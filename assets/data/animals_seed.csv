@@ -1,0 +1,151 @@
+commonName,recommendedCaliber,isHuntable,animalType,provinceOfOrigin,huntingSeason
+Impala,.243 Winchester,TRUE,Mammal (Antelope),Limpopo-Mpumalanga-North West-KZN,Feb-Nov (peak May-Aug)
+Greater Kudu,.30-06 Springfield,TRUE,Mammal (Antelope),Nationwide,Feb-Nov (peak May-Aug)
+Cape Buffalo,.375 H&H Magnum,TRUE,Mammal (Dangerous Game),Limpopo-Mpumalanga-North West-KZN,Mar-Oct
+Blue Wildebeest,.30-06 Springfield,TRUE,Mammal (Antelope),Nationwide,Feb-Nov (peak May-Aug)
+Black Wildebeest,.30-06 Springfield,TRUE,Mammal (Antelope),Free State-Eastern Cape-North West,Feb-Nov (peak May-Aug)
+Gemsbok (Oryx),.30-06 Springfield,TRUE,Mammal (Antelope),Northern Cape-North West,Feb-Nov (peak May-Aug)
+Springbok,.243 Winchester,TRUE,Mammal (Antelope),Northern Cape-Free State-North West,Feb-Nov (peak May-Aug)
+Blesbok,.243 Winchester,TRUE,Mammal (Antelope),Free State-North West-Eastern Cape,Feb-Nov (peak May-Aug)
+Bontebok,.243 Winchester,TRUE,Mammal (Antelope),Western Cape,Feb-Nov (peak May-Aug)
+Southern Bushbuck,.243 Winchester,TRUE,Mammal (Antelope),Eastern Cape-KZN-Limpopo-Mpumalanga,Feb-Nov (peak May-Aug)
+Nyala,.308 Winchester,TRUE,Mammal (Antelope),KZN-Mpumalanga-Limpopo,Feb-Nov (peak May-Aug)
+Common Waterbuck,.30-06 Springfield,TRUE,Mammal (Antelope),Limpopo-Mpumalanga-North West-KZN,Feb-Nov (peak May-Aug)
+Red Hartebeest,.308 Winchester,TRUE,Mammal (Antelope),Northern Cape-Free State-North West,Feb-Nov (peak May-Aug)
+Tsessebe,.30-06 Springfield,TRUE,Mammal (Antelope),Limpopo-North West,Feb-Nov (peak May-Aug)
+Sable Antelope,.30-06 Springfield,TRUE,Mammal (Antelope),Limpopo-Mpumalanga-North West,Feb-Nov (peak May-Aug)
+Roan Antelope,.30-06 Springfield,TRUE,Mammal (Antelope),Limpopo-North West,Feb-Nov (peak May-Aug)
+Eland,.300 Magnum,TRUE,Mammal (Antelope),Nationwide,Feb-Nov (peak May-Aug)
+Plains Zebra,.30-06 Springfield,TRUE,Mammal (Equid),Nationwide,Feb-Nov (peak May-Aug)
+Cape Mountain Zebra,.30-06 Springfield,TRUE,Mammal (Equid),Western Cape-Eastern Cape,Feb-Nov (peak May-Aug)
+Hartmann's Mountain Zebra,.30-06 Springfield,TRUE,Mammal (Equid),Northern Cape,Feb-Nov (peak May-Aug)
+Common Warthog,.308 Winchester,TRUE,Mammal (Pig),Nationwide,Feb-Nov (year-round pest)
+Bushpig,.308 Winchester,TRUE,Mammal (Pig),Eastern Cape-KZN-Limpopo-Mpumalanga,Feb-Nov
+Common Duiker,.223 Remington,TRUE,Mammal (Antelope),Nationwide,Feb-Nov (peak May-Aug)
+Blue Duiker,.223 Remington,TRUE,Mammal (Antelope),KZN-Eastern Cape,Feb-Nov (peak May-Aug)
+Steenbok,.223 Remington,TRUE,Mammal (Antelope),Nationwide,Feb-Nov (peak May-Aug)
+Cape Grysbok,.223 Remington,TRUE,Mammal (Antelope),Western Cape-Eastern Cape,Feb-Nov (peak May-Aug)
+Sharpe's Grysbok,.223 Remington,TRUE,Mammal (Antelope),Limpopo-Mpumalanga-North West,Feb-Nov (peak May-Aug)
+Klipspringer,.223 Remington,TRUE,Mammal (Antelope),Limpopo-Mpumalanga-Eastern Cape-Free State,Feb-Nov (peak May-Aug)
+Oribi,.223 Remington,TRUE,Mammal (Antelope),KZN-Eastern Cape-Mpumalanga-Gauteng,Feb-Nov (peak May-Aug)
+Southern Reedbuck,.243 Winchester,TRUE,Mammal (Antelope),KZN-Eastern Cape-Mpumalanga-Free State,Feb-Nov (peak May-Aug)
+Mountain Reedbuck,.243 Winchester,TRUE,Mammal (Antelope),Western Cape-Eastern Cape-Free State,Feb-Nov (peak May-Aug)
+Suni,.223 Remington,TRUE,Mammal (Antelope),KZN,Feb-Nov (peak May-Aug)
+Natal Red Duiker,.223 Remington,TRUE,Mammal (Antelope),KZN-Eastern Cape,Feb-Nov (peak May-Aug)
+Giraffe,.300 Magnum,TRUE,Mammal (Giraffid),Limpopo-Mpumalanga-North West-Northern Cape,Feb-Nov (peak May-Aug)
+Lion,.375 H&H Magnum,TRUE,Mammal (Predator - Dangerous),Limpopo-Mpumalanga-North West-Northern Cape,Mar-Oct
+Leopard,.30-06 Springfield,TRUE,Mammal (Predator),Nationwide,May-Aug (permit)
+Cheetah,.243 Winchester,TRUE,Mammal (Predator),Limpopo-North West-Northern Cape,May-Aug (permit)
+Spotted Hyaena,.308 Winchester,TRUE,Mammal (Predator),Limpopo-Mpumalanga-North West-Northern Cape,May-Aug (permit)
+Brown Hyaena,.308 Winchester,TRUE,Mammal (Predator),Northern Cape-North West-Free State,May-Aug (permit)
+Aardwolf,.223 Remington,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Black-backed Jackal,.223 Remington,TRUE,Mammal (Predator - small),Nationwide,Year-round (pest)
+Side-striped Jackal,.223 Remington,TRUE,Mammal (Predator - small),Limpopo-Mpumalanga-KZN-Eastern Cape,Year-round (pest)
+Cape Fox,.223 Remington,TRUE,Mammal (Predator - small),Northern Cape-Western Cape-Free State,May-Aug
+Bat-eared Fox,.223 Remington,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Caracal,.223 Remington,TRUE,Mammal (Predator - medium),Nationwide,Year-round (pest)
+Serval,.223 Remington,TRUE,Mammal (Predator - medium),KZN-Mpumalanga-Eastern Cape-Limpopo,May-Aug (permit)
+African Wildcat,.22 Magnum,TRUE,Mammal (Predator - small),Nationwide,Year-round (pest)
+Black-footed Cat,.22 LR,TRUE,Mammal (Predator - small),Northern Cape-Free State-North West,May-Aug (permit)
+African Civet,.223 Remington,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Small-spotted Genet,.22 Magnum,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Rusty-spotted Genet,.22 Magnum,TRUE,Mammal (Predator - small),KZN-Mpumalanga-Limpopo-Eastern Cape,May-Aug
+Cape Genet,.22 Magnum,TRUE,Mammal (Predator - small),Western Cape-Eastern Cape,May-Aug
+Yellow Mongoose,.22 Magnum,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Slender Mongoose,.22 Magnum,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+Banded Mongoose,.22 LR,TRUE,Mammal (Predator - small),Limpopo-Mpumalanga-KZN-North West,May-Aug
+Dwarf Mongoose,.22 LR,TRUE,Mammal (Predator - small),Limpopo-Mpumalanga-KZN-North West,May-Aug
+Water Mongoose,.22 Magnum,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+White-tailed Mongoose,.22 Magnum,TRUE,Mammal (Predator - small),KZN-Mpumalanga-Limpopo-Eastern Cape,May-Aug
+Selous' Mongoose,.22 Magnum,TRUE,Mammal (Predator - small),Limpopo-Mpumalanga-North West,May-Aug
+Suricate (Meerkat),.22 LR,TRUE,Mammal (Predator - small),Northern Cape-Western Cape-Free State,May-Aug
+Striped Polecat,.22 LR,TRUE,Mammal (Predator - small),Nationwide,May-Aug
+African Striped Weasel,.22 LR,TRUE,Mammal (Predator - small),KZN-Eastern Cape-Mpumalanga,May-Aug
+Honey Badger,.223 Remington,TRUE,Mammal (Predator - medium),Nationwide,May-Aug (permit)
+Aardvark,.223 Remington,TRUE,Mammal (Other),Nationwide,May-Aug (permit)
+Cape Porcupine,.223 Remington,TRUE,Mammal (Rodent),Nationwide,Year-round (pest)
+Springhare,.17 HMR,TRUE,Mammal (Rodent),Free State-Northern Cape-North West,May-Aug
+Greater Cane Rat,.22 Magnum,TRUE,Mammal (Rodent),KZN-Eastern Cape-Mpumalanga-Limpopo,May-Aug
+Cape Hare,.17 HMR,TRUE,Mammal (Lagomorph),Nationwide,Year-round (pest)
+Scrub Hare,.17 HMR,TRUE,Mammal (Lagomorph),Nationwide,Year-round (pest)
+African Savanna Hare,.17 HMR,TRUE,Mammal (Lagomorph),Nationwide,Year-round (pest)
+Tree Squirrel,.22 LR,TRUE,Mammal (Rodent),Limpopo-Mpumalanga-North West-KZN,May-Aug
+Cape Ground Squirrel,.22 LR,TRUE,Mammal (Rodent),Northern Cape-Free State-North West,May-Aug
+Damara Ground Squirrel,.22 LR,TRUE,Mammal (Rodent),Northern Cape,May-Aug
+Rock Hyrax,.22 Magnum,TRUE,Mammal (Hyrax),Nationwide,May-Aug
+Tree Hyrax,.22 LR,TRUE,Mammal (Hyrax),KZN-Limpopo-Mpumalanga,May-Aug
+Yellow-spotted Rock Hyrax,.22 LR,TRUE,Mammal (Hyrax),Limpopo-Mpumalanga-North West,May-Aug
+Chacma Baboon,.243 Winchester,TRUE,Mammal (Primate),Nationwide,Year-round (pest)
+Vervet Monkey,.223 Remington,TRUE,Mammal (Primate),Nationwide,Year-round (pest)
+Nile Crocodile,.375 H&H Magnum,TRUE,Reptile (Crocodilian),Limpopo-Mpumalanga-KZN,Mar-Oct (permit)
+Rock Monitor (Varanus albigularis),.223 Remington,TRUE,Reptile (Monitor),Limpopo-Mpumalanga-North West-KZN,May-Aug (permit)
+Nile Monitor (Varanus niloticus),.223 Remington,TRUE,Reptile (Monitor),Nationwide,May-Aug (permit)
+Water Monitor (Varanus niloticus),.223 Remington,TRUE,Reptile (Monitor),Limpopo-Mpumalanga-KZN,May-Aug (permit)
+African Rock Python,.22 Magnum,TRUE,Reptile (Snake),Limpopo-Mpumalanga-KZN-Eastern Cape,May-Aug (pest control permit)
+Egyptian Goose,#2 - #3 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+Spur-winged Goose,#2 - #3 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+African Pygmy Goose,#4 - #5 Shot,TRUE,Bird (Waterfowl),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Yellow-billed Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+Red-billed Teal,#4 - #5 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+Cape Teal,#4 - #5 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+Hottentot Teal,#4 - #5 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+Southern Pochard,#4 - #5 Shot,TRUE,Bird (Waterfowl),Nationwide,May 1 - Jul 31
+White-faced Whistling Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Fulvous Whistling Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+South African Shelduck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Free State-Northern Cape-Western Cape,May 1 - Jul 31
+African Black Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Western Cape-Eastern Cape-KZN,May 1 - Jul 31
+Knob-billed Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Maccoa Duck,#4 - #5 Shot,TRUE,Bird (Waterfowl),Western Cape-Eastern Cape-Free State,May 1 - Jul 31
+Common Quail,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Harlequin Quail,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Crested Francolin,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West-KZN,May 1 - Jul 31
+Red-winged Francolin,#5 - #6 Shot,TRUE,Bird (Gamebird),Western Cape-Eastern Cape,May 1 - Jul 31
+Orange River Francolin,#5 - #6 Shot,TRUE,Bird (Gamebird),Northern Cape-Free State-North West,May 1 - Jul 31
+Shelley's Francolin,#5 - #6 Shot,TRUE,Bird (Gamebird),Mpumalanga-KZN-Limpopo,May 1 - Jul 31
+Grey-winged Francolin,#5 - #6 Shot,TRUE,Bird (Gamebird),Western Cape-Eastern Cape-Free State,May 1 - Jul 31
+Crested Guineafowl,#4 - #5 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Helmeted Guineafowl,#4 - #5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Red-billed Spurfowl,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West-KZN,May 1 - Jul 31
+Cape Spurfowl,#5 - #6 Shot,TRUE,Bird (Gamebird),Western Cape,May 1 - Jul 31
+Natal Spurfowl,#5 - #6 Shot,TRUE,Bird (Gamebird),KZN-Eastern Cape,May 1 - Jul 31
+Swainson's Spurfowl,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West-Free State,May 1 - Jul 31
+African Olive Pigeon (Rameron),#5 - #6 Shot,TRUE,Bird (Gamebird),Western Cape-Eastern Cape-KZN,May 1 - Jul 31
+Eastern Bronze-naped Pigeon,#5 - #6 Shot,TRUE,Bird (Gamebird),KZN-Mpumalanga-Limpopo,May 1 - Jul 31
+Speckled Pigeon (Rock Pigeon),#5 - #6 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Lemon Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),KZN-Eastern Cape-Western Cape,May 1 - Jul 31
+Rock Dove (feral pigeon),#6 Shot,TRUE,Bird (Pest),Nationwide,Year-round
+Namaqua Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Cape Turtle Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Red-eyed Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+Laughing Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Nationwide,May 1 - Jul 31
+African Green Pigeon,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Blue-spotted Wood Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-KZN,May 1 - Jul 31
+Emerald-spotted Wood Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West-KZN,May 1 - Jul 31
+Tambourine Dove,#6 - #7.5 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-KZN-Eastern Cape,May 1 - Jul 31
+Double-banded Sandgrouse,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-North West-Northern Cape,May 1 - Jul 31
+Yellow-throated Sandgrouse,#5 - #6 Shot,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West,May 1 - Jul 31
+Namaqua Sandgrouse,#5 - #6 Shot,TRUE,Bird (Gamebird),Northern Cape-North West-Free State,May 1 - Jul 31
+Southern Black Korhaan,.243 Winchester,TRUE,Bird (Gamebird),Western Cape,May 1 - Jul 31
+Northern Black Korhaan,.243 Winchester,TRUE,Bird (Gamebird),Northern Cape-Free State-North West,May 1 - Jul 31
+Blue Korhaan,.243 Winchester,TRUE,Bird (Gamebird),Eastern Cape-Free State,May 1 - Jul 31
+Karoo Korhaan,.243 Winchester,TRUE,Bird (Gamebird),Western Cape-Northern Cape-Eastern Cape,May 1 - Jul 31
+Red-crested Korhaan,.243 Winchester,TRUE,Bird (Gamebird),Limpopo-Mpumalanga-North West-KZN,May 1 - Jul 31
+White-bellied Korhaan,.243 Winchester,TRUE,Bird (Gamebird),KZN-Mpumalanga-Limpopo,May 1 - Jul 31
+Kori Bustard,.30-06 Springfield,TRUE,Bird (Gamebird),Northern Cape-North West-Free State,May 1 - Jul 31 (permit)
+Denham's Bustard,.30-06 Springfield,TRUE,Bird (Gamebird),KZN-Mpumalanga-North West,May 1 - Jul 31 (permit)
+Ludwig's Bustard,.30-06 Springfield,TRUE,Bird (Gamebird),Northern Cape-Western Cape,May 1 - Jul 31 (permit)
+Secretarybird,.243 Winchester,FALSE,Bird (Protected),Nationwide,N/A (protected)
+Temminck's Ground Pangolin,N/A,FALSE,Mammal (Protected - Endangered),Nationwide,N/A (fully protected)
+African Elephant,N/A,FALSE,Mammal (Protected - Dangerous Game),Limpopo-Mpumalanga-North West,N/A (strict permit only)
+Southern White Rhinoceros,N/A,FALSE,Mammal (Protected - Dangerous Game),KZN-Limpopo-Mpumalanga-North West,N/A (strict permit only)
+Black Rhinoceros,N/A,FALSE,Mammal (Protected - Endangered),KZN-Eastern Cape,N/A (strict permit only)
+Hippopotamus,N/A,FALSE,Mammal (Protected),KZN-Mpumalanga-Limpopo-Eastern Cape,N/A (strict permit only)
+Geometric Tortoise,N/A,FALSE,Reptile (Protected - Endangered),Western Cape,N/A (fully protected)
+Leopard Tortoise,N/A,FALSE,Reptile (Protected),Nationwide,N/A (protected)
+Angulate Tortoise,N/A,FALSE,Reptile (Protected),Western Cape-Eastern Cape,N/A (protected)
+Speckled Padloper Tortoise,N/A,FALSE,Reptile (Protected - Vulnerable),Northern Cape-Western Cape,N/A (fully protected)
+Loggerhead Turtle,N/A,FALSE,Reptile (Protected - Marine),KZN,N/A (fully protected)
+Green Turtle,N/A,FALSE,Reptile (Protected - Marine),KZN,N/A (fully protected)
+Leatherback Turtle,N/A,FALSE,Reptile (Protected - Marine),KZN,N/A (fully protected)
+Hawksbill Turtle,N/A,FALSE,Reptile (Protected - Marine),KZN,N/A (fully protected)
+Olive Ridley Turtle,N/A,FALSE,Reptile (Protected - Marine),KZN,N/A (fully protected)

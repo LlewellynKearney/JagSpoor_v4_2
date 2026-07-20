@@ -1,0 +1,96 @@
+name: jagspoor
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+    
+  # Live camera scanning of high-density PDF417 barcodes (SA documents)
+  mobile_scanner: ^7.2.0
+  
+  # Reliable native camera access to bypass GPU/Vulkan rendering errors
+  image_picker: ^1.1.2
+  flutter_image_compress: ^2.3.0
+  
+  # Camera access for spoor identifier
+  camera: ^0.10.5+5
+
+  # TensorFlow Lite for on-device AI image classification
+  tflite_flutter: ^0.11.0
+  
+  # Image processing for model input preparation
+  image: ^4.1.3
+
+  # Core localization, formatting, and South African document parsing
+  intl: ^0.20.2
+
+  # PDF generation and sharing
+  pdf: ^3.10.1
+  printing: ^5.10.0
+
+  # GPS and location services
+  geolocator: ^11.0.0
+  geocoding: ^3.0.0
+  http: ^1.6.0
+
+  # Modern UI indicators
+  cupertino_icons: ^1.0.9
+  
+  # FIREBASE - All aligned to ^7.1.0 platform_interface
+  firebase_core: ^4.5.0
+  firebase_auth: ^6.5.3
+  cloud_firestore: ^6.6.0
+  firebase_storage: ^13.4.3  # <-- CHANGED from 12.3.1
+  firebase_crashlytics: ^5.2.4
+
+  # Offline-capable animal profile images (SA Game Guide)
+  cached_network_image: ^3.4.1
+
+  # CSV parsing for animal data seeding
+  csv: ^6.0.0
+
+  # Local storage for offline cache flags
+  shared_preferences: ^2.2.2
+
+  # URL launcher for communication shortcuts
+  url_launcher: ^6.3.0
+
+  # Hardware compass for tactical navigation
+  flutter_compass: ^0.8.0
+
+  # Interactive ballistic trajectory charting
+  fl_chart: ^0.68.0
+  path: ^1.9.1
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/data/
+    - assets/app logo/
+    - assets/models/spoor_classifier.tflite
+    - assets/models/labels.txt
+    - assets/data/ammunition_database.csv
+    - assets/data/bullet_database.csv
+    - assets/data/propellant_database.csv
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app logo/logo1.png"
+  adaptive_icon_background: "#2E7D32"
+  adaptive_icon_foreground: "assets/app logo/logo1.png"

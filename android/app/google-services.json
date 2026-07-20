@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "475471855344",
+    "project_id": "jagspoor",
+    "storage_bucket": "jagspoor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:475471855344:android:b74bed5488b2440b620c35",
+        "android_client_info": {
+          "package_name": "com.example.jagspoor"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "475471855344-89nc8lvtb5su643rnb6a2ft7p30g741h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.jagspoor",
+            "certificate_hash": "9d2d67a688eb3bb8744cb4e4f48215b5fe38f1ab"
+          }
+        },
+        {
+          "client_id": "475471855344-nk7g5qq6v11c6t7efp5s9ppqc9tup5c7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBDBoiJr9Tqwa0LIF24mGTmQFa-MJawyXM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "475471855344-nk7g5qq6v11c6t7efp5s9ppqc9tup5c7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "475471855344-g2htqcg7khu9tq92c500anih3m4bkdsq.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.jagspoor"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,24 @@
+Kudu
+Nyala
+Gemsbok
+Impala
+Wildebeest
+Springbok
+Blesbok
+Hartebeest
+Eland
+Roan Antelope
+Sable Antelope
+Bushbuck
+Duiker
+Oribi
+Steenbok
+Red Hartebeest
+Blue Wildebeest
+Giraffe
+Zebra
+Warthog
+Hyena
+Jackal
+Caracal
+Serval
