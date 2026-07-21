@@ -12,12 +12,22 @@ class SlaghuisMatrixScreen extends StatefulWidget {
 class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
   final LocalDatabaseService _dbService = LocalDatabaseService();
   final _formKey = GlobalKey<FormState>();
+  final _weightController = TextEditingController();
   
   String _selectedSpecies = 'Impala';
-  double _weight = 0.0;
   
   static const Color accentGold = Color(0xFFC5A059);
   static const Color deepWalnut = Color(0xFF3E2723);
+
+  @override
+  void dispose() {
+    _weightController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshData() async {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +51,7 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
           final records = snapshot.data!.map((m) => CarcassRecord.fromMap(m)).toList();
 
           return ListView.builder(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.only(bottom: 80, left: 12, right: 12, top: 12),
             itemCount: records.length,
             itemBuilder: (context, index) {
               final record = records[index];
@@ -74,79 +84,98 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
   }
 
   void _showAddCarcassModal(BuildContext context) {
+    // Reset form state for new entry
+    _weightController.clear();
+    _selectedSpecies = 'Impala';
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        top: false,
-        bottom: true,
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 16,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('LOG NEW CARCASS', 
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedSpecies,
-                  dropdownColor: Colors.black,
-                  style: const TextStyle(color: Colors.white),
-                  items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                  onChanged: (v) => setState(() => _selectedSpecies = v!),
-                  decoration: const InputDecoration(
-                    labelText: 'Species',
-                    labelStyle: TextStyle(color: Colors.grey),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          top: false,
+          bottom: true,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + MediaQuery.of(sheetContext).padding.bottom + 16,
+              left: 20,
+              right: 20,
+              top: 20,
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('LOG NEW CARCASS', 
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedSpecies,
+                    dropdownColor: Colors.black,
+                    style: const TextStyle(color: Colors.white),
+                    items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    onChanged: (v) {
+                      setSheetState(() => _selectedSpecies = v ?? 'Impala');
+                      setState(() => _selectedSpecies = v ?? 'Impala');
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Species',
+                      labelStyle: TextStyle(color: Colors.grey),
+                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  style: const TextStyle(color: Colors.white),
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Carcass Weight (kg)',
-                    labelStyle: TextStyle(color: Colors.grey),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _weightController,
+                    style: const TextStyle(color: Colors.white),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Carcass Weight (kg)',
+                      labelStyle: TextStyle(color: Colors.grey),
+                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Weight is required';
+                      if (double.tryParse(v) == null) return 'Enter a valid number';
+                      return null;
+                    },
                   ),
-                  onSaved: (v) => _weight = double.tryParse(v ?? '0') ?? 0.0,
-                ),
-                const SizedBox(height: 30),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accentGold,
-                    minimumSize: const Size(double.infinity, 50)
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accentGold,
+                      minimumSize: const Size(double.infinity, 50)
+                    ),
+                    onPressed: () async {
+                      if (_formKey.currentState!.validate()) {
+                        final weight = double.tryParse(_weightController.text) ?? 0.0;
+                        final record = CarcassRecord(
+                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          hunterId: 'CURRENT_SESSION_ID',
+                          species: _selectedSpecies,
+                          carcassWeight: weight,
+                          slaughterFee: 150.0,
+                          coldroomDays: 0,
+                          status: 'In Coldroom',
+                          isDirty: 1,
+                        );
+                        
+                        await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
+                        
+                        // Close sheet and refresh UI
+                        if (!mounted) return;
+                        Navigator.of(sheetContext).pop();
+                        await _refreshData();
+                      }
+                    },
+                    child: const Text('ADD TO COLDROOM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                   ),
-                  onPressed: () async {
-                    if (_formKey.currentState!.validate()) {
-                      _formKey.currentState!.save();
-                      final record = CarcassRecord(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        hunterId: 'CURRENT_SESSION_ID',
-                        species: _selectedSpecies,
-                        carcassWeight: _weight,
-                        slaughterFee: 150.0,
-                      );
-                      final navigator = Navigator.of(context);
-                      await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
-                      if (!mounted) return;
-                      navigator.pop();
-                      setState(() {});
-                    }
-                  },
-                  child: const Text('ADD TO COLDROOM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 16),
-              ],
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
         ),

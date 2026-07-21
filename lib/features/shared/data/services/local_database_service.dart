@@ -21,23 +21,24 @@ class LocalDatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // Create carcass_records table for Slaghuis Matrix
+    // Create carcass_records table for Slaghuis Matrix with correct column mappings
     await db.execute('''
       CREATE TABLE IF NOT EXISTS carcass_records (
         id TEXT PRIMARY KEY,
         hunterId TEXT,
         species TEXT,
         carcassWeight REAL,
-        coldroomDays INTEGER DEFAULT 0,
-        isDirty INTEGER DEFAULT 0,
-        slaughterFee REAL DEFAULT 0,
-        createdAt TEXT
+        slaughterFee REAL,
+        coldroomDays INTEGER,
+        status TEXT,
+        isDirty INTEGER DEFAULT 1
       )
     ''');
 
@@ -68,5 +69,36 @@ class LocalDatabaseService {
         createdAt TEXT
       )
     ''');
+
+    // Create outfitter_packages table for package management
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS outfitter_packages (
+        id TEXT PRIMARY KEY,
+        packageName TEXT,
+        packageLocation TEXT,
+        startDate TEXT,
+        endDate TEXT,
+        packageDescription TEXT,
+        basePrice REAL,
+        createdAt TEXT,
+        updatedAt TEXT
+      )
+    ''');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // Migrate carcass_records table to include status column if upgrading from v1
+    if (oldVersion < 2) {
+      try {
+        await db.execute("ALTER TABLE carcass_records ADD COLUMN status TEXT");
+      } catch (_) {
+        // Column might already exist
+      }
+      try {
+        await db.execute("ALTER TABLE carcass_records ADD COLUMN slaughterFee REAL");
+      } catch (_) {
+        // Column might already exist
+      }
+    }
   }
 }

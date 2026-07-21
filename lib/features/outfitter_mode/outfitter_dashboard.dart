@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_screen.dart';
+import 'presentation/lodge_booking_screen.dart';
 import 'presentation/manual_invoice_screen.dart';
 import 'presentation/slaghuis_matrix_screen.dart';
 
@@ -54,7 +55,12 @@ class OutfitterDashboard extends StatelessWidget {
                     title: 'Lodge Booking Manager',
                     description: 'Schedule client arrivals, room layouts, and hunting permits',
                     theme: theme,
-                    onTap: () => _showComingSoon(context, 'Lodge Booking Manager', theme),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LodgeBookingScreen()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
 
