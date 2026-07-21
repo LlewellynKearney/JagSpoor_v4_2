@@ -31,8 +31,8 @@ dependencies:
   intl: ^0.20.2
 
   # PDF generation and sharing
-  pdf: ^3.10.1
-  printing: ^5.10.0
+  pdf: ^3.12.0
+  printing: ^5.14.3
 
   # GPS and location services
   geolocator: ^11.0.0
@@ -68,6 +68,7 @@ dependencies:
   fl_chart: ^0.68.0
   path: ^1.9.1
   path_provider: ^2.1.6
+  share_plus: ^13.2.1
 
 dev_dependencies:
   flutter_test:
