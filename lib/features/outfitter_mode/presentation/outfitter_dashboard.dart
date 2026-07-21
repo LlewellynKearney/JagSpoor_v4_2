@@ -1,7 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../../core/theme/app_theme.dart';
-import '../auth/auth_screen.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../auth/auth_screen.dart';
 import 'manual_invoice_screen.dart';
 import 'slaghuis_matrix_screen.dart';
 
@@ -33,18 +32,18 @@ class OutfitterDashboard extends StatelessWidget {
                 const Text(
                   'Jagspoor Outfitter',
                   style: TextStyle(
-                    fontWeight: FontWeightw
-                    letterSpacing: 
-                    fontSize: 
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                    fontSize: 18,
                   ),
                 ),
                 Text(
                   conceptLabel,
                   style: TextStyle(
-                    color: themeaccentColor,
-                    fontWeight: FontWeightw
-                    letterSpacing: 
-                    fontSize: 
+                    color: theme.accentColor,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 1.0,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -54,12 +53,12 @@ class OutfitterDashboard extends StatelessWidget {
             actions: [
               IconButton(
                 tooltip: 'Lock Portal',
-                icon: Icon(Iconslock_reset_rounded, color: themeaccentColor),
+                icon: Icon(Icons.lock_reset_rounded, color: theme.accentColor),
                 onPressed: () {
-                  NavigatorpushReplacement(
-                    
+                  Navigator.pushReplacement(
+                    context,
                     MaterialPageRoute(
-                      builder: (
+                      builder: (_) => AuthScreen(themedata: theme),
                     ),
                   );
                 },
@@ -72,45 +71,43 @@ class OutfitterDashboard extends StatelessWidget {
               physics: const BouncingScrollPhysics(),
               children: [
                 _buildStatusBanner(theme),
-                const SizedBox(height: ),
+                const SizedBox(height: 16),
                 Text(
                   'OUTFITTER OPERATIONS',
                   style: TextStyle(
-                    color: themetextColorwithAlpha(),
-                    fontSize: 
-                    fontWeight: FontWeightw
-                    letterSpacing: 
+                    color: theme.textColor.withAlpha(180),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 2.0,
                   ),
                 ),
-                const SizedBox(height: ),
+                const SizedBox(height: 12),
                 
                 // Price Catalog & Invoicing
                 _buildFeatureCard(
-                  
-                  icon: Iconsreceipt_long_rounded,
+                  icon: Icons.receipt_long_rounded,
                   title: 'Price Catalog & Invoicing',
                   description: 'Manage animal rates and generate client invoices',
                   theme: theme,
                   onTap: () {
-                    Navigatorpush(
-                      
-                      MaterialPageRoute(builder: (
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ManualInvoiceScreen()),
                     );
                   },
                 ),
-                const SizedBox(height: ),
+                const SizedBox(height: 12),
 
                 // Slaghuis Matrix
                 _buildFeatureCard(
-                  
-                  icon: Iconsinventory__rounded,
+                  icon: Icons.inventory_2_rounded,
                   title: 'Slaghuis Matrix',
                   description: 'Track carcass weights and processing status',
                   theme: theme,
                   onTap: () {
-                    Navigatorpush(
-                      
-                      MaterialPageRoute(builder: (
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SlaghuisMatrixScreen()),
                     );
                   },
                 ),
@@ -132,12 +129,12 @@ class OutfitterDashboard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Iconsvilla_rounded, color: themeaccentColor, size: ),
-          const SizedBox(width: ),
+          Icon(Icons.villa_rounded, color: theme.accentColor, size: 32),
+          const SizedBox(width: 16),
           Expanded(
             child: Text(
               'OUTFITTER CONTROL CENTER ACTIVE',
-              style: TextStyle(color: themetextColor, fontWeight: FontWeightwfontSize: ),
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w700, fontSize: 14),
             ),
           ),
         ],
@@ -145,8 +142,7 @@ class OutfitterDashboard extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureCard(
-    BuildContext context, {
+  Widget _buildFeatureCard({
     required IconData icon,
     required String title,
     required String description,
@@ -163,19 +159,18 @@ class OutfitterDashboard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Row(
             children: [
-              Icon(icon, color: themeaccentColor, size: ),
-              const SizedBox(width: ),
+              Icon(icon, color: theme.accentColor, size: 32),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignmentstart,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: TextStyle(color: themetextColor, fontWeight: FontWeightbold, fontSize: )),
-                    Text(description, style: TextStyle(color: themetextColorwithAlpha(), fontSize: )),
+                    Text(title, style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(description, style: TextStyle(color: theme.textColor.withAlpha(180), fontSize: 13)),
                   ],
                 ),
               ),

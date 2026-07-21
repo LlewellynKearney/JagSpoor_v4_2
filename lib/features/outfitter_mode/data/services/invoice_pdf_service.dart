@@ -18,20 +18,20 @@ class InvoicePdfService {
         pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
           double totalAmount = (packageBasePrice * markup);
-          
+
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pwContainer(
-                color: PdfColorsbrown
-                padding: const pwEdgeInsetsall(),
-                child: pwRow(
-                  mainAxisAlignment: pwMainAxisAlignmentspaceBetween,
+              pw.Container(
+                color: PdfColors.brown,
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pwText('JAGSPOOR HUNTING INVOICE', 
-                        style: pwTextStyle(color: PdfColorswhite, fontSize: fontWeight: pwFontWeightbold)),
-                    pwText('Client: $clientName', 
-                        style: pwTextStyle(color: PdfColorswhite, fontWeight: pwFontWeightbold)),
+                    pw.Text('JAGSPOOR HUNTING INVOICE',
+                        style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('Client: $clientName',
+                        style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold)),
                   ],
                 ),
               ),
@@ -40,7 +40,7 @@ class InvoicePdfService {
               pw.TableHelper.fromTextArray(
                 data: [
                   ['Description', 'Price (ZAR)'],
-                  [packageName, 'R ${totalAmounttoStringAsFixed()}'],
+                  [packageName, 'R ${totalAmount.toStringAsFixed(2)}'],
                 ],
               ),
               pw.SizedBox(height: 24),
@@ -54,7 +54,7 @@ class InvoicePdfService {
                   final int qty = (item['multiplier'] is num) ? (item['multiplier'] as num).toInt() : 1;
                   final double subtotal = hunterPrice * qty;
                   totalAmount += subtotal;
-                  
+
                   return [
                     item['name'] ?? 'Extra Item',
                     qty.toString(),
@@ -67,7 +67,7 @@ class InvoicePdfService {
               pw.Divider(color: PdfColors.grey500),
               pw.Align(
                 alignment: pw.Alignment.centerRight,
-                child: pw.Text('TOTAL AMOUNT DUE: R ${totalAmount.toStringAsFixed(2)}', 
+                child: pw.Text('TOTAL AMOUNT DUE: R ${totalAmount.toStringAsFixed(2)}',
                     style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
               ),
             ],

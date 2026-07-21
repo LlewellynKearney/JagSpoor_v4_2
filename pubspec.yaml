@@ -57,6 +57,9 @@ dependencies:
 
   # Local storage for offline cache flags
   shared_preferences: ^2.2.2
+  
+  # SQLite database for local data persistence
+  sqflite: ^2.3.0
 
   # URL launcher for communication shortcuts
   url_launcher: ^6.3.0

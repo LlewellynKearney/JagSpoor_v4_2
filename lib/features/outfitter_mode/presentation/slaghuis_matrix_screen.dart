@@ -49,7 +49,7 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                 color: const Color(0xFF1A1A1A),
                 margin: const EdgeInsets.only(bottom: 12),
                 shape: RoundedRectangleBorder(
-                  side: BorderSide(color: record.isDirty == 1 ? Colors.orange : accentGold.withOpacity(0.3)),
+                  side: BorderSide(color: record.isDirty == 1 ? Colors.orange : accentGold.withValues(alpha: 0.3)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: ListTile(
@@ -92,7 +92,7 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
-                value: _selectedSpecies,
+                initialValue: _selectedSpecies,
                 dropdownColor: Colors.black,
                 style: const TextStyle(color: Colors.white),
                 items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
@@ -131,9 +131,10 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                       carcassWeight: _weight,
                       slaughterFee: 150.0,
                     );
+                    final navigator = Navigator.of(context);
                     await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
                     if (!mounted) return;
-                    Navigator.pop(context);
+                    navigator.pop();
                     setState(() {});
                   }
                 },
