@@ -21,7 +21,7 @@ class LocalDatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -70,7 +70,7 @@ class LocalDatabaseService {
       )
     ''');
 
-    // Create outfitter_packages table for package management
+    // Create outfitter_packages table for package management with includedAnimalsJson
     await db.execute('''
       CREATE TABLE IF NOT EXISTS outfitter_packages (
         id TEXT PRIMARY KEY,
@@ -80,6 +80,7 @@ class LocalDatabaseService {
         endDate TEXT,
         packageDescription TEXT,
         basePrice REAL,
+        includedAnimalsJson TEXT,
         createdAt TEXT,
         updatedAt TEXT
       )
@@ -87,18 +88,23 @@ class LocalDatabaseService {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migrate carcass_records table to include status column if upgrading from v1
+    // Migrate from v1 to v2
     if (oldVersion < 2) {
       try {
         await db.execute("ALTER TABLE carcass_records ADD COLUMN status TEXT");
-      } catch (_) {
-        // Column might already exist
-      }
+      } catch (_) {}
       try {
         await db.execute("ALTER TABLE carcass_records ADD COLUMN slaughterFee REAL");
-      } catch (_) {
-        // Column might already exist
-      }
+      } catch (_) {}
+    }
+    // Migrate from v2 to v3 - add includedAnimalsJson column
+    if (oldVersion < 3) {
+      try {
+        await db.execute("ALTER TABLE outfitter_packages ADD COLUMN includedAnimalsJson TEXT");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE outfitter_packages ADD COLUMN basePrice REAL DEFAULT 0");
+      } catch (_) {}
     }
   }
 }

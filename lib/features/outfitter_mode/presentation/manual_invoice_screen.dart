@@ -67,6 +67,20 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
     });
   }
 
+  // SA Game Guide standard animal types for hunting packages
+  static const List<Map<String, dynamic>> _availableAnimals = [
+    {'name': 'Impala', 'icon': '🦌'},
+    {'name': 'Kudu', 'icon': '🐂'},
+    {'name': 'Warthog', 'icon': '🐗'},
+    {'name': 'Eland', 'icon': '🦬'},
+    {'name': 'Blue Wildebeest', 'icon': '🐃'},
+    {'name': 'Zebra', 'icon': '🦓'},
+    {'name': 'Wildebeest', 'icon': '🐄'},
+    {'name': 'Gemsbok', 'icon': '🦏'},
+    {'name': 'Springbok', 'icon': '🐇'},
+    {'name': 'Blesbok', 'icon': '🦌'},
+  ];
+
   Future<void> _showPackageForm({Map<String, dynamic>? existingPackage}) async {
     final isEditing = existingPackage != null;
     final nameController = TextEditingController(text: isEditing ? (existingPackage['packageName'] ?? '') : '');
@@ -75,6 +89,36 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
     final priceController = TextEditingController(
       text: isEditing ? ((existingPackage['basePrice'] ?? 0.0) as double).toStringAsFixed(2) : '',
     );
+    
+    // Cost field controllers
+    final slaughterFeeController = TextEditingController(text: '0.00');
+    final coldroomFeeController = TextEditingController(text: '0.00');
+    final bakkieFeeController = TextEditingController(text: '0.00');
+    final phFeeController = TextEditingController(text: '0.00');
+    
+    // Parse existing included animals from JSON
+    List<String> selectedAnimals = [];
+    if (isEditing && existingPackage['includedAnimalsJson'] != null) {
+      try {
+        final decoded = _parseIncludedAnimalsJson(existingPackage['includedAnimalsJson']?.toString() ?? '');
+        if (decoded['animals'] != null) {
+          selectedAnimals = List<String>.from(decoded['animals']);
+        }
+        if (decoded['slaughterFee'] != null) {
+          slaughterFeeController.text = ((decoded['slaughterFee'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+        }
+        if (decoded['coldroomFee'] != null) {
+          coldroomFeeController.text = ((decoded['coldroomFee'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+        }
+        if (decoded['bakkieFee'] != null) {
+          bakkieFeeController.text = ((decoded['bakkieFee'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+        }
+        if (decoded['phFee'] != null) {
+          phFeeController.text = ((decoded['phFee'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+        }
+      } catch (_) {}
+    }
+    
     DateTime? startDate;
     DateTime? endDate;
     if (isEditing) {
@@ -109,7 +153,9 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                     isEditing ? 'EDIT PACKAGE' : 'NEW PACKAGE',
                     style: const TextStyle(color: accentGold, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  
+                  // Package Name
                   TextField(
                     controller: nameController,
                     style: const TextStyle(color: Colors.white),
@@ -120,6 +166,8 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  
+                  // Location
                   TextField(
                     controller: locationController,
                     style: const TextStyle(color: Colors.white),
@@ -130,6 +178,8 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  
+                  // Description
                   TextField(
                     controller: descController,
                     style: const TextStyle(color: Colors.white),
@@ -140,18 +190,130 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                       enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  
+                  // Animal Selection Section
+                  const Text(
+                    'INCLUDED ANIMALS (SA Game Guide)',
+                    style: TextStyle(color: accentGold, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _availableAnimals.map((animal) {
+                      final isSelected = selectedAnimals.contains(animal['name']);
+                      return FilterChip(
+                        selected: isSelected,
+                        label: Text('${animal['icon']} ${animal['name']}'),
+                        labelStyle: TextStyle(color: isSelected ? Colors.black : Colors.white, fontSize: 12),
+                        backgroundColor: const Color(0xFF2A2A2A),
+                        selectedColor: accentGold,
+                        checkmarkColor: Colors.black,
+                        onSelected: (selected) {
+                          setSheetState(() {
+                            if (selected) {
+                              selectedAnimals.add(animal['name']);
+                            } else {
+                              selectedAnimals.remove(animal['name']);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Cost Fields Section
+                  const Text(
+                    'PACKAGE COSTS (ZAR)',
+                    style: TextStyle(color: accentGold, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Base Price
                   TextField(
                     controller: priceController,
                     style: const TextStyle(color: Colors.white),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
-                      labelText: 'Base Price (ZAR)',
+                      labelText: 'Base Package Price',
+                      prefixText: 'R ',
                       labelStyle: TextStyle(color: Colors.grey),
                       enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  
+                  // Cost row: Slaughter & Coldroom
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: slaughterFeeController,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Slaughter Fee',
+                            prefixText: 'R ',
+                            labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: coldroomFeeController,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Coldroom Fee',
+                            prefixText: 'R ',
+                            labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Cost row: Bakkie & PH
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: bakkieFeeController,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Bakkie Fee',
+                            prefixText: 'R ',
+                            labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: phFeeController,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'PH Fee',
+                            prefixText: 'R ',
+                            labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
+                  
+                  // Date Row
                   Row(
                     children: [
                       Expanded(
@@ -170,14 +332,14 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                           child: InputDecorator(
                             decoration: const InputDecoration(
                               labelText: 'Start Date',
-                              labelStyle: TextStyle(color: Colors.grey),
+                              labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
                               enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
                             ),
                             child: Text(
                               startDate != null 
                                 ? '${startDate!.year}-${startDate!.month.toString().padLeft(2, '0')}-${startDate!.day.toString().padLeft(2, '0')}'
                                 : 'Select date',
-                              style: const TextStyle(color: Colors.white),
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
                             ),
                           ),
                         ),
@@ -199,42 +361,80 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                           child: InputDecorator(
                             decoration: const InputDecoration(
                               labelText: 'End Date',
-                              labelStyle: TextStyle(color: Colors.grey),
+                              labelStyle: TextStyle(color: Colors.grey, fontSize: 12),
                               enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
                             ),
                             child: Text(
                               endDate != null 
                                 ? '${endDate!.year}-${endDate!.month.toString().padLeft(2, '0')}-${endDate!.day.toString().padLeft(2, '0')}'
                                 : 'Select date',
-                              style: const TextStyle(color: Colors.white),
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
                             ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
+                  
+                  // Selected animals summary
+                  if (selectedAnimals.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.pets, color: accentGold, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Animals: ${selectedAnimals.join(', ')}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  
+                  // Save Button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: accentGold),
                       onPressed: () async {
-                        if (nameController.text.isEmpty || priceController.text.isEmpty) {
+                        if (nameController.text.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Name and price required'), backgroundColor: Colors.orange),
+                            const SnackBar(content: Text('Package name required'), backgroundColor: Colors.orange),
                           );
                           return;
                         }
+                        
+                        // Build includedAnimalsJson
+                        final includedAnimalsJson = _buildIncludedAnimalsJson(
+                          selectedAnimals,
+                          double.tryParse(slaughterFeeController.text) ?? 0,
+                          double.tryParse(coldroomFeeController.text) ?? 0,
+                          double.tryParse(bakkieFeeController.text) ?? 0,
+                          double.tryParse(phFeeController.text) ?? 0,
+                        );
+                        
                         final now = DateTime.now().toIso8601String();
                         final packageData = {
                           'packageName': nameController.text,
                           'packageLocation': locationController.text,
                           'packageDescription': descController.text,
                           'basePrice': double.tryParse(priceController.text) ?? 0.0,
+                          'includedAnimalsJson': includedAnimalsJson,
                           'startDate': startDate?.toIso8601String(),
                           'endDate': endDate?.toIso8601String(),
                           if (isEditing) 'updatedAt': now else 'createdAt': now,
                         };
+                        
                         try {
                           final db = await _dbService.database;
                           if (isEditing) {
@@ -262,7 +462,7 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                         style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
@@ -270,6 +470,54 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
         ),
       ),
     );
+  }
+  
+  // Parse JSON string for included animals and costs
+  Map<String, dynamic> _parseIncludedAnimalsJson(String jsonStr) {
+    final result = <String, dynamic>{};
+    try {
+      // Simple JSON parsing - extract animals array
+      final animalsMatch = RegExp(r'"animals":\[(.*?)\]').firstMatch(jsonStr);
+      if (animalsMatch != null) {
+        final animalsStr = animalsMatch.group(1) ?? '';
+        final animals = animalsStr
+            .split(',')
+            .map((s) => s.trim().replaceAll('"', ''))
+            .where((s) => s.isNotEmpty)
+            .toList();
+        result['animals'] = animals;
+      }
+      // Extract numeric values
+      final slaughterMatch = RegExp(r'"slaughterFee":([0-9.]+)').firstMatch(jsonStr);
+      if (slaughterMatch != null) {
+        result['slaughterFee'] = double.tryParse(slaughterMatch.group(1) ?? '0') ?? 0;
+      }
+      final coldroomMatch = RegExp(r'"coldroomFee":([0-9.]+)').firstMatch(jsonStr);
+      if (coldroomMatch != null) {
+        result['coldroomFee'] = double.tryParse(coldroomMatch.group(1) ?? '0') ?? 0;
+      }
+      final bakkieMatch = RegExp(r'"bakkieFee":([0-9.]+)').firstMatch(jsonStr);
+      if (bakkieMatch != null) {
+        result['bakkieFee'] = double.tryParse(bakkieMatch.group(1) ?? '0') ?? 0;
+      }
+      final phMatch = RegExp(r'"phFee":([0-9.]+)').firstMatch(jsonStr);
+      if (phMatch != null) {
+        result['phFee'] = double.tryParse(phMatch.group(1) ?? '0') ?? 0;
+      }
+    } catch (_) {}
+    return result;
+  }
+  
+  // Build JSON string for included animals and costs
+  String _buildIncludedAnimalsJson(
+    List<String> animals,
+    double slaughterFee,
+    double coldroomFee,
+    double bakkieFee,
+    double phFee,
+  ) {
+    final animalsStr = animals.map((a) => '"$a"').join(',');
+    return '{"animals":[$animalsStr],"slaughterFee":$slaughterFee,"coldroomFee":$coldroomFee,"bakkieFee":$bakkieFee,"phFee":$phFee,"totalFees":${slaughterFee + coldroomFee + bakkieFee + phFee}}';
   }
 
   Future<void> _deletePackage(String packageId) async {
