@@ -78,70 +78,76 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 20, right: 20, top: 20
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('LOG NEW CARCASS', 
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedSpecies,
-                dropdownColor: Colors.black,
-                style: const TextStyle(color: Colors.white),
-                items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                onChanged: (v) => setState(() => _selectedSpecies = v!),
-                decoration: const InputDecoration(
-                  labelText: 'Species',
-                  labelStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+      builder: (context) => SafeArea(
+        top: false,
+        bottom: true,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 16,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('LOG NEW CARCASS', 
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedSpecies,
+                  dropdownColor: Colors.black,
+                  style: const TextStyle(color: Colors.white),
+                  items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                  onChanged: (v) => setState(() => _selectedSpecies = v!),
+                  decoration: const InputDecoration(
+                    labelText: 'Species',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                style: const TextStyle(color: Colors.white),
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Carcass Weight (kg)',
-                  labelStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                const SizedBox(height: 10),
+                TextFormField(
+                  style: const TextStyle(color: Colors.white),
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Carcass Weight (kg)',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+                  ),
+                  onSaved: (v) => _weight = double.tryParse(v ?? '0') ?? 0.0,
                 ),
-                onSaved: (v) => _weight = double.tryParse(v ?? '0') ?? 0.0,
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accentGold,
-                  minimumSize: const Size(double.infinity, 50)
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accentGold,
+                    minimumSize: const Size(double.infinity, 50)
+                  ),
+                  onPressed: () async {
+                    if (_formKey.currentState!.validate()) {
+                      _formKey.currentState!.save();
+                      final record = CarcassRecord(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        hunterId: 'CURRENT_SESSION_ID',
+                        species: _selectedSpecies,
+                        carcassWeight: _weight,
+                        slaughterFee: 150.0,
+                      );
+                      final navigator = Navigator.of(context);
+                      await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
+                      if (!mounted) return;
+                      navigator.pop();
+                      setState(() {});
+                    }
+                  },
+                  child: const Text('ADD TO COLDROOM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 ),
-                onPressed: () async {
-                  if (_formKey.currentState!.validate()) {
-                    _formKey.currentState!.save();
-                    final record = CarcassRecord(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      hunterId: 'CURRENT_SESSION_ID',
-                      species: _selectedSpecies,
-                      carcassWeight: _weight,
-                      slaughterFee: 150.0,
-                    );
-                    final navigator = Navigator.of(context);
-                    await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
-                    if (!mounted) return;
-                    navigator.pop();
-                    setState(() {});
-                  }
-                },
-                child: const Text('ADD TO COLDROOM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
       ),
