@@ -481,28 +481,15 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
     return StreamBuilder<QuerySnapshot>(
       stream: widget.factoryAmmunitionStream,
       builder: (context, snapshot) {
-        // Intercept App Check / Security failures and provide offline tracking fallbacks
-        if (snapshot.hasError) {
-          if (_isAppCheckError(snapshot.error)) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _isOfflineMode = true);
-            });
-            return _buildOfflineAmmunitionDropdown(context);
-          }
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Ammunition data unavailable',
-                    style: TextStyle(color: AppColors.thermalGlow),
-                  ),
-                ],
-              ),
-            ),
+        // Intercept App Check / Security failures OR empty data with offline fallback
+        if (snapshot.hasError || (snapshot.hasData && snapshot.data!.docs.isEmpty)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _isOfflineMode = true);
+          });
+          return _buildLocalFallbackDropdown(
+            context: context,
+            selectedId: widget.selectedId,
+            onSelected: widget.onSelected,
           );
         }
 
@@ -525,7 +512,11 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) setState(() => _isOfflineMode = true);
           });
-          return _buildOfflineAmmunitionDropdown(context);
+          return _buildLocalFallbackDropdown(
+            context: context,
+            selectedId: widget.selectedId,
+            onSelected: widget.onSelected,
+          );
         }
 
         _isOfflineMode = false;
@@ -556,7 +547,11 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
         .toList();
 
     if (filtered.isEmpty) {
-      return _buildEmptyState(context);
+      return _buildLocalFallbackDropdown(
+        context: context,
+        selectedId: widget.selectedId,
+        onSelected: widget.onSelected,
+      );
     }
 
     return Card(
@@ -597,6 +592,120 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
                   if (index < filtered.length) {
                     widget.onSelected(v, Map<String, dynamic>.from(filtered[index]));
                   }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocalFallbackDropdown({
+    required BuildContext context,
+    required String? selectedId,
+    required Function(String, Map<String, dynamic>) onSelected,
+  }) {
+    // Pre-compiled standalone caliber profiles for offline fallback
+    final fallbackProfiles = [
+      {'id': 'local_308', 'caliber': '.308 Winchester', 'brand': 'Local', 'description': 'Standard', 'bullet_grain': 150, 'muzzle_velocity': 2800, 'bc': 0.420},
+      {'id': 'local_65cm', 'caliber': '6.5mm Creedmoor', 'brand': 'Local', 'description': 'Precision', 'bullet_grain': 140, 'muzzle_velocity': 2700, 'bc': 0.485},
+      {'id': 'local_270', 'caliber': '.270 Winchester', 'brand': 'Local', 'description': 'Standard', 'bullet_grain': 130, 'muzzle_velocity': 3060, 'bc': 0.400},
+      {'id': 'local_3006', 'caliber': '.30-06 Springfield', 'brand': 'Local', 'description': 'Classic', 'bullet_grain': 180, 'muzzle_velocity': 2700, 'bc': 0.470},
+      {'id': 'local_243', 'caliber': '.243 Winchester', 'brand': 'Local', 'description': 'Varmint', 'bullet_grain': 95, 'muzzle_velocity': 3100, 'bc': 0.355},
+    ];
+
+    final caliber = widget.firearmCaliber ?? '';
+    final filtered = fallbackProfiles
+        .where((a) => checkCaliberMatch(caliber, a['caliber'] as String?))
+        .toList();
+
+    final displayItems = filtered.isNotEmpty ? filtered : fallbackProfiles;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Caption bar signaling offline catalogue
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.thermalGlow.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: AppColors.thermalGlow.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.offline_bolt, color: AppColors.thermalGlow, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    '⚠️ Local Offline Catalogue Active',
+                    style: TextStyle(
+                      color: AppColors.thermalGlow,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.inventory_2_outlined, color: AppColors.walnutLuxury, size: 20),
+                const SizedBox(width: 8),
+                Text('Select Ammunition', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: displayItems.isNotEmpty ? displayItems.first['id'] as String : null,
+              isExpanded: true,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.walnutLuxury.withValues(alpha: 0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.thermalGlow, width: 2),
+                ),
+              ),
+              items: displayItems.map((item) {
+                return DropdownMenuItem(
+                  value: item['id'] as String,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${item['caliber']}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.walnutLuxury,
+                          ),
+                        ),
+                        Text(
+                          '${item['brand']} ${item['description']} • ${item['bullet_grain']}gr • ${item['muzzle_velocity']}fps',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  final item = displayItems.firstWhere((p) => p['id'] == v);
+                  onSelected(v, Map<String, dynamic>.from(item));
                 }
               },
             ),
