@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import '../models/rifle_profile.dart';
+import 'models/rifle_profile.dart';
 
 /// Service layer that mimics data extraction hooks from a 
 /// Digital Firearm Safe and Ammunition Manager.
