@@ -4,21 +4,46 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-
+/// JagspoorTheme provides dynamic theme colors that can be overridden
+/// by the hunter profile's ThemeController for consistent styling.
 class JagspoorTheme {
-  static const Color walnutLuxury = Color(0xFF8B4513);
-  static const Color thermalGlow = Color(0xFFC5A059);
-  static const Color tacticalDark = Color(0xFF121212);
-  static const Color hudCardBackground = Color(0xFF1E1E1E);
-}
+  // Primary theme colors - can be overridden dynamically
+  static Color walnutLuxury = const Color(0xFF8B4513);
+  static Color thermalGlow = const Color(0xFFC5A059);
+  static Color tacticalDark = const Color(0xFF121212);
+  static Color hudCardBackground = const Color(0xFF1E1E1E);
 
+  /// Updates theme colors from a ThemeController (hunter profile)
+  static void applyHunterTheme({
+    Color? backgroundColor,
+    Color? accentColor,
+    Color? textColor,
+  }) {
+    if (accentColor != null) thermalGlow = accentColor;
+    if (backgroundColor != null) {
+      tacticalDark = _darkenColor(backgroundColor, 0.3);
+      hudCardBackground = _darkenColor(backgroundColor, 0.2);
+    }
+    if (textColor != null) {
+      // Text color influence on other elements
+    }
+  }
+
+  static Color _darkenColor(Color color, double factor) {
+    return Color.fromARGB(
+      color.alpha,
+      (color.red * (1 - factor)).round().clamp(0, 255),
+      (color.green * (1 - factor)).round().clamp(0, 255),
+      (color.blue * (1 - factor)).round().clamp(0, 255),
+    );
+  }
+}
 
 class TrajectoryPoint {
   final double rangeMeters;
   final double dropCm;
   final double windageCm;
   final double velocityMs;
-
 
   const TrajectoryPoint({
     required this.rangeMeters,
@@ -28,24 +53,48 @@ class TrajectoryPoint {
   });
 }
 
-
 class BallisticPhysicsEngine {
-  static double calculateTrueBallisticRange(double lineOfSightRange, double angleDegrees) {
+  static double calculateTrueBallisticRange(
+      double lineOfSightRange, double angleDegrees) {
     if (lineOfSightRange <= 0) return 0.0;
     return lineOfSightRange * math.cos(angleDegrees * math.pi / 180.0);
   }
 
-
-  static double calculateAirDensityRatio(double altitudeMeters, double tempCelsius) {
+  static double calculateAirDensityRatio(
+      double altitudeMeters, double tempCelsius) {
     final double altitudeFactor = 1.0 - ((altitudeMeters / 300.0) * 0.03);
     final double tempFactor = 1.0 - (((tempCelsius - 15.0) / 5.0) * 0.01);
     return math.max(0.5, math.min(1.5, altitudeFactor * tempFactor));
   }
 
+  /// Calculates ballistic coefficient adjustment based on bullet weight.
+  /// Heavier bullets maintain velocity better and have higher effective BC.
+  static double calculateBulletWeightAdjustment(
+      double bulletWeightGrains, double baseBc) {
+    // Heavier bullets (higher grain weight) generally retain momentum better
+    // This is a simplified model - real BC depends on bullet shape
+    const double referenceWeight = 150.0; // Reference weight in grains
+    final double weightRatio = bulletWeightGrains / referenceWeight;
+    // Adjust BC by weight ratio with diminishing returns
+    return baseBc * math.pow(weightRatio, 0.15);
+  }
+
+  /// Calculates ballistic coefficient adjustment based on muzzle velocity.
+  /// Affects the drag model at different velocity ranges.
+  static double calculateMuzzleVelocityAdjustment(
+      double muzzleVelocityMs, double baseBc) {
+    // Velocity affects drag - higher velocity means more drag initially
+    // but also more energy delivery downrange
+    const double referenceVelocity = 800.0; // m/s
+    final double velocityRatio = muzzleVelocityMs / referenceVelocity;
+    // At higher velocities, effective BC increases slightly
+    return baseBc * (1.0 + 0.05 * (velocityRatio - 1.0));
+  }
 
   static List<TrajectoryPoint> generateTrajectoryGrid({
     required double muzzleVelocityMs,
     required double ballisticCoefficient,
+    required double bulletWeightGrains,
     required double zeroDistanceMeters,
     required double crossWindMps,
     required double pitchAngleDegrees,
@@ -53,40 +102,61 @@ class BallisticPhysicsEngine {
     required double temperatureCelsius,
   }) {
     if (muzzleVelocityMs <= 0 || ballisticCoefficient <= 0) {
-      return List.generate(11, (i) => TrajectoryPoint(rangeMeters: i * 50.0, dropCm: 0, windageCm: 0, velocityMs: 0));
+      return List.generate(
+          21,
+          (i) => TrajectoryPoint(
+              rangeMeters: i * 50.0, dropCm: 0, windageCm: 0, velocityMs: 0));
     }
 
+    // Apply physics adjustments for bullet weight and muzzle velocity
+    final double weightAdjustedBc = calculateBulletWeightAdjustment(
+        bulletWeightGrains, ballisticCoefficient);
+    final double velocityAdjustedBc =
+        calculateMuzzleVelocityAdjustment(muzzleVelocityMs, weightAdjustedBc);
 
     final List<TrajectoryPoint> grid = [];
-    final double densityRatio = calculateAirDensityRatio(altitudeMeters, temperatureCelsius);
-    final double adjustedBc = ballisticCoefficient / densityRatio;
-    final double gravity = 9.80665 * math.cos(pitchAngleDegrees * math.pi / 180.0);
-
+    final double densityRatio =
+        calculateAirDensityRatio(altitudeMeters, temperatureCelsius);
+    final double adjustedBc = velocityAdjustedBc / densityRatio;
+    final double gravity =
+        9.80665 * math.cos(pitchAngleDegrees * math.pi / 180.0);
 
     for (int stepRange = 0; stepRange <= 1000; stepRange += 50) {
       final double x = stepRange.toDouble();
       if (x == 0) {
-        grid.add(TrajectoryPoint(rangeMeters: 0, dropCm: 0, windageCm: 0, velocityMs: muzzleVelocityMs));
+        grid.add(TrajectoryPoint(
+            rangeMeters: 0,
+            dropCm: 0,
+            windageCm: 0,
+            velocityMs: muzzleVelocityMs));
         continue;
       }
 
-
-      final double velocityAtX = muzzleVelocityMs * math.exp(-x / (adjustedBc * 1500.0));
+      // Enhanced velocity decay model with bullet weight factor
+      final double ballisticDecayFactor =
+          adjustedBc * 1500.0 * (1.0 + 100.0 / bulletWeightGrains);
+      final double velocityAtX =
+          muzzleVelocityMs * math.exp(-x / ballisticDecayFactor);
       final double averageVelocity = (muzzleVelocityMs + velocityAtX) / 2.0;
       final double timeOfFlight = x / averageVelocity;
 
-
       double rawDropCm = 0.5 * gravity * math.pow(timeOfFlight, 2) * 100.0;
-      final double zeroTime = zeroDistanceMeters / ((muzzleVelocityMs + (muzzleVelocityMs * math.exp(-zeroDistanceMeters / (adjustedBc * 1500.0)))) / 2.0);
-      final double zeroDropCompensationAtX = (0.5 * gravity * math.pow(zeroTime, 2) * 100.0) * (x / zeroDistanceMeters);
-      
+      final double zeroTime = zeroDistanceMeters /
+          ((muzzleVelocityMs +
+                  muzzleVelocityMs *
+                      math.exp(-zeroDistanceMeters / ballisticDecayFactor)) /
+              2.0);
+      final double zeroDropCompensationAtX =
+          (0.5 * gravity * math.pow(zeroTime, 2) * 100.0) *
+              (x / zeroDistanceMeters);
+
       double dropCorrectionCm = zeroDropCompensationAtX - rawDropCm;
       double windageDriftCm = crossWindMps * timeOfFlight * 10.0;
 
-
-      if (dropCorrectionCm.isNaN || dropCorrectionCm.isInfinite) dropCorrectionCm = 0.0;
-      if (windageDriftCm.isNaN || windageDriftCm.isInfinite) windageDriftCm = 0.0;
-
+      if (dropCorrectionCm.isNaN || dropCorrectionCm.isInfinite)
+        dropCorrectionCm = 0.0;
+      if (windageDriftCm.isNaN || windageDriftCm.isInfinite)
+        windageDriftCm = 0.0;
 
       grid.add(TrajectoryPoint(
         rangeMeters: x,
@@ -99,26 +169,22 @@ class BallisticPhysicsEngine {
   }
 }
 
-
 class BallisticCalcScreen extends StatefulWidget {
   const BallisticCalcScreen({super.key});
-
 
   @override
   State<BallisticCalcScreen> createState() => _BallisticCalcScreenState();
 }
 
-
-class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTickerProviderStateMixin {
+class _BallisticCalcScreenState extends State<BallisticCalcScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Stream<QuerySnapshot> _firearmsStream;
   late Stream<QuerySnapshot> _factoryAmmoStream;
 
-
   String? _selectedFirearmId;
   Map<String, dynamic>? _selectedFirearmData;
   Map<String, dynamic>? _selectedAmmunitionData;
-
 
   double _targetRangeMeters = 200.0;
   final double _barrelPitchDegrees = 0.0;
@@ -127,32 +193,59 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
   double _temperatureCelsius = 20.0;
   double _zeroDistanceMeters = 100.0;
 
+  // Muzzle velocity and bullet weight controls (v17.1)
+  double _muzzleVelocityMs = 820.0; // Range: 400-1200 m/s, Default: 820
+  double _bulletWeightGrains = 150.0; // Range: 30-300 grains, Default: 150
 
   final List<Map<String, dynamic>> _fallbackAmmunitionCatalog = [
-    {'id': '308_win', 'name': '.308 Winchester Professional', 'caliber': '.308', 'velocityMs': 800.0, 'bulletWeightGrains': 175.0, 'ballisticCoefficient': 0.496},
-    {'id': '65_cm', 'name': '6.5mm Creedmoor Match Grade', 'caliber': '6.5mm', 'velocityMs': 835.0, 'bulletWeightGrains': 140.0, 'ballisticCoefficient': 0.512},
-    {'id': '243_win', 'name': '.243 Winchester Varmint', 'caliber': '.243', 'velocityMs': 900.0, 'bulletWeightGrains': 100.0, 'ballisticCoefficient': 0.395},
-    {'id': '270_win', 'name': '.270 Winchester Express', 'caliber': '.270', 'velocityMs': 850.0, 'bulletWeightGrains': 150.0, 'ballisticCoefficient': 0.447},
+    {
+      'id': '308_win',
+      'name': '.308 Winchester Professional',
+      'caliber': '.308',
+      'velocityMs': 800.0,
+      'bulletWeightGrains': 175.0,
+      'ballisticCoefficient': 0.496
+    },
+    {
+      'id': '65_cm',
+      'name': '6.5mm Creedmoor Match Grade',
+      'caliber': '6.5mm',
+      'velocityMs': 835.0,
+      'bulletWeightGrains': 140.0,
+      'ballisticCoefficient': 0.512
+    },
+    {
+      'id': '243_win',
+      'name': '.243 Winchester Varmint',
+      'caliber': '.243',
+      'velocityMs': 900.0,
+      'bulletWeightGrains': 100.0,
+      'ballisticCoefficient': 0.395
+    },
+    {
+      'id': '270_win',
+      'name': '.270 Winchester Express',
+      'caliber': '.270',
+      'velocityMs': 850.0,
+      'bulletWeightGrains': 150.0,
+      'ballisticCoefficient': 0.447
+    },
   ];
-
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    
+
     _firearmsStream = FirebaseFirestore.instance
         .collection('firearms')
         .where('ownerId', isEqualTo: currentUid)
         .snapshots();
 
-
-    _factoryAmmoStream = FirebaseFirestore.instance
-        .collection('factory_ammunition')
-        .snapshots();
+    _factoryAmmoStream =
+        FirebaseFirestore.instance.collection('factory_ammunition').snapshots();
   }
-
 
   @override
   void dispose() {
@@ -160,15 +253,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
     super.dispose();
   }
 
-
   bool _evaluateCaliberMatch(String? rifleCaliber, String? cartridgeCaliber) {
     if (rifleCaliber == null || cartridgeCaliber == null) return false;
-    String normalize(String s) => s.replaceAll(RegExp(r'[\s\-\.]'), '').toLowerCase();
+    String normalize(String s) =>
+        s.replaceAll(RegExp(r'[\s\-\.]'), '').toLowerCase();
     final String rClean = normalize(rifleCaliber);
     final String cClean = normalize(cartridgeCaliber);
     return rClean.contains(cClean) || cClean.contains(rClean);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +268,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
       backgroundColor: JagspoorTheme.tacticalDark,
       appBar: AppBar(
         backgroundColor: JagspoorTheme.walnutLuxury,
-        title: const Text('HUD BALLISTIC DATA SYSTEM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+        title: const Text('HUD BALLISTIC DATA SYSTEM',
+            style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5)),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: JagspoorTheme.thermalGlow,
@@ -194,33 +290,51 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🏹 TACTICAL PROFILE DATA MATRIX', style: TextStyle(color: JagspoorTheme.thermalGlow, fontWeight: FontWeight.bold, fontSize: 14)),
+              const Text('🏹 TACTICAL PROFILE DATA MATRIX',
+                  style: TextStyle(
+                      color: JagspoorTheme.thermalGlow,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14)),
               const SizedBox(height: 10),
-              
+
               StreamBuilder<QuerySnapshot>(
                 stream: _firearmsStream,
                 builder: (context, snapshot) {
-                  if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  if (snapshot.hasError ||
+                      !snapshot.hasData ||
+                      snapshot.data!.docs.isEmpty) {
                     return _buildHardwareDropdownContainer(
                       label: 'Select Firearm Vault Location',
-                      child: const Text('OFFLINE SAFE MODULE ACTIVE', style: TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 14)),
+                      child: const Text('OFFLINE SAFE MODULE ACTIVE',
+                          style: TextStyle(
+                              color: JagspoorTheme.thermalGlow, fontSize: 14)),
                     );
                   }
-                  
+
                   final docs = snapshot.data!.docs;
                   return _buildHardwareDropdownContainer(
                     label: 'Select Firearm Vault Location',
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        hint: const Text('CHOOSE FIREARM', style: TextStyle(color: Colors.white70)),
+                        hint: const Text('CHOOSE FIREARM',
+                            style: TextStyle(color: Colors.white70)),
                         dropdownColor: JagspoorTheme.hudCardBackground,
                         value: _selectedFirearmId,
                         items: docs.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
-                          final String make = (data['make'] ?? data['brand'] ?? data['manufacturer'] ?? 'Unknown').toString();
-                          final String model = (data['model'] ?? data['modelName'] ?? data['name'] ?? 'Firearm').toString();
-                          final String caliber = (data['caliber'] ?? 'N/A').toString();
+                          final String make = (data['make'] ??
+                                  data['brand'] ??
+                                  data['manufacturer'] ??
+                                  'Unknown')
+                              .toString();
+                          final String model = (data['model'] ??
+                                  data['modelName'] ??
+                                  data['name'] ??
+                                  'Firearm')
+                              .toString();
+                          final String caliber =
+                              (data['caliber'] ?? 'N/A').toString();
                           return DropdownMenuItem<String>(
                             value: doc.id,
                             child: Text(
@@ -234,7 +348,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                           final doc = docs.firstWhere((d) => d.id == id);
                           setState(() {
                             _selectedFirearmId = id;
-                            _selectedFirearmData = doc.data() as Map<String, dynamic>;
+                            _selectedFirearmData =
+                                doc.data() as Map<String, dynamic>;
                             _selectedAmmunitionData = null;
                           });
                         },
@@ -243,9 +358,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                   );
                 },
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               _buildHardwareDropdownContainer(
                 label: 'Target Range (meters)',
                 child: Column(
@@ -253,8 +368,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('RANGE', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        Text('${_targetRangeMeters.toInt()} m', style: const TextStyle(color: JagspoorTheme.thermalGlow, fontWeight: FontWeight.bold)),
+                        const Text('RANGE',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text('${_targetRangeMeters.toInt()} m',
+                            style: const TextStyle(
+                                color: JagspoorTheme.thermalGlow,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                     Slider(
@@ -269,58 +389,228 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               _buildHardwareDropdownContainer(
                 label: 'Environmental Parameters',
                 child: Column(
                   children: [
-                    _buildParameterRow('Wind Speed (m/s)', _crossWindMps, 0, 20, (v) => setState(() => _crossWindMps = v)),
+                    _buildParameterRow('Wind Speed (m/s)', _crossWindMps, 0, 20,
+                        (v) => setState(() => _crossWindMps = v)),
                     const SizedBox(height: 8),
-                    _buildParameterRow('Altitude (m)', _altitudeMeters, 0, 5000, (v) => setState(() => _altitudeMeters = v)),
+                    _buildParameterRow('Altitude (m)', _altitudeMeters, 0, 5000,
+                        (v) => setState(() => _altitudeMeters = v)),
                     const SizedBox(height: 8),
-                    _buildParameterRow('Temperature (°C)', _temperatureCelsius, -40, 60, (v) => setState(() => _temperatureCelsius = v)),
+                    _buildParameterRow(
+                        'Temperature (°C)',
+                        _temperatureCelsius,
+                        -40,
+                        60,
+                        (v) => setState(() => _temperatureCelsius = v)),
                     const SizedBox(height: 8),
-                    _buildParameterRow('Zero Distance (m)', _zeroDistanceMeters, 50, 1000, (v) => setState(() => _zeroDistanceMeters = v)),
+                    _buildParameterRow(
+                        'Zero Distance (m)',
+                        _zeroDistanceMeters,
+                        50,
+                        1000,
+                        (v) => setState(() => _zeroDistanceMeters = v)),
                   ],
                 ),
               ),
-              
+
+              const SizedBox(height: 16),
+
+              // Muzzle Velocity and Bullet Weight Controls (v17.1)
+              _buildHardwareDropdownContainer(
+                label: '🚀 Ballistic Load Parameters',
+                child: Column(
+                  children: [
+                    _buildParameterRow(
+                        'Muzzle Velocity (m/s)',
+                        _muzzleVelocityMs,
+                        400,
+                        1200,
+                        (v) => setState(() => _muzzleVelocityMs = v)),
+                    const SizedBox(height: 8),
+                    _buildParameterRow(
+                        'Bullet Weight (Grains)',
+                        _bulletWeightGrains,
+                        30,
+                        300,
+                        (v) => setState(() => _bulletWeightGrains = v)),
+                  ],
+                ),
+              ),
+
               const SizedBox(height: 24),
-              
+
               if (_selectedFirearmData != null) ...[
-                const Text('📊 TRAJECTORY COMPUTATION GRID', style: TextStyle(color: JagspoorTheme.thermalGlow, fontWeight: FontWeight.bold, fontSize: 14)),
+                const Text('📊 TRAJECTORY COMPUTATION GRID',
+                    style: TextStyle(
+                        color: JagspoorTheme.thermalGlow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
                 const SizedBox(height: 12),
-                
                 StreamBuilder<QuerySnapshot>(
                   stream: _factoryAmmoStream,
                   builder: (context, snapshot) {
-                    List<Map<String, dynamic>> ammoCatalog = _fallbackAmmunitionCatalog;
+                    List<Map<String, dynamic>> ammoCatalog =
+                        _fallbackAmmunitionCatalog;
                     if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
                       ammoCatalog = snapshot.data!.docs
                           .map((doc) => doc.data() as Map<String, dynamic>)
-                          .where((a) => _evaluateCaliberMatch(_selectedFirearmData!['caliber'], a['caliber']))
+                          .where((a) => _evaluateCaliberMatch(
+                              _selectedFirearmData!['caliber'], a['caliber']))
                           .toList();
                       if (ammoCatalog.isEmpty) {
                         ammoCatalog = _fallbackAmmunitionCatalog;
                       }
                     }
-                    
+
                     return _buildTrajectoryChart(ammoCatalog);
                   },
                 ),
               ] else ...[
                 _buildOfflineChartDisplay(),
               ],
+
+              const SizedBox(height: 16),
+
+              // Analytics Summary Footer Card (v17.1)
+              _buildAnalyticsSummaryCard(),
             ],
           ),
         ),
       ),
     );
   }
-  
-  Widget _buildHardwareDropdownContainer({required String label, required Widget child}) {
+
+  /// Builds the analytics summary footer card with trajectory telemetry data (v17.1)
+  Widget _buildAnalyticsSummaryCard() {
+    // Calculate values for display
+    final double muzzleVelocity = _muzzleVelocityMs;
+    final double bulletWeight = _bulletWeightGrains;
+
+    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
+            _selectedAmmunitionData?['bc'] ??
+            0.45)
+        .toDouble();
+
+    final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
+      muzzleVelocityMs: muzzleVelocity,
+      ballisticCoefficient: bc,
+      bulletWeightGrains: bulletWeight,
+      zeroDistanceMeters: _zeroDistanceMeters,
+      crossWindMps: _crossWindMps,
+      pitchAngleDegrees: _barrelPitchDegrees,
+      altitudeMeters: _altitudeMeters,
+      temperatureCelsius: _temperatureCelsius,
+    );
+
+    // Find data point at target range
+    TrajectoryPoint? targetPoint;
+    for (final point in trajectoryGrid) {
+      if (point.rangeMeters >= _targetRangeMeters) {
+        targetPoint = point;
+        break;
+      }
+    }
+    final double targetDrop = targetPoint?.dropCm ?? 0.0;
+    final double targetWindage = targetPoint?.windageCm ?? 0.0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: JagspoorTheme.hudCardBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: JagspoorTheme.thermalGlow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.analytics_outlined,
+                color: JagspoorTheme.thermalGlow,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '🎯 POSITION STATISTICS SUMMARY (1000m Flight Path)',
+                style: TextStyle(
+                  color: JagspoorTheme.thermalGlow,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(color: Colors.white24, height: 1),
+          const SizedBox(height: 12),
+          _buildSummaryRow(
+            'Selected Cartridge Load Weight:',
+            '${bulletWeight.toStringAsFixed(0)} Grains @ ${muzzleVelocity.toStringAsFixed(0)} m/s Muzzle Speed',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Calculated Bullet Drop at Target Range:',
+            '${targetDrop.toStringAsFixed(1)} cm',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Estimated Cross-windage Displacement:',
+            '${targetWindage.toStringAsFixed(1)} cm',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Atmospheric Air Density Profile:',
+            '${_altitudeMeters.toStringAsFixed(0)}m AMONGST ${_temperatureCelsius.toStringAsFixed(0)}°C',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('• ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+        Expanded(
+          child: Text(
+            '$label ',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: JagspoorTheme.thermalGlow,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHardwareDropdownContainer(
+      {required String label, required Widget child}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -332,20 +622,24 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1.2)),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           child,
         ],
       ),
     );
   }
-  
-  Widget _buildParameterRow(String label, double value, double min, double max, ValueChanged<double> onChanged) {
+
+  Widget _buildParameterRow(String label, double value, double min, double max,
+      ValueChanged<double> onChanged) {
     return Row(
       children: [
         Expanded(
           flex: 2,
-          child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          child: Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
         ),
         Expanded(
           flex: 3,
@@ -363,53 +657,51 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
           width: 60,
           child: Text(
             value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1),
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold),
             textAlign: TextAlign.right,
           ),
         ),
       ],
     );
   }
-  
-  Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double v0 = (
-      _selectedAmmunitionData?['velocityMs'] ??
-      _selectedAmmunitionData?['muzzleVelocity'] ??
-      _selectedAmmunitionData?['velocity'] ??
-      820.0
-    ).toDouble();
 
-    final double bc = (
-      _selectedAmmunitionData?['ballisticCoefficient'] ??
-      _selectedAmmunitionData?['bc'] ??
-      0.45
-    ).toDouble();
+  Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
+    final double v0 = (_selectedAmmunitionData?['velocityMs'] ??
+            _selectedAmmunitionData?['muzzleVelocity'] ??
+            _selectedAmmunitionData?['velocity'] ??
+            820.0)
+        .toDouble();
+
+    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
+            _selectedAmmunitionData?['bc'] ??
+            0.45)
+        .toDouble();
 
     final double muzzleVelocity = v0;
     final double ballisticCoef = bc;
-    
+
     final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
       muzzleVelocityMs: muzzleVelocity,
       ballisticCoefficient: ballisticCoef,
+      bulletWeightGrains: _bulletWeightGrains,
       zeroDistanceMeters: _zeroDistanceMeters,
       crossWindMps: _crossWindMps,
       pitchAngleDegrees: _barrelPitchDegrees,
       altitudeMeters: _altitudeMeters,
       temperatureCelsius: _temperatureCelsius,
     );
-    
-    final dropSpots = trajectoryGrid
-        .map((p) => FlSpot(p.rangeMeters, p.dropCm))
-        .toList();
-    
-    final windageSpots = trajectoryGrid
-        .map((p) => FlSpot(p.rangeMeters, p.windageCm))
-        .toList();
-    
+
+    final dropSpots =
+        trajectoryGrid.map((p) => FlSpot(p.rangeMeters, p.dropCm)).toList();
+
+    final windageSpots =
+        trajectoryGrid.map((p) => FlSpot(p.rangeMeters, p.windageCm)).toList();
+
     final maxY = [...dropSpots, ...windageSpots]
         .map((s) => s.y.abs())
         .fold<double>(0, (a, b) => math.max(a, b));
-    
+
     return Container(
       height: 350,
       padding: const EdgeInsets.all(12),
@@ -424,9 +716,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('DROP & WINDAGE vs RANGE', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const Text('DROP & WINDAGE vs RANGE',
+                  style: TextStyle(color: Colors.white70, fontSize: 12)),
               if (ammoCatalog.isNotEmpty)
-                Text(ammoCatalog.first['name'] ?? '', style: const TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 11)),
+                Text(ammoCatalog.first['name'] ?? '',
+                    style: const TextStyle(
+                        color: JagspoorTheme.thermalGlow, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 8),
@@ -454,7 +749,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                       reservedSize: 45,
                       getTitlesWidget: (value, meta) => Text(
                         value.toStringAsFixed(0),
-                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 10),
                       ),
                     ),
                   ),
@@ -464,16 +760,41 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                       reservedSize: 30,
                       getTitlesWidget: (value, meta) => Text(
                         '${value.toInt()}m',
-                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 10),
                       ),
                     ),
                   ),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
                 ),
                 borderData: FlBorderData(
                   show: true,
-                  border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+                  border: Border.all(
+                      color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+                ),
+                // Target Range Indicator Line (v17.1)
+                extraLinesData: ExtraLinesData(
+                  verticalLines: [
+                    VerticalLine(
+                      x: _targetRangeMeters,
+                      color: JagspoorTheme.thermalGlow,
+                      strokeWidth: 2,
+                      dashArray: [8, 4],
+                      label: VerticalLineLabel(
+                        show: true,
+                        alignment: Alignment.topRight,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold),
+                        labelResolver: (line) =>
+                            'TARGET: ${_targetRangeMeters.toStringAsFixed(0)}m',
+                      ),
+                    ),
+                  ],
                 ),
                 minX: 0,
                 maxX: 1000,
@@ -503,12 +824,17 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                 ],
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
-                    getTooltipColor: (touchedSpot) => JagspoorTheme.hudCardBackground,
+                    getTooltipColor: (touchedSpot) =>
+                        JagspoorTheme.hudCardBackground,
                     getTooltipItems: (spots) => spots.map((spot) {
                       final label = spot.barIndex == 0 ? 'Drop' : 'Wind';
                       return LineTooltipItem(
                         '$label: ${spot.y.toStringAsFixed(2)} cm',
-                        TextStyle(color: spot.barIndex == 0 ? JagspoorTheme.thermalGlow : Colors.blueAccent, fontSize: 12),
+                        TextStyle(
+                            color: spot.barIndex == 0
+                                ? JagspoorTheme.thermalGlow
+                                : Colors.blueAccent,
+                            fontSize: 12),
                       );
                     }).toList(),
                   ),
@@ -529,7 +855,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
       ),
     );
   }
-  
+
   Widget _buildOfflineChartDisplay() {
     return Container(
       height: 350,
@@ -545,20 +871,29 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
           children: [
             Icon(Icons.shield, color: JagspoorTheme.walnutLuxury, size: 64),
             SizedBox(height: 16),
-            Text('SELECT FIREARM TO ACTIVATE', style: TextStyle(color: Colors.white70, fontSize: 14, letterSpacing: 1.2)),
-            Text('TRAJECTORY COMPUTATION ENGINE', style: TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 12)),
+            Text('SELECT FIREARM TO ACTIVATE',
+                style: TextStyle(
+                    color: Colors.white70, fontSize: 14, letterSpacing: 1.2)),
+            Text('TRAJECTORY COMPUTATION ENGINE',
+                style:
+                    TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 12)),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildLegendItem(String label, Color color) {
     return Row(
       children: [
-        Container(width: 16, height: 3, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+        Container(
+            width: 16,
+            height: 3,
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        Text(label,
+            style: const TextStyle(color: Colors.white70, fontSize: 11)),
       ],
     );
   }
