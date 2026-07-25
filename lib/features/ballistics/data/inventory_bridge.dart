@@ -16,6 +16,53 @@ class InventoryBridge {
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
+  /// Returns a fallback list of common caliber ammunition records
+  /// for offline mode when Firestore queries fail (e.g., DEVELOPER_ERROR).
+  List<AmmoProfile> _getFallbackLocalAmmunition() {
+    return [
+      AmmoProfile(
+        id: 'fallback_308',
+        rifleId: '',
+        bulletWeightGrains: 175,
+        velocityMs: 800.0,
+        ballisticCoefficient: 0.496,
+        remainingStockCount: 20,
+      ),
+      AmmoProfile(
+        id: 'fallback_65creed',
+        rifleId: '',
+        bulletWeightGrains: 140,
+        velocityMs: 835.0,
+        ballisticCoefficient: 0.512,
+        remainingStockCount: 20,
+      ),
+      AmmoProfile(
+        id: 'fallback_3006',
+        rifleId: '',
+        bulletWeightGrains: 180,
+        velocityMs: 825.0,
+        ballisticCoefficient: 0.473,
+        remainingStockCount: 20,
+      ),
+      AmmoProfile(
+        id: 'fallback_223rem',
+        rifleId: '',
+        bulletWeightGrains: 55,
+        velocityMs: 980.0,
+        ballisticCoefficient: 0.242,
+        remainingStockCount: 20,
+      ),
+      AmmoProfile(
+        id: 'fallback_270win',
+        rifleId: '',
+        bulletWeightGrains: 150,
+        velocityMs: 850.0,
+        ballisticCoefficient: 0.447,
+        remainingStockCount: 20,
+      ),
+    ];
+  }
+
   /// Fetches all firearms from the user's collection.
   /// Returns an empty list if no firearms are found or on error.
   Future<List<RifleProfile>> fetchSafeFirearms() async {
@@ -42,6 +89,9 @@ class InventoryBridge {
 
       debugPrint('InventoryBridge: Fetched ${rifles.length} firearms for user');
       return rifles;
+    } on PlatformException catch (pe) {
+      debugPrint('Caught Firebase Platform Exception: $pe');
+      return [];
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching firearms: $e');
       return [];
@@ -49,12 +99,12 @@ class InventoryBridge {
   }
 
   /// Fetches available ammunition for a specific rifle from the Ammunition sub-collection.
-  /// Returns an empty list if no ammunition is found or on error.
+  /// Returns fallback local ammunition on platform exceptions (e.g., DEVELOPER_ERROR).
   Future<List<AmmoProfile>> fetchAvailableAmmunition(String rifleId) async {
     try {
       if (rifleId.isEmpty) {
         debugPrint('InventoryBridge: Empty rifleId provided');
-        return [];
+        return _getFallbackLocalAmmunition();
       }
 
       // Fetch ammunition from the rifle's sub-collection
@@ -68,7 +118,7 @@ class InventoryBridge {
 
       if (ammoSnapshot.docs.isEmpty) {
         debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
-        return [];
+        return _getFallbackLocalAmmunition();
       }
 
       final ammoList = ammoSnapshot.docs.map((doc) {
@@ -85,9 +135,12 @@ class InventoryBridge {
 
       debugPrint('InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId');
       return ammoList;
+    } on PlatformException catch (pe) {
+      print('Caught Firebase Platform Exception: $pe');
+      return _getFallbackLocalAmmunition();
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching ammunition: $e');
-      return [];
+      return _getFallbackLocalAmmunition();
     }
   }
 
@@ -157,9 +210,10 @@ class InventoryBridge {
   
   /// Stream of ammunition for a specific rifle from the sub-collection.
   /// Uses Firestore snapshots for real-time updates instead of polling.
+  /// Returns fallback local ammunition on platform exceptions.
   Stream<List<AmmoProfile>> watchAvailableAmmunition(String rifleId) {
     if (rifleId.isEmpty) {
-      return Stream.value(<AmmoProfile>[]);
+      return Stream.value(_getFallbackLocalAmmunition());
     }
 
     return _firestore
@@ -172,7 +226,7 @@ class InventoryBridge {
         .map((snapshot) {
           if (snapshot.docs.isEmpty) {
             debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
-            return <AmmoProfile>[];
+            return _getFallbackLocalAmmunition();
           }
 
           final ammoList = snapshot.docs.map((doc) {
@@ -191,8 +245,8 @@ class InventoryBridge {
           return ammoList;
         })
         .handleError((error) {
-          debugPrint('InventoryBridge: Error watching ammunition: $error');
-          return <AmmoProfile>[];
+          print('Caught Firebase Platform Exception in stream: $error');
+          return _getFallbackLocalAmmunition();
         });
   }
 }

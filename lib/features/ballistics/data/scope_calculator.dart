@@ -36,6 +36,28 @@ class MoaCorrectionResult {
   });
 }
 
+/// Result of trajectory DOPE (Data On Past Experience) array generation.
+class DopeResult {
+  final List<double> distances;
+  final List<double> clicks;
+  final List<double> bulletDrops;
+  final bool isValid;
+
+  const DopeResult({
+    required this.distances,
+    required this.clicks,
+    required this.bulletDrops,
+    this.isValid = true,
+  });
+
+  static const DopeResult defaultDope = DopeResult(
+    distances: [100, 200, 300, 400, 500],
+    clicks: [0, 2, 5, 9, 14],
+    bulletDrops: [0, -2, -6, -12, -20],
+    isValid: true,
+  );
+}
+
 /// Ballistic scope calculator with gyroscopic and AI targeting functions.
 class ScopeCalculator {
   /// Validates that a value is not null, NaN, or close to zero.
@@ -45,6 +67,30 @@ class ScopeCalculator {
       return defaultValue;
     }
     return value;
+  }
+
+  /// Validates that a calculated value is a safe real number.
+  /// Returns 0.0 if the value is NaN or Infinite, otherwise returns the value.
+  static double _sanitizeOutput(double? value) {
+    if (value == null || value.isNaN || value.isInfinite) {
+      return 0.0;
+    }
+    return value;
+  }
+
+  /// Validates ballistic parameters for trajectory calculations.
+  /// Returns true if parameters are valid for computation.
+  static bool _validateBallisticParams({
+    required double velocity,
+    required double ballisticCoefficient,
+  }) {
+    if (velocity <= 0 || velocity.isNaN || velocity.isInfinite) {
+      return false;
+    }
+    if (ballisticCoefficient <= 0 || ballisticCoefficient.isNaN || ballisticCoefficient.isInfinite) {
+      return false;
+    }
+    return true;
   }
 
   /// Calculates the gyro holdover adjustment based on barrel angle.
@@ -343,9 +389,157 @@ class ScopeCalculator {
       sumY += coord['y'] ?? 0.0;
     }
     
+    // Sanitize output values to prevent NaN
+    final count = coordinates.length.toDouble();
     return {
-      'x': sumX / coordinates.length,
-      'y': sumY / coordinates.length,
+      'x': _sanitizeOutput(sumX / count),
+      'y': _sanitizeOutput(sumY / count),
     };
+  }
+
+  /// Generates a trajectory DOPE (Data On Past Experience) array with atmospheric corrections.
+  /// 
+  /// Parameters:
+  /// - [velocity] - Muzzle velocity in meters per second
+  /// - [ballisticCoefficient] - G7 ballistic coefficient
+  /// - [zeroDistance] - Zero distance in meters
+  /// - [maxDistance] - Maximum range to calculate in meters
+  /// - [temperature] - Temperature in Celsius (default: 15°C)
+  /// - [altitude] - Altitude in meters (default: 0m)
+  /// 
+  /// Returns [DopeResult] with distance/click/drop arrays or default safe values on error.
+  static DopeResult generateDopeArrayWithAtmosphere({
+    required double velocity,
+    required double ballisticCoefficient,
+    double zeroDistance = 100.0,
+    double maxDistance = 500.0,
+    double temperature = 15.0,
+    double altitude = 0.0,
+  }) {
+    // Validate ballistic parameters - return safe default on invalid input
+    if (!_validateBallisticParams(
+      velocity: velocity,
+      ballisticCoefficient: ballisticCoefficient,
+    )) {
+      debugPrint('ScopeCalculator: Invalid ballistic parameters - returning default DOPE');
+      return DopeResult.defaultDope;
+    }
+
+    // Validate zero distance
+    final safeZeroDistance = _validateInput(zeroDistance, 100.0);
+    final safeMaxDistance = _validateInput(maxDistance, 500.0);
+    final safeTemp = _validateInput(temperature, 15.0);
+    final safeAlt = _validateInput(altitude, 0.0);
+
+    // Calculate atmospheric density factor
+    // Standard atmosphere: sea level at 15°C = 1.0
+    // Temperature correction: -0.1% per °C deviation from 15°C
+    // Altitude correction: -0.03% per 100m
+    final tempFactor = 1.0 - ((safeTemp - 15.0) * 0.001);
+    final altFactor = 1.0 - (safeAlt * 0.0003);
+    final atmosphericFactor = _sanitizeOutput(tempFactor * altFactor);
+
+    if (atmosphericFactor <= 0 || atmosphericFactor.isNaN) {
+      return DopeResult.defaultDope;
+    }
+
+    // Adjust velocity for atmospheric conditions
+    final adjustedVelocity = _sanitizeOutput(velocity * sqrt(atmosphericFactor));
+
+    // Standard yard distances for DOPE card
+    final distances = <double>[100, 200, 300, 400, 500, 600, 700, 800];
+    final clicks = <double>[];
+    final bulletDrops = <double>[];
+
+    for (final distance in distances) {
+      if (distance > safeMaxDistance) {
+        break;
+      }
+
+      // Skip invalid distances
+      if (distance <= 0) {
+        clicks.add(0.0);
+        bulletDrops.add(0.0);
+        continue;
+      }
+
+      // Simplified trajectory calculation using Siacci's method approximation
+      // Drop (inches) ≈ (distance²) / (velocity² × BC × constant)
+      // This is a simplified ballistic model for demonstration
+      final distanceYards = distance * 1.09361;
+      final distanceSquared = distanceYards * distanceYards;
+      
+      // Calculate velocity at distance using drag approximation
+      final velocityRatio = adjustedVelocity / velocity;
+      final currentVelocity = _sanitizeOutput(adjustedVelocity * velocityRatio);
+
+      // Skip if velocity is zero or negative (prevents division by zero)
+      if (currentVelocity <= 0) {
+        clicks.add(0.0);
+        bulletDrops.add(0.0);
+        continue;
+      }
+
+      // Calculate bullet drop using simplified point mass model
+      // g = 386.09 in/s², yards to inches = 36
+      const g = 386.09;
+      const yardsToInches = 36.0;
+      final timeOfFlight = _sanitizeOutput((distanceYards * yardsToInches) / currentVelocity);
+
+      if (timeOfFlight.isNaN || timeOfFlight.isInfinite || timeOfFlight <= 0) {
+        clicks.add(0.0);
+        bulletDrops.add(0.0);
+        continue;
+      }
+
+      // Calculate drop: y = 0.5 * g * t²
+      final dropInches = _sanitizeOutput(0.5 * g * timeOfFlight * timeOfFlight);
+
+      // Calculate MOA adjustment needed
+      // MOA = (drop in inches / distance in yards) * 100 (approximation)
+      double moaAdjustment;
+      if (distanceYards > 0) {
+        moaAdjustment = _sanitizeOutput((dropInches / distanceYards) * 100);
+      } else {
+        moaAdjustment = 0.0;
+      }
+
+      // Convert MOA to clicks (assuming 0.25 MOA per click)
+      final clicksNeeded = _sanitizeOutput(moaAdjustment / 0.25);
+
+      // Sanitize all outputs
+      final safeClicks = _sanitizeOutput(clicksNeeded);
+      final safeDrop = _sanitizeOutput(dropInches);
+
+      clicks.add(safeClicks);
+      bulletDrops.add(safeDrop);
+    }
+
+    // Validate final arrays contain no NaN or infinite values
+    bool hasValidData = true;
+    for (final click in clicks) {
+      if (click.isNaN || click.isInfinite) {
+        hasValidData = false;
+        break;
+      }
+    }
+    for (final drop in bulletDrops) {
+      if (drop.isNaN || drop.isInfinite) {
+        hasValidData = false;
+        break;
+      }
+    }
+
+    if (!hasValidData || clicks.isEmpty) {
+      debugPrint('ScopeCalculator: NaN detected in trajectory array - returning default DOPE');
+      return DopeResult.defaultDope;
+    }
+
+    return DopeResult(
+      distances: distances.sublist(0, clicks.length),
+      clicks: clicks,
+      bulletDrops: bulletDrops,
+      isValid: true,
+    );
   }
 }

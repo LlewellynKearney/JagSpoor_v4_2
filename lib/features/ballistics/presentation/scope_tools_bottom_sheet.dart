@@ -246,15 +246,29 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   StreamBuilder<List<RifleProfile>>(
                     stream: _firearmsStream,
                     builder: (context, riflesSnapshot) {
-                      // Handle error states
+                      // Handle error states with Thermal Glow recovery label
                       if (riflesSnapshot.hasError) {
-                        return _buildInventoryDropdown(
-                          label: 'Select Weapon from Safe',
-                          value: null,
-                          items: [],
-                          onChanged: null,
-                          isLoading: false,
-                          errorMessage: 'Data Error',
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildInventoryDropdown(
+                              label: 'Select Weapon from Safe',
+                              value: null,
+                              items: [],
+                              onChanged: null,
+                              isLoading: false,
+                              errorMessage: riflesSnapshot.error?.toString() ?? 'Unknown Error',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Offline Mode Active',
+                              style: TextStyle(
+                                color: const Color(0xFFC5A059),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         );
                       }
                       
@@ -303,15 +317,29 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   StreamBuilder<List<AmmoProfile>>(
                     stream: _ammunitionStream ?? Stream.value([]),
                     builder: (context, ammoSnapshot) {
-                      // Handle error states
+                      // Handle error states with Thermal Glow recovery label
                       if (ammoSnapshot.hasError) {
-                        return _buildInventoryDropdown(
-                          label: 'Select Loaded Ammunition',
-                          value: null,
-                          items: [],
-                          onChanged: null,
-                          isLoading: false,
-                          errorMessage: 'Data Error',
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildInventoryDropdown(
+                              label: 'Select Loaded Ammunition',
+                              value: null,
+                              items: [],
+                              onChanged: null,
+                              isLoading: false,
+                              errorMessage: ammoSnapshot.error?.toString() ?? 'Unknown Error',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Offline Mode Active',
+                              style: TextStyle(
+                                color: const Color(0xFFC5A059),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         );
                       }
                       
