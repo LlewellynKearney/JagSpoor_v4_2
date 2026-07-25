@@ -23,6 +23,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   // Inventory Bridge for firearm and ammunition data
   final InventoryBridge _inventoryBridge = InventoryBridge();
   
+  // Persistent stream references - initialized once in initState to prevent rebuild loops
+  late Stream<List<RifleProfile>> _firearmsStream;
+  Stream<List<AmmoProfile>>? _ammunitionStream;
+  
   // State variables
   String? _selectedRifleId;
   String? _selectedAmmoId;
@@ -73,6 +77,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Initialize firearms stream once at lifecycle bootup to prevent rebuild loops
+    _firearmsStream = _inventoryBridge.watchSafeFirearms();
   }
 
   @override
@@ -84,12 +90,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void _onRifleSelected(String? rifleId) {
     if (rifleId == null) return;
     
-    // Get the rifle from the stream data via the state
-    // The stream will provide updated rifles list, so we use the snapshot from StreamBuilder
+    // Create new ammunition stream for the selected rifle
+    // This is assigned in setState to trigger a rebuild with the new stream
     setState(() {
       _selectedRifleId = rifleId;
-      // Reset ammunition selection when rifle changes
       _selectedAmmoId = null;
+      _ammunitionStream = _inventoryBridge.watchAvailableAmmunition(rifleId);
     });
   }
 
@@ -236,9 +242,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  // Firearm Stream Dropdown
+                  // Firearm Stream Dropdown - uses persistent _firearmsStream reference
                   StreamBuilder<List<RifleProfile>>(
-                    stream: _inventoryBridge.watchSafeFirearms(),
+                    stream: _firearmsStream,
                     builder: (context, riflesSnapshot) {
                       final rifles = riflesSnapshot.data ?? [];
                       final isLoading = riflesSnapshot.connectionState == ConnectionState.waiting;
@@ -270,11 +276,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   ),
                   const SizedBox(height: 12),
                   
-                  // Ammunition Stream Dropdown (filtered by selected rifle's caliber)
+                  // Ammunition Stream Dropdown - uses persistent _ammunitionStream reference
                   StreamBuilder<List<AmmoProfile>>(
-                    stream: _selectedRifleId != null
-                        ? _inventoryBridge.watchAvailableAmmunition(_selectedRifleId!)
-                        : Stream.value([]),
+                    stream: _ammunitionStream ?? Stream.value([]),
                     builder: (context, ammoSnapshot) {
                       final ammoList = ammoSnapshot.data ?? [];
                       final isLoading = ammoSnapshot.connectionState == ConnectionState.waiting;
