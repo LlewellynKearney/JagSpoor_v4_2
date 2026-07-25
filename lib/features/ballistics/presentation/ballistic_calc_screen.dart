@@ -369,8 +369,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
   }
   
   Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double muzzleVelocity = _selectedAmmunitionData?['velocityMs'] ?? ammoCatalog.first['velocityMs'];
-    final double ballisticCoef = _selectedAmmunitionData?['ballisticCoefficient'] ?? ammoCatalog.first['ballisticCoefficient'];
+    final double v0 = (_selectedAmmunitionData?['velocityMs'] as num?)?.toDouble() ?? ammoCatalog.first['velocityMs'].toDouble();
+    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] as num?)?.toDouble() ?? ammoCatalog.first['ballisticCoefficient'].toDouble();
+    final double muzzleVelocity = v0;
+    final double ballisticCoef = bc;
     
     final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
       muzzleVelocityMs: muzzleVelocity,
