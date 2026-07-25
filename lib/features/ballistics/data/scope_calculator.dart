@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 /// Result of the gyro holdover calculation.
 class GyroHoldoverResult {
@@ -425,8 +426,7 @@ class ScopeCalculator {
       return DopeResult.defaultDope;
     }
 
-    // Validate zero distance
-    final safeZeroDistance = _validateInput(zeroDistance, 100.0);
+    // Validate atmospheric parameters
     final safeMaxDistance = _validateInput(maxDistance, 500.0);
     final safeTemp = _validateInput(temperature, 15.0);
     final safeAlt = _validateInput(altitude, 0.0);
@@ -467,7 +467,6 @@ class ScopeCalculator {
       // Drop (inches) ≈ (distance²) / (velocity² × BC × constant)
       // This is a simplified ballistic model for demonstration
       final distanceYards = distance * 1.09361;
-      final distanceSquared = distanceYards * distanceYards;
       
       // Calculate velocity at distance using drag approximation
       final velocityRatio = adjustedVelocity / velocity;
