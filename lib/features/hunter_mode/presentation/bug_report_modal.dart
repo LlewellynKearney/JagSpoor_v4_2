@@ -44,7 +44,12 @@ class _BugReportModalState extends State<BugReportModal> {
         severity: _selectedSeverity,
       );
 
-      final emailBody = _buildEmailBody();
+      final emailBody = FeedbackFirebaseService.buildBugReportEmailBody(
+        title: _titleController.text.trim(),
+        steps: _stepsController.text.trim(),
+        severity: _selectedSeverity,
+      );
+
       await service.launchNativeEmail(
         subject: '[Bug Report] ${_titleController.text.trim()}',
         body: emailBody,
@@ -65,22 +70,6 @@ class _BugReportModalState extends State<BugReportModal> {
         setState(() => _isSubmitting = false);
       }
     }
-  }
-
-  String _buildEmailBody() {
-    return '''
-BUG REPORT - Jagspoor Hunter Dashboard
-
-Title: ${_titleController.text.trim()}
-
-Severity Level: $_selectedSeverity
-
-Steps to Reproduce:
-${_stepsController.text.trim()}
-
----
-Submitted via Jagspoor App
-''';
   }
 
   @override

@@ -44,7 +44,12 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         benefits: _benefitsController.text.trim(),
       );
 
-      final emailBody = _buildEmailBody();
+      final emailBody = FeedbackFirebaseService.buildFeatureSuggestionEmailBody(
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        benefits: _benefitsController.text.trim(),
+      );
+
       await service.launchNativeEmail(
         subject: '[Feature Suggestion] ${_titleController.text.trim()}',
         body: emailBody,
@@ -65,23 +70,6 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         setState(() => _isSubmitting = false);
       }
     }
-  }
-
-  String _buildEmailBody() {
-    return '''
-FEATURE SUGGESTION - Jagspoor Hunter Dashboard
-
-Proposed Feature: ${_titleController.text.trim()}
-
-Detailed Description:
-${_descriptionController.text.trim()}
-
-Expected Benefits to Hunting Teams:
-${_benefitsController.text.trim()}
-
----
-Submitted via Jagspoor App
-''';
   }
 
   @override
