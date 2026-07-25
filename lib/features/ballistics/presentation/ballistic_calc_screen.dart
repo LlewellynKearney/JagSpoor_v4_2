@@ -80,7 +80,7 @@ class BallisticPhysicsEngine {
       final double zeroTime = zeroDistanceMeters / ((muzzleVelocityMs + (muzzleVelocityMs * math.exp(-zeroDistanceMeters / (adjustedBc * 1500.0)))) / 2.0);
       final double zeroDropCompensationAtX = (0.5 * gravity * math.pow(zeroTime, 2) * 100.0) * (x / zeroDistanceMeters);
       
-      double dropCorrectionCm = rawDropCm - zeroDropCompensationAtX;
+      double dropCorrectionCm = zeroDropCompensationAtX - rawDropCm;
       double windageDriftCm = crossWindMps * timeOfFlight * 10.0;
 
 
@@ -282,7 +282,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                     const SizedBox(height: 8),
                     _buildParameterRow('Temperature (°C)', _temperatureCelsius, -40, 60, (v) => setState(() => _temperatureCelsius = v)),
                     const SizedBox(height: 8),
-                    _buildParameterRow('Zero Distance (m)', _zeroDistanceMeters, 50, 300, (v) => setState(() => _zeroDistanceMeters = v)),
+                    _buildParameterRow('Zero Distance (m)', _zeroDistanceMeters, 50, 1000, (v) => setState(() => _zeroDistanceMeters = v)),
                   ],
                 ),
               ),
@@ -476,7 +476,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                   border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
                 ),
                 minX: 0,
-                maxX: 500,
+                maxX: 1000,
                 minY: -maxY - 10,
                 maxY: maxY + 10,
                 lineBarsData: [
