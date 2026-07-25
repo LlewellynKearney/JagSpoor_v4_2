@@ -27,9 +27,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   String? _selectedRifleId;
   String? _selectedAmmoId;
   RifleProfile? _selectedRifle;
-  List<RifleProfile> _rifles = [];
-  List<AmmoProfile> _ammunition = [];
-  bool _isLoading = true;
 
   // Scope reticle type selection
   String _selectedReticle = 'Mil-Dot';
@@ -76,7 +73,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadInventoryData();
   }
 
   @override
@@ -85,42 +81,27 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     super.dispose();
   }
 
-  Future<void> _loadInventoryData() async {
-    setState(() => _isLoading = true);
-    
-    try {
-      final rifles = await _inventoryBridge.fetchSafeFirearms();
-      setState(() {
-        _rifles = rifles;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading inventory: $e');
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _onRifleSelected(String? rifleId) async {
+  void _onRifleSelected(String? rifleId) {
     if (rifleId == null) return;
     
+    // Get the rifle from the stream data via the state
+    // The stream will provide updated rifles list, so we use the snapshot from StreamBuilder
     setState(() {
       _selectedRifleId = rifleId;
-      _selectedRifle = _rifles.firstWhere(
-        (r) => r.id == rifleId,
-        orElse: () => RifleProfile(id: '', name: '', caliber: ''),
-      );
-      _clickValue = _selectedRifle?.scopeClickValue ?? 0.25;
+      // Reset ammunition selection when rifle changes
+      _selectedAmmoId = null;
     });
+  }
 
-    // Load ammunition for selected rifle
-    try {
-      final ammo = await _inventoryBridge.fetchAvailableAmmunition(rifleId);
+  void _updateRifleFromSnapshots(List<RifleProfile> rifles) {
+    if (_selectedRifleId == null) return;
+    
+    final selectedRifle = rifles.where((r) => r.id == _selectedRifleId).firstOrNull;
+    if (selectedRifle != null && selectedRifle.id != _selectedRifle?.id) {
       setState(() {
-        _ammunition = ammo;
+        _selectedRifle = selectedRifle;
+        _clickValue = selectedRifle.scopeClickValue;
       });
-    } catch (e) {
-      debugPrint('Error loading ammunition: $e');
-      setState(() => _ammunition = []);
     }
   }
 
@@ -250,31 +231,68 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               ),
             ),
             
-            // Inventory Selectors
+            // Inventory Selectors with Reactive Streams
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  _buildInventoryDropdown(
-                    label: 'Select Weapon from Safe',
-                    value: _selectedRifleId,
-                    items: _rifles.map((r) => DropdownMenuItem(
-                      value: r.id,
-                      child: Text('${r.name} (${r.caliber})'),
-                    )).toList(),
-                    onChanged: _onRifleSelected,
-                    isLoading: _isLoading,
+                  // Firearm Stream Dropdown
+                  StreamBuilder<List<RifleProfile>>(
+                    stream: _inventoryBridge.watchSafeFirearms(),
+                    builder: (context, riflesSnapshot) {
+                      final rifles = riflesSnapshot.data ?? [];
+                      final isLoading = riflesSnapshot.connectionState == ConnectionState.waiting;
+                      
+                      // Update selected rifle when stream data changes
+                      if (rifles.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _updateRifleFromSnapshots(rifles);
+                        });
+                      }
+                      
+                      return _buildInventoryDropdown(
+                        label: 'Select Weapon from Safe',
+                        value: _selectedRifleId,
+                        items: rifles.map((r) => DropdownMenuItem(
+                          value: r.id,
+                          child: Text('${r.name} (${r.caliber})'),
+                        )).toList(),
+                        onChanged: (id) {
+                          if (!context.mounted) return;
+                          _onRifleSelected(id);
+                        },
+                        isLoading: isLoading,
+                        onSeedRequested: rifles.isEmpty && !isLoading 
+                            ? () => _seedDefaultVaultHardware(context)
+                            : null,
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
-                  _buildInventoryDropdown(
-                    label: 'Select Loaded Ammunition',
-                    value: _selectedAmmoId,
-                    items: _ammunition.map((a) => DropdownMenuItem(
-                      value: a.id,
-                      child: Text('${a.bulletWeightGrains}gr (${a.remainingStockCount} remaining)'),
-                    )).toList(),
-                    onChanged: _onAmmoSelected,
-                    isLoading: _isLoading,
+                  
+                  // Ammunition Stream Dropdown (filtered by selected rifle's caliber)
+                  StreamBuilder<List<AmmoProfile>>(
+                    stream: _selectedRifleId != null
+                        ? _inventoryBridge.watchAvailableAmmunition(_selectedRifleId!)
+                        : Stream.value([]),
+                    builder: (context, ammoSnapshot) {
+                      final ammoList = ammoSnapshot.data ?? [];
+                      final isLoading = ammoSnapshot.connectionState == ConnectionState.waiting;
+                      
+                      return _buildInventoryDropdown(
+                        label: 'Select Loaded Ammunition',
+                        value: _selectedAmmoId,
+                        items: ammoList.map((a) => DropdownMenuItem(
+                          value: a.id,
+                          child: Text('${a.bulletWeightGrains}gr (${a.remainingStockCount} remaining)'),
+                        )).toList(),
+                        onChanged: (id) {
+                          if (!context.mounted) return;
+                          _onAmmoSelected(id);
+                        },
+                        isLoading: isLoading,
+                      );
+                    },
                   ),
                 ],
               ),
@@ -306,6 +324,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     required List<DropdownMenuItem<String>> items,
     required ValueChanged<String?> onChanged,
     required bool isLoading,
+    VoidCallback? onSeedRequested,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -343,22 +362,138 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     ),
                   ),
                 )
-              : DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: value,
-                    isExpanded: true,
-                    dropdownColor: const Color(0xFF2A2A2A),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    hint: const Text('No items available', style: TextStyle(color: Colors.grey)),
-                    items: items.isEmpty
-                        ? [const DropdownMenuItem(value: null, child: Text('No data'))]
-                        : items,
-                    onChanged: onChanged,
-                  ),
-                ),
+              : items.isEmpty
+                  ? _buildSeedButton(onSeedRequested)
+                  : DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: value,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF2A2A2A),
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        hint: const Text('No items available', style: TextStyle(color: Colors.grey)),
+                        items: items,
+                        onChanged: onChanged,
+                      ),
+                    ),
         ),
       ],
     );
+  }
+
+  Widget _buildSeedButton(VoidCallback? onSeedRequested) {
+    if (onSeedRequested == null) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('No data available', style: TextStyle(color: Colors.grey)),
+      );
+    }
+    
+    return InkWell(
+      onTap: onSeedRequested,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFC5A059).withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFC5A059)),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_download, color: Color(0xFFC5A059), size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Seed Default Vault Hardware',
+              style: TextStyle(
+                color: Color(0xFFC5A059),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _seedDefaultVaultHardware(BuildContext context) async {
+    if (!context.mounted) return;
+    
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Seeding default vault hardware...'),
+        backgroundColor: Color(0xFFC5A059),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    
+    try {
+      // Add default rifles
+      final tikkaRifle = RifleProfile(
+        id: '',
+        name: 'Tikka 6.5 CM',
+        caliber: '6.5mm Creedmoor',
+        scopeClickValue: 0.25,
+        serialNumber: 'TIKKA-2024-001',
+      );
+      final sakoRifle = RifleProfile(
+        id: '',
+        name: 'Sako .308',
+        caliber: '.308 Winchester',
+        scopeClickValue: 0.25,
+        serialNumber: 'SAKO-2024-001',
+      );
+      
+      final tikkaId = await _inventoryBridge.addRifleToSafe(tikkaRifle);
+      final sakoId = await _inventoryBridge.addRifleToSafe(sakoRifle);
+      
+      if (!context.mounted) return;
+      
+      // Add default ammunition for each rifle
+      if (tikkaId != null) {
+        final tikkaAmmo = AmmoProfile(
+          id: '',
+          rifleId: tikkaId,
+          bulletWeightGrains: 140,
+          velocityMs: 810.0,
+          ballisticCoefficient: 0.487,
+          remainingStockCount: 20,
+        );
+        await _inventoryBridge.addAmmunition(tikkaAmmo);
+      }
+      
+      if (sakoId != null) {
+        final sakoAmmo = AmmoProfile(
+          id: '',
+          rifleId: sakoId,
+          bulletWeightGrains: 175,
+          velocityMs: 800.0,
+          ballisticCoefficient: 0.435,
+          remainingStockCount: 15,
+        );
+        await _inventoryBridge.addAmmunition(sakoAmmo);
+      }
+      
+      if (!context.mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Default vault hardware seeded successfully!'),
+          backgroundColor: Color(0xFF4CAF50),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error seeding vault: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildScopeConfigTab() {
