@@ -680,26 +680,39 @@ class _BallisticTrajectorySectionState
   }
 
   void _calculateTrajectory() {
-    final double mvFps =
-        (widget.ammunition['muzzle_velocity'] ??
-                widget.ammunition['muzzleVelocity'] ??
-                2700)
-            .toDouble();
-    final bcValue = widget.ammunition['bc'];
-    final double bc = bcValue != null
-        ? (bcValue is double
-              ? bcValue
-              : double.tryParse(bcValue.toString()) ?? 0.4)
-        : 0.4;
+    // Safely extract and validate muzzle velocity
+    final mvRaw = widget.ammunition['muzzle_velocity'] ?? widget.ammunition['muzzleVelocity'] ?? 2700;
+    final mvFps = (mvRaw is num) ? mvRaw.toDouble() : (double.tryParse(mvRaw.toString()) ?? 2700.0);
+    final safeMvFps = (mvFps.isNaN || mvFps.isInfinite) ? 2700.0 : mvFps;
 
-    // Convert units: meters to yards, m/s to mph
-    final double zeroYards = widget.zeroingDistance * 1.09361;
-    final double windMph = widget.windMps * 2.23694;
+    // Safely extract and validate ballistic coefficient
+    final bcValue = widget.ammunition['bc'];
+    double bc = 0.4;
+    if (bcValue != null) {
+      if (bcValue is double) {
+        bc = bcValue;
+      } else if (bcValue is num) {
+        bc = bcValue.toDouble();
+      } else {
+        bc = double.tryParse(bcValue.toString()) ?? 0.4;
+      }
+    }
+    final safeBc = (bc.isNaN || bc.isInfinite || bc <= 0) ? 0.4 : bc;
+
+    // Safely handle zeroing distance
+    final zeroYards = (widget.zeroingDistance.isNaN || widget.zeroingDistance.isInfinite || widget.zeroingDistance <= 0)
+        ? 100.0 * 1.09361
+        : widget.zeroingDistance * 1.09361;
+
+    // Safely handle wind speed
+    final windMph = (widget.windMps.isNaN || widget.windMps.isInfinite)
+        ? 0.0
+        : widget.windMps * 2.23694;
 
     // Calculate trajectory using ballistics_calculator
     _trajectory = calcTrajectory(
-      bc: bc,
-      mv: mvFps,
+      bc: safeBc,
+      mv: safeMvFps,
       zero: zeroYards,
       windMph: windMph,
       angleDeg: 0,
@@ -713,7 +726,7 @@ class _BallisticTrajectorySectionState
       final drop = widget.lengthUnit == LengthUnit.inches
           ? p.drop
           : p.drop * 2.54; // inches to cm
-      return FlSpot(distance, drop);
+      return FlSpot(distance, drop.isNaN ? 0.0 : drop);
     }).toList();
 
     _windDriftSpots = _trajectory.map((p) {
@@ -723,17 +736,24 @@ class _BallisticTrajectorySectionState
       final drift = widget.lengthUnit == LengthUnit.inches
           ? p.windDrift
           : p.windDrift * 2.54; // inches to cm
-      return FlSpot(distance, drift);
+      return FlSpot(distance, drift.isNaN ? 0.0 : drift);
     }).toList();
 
     // Calculate max drop (absolute value) in selected unit
-    _maxDrop = _trajectory
-        .map(
-          (p) => widget.lengthUnit == LengthUnit.inches
-              ? p.drop.abs()
-              : p.drop.abs() * 2.54,
-        )
-        .reduce((a, b) => a > b ? a : b);
+    if (_trajectory.isNotEmpty) {
+      _maxDrop = _trajectory
+          .map(
+            (p) {
+              final drop = widget.lengthUnit == LengthUnit.inches
+                  ? p.drop.abs()
+                  : (p.drop.abs() * 2.54);
+              return drop.isNaN ? 0.0 : drop;
+            },
+          )
+          .reduce((a, b) => a > b ? a : b);
+    } else {
+      _maxDrop = 0.0;
+    }
 
     // Calculate MPBR (Maximum Point Blank Range)
     // MPBR is the distance where bullet stays within ±3 inches of line of sight

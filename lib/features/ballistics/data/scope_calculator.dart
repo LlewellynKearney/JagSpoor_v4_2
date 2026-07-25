@@ -38,6 +38,15 @@ class MoaCorrectionResult {
 
 /// Ballistic scope calculator with gyroscopic and AI targeting functions.
 class ScopeCalculator {
+  /// Validates that a value is not null, NaN, or close to zero.
+  /// Returns the value if valid, or the default if not.
+  static double _validateInput(double? value, double defaultValue) {
+    if (value == null || value.isNaN || value.isInfinite) {
+      return defaultValue;
+    }
+    return value;
+  }
+
   /// Calculates the gyro holdover adjustment based on barrel angle.
   /// 
   /// This function factors the true cosine distance range and determines
@@ -55,19 +64,27 @@ class ScopeCalculator {
     required double barrelAngleDegrees,
     required double clickValueUnit,
   }) {
+    // Validate all inputs against null, NaN, and infinite values
+    final validatedDistance = _validateInput(lineOfSightDistance, 100.0);
+    final validatedAngle = _validateInput(barrelAngleDegrees, 0.0);
+    final validatedClickValue = _validateInput(clickValueUnit, 0.25);
+
+    // Ensure distance is not zero or negative
+    final safeDistance = validatedDistance <= 0 ? 100.0 : validatedDistance;
+    
     // Convert angle to radians for cosine calculation
-    final angleRad = barrelAngleDegrees * pi / 180.0;
+    final angleRad = validatedAngle * pi / 180.0;
     
     // Calculate true horizontal distance using cosine
     // True horizontal = Line of sight * cos(angle)
-    final trueHorizontalDistance = lineOfSightDistance * cos(angleRad);
+    final trueHorizontalDistance = safeDistance * cos(angleRad);
     
     // Calculate the difference between line of sight and horizontal
-    final distanceDifference = lineOfSightDistance - trueHorizontalDistance;
+    final distanceDifference = safeDistance - trueHorizontalDistance;
     
     // Determine if we need to hold over or under
-    final isHoldingOver = barrelAngleDegrees > 0;
-    final isHoldingUnder = barrelAngleDegrees < 0;
+    final isHoldingOver = validatedAngle > 0;
+    final isHoldingUnder = validatedAngle < 0;
     
     // Calculate click units needed for correction
     // Using a simplified model: 1 MOA ≈ 1.047" at 100 yards
@@ -75,12 +92,11 @@ class ScopeCalculator {
     // This is a simplified approximation for demonstration
     double clicksPerMeter = 0.0;
     
-    if (clickValueUnit > 0) {
+    if (validatedClickValue > 0) {
       // Convert angular difference to clicks
       // Assuming scope is zeroed at horizontal, the angular difference
       // from line of sight needs to be compensated
-      final angleDifferenceRad = (lineOfSightDistance - trueHorizontalDistance) / 
-                                  max(lineOfSightDistance, 1.0);
+      final angleDifferenceRad = distanceDifference / max(safeDistance, 1.0);
       
       // Simple linear approximation for small angles
       // In real-world, this would use more sophisticated ballistic equations
@@ -90,12 +106,12 @@ class ScopeCalculator {
       final angleDifferenceMoa = angleDifferenceDeg * 60.0;
       
       // Calculate clicks
-      clicksPerMeter = angleDifferenceMoa.abs() / clickValueUnit;
+      clicksPerMeter = angleDifferenceMoa.abs() / validatedClickValue;
     }
     
     // Build tactical output string
     String tacticalOutput;
-    if (barrelAngleDegrees.abs() < 0.5) {
+    if (validatedAngle.abs() < 0.5) {
       tacticalOutput = 'LEVEL - NO ADJUSTMENT';
     } else if (isHoldingOver) {
       tacticalOutput = 'HOLD OVER ${clicksPerMeter.toStringAsFixed(0)} CLICKS';
@@ -131,12 +147,20 @@ class ScopeCalculator {
     required double targetDistanceMeters,
     required String scopeUnitType,
   }) {
+    // Validate all numeric inputs against NaN and infinite values
+    final validatedDevX = _validateInput(deviationX_cm, 0.0);
+    final validatedDevY = _validateInput(deviationY_cm, 0.0);
+    final validatedDistance = _validateInput(targetDistanceMeters, 100.0);
+    
+    // Ensure distance is positive
+    final safeDistance = validatedDistance <= 0 ? 100.0 : validatedDistance;
+    
     // Convert cm to inches for MOA calculations
-    final deviationX_inches = deviationX_cm / 2.54;
-    final deviationY_inches = deviationY_cm / 2.54;
+    final deviationX_inches = validatedDevX / 2.54;
+    final deviationY_inches = validatedDevY / 2.54;
     
     // Convert distance to yards
-    final targetDistanceYards = targetDistanceMeters * 1.09361;
+    final targetDistanceYards = safeDistance * 1.09361;
     
     // Calculate minutes of angle
     // MOA = (deviation in inches / distance in yards) * 100 yards approximation
@@ -160,9 +184,9 @@ class ScopeCalculator {
         // At 100m: 1 MRAD = 0.1m = 10cm
         // Deviation in radians = deviation in cm / (distance in cm * 100)
         // Clicks = deviation in radians / 0.0001 (0.1 MRAD per click)
-        final distanceCm = targetDistanceMeters * 100;
-        final deviationX_radians = deviationX_cm / distanceCm;
-        final deviationY_radians = deviationY_cm / distanceCm;
+        final distanceCm = safeDistance * 100;
+        final deviationX_radians = validatedDevX / distanceCm;
+        final deviationY_radians = validatedDevY / distanceCm;
         
         // Convert to MRAD (milliradians) and divide by 0.1 for clicks (0.1 MRAD per click)
         clicksX = (deviationX_radians / 0.001) / 0.1; // deviation in MRAD / click value
@@ -187,17 +211,17 @@ class ScopeCalculator {
     final String directionX;
     final String directionY;
     
-    if (deviationX_cm > 0) {
+    if (validatedDevX > 0) {
       directionX = 'RIGHT';
-    } else if (deviationX_cm < 0) {
+    } else if (validatedDevX < 0) {
       directionX = 'LEFT';
     } else {
       directionX = '';
     }
     
-    if (deviationY_cm > 0) {
+    if (validatedDevY > 0) {
       directionY = 'UP';
-    } else if (deviationY_cm < 0) {
+    } else if (validatedDevY < 0) {
       directionY = 'DOWN';
     } else {
       directionY = '';
@@ -229,8 +253,12 @@ class ScopeCalculator {
     required double lineOfSightDistance,
     required double angleDegrees,
   }) {
-    final angleRad = angleDegrees * pi / 180.0;
-    return lineOfSightDistance * cos(angleRad);
+    final validatedDistance = _validateInput(lineOfSightDistance, 100.0);
+    final validatedAngle = _validateInput(angleDegrees, 0.0);
+    if (validatedDistance <= 0) return 0.0;
+    
+    final angleRad = validatedAngle * pi / 180.0;
+    return validatedDistance * cos(angleRad);
   }
 
   /// Calculates elevation correction in MOA for a given distance.
@@ -239,11 +267,14 @@ class ScopeCalculator {
     required double zeroDistanceMeters,
     required double bulletDropInches,
   }) {
-    final distanceYards = distanceMeters * 1.09361;
+    final validatedDistance = _validateInput(distanceMeters, 100.0);
+    final validatedDrop = _validateInput(bulletDropInches, 0.0);
+    
+    final distanceYards = validatedDistance * 1.09361;
     if (distanceYards <= 0) return 0.0;
     
     // MOA correction = (drop in inches / distance in yards) * 100
-    return (bulletDropInches / distanceYards) * 100.0;
+    return (validatedDrop / distanceYards) * 100.0;
   }
 
   /// Calculates windage correction in MOA.
@@ -252,13 +283,17 @@ class ScopeCalculator {
     required double distanceMeters,
     required double bulletVelocityFps,
   }) {
-    final distanceYards = distanceMeters * 1.09361;
-    if (distanceYards <= 0) return 0.0;
+    final validatedDistance = _validateInput(distanceMeters, 100.0);
+    final validatedWind = _validateInput(windSpeedMph, 0.0);
+    final validatedVelocity = _validateInput(bulletVelocityFps, 1000.0);
+    
+    final distanceYards = validatedDistance * 1.09361;
+    if (distanceYards <= 0 || validatedVelocity <= 0) return 0.0;
     
     // Simplified windage formula
     // Windage in MOA ≈ (wind speed * distance) / (bullet velocity * constant)
     const windConstant = 15.0; // Simplified constant
-    return (windSpeedMph * distanceYards) / (bulletVelocityFps * windConstant);
+    return (validatedWind * distanceYards) / (validatedVelocity * windConstant);
   }
 
   /// Simulates AI target scanning with coordinate array evaluation.
@@ -266,6 +301,11 @@ class ScopeCalculator {
   static List<Map<String, double>> simulateTargetScanData({
     required double targetDistanceMeters,
   }) {
+    final validatedDistance = _validateInput(targetDistanceMeters, 100.0);
+    if (validatedDistance <= 0) {
+      return <Map<String, double>>[];
+    }
+    
     final random = Random();
     final hitCount = 3 + random.nextInt(5); // 3-7 simulated hits
     

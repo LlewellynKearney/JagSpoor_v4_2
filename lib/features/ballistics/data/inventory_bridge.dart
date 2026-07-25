@@ -156,8 +156,43 @@ class InventoryBridge {
   }
   
   /// Stream of ammunition for a specific rifle from the sub-collection.
+  /// Uses Firestore snapshots for real-time updates instead of polling.
   Stream<List<AmmoProfile>> watchAvailableAmmunition(String rifleId) {
-    return Stream.periodic(const Duration(milliseconds: 500))
-        .asyncMap((_) => fetchAvailableAmmunition(rifleId));
+    if (rifleId.isEmpty) {
+      return Stream.value(<AmmoProfile>[]);
+    }
+
+    return _firestore
+        .collection('firearms')
+        .doc(rifleId)
+        .collection('ammunition')
+        .where('remainingStockCount', isGreaterThan: 0)
+        .orderBy('bulletWeightGrains')
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) {
+            debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
+            return <AmmoProfile>[];
+          }
+
+          final ammoList = snapshot.docs.map((doc) {
+            final data = doc.data();
+            return AmmoProfile(
+              id: doc.id,
+              rifleId: rifleId,
+              bulletWeightGrains: (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
+              velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
+              ballisticCoefficient: (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
+              remainingStockCount: (data['remainingStockCount'] as num?)?.toInt() ?? 0,
+            );
+          }).toList();
+
+          debugPrint('InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId');
+          return ammoList;
+        })
+        .handleError((error) {
+          debugPrint('InventoryBridge: Error watching ammunition: $error');
+          return <AmmoProfile>[];
+        });
   }
 }

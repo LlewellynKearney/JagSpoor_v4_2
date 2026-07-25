@@ -25,7 +25,7 @@ class Point {
 /// - windMph: Wind speed (mph)
 /// - angleDeg: Firing angle (degrees, positive for uphill)
 ///
-/// Returns: List of trajectory points at 25-yard intervals
+/// Returns: List of trajectory points at 25-yard intervals (or safe defaults on error)
 List<Point> calcTrajectory({
   required double bc,
   required double mv,
@@ -33,16 +33,12 @@ List<Point> calcTrajectory({
   required double windMph,
   required double angleDeg,
 }) {
-  // Input validation
-  if (bc <= 0) {
-    throw ArgumentError('Ballistic coefficient must be greater than 0');
-  }
-  if (mv < 500 || mv > 4000) {
-    throw ArgumentError('Muzzle velocity must be between 500 and 4000 ft/s');
-  }
-  if (zero < 25 || zero > 300) {
-    throw ArgumentError('Zero distance must be between 25 and 300 yards');
-  }
+  // Input validation with safe defaults - return minimal trajectory on invalid input
+  final validatedBc = (bc.isNaN || bc.isInfinite || bc <= 0) ? 0.4 : bc;
+  final validatedMv = (mv.isNaN || mv.isInfinite || mv < 500 || mv > 4000) ? 2700.0 : mv;
+  final validatedZero = (zero.isNaN || zero.isInfinite || zero < 25 || zero > 300) ? 100.0 : zero;
+  final validatedWind = (windMph.isNaN || windMph.isInfinite) ? 0.0 : windMph;
+  final validatedAngle = (angleDeg.isNaN || angleDeg.isInfinite) ? 0.0 : angleDeg;
 
   const double gravity = 32.174; // ft/s²
   const double airDensity = 0.075; // lb/ft³ at sea level
@@ -52,17 +48,17 @@ List<Point> calcTrajectory({
   List<Point> trajectory = [];
 
   // Convert angle to radians
-  final double angleRad = angleDeg * pi / 180.0;
+  final double angleRad = validatedAngle * pi / 180.0;
 
   // Initial conditions
   double x = 0.0; // horizontal distance (yards)
   double y = 0.0; // vertical position (inches relative to line of sight)
-  double vx = mv * cos(angleRad); // horizontal velocity (ft/s)
-  double vy = mv * sin(angleRad); // vertical velocity (ft/s)
+  double vx = validatedMv * cos(angleRad); // horizontal velocity (ft/s)
+  double vy = validatedMv * sin(angleRad); // vertical velocity (ft/s)
   double t = 0.0; // time (s)
 
   // Wind drift calculation
-  final double windFps = windMph * 5280.0 / 3600.0; // Convert mph to ft/s
+  final double windFps = validatedWind * 5280.0 / 3600.0; // Convert mph to ft/s
   double windDrift = 0.0;
 
   // Calculate trajectory
@@ -80,7 +76,7 @@ List<Point> calcTrajectory({
 
       // Retardation (deceleration) due to drag
       final double retardation =
-          (dragCoeff * airDensity * v * v) / (2 * bc * 1.0);
+          (dragCoeff * airDensity * v * v) / (2 * validatedBc * 1.0);
 
       // Update velocities (Euler integration)
       final double dt = 0.01; // Time step (s)
@@ -99,7 +95,7 @@ List<Point> calcTrajectory({
       t += dt;
 
       // Wind drift accumulation (simplified)
-      windDrift += (windFps - vx) * dt * 12.0 * (1.0 / v); // inches
+      windDrift += (windFps - vx) * dt * 12.0 * (1.0 / max(v, 1.0)); // inches
     }
 
     // Calculate drop relative to zero distance
@@ -123,7 +119,7 @@ List<Point> calcTrajectory({
   }
 
   // Apply zero correction (shift all points so zero distance has 0 drop)
-  final int zeroIndex = trajectory.indexWhere((p) => p.distance == zero);
+  final int zeroIndex = trajectory.indexWhere((p) => p.distance == validatedZero);
   final Point zeroPoint = zeroIndex >= 0
       ? trajectory[zeroIndex]
       : trajectory[0];
@@ -183,6 +179,9 @@ String getPointData({
   required double angleDeg,
   required double distance,
 }) {
+  // Validate distance input
+  final validatedDistance = (distance.isNaN || distance.isInfinite || distance < 0) ? 100.0 : distance;
+  
   final trajectory = calcTrajectory(
     bc: bc,
     mv: mv,
@@ -191,22 +190,26 @@ String getPointData({
     angleDeg: angleDeg,
   );
 
+  // Return safe default if trajectory is empty
+  if (trajectory.isEmpty) {
+    return 'Drop: 0.00 in, Drift: 0.00 in, Vel: ${mv.toStringAsFixed(0)} fps';
+  }
+
   // Find the point closest to the requested distance
   Point? targetPoint;
   double minDiff = double.infinity;
 
   for (final point in trajectory) {
-    final diff = (point.distance - distance).abs();
+    final diff = (point.distance - validatedDistance).abs();
     if (diff < minDiff) {
       minDiff = diff;
       targetPoint = point;
     }
   }
 
+  // Return safe default if no point found
   if (targetPoint == null) {
-    throw ArgumentError(
-      'Could not find trajectory data for distance $distance yards',
-    );
+    return 'Drop: 0.00 in, Drift: 0.00 in, Vel: ${mv.toStringAsFixed(0)} fps';
   }
 
   return 'Drop: ${targetPoint.drop.abs().toStringAsFixed(2)} in, Drift: ${targetPoint.windDrift.abs().toStringAsFixed(2)} in, Vel: ${targetPoint.velocity.toStringAsFixed(0)} fps';

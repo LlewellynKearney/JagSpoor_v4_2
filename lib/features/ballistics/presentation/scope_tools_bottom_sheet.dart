@@ -246,12 +246,35 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   StreamBuilder<List<RifleProfile>>(
                     stream: _firearmsStream,
                     builder: (context, riflesSnapshot) {
+                      // Handle error states
+                      if (riflesSnapshot.hasError) {
+                        return _buildInventoryDropdown(
+                          label: 'Select Weapon from Safe',
+                          value: null,
+                          items: [],
+                          onChanged: null,
+                          isLoading: false,
+                          errorMessage: 'Data Error',
+                        );
+                      }
+                      
+                      // Handle loading and no data states
+                      if (!riflesSnapshot.hasData || riflesSnapshot.connectionState == ConnectionState.waiting) {
+                        return _buildInventoryDropdown(
+                          label: 'Select Weapon from Safe',
+                          value: null,
+                          items: [],
+                          onChanged: null,
+                          isLoading: true,
+                        );
+                      }
+                      
                       final rifles = riflesSnapshot.data ?? [];
-                      final isLoading = riflesSnapshot.connectionState == ConnectionState.waiting;
                       
                       // Update selected rifle when stream data changes
                       if (rifles.isNotEmpty) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!context.mounted) return;
                           _updateRifleFromSnapshots(rifles);
                         });
                       }
@@ -267,8 +290,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           if (!context.mounted) return;
                           _onRifleSelected(id);
                         },
-                        isLoading: isLoading,
-                        onSeedRequested: rifles.isEmpty && !isLoading 
+                        isLoading: false,
+                        onSeedRequested: rifles.isEmpty
                             ? () => _seedDefaultVaultHardware(context)
                             : null,
                       );
@@ -280,8 +303,30 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   StreamBuilder<List<AmmoProfile>>(
                     stream: _ammunitionStream ?? Stream.value([]),
                     builder: (context, ammoSnapshot) {
+                      // Handle error states
+                      if (ammoSnapshot.hasError) {
+                        return _buildInventoryDropdown(
+                          label: 'Select Loaded Ammunition',
+                          value: null,
+                          items: [],
+                          onChanged: null,
+                          isLoading: false,
+                          errorMessage: 'Data Error',
+                        );
+                      }
+                      
+                      // Handle loading and no data states
+                      if (!ammoSnapshot.hasData || ammoSnapshot.connectionState == ConnectionState.waiting) {
+                        return _buildInventoryDropdown(
+                          label: 'Select Loaded Ammunition',
+                          value: null,
+                          items: [],
+                          onChanged: null,
+                          isLoading: true,
+                        );
+                      }
+                      
                       final ammoList = ammoSnapshot.data ?? [];
-                      final isLoading = ammoSnapshot.connectionState == ConnectionState.waiting;
                       
                       return _buildInventoryDropdown(
                         label: 'Select Loaded Ammunition',
@@ -294,7 +339,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           if (!context.mounted) return;
                           _onAmmoSelected(id);
                         },
-                        isLoading: isLoading,
+                        isLoading: false,
                       );
                     },
                   ),
@@ -326,9 +371,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     required String label,
     required String? value,
     required List<DropdownMenuItem<String>> items,
-    required ValueChanged<String?> onChanged,
+    required ValueChanged<String?>? onChanged,
     required bool isLoading,
     VoidCallback? onSeedRequested,
+    String? errorMessage,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,7 +395,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             color: const Color(0xFF8B4513).withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: const Color(0xFFC5A059).withValues(alpha: 0.3),
+              color: errorMessage != null 
+                  ? const Color(0xFFB22222).withValues(alpha: 0.5)
+                  : const Color(0xFFC5A059).withValues(alpha: 0.3),
             ),
           ),
           child: isLoading
@@ -366,19 +414,27 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     ),
                   ),
                 )
-              : items.isEmpty
-                  ? _buildSeedButton(onSeedRequested)
-                  : DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: value,
-                        isExpanded: true,
-                        dropdownColor: const Color(0xFF2A2A2A),
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        hint: const Text('No items available', style: TextStyle(color: Colors.grey)),
-                        items: items,
-                        onChanged: onChanged,
+              : errorMessage != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        errorMessage,
+                        style: const TextStyle(color: Color(0xFFC5A059)),
                       ),
-                    ),
+                    )
+                  : items.isEmpty
+                      ? _buildSeedButton(onSeedRequested)
+                      : DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: value,
+                            isExpanded: true,
+                            dropdownColor: const Color(0xFF2A2A2A),
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            hint: const Text('No items available', style: TextStyle(color: Colors.grey)),
+                            items: items,
+                            onChanged: onChanged,
+                          ),
+                        ),
         ),
       ],
     );
