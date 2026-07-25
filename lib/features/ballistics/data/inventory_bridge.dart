@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'models/rifle_profile.dart';
 
@@ -7,21 +8,31 @@ import 'models/rifle_profile.dart';
 /// Provides functions to dynamically feed user dropdown menus.
 class InventoryBridge {
   final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
 
-  InventoryBridge({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  InventoryBridge({FirebaseFirestore? firestore, FirebaseAuth? auth})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  /// Fetches all firearms from the Digital Firearm Safe.
+  String? get _currentUserId => _auth.currentUser?.uid;
+
+  /// Fetches all firearms from the user's collection.
   /// Returns an empty list if no firearms are found or on error.
   Future<List<RifleProfile>> fetchSafeFirearms() async {
     try {
+      if (_currentUserId == null) {
+        debugPrint('InventoryBridge: User not authenticated');
+        return [];
+      }
+
       final snapshot = await _firestore
-          .collection('firearm_safe')
+          .collection('firearms')
+          .where('ownerId', isEqualTo: _currentUserId)
           .orderBy('name')
           .get();
 
       if (snapshot.docs.isEmpty) {
-        debugPrint('InventoryBridge: No firearms found in safe');
+        debugPrint('InventoryBridge: No firearms found for user');
         return [];
       }
 
@@ -29,7 +40,7 @@ class InventoryBridge {
           .map((doc) => RifleProfile.fromFirestore(doc))
           .toList();
 
-      debugPrint('InventoryBridge: Fetched ${rifles.length} firearms from safe');
+      debugPrint('InventoryBridge: Fetched ${rifles.length} firearms for user');
       return rifles;
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching firearms: $e');
@@ -37,8 +48,7 @@ class InventoryBridge {
     }
   }
 
-  /// Fetches available ammunition for a specific rifle from the Ammunition Manager.
-  /// Filters ammunition by caliber matching the rifle's caliber.
+  /// Fetches available ammunition for a specific rifle from the Ammunition sub-collection.
   /// Returns an empty list if no ammunition is found or on error.
   Future<List<AmmoProfile>> fetchAvailableAmmunition(String rifleId) async {
     try {
@@ -47,34 +57,17 @@ class InventoryBridge {
         return [];
       }
 
-      // First, get the rifle to determine its caliber
-      final rifleDoc = await _firestore
-          .collection('firearm_safe')
-          .doc(rifleId)
-          .get();
-
-      if (!rifleDoc.exists || rifleDoc.data() == null) {
-        debugPrint('InventoryBridge: Rifle not found: $rifleId');
-        return [];
-      }
-
-      final caliber = rifleDoc.data()!['caliber'] as String? ?? '';
-      
-      if (caliber.isEmpty) {
-        debugPrint('InventoryBridge: Rifle has no caliber defined');
-        return [];
-      }
-
-      // Fetch ammunition matching the rifle's caliber
+      // Fetch ammunition from the rifle's sub-collection
       final ammoSnapshot = await _firestore
-          .collection('ammunition_inventory')
-          .where('caliber', isEqualTo: caliber)
+          .collection('firearms')
+          .doc(rifleId)
+          .collection('ammunition')
           .where('remainingStockCount', isGreaterThan: 0)
-          .orderBy('remainingStockCount', descending: true)
+          .orderBy('bulletWeightGrains')
           .get();
 
       if (ammoSnapshot.docs.isEmpty) {
-        debugPrint('InventoryBridge: No ammunition found for caliber: $caliber');
+        debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
         return [];
       }
 
@@ -83,10 +76,10 @@ class InventoryBridge {
         return AmmoProfile(
           id: doc.id,
           rifleId: rifleId,
-          bulletWeightGrains: data['bulletWeightGrains'] as int? ?? 0,
+          bulletWeightGrains: (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
           velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
           ballisticCoefficient: (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
-          remainingStockCount: data['remainingStockCount'] as int? ?? 0,
+          remainingStockCount: (data['remainingStockCount'] as num?)?.toInt() ?? 0,
         );
       }).toList();
 
@@ -98,64 +91,18 @@ class InventoryBridge {
     }
   }
 
-  /// Fetches all ammunition inventory regardless of rifle.
-  /// Useful for ammunition dropdown when no rifle is selected.
-  Future<List<AmmoProfile>> fetchAllAmmunition() async {
-    try {
-      final snapshot = await _firestore
-          .collection('ammunition_inventory')
-          .where('remainingStockCount', isGreaterThan: 0)
-          .orderBy('caliber')
-          .orderBy('bulletWeightGrains')
-          .get();
-
-      if (snapshot.docs.isEmpty) {
-        debugPrint('InventoryBridge: No ammunition found');
-        return [];
-      }
-
-      final ammoList = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return AmmoProfile(
-          id: doc.id,
-          rifleId: data['rifleId'] as String? ?? '',
-          bulletWeightGrains: data['bulletWeightGrains'] as int? ?? 0,
-          velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
-          ballisticCoefficient: (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
-          remainingStockCount: data['remainingStockCount'] as int? ?? 0,
-        );
-      }).toList();
-
-      debugPrint('InventoryBridge: Fetched ${ammoList.length} total ammunition');
-      return ammoList;
-    } catch (e) {
-      debugPrint('InventoryBridge: Error fetching all ammunition: $e');
-      return [];
-    }
-  }
-
-  /// Updates the stock count for a specific ammunition.
-  Future<bool> updateAmmunitionStock(String ammoId, int newCount) async {
-    try {
-      await _firestore
-          .collection('ammunition_inventory')
-          .doc(ammoId)
-          .update({'remainingStockCount': newCount});
-      debugPrint('InventoryBridge: Updated stock for $ammoId to $newCount');
-      return true;
-    } catch (e) {
-      debugPrint('InventoryBridge: Error updating stock: $e');
-      return false;
-    }
-  }
-
-  /// Adds a new rifle to the firearm safe.
+  /// Adds a new rifle to the user's firearm collection.
   Future<String?> addRifleToSafe(RifleProfile rifle) async {
     try {
-      final docRef = _firestore.collection('firearm_safe').doc();
-      final newRifle = rifle.copyWith(id: docRef.id);
+      if (_currentUserId == null) {
+        debugPrint('InventoryBridge: Cannot add rifle - user not authenticated');
+        return null;
+      }
+
+      final docRef = _firestore.collection('firearms').doc();
+      final newRifle = rifle.copyWith(id: docRef.id, ownerId: _currentUserId);
       await docRef.set(newRifle.toFirestore());
-      debugPrint('InventoryBridge: Added rifle ${newRifle.name} to safe');
+      debugPrint('InventoryBridge: Added rifle ${newRifle.name} to collection');
       return docRef.id;
     } catch (e) {
       debugPrint('InventoryBridge: Error adding rifle: $e');
@@ -163,13 +110,22 @@ class InventoryBridge {
     }
   }
 
-  /// Adds a new ammunition to the inventory.
+  /// Adds a new ammunition to the rifle's sub-collection.
   Future<String?> addAmmunition(AmmoProfile ammo) async {
     try {
-      final docRef = _firestore.collection('ammunition_inventory').doc();
+      if (ammo.rifleId.isEmpty) {
+        debugPrint('InventoryBridge: Cannot add ammunition - rifleId is empty');
+        return null;
+      }
+
+      final docRef = _firestore
+          .collection('firearms')
+          .doc(ammo.rifleId)
+          .collection('ammunition')
+          .doc();
       final newAmmo = ammo.copyWith(id: docRef.id);
       await docRef.set(newAmmo.toFirestore());
-      debugPrint('InventoryBridge: Added ammunition to inventory');
+      debugPrint('InventoryBridge: Added ammunition to rifle ${ammo.rifleId}');
       return docRef.id;
     } catch (e) {
       debugPrint('InventoryBridge: Error adding ammunition: $e');
@@ -179,8 +135,13 @@ class InventoryBridge {
 
   /// Stream of firearms for reactive UI updates.
   Stream<List<RifleProfile>> watchSafeFirearms() {
+    if (_currentUserId == null) {
+      return Stream.value(<RifleProfile>[]);
+    }
+
     return _firestore
-        .collection('firearm_safe')
+        .collection('firearms')
+        .where('ownerId', isEqualTo: _currentUserId)
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
@@ -193,8 +154,8 @@ class InventoryBridge {
           return <RifleProfile>[];
         });
   }
-
-  /// Stream of ammunition for a specific rifle.
+  
+  /// Stream of ammunition for a specific rifle from the sub-collection.
   Stream<List<AmmoProfile>> watchAvailableAmmunition(String rifleId) {
     return Stream.periodic(const Duration(milliseconds: 500))
         .asyncMap((_) => fetchAvailableAmmunition(rifleId));

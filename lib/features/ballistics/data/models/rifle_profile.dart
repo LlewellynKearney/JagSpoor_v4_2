@@ -8,6 +8,7 @@ class RifleProfile {
   final String caliber;
   final double scopeClickValue;
   final String serialNumber;
+  final String ownerId;
 
   const RifleProfile({
     required this.id,
@@ -15,6 +16,7 @@ class RifleProfile {
     required this.caliber,
     this.scopeClickValue = 0.25,
     this.serialNumber = '',
+    this.ownerId = '',
   });
 
   factory RifleProfile.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -32,11 +34,12 @@ class RifleProfile {
 
   factory RifleProfile.fromJson(Map<String, dynamic> json, {String? id}) {
     return RifleProfile(
-      id: id ?? json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      caliber: json['caliber'] as String? ?? '',
+      id: id ?? (json['id'] as String?) ?? '',
+      name: (json['name'] as String?) ?? '',
+      caliber: (json['caliber'] as String?) ?? '',
       scopeClickValue: _doubleOrDefault(json['scopeClickValue']),
-      serialNumber: json['serialNumber'] as String? ?? '',
+      serialNumber: (json['serialNumber'] as String?) ?? '',
+      ownerId: (json['ownerId'] as String?) ?? '',
     );
   }
 
@@ -46,6 +49,7 @@ class RifleProfile {
         'caliber': caliber,
         'scopeClickValue': scopeClickValue,
         'serialNumber': serialNumber,
+        'ownerId': ownerId,
       };
 
   Map<String, dynamic> toFirestore() => toJson();
@@ -64,6 +68,7 @@ class RifleProfile {
     String? caliber,
     double? scopeClickValue,
     String? serialNumber,
+    String? ownerId,
   }) {
     return RifleProfile(
       id: id ?? this.id,
@@ -71,6 +76,7 @@ class RifleProfile {
       caliber: caliber ?? this.caliber,
       scopeClickValue: scopeClickValue ?? this.scopeClickValue,
       serialNumber: serialNumber ?? this.serialNumber,
+      ownerId: ownerId ?? this.ownerId,
     );
   }
 }
