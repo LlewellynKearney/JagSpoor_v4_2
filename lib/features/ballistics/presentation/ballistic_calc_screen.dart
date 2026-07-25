@@ -218,10 +218,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
                         value: _selectedFirearmId,
                         items: docs.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
+                          final String make = (data['make'] ?? data['brand'] ?? data['manufacturer'] ?? 'Unknown').toString();
+                          final String model = (data['model'] ?? data['modelName'] ?? data['name'] ?? 'Firearm').toString();
+                          final String caliber = (data['caliber'] ?? 'N/A').toString();
                           return DropdownMenuItem<String>(
                             value: doc.id,
                             child: Text(
-                              '${data['name'] ?? 'Unknown'} | ${data['caliber'] ?? 'N/A'}',
+                              '$make $model • [$caliber]',
                               style: const TextStyle(color: Colors.white),
                             ),
                           );
@@ -369,8 +372,19 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen> with SingleTi
   }
   
   Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double v0 = (_selectedAmmunitionData?['velocityMs'] as num?)?.toDouble() ?? ammoCatalog.first['velocityMs'].toDouble();
-    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] as num?)?.toDouble() ?? ammoCatalog.first['ballisticCoefficient'].toDouble();
+    final double v0 = (
+      _selectedAmmunitionData?['velocityMs'] ??
+      _selectedAmmunitionData?['muzzleVelocity'] ??
+      _selectedAmmunitionData?['velocity'] ??
+      820.0
+    ).toDouble();
+
+    final double bc = (
+      _selectedAmmunitionData?['ballisticCoefficient'] ??
+      _selectedAmmunitionData?['bc'] ??
+      0.45
+    ).toDouble();
+
     final double muzzleVelocity = v0;
     final double ballisticCoef = bc;
     
