@@ -607,12 +607,12 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
     required Function(String, Map<String, dynamic>) onSelected,
   }) {
     // Pre-compiled standalone caliber profiles for offline fallback
-    final fallbackProfiles = [
-      {'id': 'local_308', 'caliber': '.308 Winchester', 'brand': 'Local', 'description': 'Standard', 'bullet_grain': 150, 'muzzle_velocity': 2800, 'bc': 0.420},
-      {'id': 'local_65cm', 'caliber': '6.5mm Creedmoor', 'brand': 'Local', 'description': 'Precision', 'bullet_grain': 140, 'muzzle_velocity': 2700, 'bc': 0.485},
-      {'id': 'local_270', 'caliber': '.270 Winchester', 'brand': 'Local', 'description': 'Standard', 'bullet_grain': 130, 'muzzle_velocity': 3060, 'bc': 0.400},
-      {'id': 'local_3006', 'caliber': '.30-06 Springfield', 'brand': 'Local', 'description': 'Classic', 'bullet_grain': 180, 'muzzle_velocity': 2700, 'bc': 0.470},
-      {'id': 'local_243', 'caliber': '.243 Winchester', 'brand': 'Local', 'description': 'Varmint', 'bullet_grain': 95, 'muzzle_velocity': 3100, 'bc': 0.355},
+    final List<Map<String, dynamic>> fallbackProfiles = [
+      {'id': 'local_308', 'name': '.308 Winchester', 'caliber': '.308', 'velocityMs': 800.0, 'bulletWeightGrains': 175.0, 'ballisticCoefficient': 0.496},
+      {'id': 'local_243', 'name': '.243 Winchester', 'caliber': '.243', 'velocityMs': 900.0, 'bulletWeightGrains': 100.0, 'ballisticCoefficient': 0.395},
+      {'id': 'local_65cm', 'name': '6.5mm Creedmoor', 'caliber': '6.5mm', 'velocityMs': 835.0, 'bulletWeightGrains': 140.0, 'ballisticCoefficient': 0.512},
+      {'id': 'local_270', 'name': '.270 Winchester', 'caliber': '.270', 'velocityMs': 850.0, 'bulletWeightGrains': 150.0, 'ballisticCoefficient': 0.447},
+      {'id': 'local_300wm', 'name': '.300 Win Mag', 'caliber': '.300', 'velocityMs': 900.0, 'bulletWeightGrains': 180.0, 'ballisticCoefficient': 0.485},
     ];
 
     final caliber = widget.firearmCaliber ?? '';
@@ -684,14 +684,14 @@ class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> 
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '${item['caliber']}',
+                          '${item['name']}',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: AppColors.walnutLuxury,
                           ),
                         ),
                         Text(
-                          '${item['brand']} ${item['description']} • ${item['bullet_grain']}gr • ${item['muzzle_velocity']}fps',
+                          '${item['bulletWeightGrains']}gr • BC: ${item['ballisticCoefficient']}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade600,
@@ -1493,6 +1493,7 @@ class _BallisticTrajectorySectionState
               ),
               gridData: FlGridData(
                 show: true,
+                drawVerticalLine: true,
                 getDrawingHorizontalLine: (value) => FlLine(
                   color: AppColors.walnutLuxury.withValues(alpha: 0.2),
                   strokeWidth: 1,
