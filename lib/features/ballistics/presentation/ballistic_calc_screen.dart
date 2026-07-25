@@ -63,7 +63,7 @@ class BallisticPhysicsEngine {
     final double gravity = 9.80665 * math.cos(pitchAngleDegrees * math.pi / 180.0);
 
 
-    for (int stepRange = 0; stepRange <= 500; stepRange += 50) {
+    for (int stepRange = 0; stepRange <= 1000; stepRange += 50) {
       final double x = stepRange.toDouble();
       if (x == 0) {
         grid.add(TrajectoryPoint(rangeMeters: 0, dropCm: 0, windageCm: 0, velocityMs: muzzleVelocityMs));

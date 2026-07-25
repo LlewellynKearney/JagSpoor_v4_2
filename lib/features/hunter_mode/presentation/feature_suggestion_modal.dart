@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../ballistics/presentation/ballistic_calc_screen.dart';
 import '../services/feedback_firebase_service.dart';
 
 /// FeatureSuggestionModal provides a bottom sheet form for submitting
@@ -12,10 +13,6 @@ class FeatureSuggestionModal extends StatefulWidget {
 }
 
 class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
-  static const Color _walnutLuxury = Color(0xFF8B4513);
-  static const Color _thermalGlow = Color(0xFFC5A059);
-  static const Color _darkBackground = Color(0xFF1A1412);
-
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -76,10 +73,10 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: _darkBackground,
+        color: JagspoorTheme.tacticalDark,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         border: Border.all(
-          color: _thermalGlow.withValues(alpha: 0.3),
+          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -105,17 +102,17 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
                   // Header
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.lightbulb_outline_rounded,
-                        color: _thermalGlow,
+                        color: JagspoorTheme.thermalGlow,
                         size: 24,
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           '💡 SUGGEST NEW FEATURE',
                           style: TextStyle(
-                            color: _thermalGlow,
+                            color: JagspoorTheme.thermalGlow,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.5,
@@ -192,7 +189,7 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
                   // Submit Button
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _thermalGlow,
+                      backgroundColor: JagspoorTheme.thermalGlow,
                       foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
@@ -237,8 +234,8 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
   Widget _buildSectionLabel(String label) {
     return Text(
       label.toUpperCase(),
-      style: const TextStyle(
-        color: _thermalGlow,
+      style: TextStyle(
+        color: JagspoorTheme.thermalGlow,
         fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
@@ -253,25 +250,25 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
     return InputDecoration(
       hintText: hintText,
       hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-      prefixIcon: Icon(prefixIcon, color: _thermalGlow),
+      prefixIcon: Icon(prefixIcon, color: JagspoorTheme.thermalGlow),
       filled: true,
-      fillColor: _walnutLuxury.withValues(alpha: 0.3),
+      fillColor: JagspoorTheme.walnutLuxury.withValues(alpha: 0.3),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: _thermalGlow.withValues(alpha: 0.3),
+          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
         ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: _thermalGlow.withValues(alpha: 0.3),
+          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
         ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: _thermalGlow,
+        borderSide: BorderSide(
+          color: JagspoorTheme.thermalGlow,
           width: 2,
         ),
       ),
