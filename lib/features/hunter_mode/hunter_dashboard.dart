@@ -11,6 +11,8 @@ import 'package:jagspoor/features/game_guide/presentation/field_estimate_screen.
 import 'package:jagspoor/features/ballistics/presentation/ballistic_calc_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/ammunition_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/scope_tools_bottom_sheet.dart';
+import 'presentation/bug_report_modal.dart';
+import 'presentation/feature_suggestion_modal.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -171,6 +173,32 @@ class _HunterDashboardState extends State<HunterDashboard> {
             context: context,
             isScrollControlled: true,
             builder: (sheetContext) => const ScopeToolsBottomSheet(),
+          );
+        },
+      ),
+      DashboardFeature(
+        id: 'report_bug',
+        icon: Icons.bug_report_rounded,
+        title: '🪲 Report Bug',
+        description: 'Encountered a glitch in the bush? Log to cloud and alert support.',
+        onTap: (context, theme) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (sheetContext) => const BugReportModal(),
+          );
+        },
+      ),
+      DashboardFeature(
+        id: 'suggest_feature',
+        icon: Icons.lightbulb_outline_rounded,
+        title: '💡 Suggest New Feature',
+        description: 'Have an idea for a tactical tracking tool? Inform our engineering team.',
+        onTap: (context, theme) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (sheetContext) => const FeatureSuggestionModal(),
           );
         },
       ),
