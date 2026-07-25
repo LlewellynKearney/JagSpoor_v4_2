@@ -31,6 +31,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
 
   Future<void> _loadFavoriteIds() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       favoriteIds.clear();
       favoriteIds.addAll(prefs.getStringList(_favoritePrefKey) ?? <String>[]);
