@@ -31,10 +31,10 @@ class JagspoorTheme {
 
   static Color _darkenColor(Color color, double factor) {
     return Color.fromARGB(
-      color.alpha,
-      (color.red * (1 - factor)).round().clamp(0, 255),
-      (color.green * (1 - factor)).round().clamp(0, 255),
-      (color.blue * (1 - factor)).round().clamp(0, 255),
+      (color.a * 255).round(),
+      (color.r * 255 * (1 - factor)).round().clamp(0, 255),
+      (color.g * 255 * (1 - factor)).round().clamp(0, 255),
+      (color.b * 255 * (1 - factor)).round().clamp(0, 255),
     );
   }
 }
@@ -153,10 +153,12 @@ class BallisticPhysicsEngine {
       double dropCorrectionCm = zeroDropCompensationAtX - rawDropCm;
       double windageDriftCm = crossWindMps * timeOfFlight * 10.0;
 
-      if (dropCorrectionCm.isNaN || dropCorrectionCm.isInfinite)
+      if (dropCorrectionCm.isNaN || dropCorrectionCm.isInfinite) {
         dropCorrectionCm = 0.0;
-      if (windageDriftCm.isNaN || windageDriftCm.isInfinite)
+      }
+      if (windageDriftCm.isNaN || windageDriftCm.isInfinite) {
         windageDriftCm = 0.0;
+      }
 
       grid.add(TrajectoryPoint(
         rangeMeters: x,
@@ -290,7 +292,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🏹 TACTICAL PROFILE DATA MATRIX',
+              Text('🏹 TACTICAL PROFILE DATA MATRIX',
                   style: TextStyle(
                       color: JagspoorTheme.thermalGlow,
                       fontWeight: FontWeight.bold,
@@ -305,7 +307,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       snapshot.data!.docs.isEmpty) {
                     return _buildHardwareDropdownContainer(
                       label: 'Select Firearm Vault Location',
-                      child: const Text('OFFLINE SAFE MODULE ACTIVE',
+                      child: Text('OFFLINE SAFE MODULE ACTIVE',
                           style: TextStyle(
                               color: JagspoorTheme.thermalGlow, fontSize: 14)),
                     );
@@ -372,7 +374,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                             style:
                                 TextStyle(color: Colors.white70, fontSize: 12)),
                         Text('${_targetRangeMeters.toInt()} m',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: JagspoorTheme.thermalGlow,
                                 fontWeight: FontWeight.bold)),
                       ],
@@ -446,7 +448,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               const SizedBox(height: 24),
 
               if (_selectedFirearmData != null) ...[
-                const Text('📊 TRAJECTORY COMPUTATION GRID',
+                Text('📊 TRAJECTORY COMPUTATION GRID',
                     style: TextStyle(
                         color: JagspoorTheme.thermalGlow,
                         fontWeight: FontWeight.bold,
@@ -720,7 +722,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   style: TextStyle(color: Colors.white70, fontSize: 12)),
               if (ammoCatalog.isNotEmpty)
                 Text(ammoCatalog.first['name'] ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: JagspoorTheme.thermalGlow, fontSize: 11)),
             ],
           ),
@@ -865,14 +867,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
       ),
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.shield, color: JagspoorTheme.walnutLuxury, size: 64),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text('SELECT FIREARM TO ACTIVATE',
-                style: TextStyle(
+                style: const TextStyle(
                     color: Colors.white70, fontSize: 14, letterSpacing: 1.2)),
             Text('TRAJECTORY COMPUTATION ENGINE',
                 style:
