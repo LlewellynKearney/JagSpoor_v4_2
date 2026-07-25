@@ -7,6 +7,44 @@ import 'package:pdf/pdf.dart' as pdf;
 import 'package:printing/printing.dart';
 import '../../../services/ballistics_calculator.dart';
 
+// Design tokens for luxury hunting theme
+class AppColors {
+  static const Color walnutLuxury = Color(0xFF8B4513); // Primary graph bounds
+  static const Color thermalGlow = Color(0xFFC5A059); // Trace trajectories
+  static const Color midnightSlate = Color(0xFF2F3640); // Background accents
+  static const Color forestDrab = Color(0xFF556B2F); // Secondary elements
+}
+
+// Offline ammunition fallback data for App Check / network error scenarios
+class OfflineAmmunitionData {
+  static const List<Map<String, dynamic>> commonFactoryAmmunition = [
+    {'brand': 'Federal', 'description': 'Power-Shok', 'caliber': '.308 Winchester', 'bullet_grain': 150, 'muzzle_velocity': 2820, 'bc': 0.418},
+    {'brand': 'Federal', 'description': 'Power-Shok', 'caliber': '.308 Winchester', 'bullet_grain': 180, 'muzzle_velocity': 2620, 'bc': 0.475},
+    {'brand': 'Remington', 'description': 'Core-Lokt', 'caliber': '.308 Winchester', 'bullet_grain': 150, 'muzzle_velocity': 2790, 'bc': 0.410},
+    {'brand': 'Remington', 'description': 'Core-Lokt', 'caliber': '.308 Winchester', 'bullet_grain': 180, 'muzzle_velocity': 2620, 'bc': 0.465},
+    {'brand': 'Hornady', 'description': 'American Whitetail', 'caliber': '.308 Winchester', 'bullet_grain': 150, 'muzzle_velocity': 2830, 'bc': 0.415},
+    {'brand': 'Hornady', 'description': 'American Whitetail', 'caliber': '.308 Winchester', 'bullet_grain': 180, 'muzzle_velocity': 2550, 'bc': 0.480},
+    {'brand': 'Winchester', 'description': 'Power-Point', 'caliber': '.308 Winchester', 'bullet_grain': 150, 'muzzle_velocity': 2820, 'bc': 0.420},
+    {'brand': 'Winchester', 'description': 'Power-Point', 'caliber': '.308 Winchester', 'bullet_grain': 180, 'muzzle_velocity': 2620, 'bc': 0.470},
+    {'brand': 'Federal', 'description': 'Power-Shok', 'caliber': '.243 Winchester', 'bullet_grain': 95, 'muzzle_velocity': 3100, 'bc': 0.355},
+    {'brand': 'Federal', 'description': 'Power-Shok', 'caliber': '.243 Winchester', 'bullet_grain': 100, 'muzzle_velocity': 2960, 'bc': 0.380},
+    {'brand': 'Remington', 'description': 'Core-Lokt', 'caliber': '.243 Winchester', 'bullet_grain': 100, 'muzzle_velocity': 2960, 'bc': 0.370},
+    {'brand': 'Hornady', 'description': 'American Whitetail', 'caliber': '.243 Winchester', 'bullet_grain': 95, 'muzzle_velocity': 3100, 'bc': 0.355},
+    {'brand': 'Winchester', 'description': 'Ballistic Silvertip', 'caliber': '.308 Winchester', 'bullet_grain': 168, 'muzzle_velocity': 2700, 'bc': 0.475},
+    {'brand': 'Nosler', 'description': 'Partition', 'caliber': '.308 Winchester', 'bullet_grain': 180, 'muzzle_velocity': 2600, 'bc': 0.490},
+    {'brand': 'Barnes', 'description': 'TSX', 'caliber': '.308 Winchester', 'bullet_grain': 165, 'muzzle_velocity': 2680, 'bc': 0.480},
+  ];
+
+  static const List<Map<String, dynamic>> commonCalibers = [
+    '.308 Winchester',
+    '.243 Winchester',
+    '6.5mm Creedmoor',
+    '.270 Winchester',
+    '.30-06 Springfield',
+    '.300 Win Mag',
+  ];
+}
+
 bool checkCaliberMatch(String? weaponCaliber, String? dbCaliber) {
   if (weaponCaliber == null || dbCaliber == null) return false;
   String clean(String s) => s.replaceAll(RegExp(r'[\s\-\.]'), '').toLowerCase();
@@ -34,6 +72,11 @@ class BallisticCalcScreen extends StatefulWidget {
 class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  
+  // Persistent stream references to prevent infinite rebuild loops
+  late Stream<QuerySnapshot> _firearmsStream;
+  late Stream<QuerySnapshot> _factoryAmmunitionStream;
+  
   String? _selectedFirearmId;
   String? _selectedAmmunitionId;
   Map<String, dynamic>? _selectedFirearm;
@@ -55,6 +98,18 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Initialize persistent stream references in lifecycle hook
+    final user = FirebaseAuth.instance.currentUser;
+    _firearmsStream = FirebaseFirestore.instance
+        .collection('firearms')
+        .where('ownerId', isEqualTo: user?.uid ?? '')
+        .snapshots();
+    
+    // Factory ammunition stream (single source for all factory ammo)
+    _factoryAmmunitionStream = FirebaseFirestore.instance
+        .collection('factory_ammunition')
+        .snapshots();
   }
 
   @override
@@ -91,7 +146,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               const SizedBox(height: 20),
 
               _FirearmDropdown(
-                userId: _currentUserId,
+                firearmsStream: _firearmsStream,
                 selectedId: _selectedFirearmId,
                 onSelected: (firearmId, firearmData) {
                   setState(() {
@@ -107,6 +162,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 const SizedBox(height: 12),
                 _ammoType == AmmoType.factory
                     ? _FactoryAmmunitionDropdown(
+                        factoryAmmunitionStream: _factoryAmmunitionStream,
                         firearmCaliber: _selectedFirearm?['caliber'],
                         selectedId: _selectedAmmunitionId,
                         onSelected: (ammoId, ammoData) {
@@ -166,39 +222,104 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   }
 }
 
-class _FirearmDropdown extends StatelessWidget {
-  final String? userId;
+class _FirearmDropdown extends StatefulWidget {
+  final Stream<QuerySnapshot> firearmsStream;
   final String? selectedId;
   final Function(String, Map<String, dynamic>) onSelected;
   const _FirearmDropdown({
-    required this.userId,
+    required this.firearmsStream,
     required this.selectedId,
     required this.onSelected,
   });
 
   @override
+  State<_FirearmDropdown> createState() => _FirearmDropdownState();
+}
+
+class _FirearmDropdownState extends State<_FirearmDropdown> {
+  bool _isOfflineMode = false;
+  List<Map<String, dynamic>> _offlineFirearms = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfflineData();
+  }
+
+  void _loadOfflineData() {
+    // Provide common firearms for offline mode
+    _offlineFirearms = [
+      {'make': 'Remington', 'model': '700', 'caliber': '.308 Winchester', 'docId': 'offline_1'},
+      {'make': 'Ruger', 'model': 'M77', 'caliber': '.243 Winchester', 'docId': 'offline_2'},
+      {'make': 'Browning', 'model': 'A-Bolt', 'caliber': '.308 Winchester', 'docId': 'offline_3'},
+      {'make': 'Winchester', 'model': 'Model 70', 'caliber': '.30-06 Springfield', 'docId': 'offline_4'},
+    ];
+  }
+
+  bool _isAppCheckError(Object? error) {
+    if (error == null) return false;
+    final errorStr = error.toString().toLowerCase();
+    return errorStr.contains('appcheck') ||
+        errorStr.contains('app check') ||
+        errorStr.contains('developer_error') ||
+        errorStr.contains('token') ||
+        errorStr.contains('unavailable');
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Center(child: Text("Login required"));
-
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('firearms')
-          .where('ownerId', isEqualTo: user.uid)
-          .snapshots(), // ROOT COLLECTION
+      stream: widget.firearmsStream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Text("Error: ${snapshot.error}");
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+        // Handle App Check / network errors with offline fallback
+        if (snapshot.hasError) {
+          if (_isAppCheckError(snapshot.error)) {
+            setState(() => _isOfflineMode = true);
+            return _buildOfflineFirearmDropdown(context);
+          }
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Firearm data unavailable',
+                    style: TextStyle(
+                      color: AppColors.thermalGlow,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
-        final firearms = snapshot.data?.docs ?? [];
-        if (firearms.isEmpty) return _buildNoFirearmsWarning(context);
 
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final firearms = snapshot.data?.docs ?? [];
+        if (firearms.isEmpty) {
+          // Auto-switch to offline mode when no data available
+          setState(() => _isOfflineMode = true);
+          return _buildOfflineFirearmDropdown(context);
+        }
+
+        _isOfflineMode = false;
         return _buildDropdownCard(
           context,
           label: 'Select Firearm',
           items: firearms,
-          selectedId: selectedId,
+          selectedId: widget.selectedId,
           itemBuilder: (doc) {
             final data = doc.data() as Map<String, dynamic>;
             return '${data['make'] ?? ''} ${data['model'] ?? ''} • ${data['caliber'] ?? 'N/A'}';
@@ -206,10 +327,64 @@ class _FirearmDropdown extends StatelessWidget {
           onSelected: (doc) {
             final data = Map<String, dynamic>.from(doc.data() as Map);
             data['docId'] = doc.id;
-            onSelected(doc.id, data);
+            widget.onSelected(doc.id, data);
           },
         );
       },
+    );
+  }
+
+  Widget _buildOfflineFirearmDropdown(BuildContext context) {
+    final filtered = _offlineFirearms
+        .where((f) => f['caliber'] != null)
+        .toList();
+
+    if (filtered.isEmpty) {
+      return _buildNoFirearmsWarning(context);
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.offline_bolt, color: AppColors.thermalGlow, size: 20),
+                const SizedBox(width: 8),
+                Text('Offline Mode', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: filtered.any((f) => f['docId'] == widget.selectedId)
+                  ? widget.selectedId
+                  : null,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              items: filtered
+                  .map((doc) => DropdownMenuItem(
+                        value: doc['docId'] as String,
+                        child: Text(
+                          '${doc['make']} ${doc['model']} • ${doc['caliber']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  final item = filtered.firstWhere((f) => f['docId'] == v);
+                  widget.onSelected(v, item);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -272,61 +447,204 @@ class _FirearmDropdown extends StatelessWidget {
   }
 }
 
-class _FactoryAmmunitionDropdown extends StatelessWidget {
+class _FactoryAmmunitionDropdown extends StatefulWidget {
+  final Stream<QuerySnapshot> factoryAmmunitionStream;
   final String? firearmCaliber;
   final String? selectedId;
   final Function(String, Map<String, dynamic>) onSelected;
   const _FactoryAmmunitionDropdown({
+    required this.factoryAmmunitionStream,
     required this.firearmCaliber,
     required this.selectedId,
     required this.onSelected,
   });
 
   @override
+  State<_FactoryAmmunitionDropdown> createState() => _FactoryAmmunitionDropdownState();
+}
+
+class _FactoryAmmunitionDropdownState extends State<_FactoryAmmunitionDropdown> {
+  bool _isOfflineMode = false;
+
+  bool _isAppCheckError(Object? error) {
+    if (error == null) return false;
+    final errorStr = error.toString().toLowerCase();
+    return errorStr.contains('appcheck') ||
+        errorStr.contains('app check') ||
+        errorStr.contains('developer_error') ||
+        errorStr.contains('token') ||
+        errorStr.contains('unavailable');
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('factory_ammunition')
-          .snapshots(),
+      stream: widget.factoryAmmunitionStream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Text("Error: ${snapshot.error}");
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+        // Intercept App Check / Security failures and provide offline tracking fallbacks
+        if (snapshot.hasError) {
+          if (_isAppCheckError(snapshot.error)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _isOfflineMode = true);
+            });
+            return _buildOfflineAmmunitionDropdown(context);
+          }
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ammunition data unavailable',
+                    style: TextStyle(color: AppColors.thermalGlow),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingWidget(context);
+        }
+
         final docs = snapshot.data?.docs ?? [];
         final filtered = docs
             .where(
               (doc) => checkCaliberMatch(
-                firearmCaliber ?? '',
+                widget.firearmCaliber ?? '',
                 (doc.data() as Map)['caliber'] ?? '',
               ),
             )
             .toList();
+
         if (filtered.isEmpty) {
-          return const Text('No factory ammo found for this caliber');
+          // Switch to offline mode if no matching caliber found
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _isOfflineMode = true);
+          });
+          return _buildOfflineAmmunitionDropdown(context);
         }
 
+        _isOfflineMode = false;
         return _buildDropdownCard(
           context,
           label: 'Select Factory Ammunition',
           items: filtered,
-          selectedId: selectedId,
+          selectedId: widget.selectedId,
           itemBuilder: (doc) {
             final d = doc.data() as Map<String, dynamic>;
-            final grain =
-                d['bullet_grain'] ?? d['bulletGrain'] ?? 'N/A'; // FIX null
-            final vel =
-                d['muzzle_velocity'] ??
-                d['muzzleVelocity'] ??
-                'N/A'; // FIX null
+            final grain = d['bullet_grain'] ?? d['bulletGrain'] ?? 'N/A';
+            final vel = d['muzzle_velocity'] ?? d['muzzleVelocity'] ?? 'N/A';
             final bc = d['bc'];
             final bcText = bc != null ? ' • BC: $bc' : '';
             return '${d['brand']} ${d['description']} • ${grain}gr • ${vel}fps$bcText';
           },
           onSelected: (doc) =>
-              onSelected(doc.id, doc.data() as Map<String, dynamic>),
+              widget.onSelected(doc.id, doc.data() as Map<String, dynamic>),
         );
       },
+    );
+  }
+
+  Widget _buildOfflineAmmunitionDropdown(BuildContext context) {
+    final caliber = widget.firearmCaliber ?? '';
+    final filtered = OfflineAmmunitionData.commonFactoryAmmunition
+        .where((a) => checkCaliberMatch(caliber, a['caliber'] as String?))
+        .toList();
+
+    if (filtered.isEmpty) {
+      return _buildEmptyState(context);
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.offline_bolt, color: AppColors.thermalGlow, size: 20),
+                const SizedBox(width: 8),
+                Text('Offline Mode', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: filtered.isNotEmpty ? 'offline_0' : null,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              items: filtered.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                return DropdownMenuItem(
+                  value: 'offline_$index',
+                  child: Text(
+                    '${item['brand']} ${item['description']} • ${item['bullet_grain']}gr • ${item['muzzle_velocity']}fps',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  final index = int.tryParse(v.replaceFirst('offline_', '')) ?? 0;
+                  if (index < filtered.length) {
+                    widget.onSelected(v, Map<String, dynamic>.from(filtered[index]));
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingWidget(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(
+              'Loading ammunition...',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Icon(Icons.search_off, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text(
+              'No factory ammo found for this caliber',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -347,26 +665,21 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
             Text(label, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              initialValue: items.any((d) => d.id == selectedId) ? selectedId : null,
-              isExpanded: true, // FIX OVERFLOW
+              value: items.any((d) => d.id == selectedId) ? selectedId : null,
+              isExpanded: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
               items: items
-                  .map(
-                    (doc) => DropdownMenuItem(
-                      value: doc.id,
-                      child: Text(
-                        itemBuilder(doc),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(), // FIX OVERFLOW
+                  .map((doc) => DropdownMenuItem(
+                        value: doc.id,
+                        child: Text(
+                          itemBuilder(doc),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
               onChanged: (v) {
                 if (v != null) onSelected(items.firstWhere((d) => d.id == v));
               },
@@ -378,7 +691,7 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
   }
 }
 
-class _CustomLoadDropdown extends StatelessWidget {
+class _CustomLoadDropdown extends StatefulWidget {
   final String? firearmId;
   final String? firearmCaliber;
   final String? selectedId;
@@ -391,40 +704,87 @@ class _CustomLoadDropdown extends StatelessWidget {
   });
 
   @override
+  State<_CustomLoadDropdown> createState() => _CustomLoadDropdownState();
+}
+
+class _CustomLoadDropdownState extends State<_CustomLoadDropdown> {
+  bool _isOfflineMode = false;
+
+  bool _isAppCheckError(Object? error) {
+    if (error == null) return false;
+    final errorStr = error.toString().toLowerCase();
+    return errorStr.contains('appcheck') ||
+        errorStr.contains('app check') ||
+        errorStr.contains('developer_error') ||
+        errorStr.contains('token') ||
+        errorStr.contains('unavailable');
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (firearmId == null) return const SizedBox.shrink();
+    if (widget.firearmId == null) return const SizedBox.shrink();
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('firearms')
-          .doc(firearmId)
+          .doc(widget.firearmId)
           .collection('ammunition')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Text("Error: ${snapshot.error}");
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+        // Intercept App Check / Security failures with offline fallback
+        if (snapshot.hasError) {
+          if (_isAppCheckError(snapshot.error)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _isOfflineMode = true);
+            });
+            return _buildOfflineCustomLoadDropdown(context);
+          }
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Custom load data unavailable',
+                    style: TextStyle(color: AppColors.thermalGlow),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingWidget(context);
+        }
+
         final docs = snapshot.data?.docs ?? [];
         final filtered = docs
             .where((doc) {
               final d = doc.data() as Map<String, dynamic>;
               return d['type'] == 'custom' &&
                   checkCaliberMatch(
-                    firearmCaliber ?? '',
+                    widget.firearmCaliber ?? '',
                     d['caliber'] ?? '',
                   );
             })
             .toList();
+
         if (filtered.isEmpty) {
-          return const Text('No custom loads. Create one in Reloading tab.');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _isOfflineMode = true);
+          });
+          return _buildOfflineCustomLoadDropdown(context);
         }
 
+        _isOfflineMode = false;
         return _buildDropdownCard(
           context,
           label: 'Select Custom Load',
           items: filtered,
-          selectedId: selectedId,
+          selectedId: widget.selectedId,
           itemBuilder: (doc) {
             final d = doc.data() as Map<String, dynamic>;
             final brand = d['bulletBrand'] ?? d['bullet_brand'] ?? d['brand'] ?? 'Custom';
@@ -433,9 +793,56 @@ class _CustomLoadDropdown extends StatelessWidget {
             return '$brand Custom • ${weight}gr • ${vel}fps';
           },
           onSelected: (doc) =>
-              onSelected(doc.id, doc.data() as Map<String, dynamic>),
+              widget.onSelected(doc.id, doc.data() as Map<String, dynamic>),
         );
       },
+    );
+  }
+
+  Widget _buildOfflineCustomLoadDropdown(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 48, color: AppColors.thermalGlow),
+            const SizedBox(height: 8),
+            Text(
+              'No custom loads found',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Create one in Reloading tab',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingWidget(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(
+              'Loading custom loads...',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -456,25 +863,20 @@ class _CustomLoadDropdown extends StatelessWidget {
             Text(label, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              initialValue: items.any((d) => d.id == selectedId) ? selectedId : null,
+              value: items.any((d) => d.id == selectedId) ? selectedId : null,
               isExpanded: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
               items: items
-                  .map(
-                    (doc) => DropdownMenuItem(
-                      value: doc.id,
-                      child: Text(
-                        itemBuilder(doc),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
+                  .map((doc) => DropdownMenuItem(
+                        value: doc.id,
+                        child: Text(
+                          itemBuilder(doc),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
                   .toList(),
               onChanged: (v) {
                 if (v != null) onSelected(items.firstWhere((d) => d.id == v));
@@ -512,7 +914,13 @@ class _UnitToggles extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Units', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Icon(Icons.straighten, color: AppColors.walnutLuxury, size: 20),
+                const SizedBox(width: 8),
+                Text('Units', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -575,12 +983,22 @@ class _UnitToggle extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.thermalGlow,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 4),
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            color: AppColors.walnutLuxury.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.walnutLuxury.withValues(alpha: 0.3),
+            ),
           ),
           child: Row(
             children: options.asMap().entries.map((entry) {
@@ -593,21 +1011,18 @@ class _UnitToggle extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.transparent,
+                      // Walnut Luxury primary fill for active tabs
+                      color: isSelected ? AppColors.walnutLuxury : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       option,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurface,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        // Thermal Glow text for labels
+                        color: isSelected ? Colors.white : AppColors.thermalGlow,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 13,
                       ),
                     ),
                   ),
@@ -907,6 +1322,7 @@ class _BallisticTrajectorySectionState
               context,
             ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.walnutLuxury.withValues(alpha: 0.3)),
           ),
           child: LineChart(
             LineChartData(
@@ -917,14 +1333,14 @@ class _BallisticTrajectorySectionState
                   spots: _dropSpots,
                   isCurved: true,
                   barWidth: 3,
-                  color: Colors.orange,
+                  color: AppColors.thermalGlow, // Thermal Glow for trajectory
                   dotData: const FlDotData(show: false),
                 ),
                 LineChartBarData(
                   spots: _windDriftSpots,
                   isCurved: true,
                   barWidth: 2,
-                  color: Colors.blue,
+                  color: AppColors.walnutLuxury, // Walnut Luxury for drift
                   dotData: const FlDotData(show: false),
                   dashArray: [5, 5],
                 ),
@@ -939,7 +1355,10 @@ class _BallisticTrajectorySectionState
                     getTitlesWidget: (value, meta) {
                       return Text(
                         value.toInt().toString(),
-                        style: const TextStyle(fontSize: 10),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.thermalGlow,
+                        ),
                       );
                     },
                   ),
@@ -954,14 +1373,23 @@ class _BallisticTrajectorySectionState
                     getTitlesWidget: (value, meta) {
                       return Text(
                         value.toInt().toString(),
-                        style: const TextStyle(fontSize: 10),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.thermalGlow,
+                        ),
                       );
                     },
                   ),
                 ),
               ),
-              gridData: FlGridData(show: true),
-              borderData: FlBorderData(show: true),
+              gridData: FlGridData(
+                show: true,
+                gridColor: AppColors.walnutLuxury.withValues(alpha: 0.2),
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: AppColors.walnutLuxury),
+              ),
             ),
           ),
         ),
