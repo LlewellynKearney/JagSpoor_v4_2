@@ -655,8 +655,9 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
       final file = File('${dir.path}/invoice_${DateTime.now().millisecondsSinceEpoch}.pdf');
       await file.writeAsBytes(pdfBytes);
       
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: 'Jagspoor Invoice - ${_clientNameController.text}'),
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Jagspoor Invoice - ${_clientNameController.text}',
       );
 
       if (!mounted) return;

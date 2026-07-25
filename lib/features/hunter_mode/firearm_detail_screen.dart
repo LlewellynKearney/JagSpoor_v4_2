@@ -641,7 +641,7 @@ class RoundsLogScreen extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: entries.length + 1,
-                    separatorBuilder: (_, _) => Divider(
+                    separatorBuilder: (context, index) => Divider(
                       color: theme.subtitleColor.withValues(alpha: 0.15),
                       height: 1,
                     ),

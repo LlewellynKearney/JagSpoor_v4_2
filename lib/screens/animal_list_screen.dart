@@ -232,7 +232,7 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                           16 + MediaQuery.of(context).padding.bottom,
                         ),
                         itemCount: filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        separatorBuilder: (context, index) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final animal = filtered[index];
                           return _AnimalListCard(
