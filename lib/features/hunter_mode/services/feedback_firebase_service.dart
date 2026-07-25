@@ -72,26 +72,23 @@ class FeedbackFirebaseService {
   ///
   /// Parameters:
   /// - [subject]: Email subject line
-  /// - [body]: Email body content
+  /// - [body]: Email body content (plain text layout)
   ///
   /// Returns a [Future<bool>] indicating whether the URL was successfully launched.
   Future<bool> launchNativeEmail({
     required String subject,
     required String body,
   }) async {
-    final encodedSubject = Uri.encodeComponent(subject);
-    final encodedBody = Uri.encodeComponent(body);
-
-    final uri = Uri(
+    final Uri emailUri = Uri(
       scheme: 'mailto',
       path: _supportEmail,
       queryParameters: {
-        'subject': encodedSubject,
-        'body': encodedBody,
+        'subject': subject,
+        'body': body,
       },
     );
 
-    return launchUrl(uri, mode: LaunchMode.externalApplication);
+    return launchUrl(emailUri, mode: LaunchMode.externalApplication);
   }
 
   /// Builds a structured tactical brief email body for bug reports.
