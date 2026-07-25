@@ -36,12 +36,12 @@ class OfflineAmmunitionData {
   ];
 
   static const List<Map<String, dynamic>> commonCalibers = [
-    '.308 Winchester',
-    '.243 Winchester',
-    '6.5mm Creedmoor',
-    '.270 Winchester',
-    '.30-06 Springfield',
-    '.300 Win Mag',
+    {'id': 'cal_001', 'name': '.308 Winchester', 'caliber': '.308 Winchester'},
+    {'id': 'cal_002', 'name': '.243 Winchester', 'caliber': '.243 Winchester'},
+    {'id': 'cal_003', 'name': '6.5mm Creedmoor', 'caliber': '6.5mm Creedmoor'},
+    {'id': 'cal_004', 'name': '.270 Winchester', 'caliber': '.270 Winchester'},
+    {'id': 'cal_005', 'name': '.30-06 Springfield', 'caliber': '.30-06 Springfield'},
+    {'id': 'cal_006', 'name': '.300 Win Mag', 'caliber': '.300 Win Mag'},
   ];
 }
 
@@ -1384,7 +1384,14 @@ class _BallisticTrajectorySectionState
               ),
               gridData: FlGridData(
                 show: true,
-                gridColor: AppColors.walnutLuxury.withValues(alpha: 0.2),
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: AppColors.walnutLuxury.withValues(alpha: 0.2),
+                  strokeWidth: 1,
+                ),
+                getDrawingVerticalLine: (value) => FlLine(
+                  color: AppColors.walnutLuxury.withValues(alpha: 0.2),
+                  strokeWidth: 1,
+                ),
               ),
               borderData: FlBorderData(
                 show: true,
