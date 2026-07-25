@@ -7,6 +7,14 @@ import 'package:pdf/pdf.dart' as pdf;
 import 'package:printing/printing.dart';
 import '../../../services/ballistics_calculator.dart';
 
+// Design tokens for luxury hunting theme
+class AppColors {
+  static const Color walnutLuxury = Color(0xFF8B4513); // Primary graph bounds
+  static const Color thermalGlow = Color(0xFFC5A059); // Trace trajectories
+  static const Color midnightSlate = Color(0xFF2F3640); // Background accents
+  static const Color forestDrab = Color(0xFF556B2F); // Secondary elements
+}
+
 bool checkCaliberMatch(String? weaponCaliber, String? dbCaliber) {
   if (weaponCaliber == null || dbCaliber == null) return false;
   String clean(String s) => s.replaceAll(RegExp(r'[\s\-\.]'), '').toLowerCase();
@@ -34,6 +42,11 @@ class BallisticCalcScreen extends StatefulWidget {
 class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  
+  // Persistent stream references to prevent infinite rebuild loops
+  late Stream<QuerySnapshot> _firearmsStream;
+  late Stream<QuerySnapshot> _factoryAmmunitionStream;
+  
   String? _selectedFirearmId;
   String? _selectedAmmunitionId;
   Map<String, dynamic>? _selectedFirearm;
@@ -55,6 +68,18 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Initialize persistent stream references in lifecycle hook
+    final user = FirebaseAuth.instance.currentUser;
+    _firearmsStream = FirebaseFirestore.instance
+        .collection('firearms')
+        .where('ownerId', isEqualTo: user?.uid ?? '')
+        .snapshots();
+    
+    // Factory ammunition stream (single source for all factory ammo)
+    _factoryAmmunitionStream = FirebaseFirestore.instance
+        .collection('factory_ammunition')
+        .snapshots();
   }
 
   @override
@@ -91,7 +116,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               const SizedBox(height: 20),
 
               _FirearmDropdown(
-                userId: _currentUserId,
+                firearmsStream: _firearmsStream,
                 selectedId: _selectedFirearmId,
                 onSelected: (firearmId, firearmData) {
                   setState(() {
@@ -107,6 +132,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 const SizedBox(height: 12),
                 _ammoType == AmmoType.factory
                     ? _FactoryAmmunitionDropdown(
+                        factoryAmmunitionStream: _factoryAmmunitionStream,
                         firearmCaliber: _selectedFirearm?['caliber'],
                         selectedId: _selectedAmmunitionId,
                         onSelected: (ammoId, ammoData) {
@@ -167,29 +193,23 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 }
 
 class _FirearmDropdown extends StatelessWidget {
-  final String? userId;
+  final Stream<QuerySnapshot> firearmsStream;
   final String? selectedId;
   final Function(String, Map<String, dynamic>) onSelected;
   const _FirearmDropdown({
-    required this.userId,
+    required this.firearmsStream,
     required this.selectedId,
     required this.onSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Center(child: Text("Login required"));
-
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('firearms')
-          .where('ownerId', isEqualTo: user.uid)
-          .snapshots(), // ROOT COLLECTION
+      stream: firearmsStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) return Text("Error: ${snapshot.error}");
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+          return const Center(child: CircularProgressIndicator());
         }
         final firearms = snapshot.data?.docs ?? [];
         if (firearms.isEmpty) return _buildNoFirearmsWarning(context);
@@ -273,10 +293,12 @@ class _FirearmDropdown extends StatelessWidget {
 }
 
 class _FactoryAmmunitionDropdown extends StatelessWidget {
+  final Stream<QuerySnapshot> factoryAmmunitionStream;
   final String? firearmCaliber;
   final String? selectedId;
   final Function(String, Map<String, dynamic>) onSelected;
   const _FactoryAmmunitionDropdown({
+    required this.factoryAmmunitionStream,
     required this.firearmCaliber,
     required this.selectedId,
     required this.onSelected,
@@ -285,13 +307,11 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('factory_ammunition')
-          .snapshots(),
+      stream: factoryAmmunitionStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) return Text("Error: ${snapshot.error}");
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+          return _buildLoadingWidget(context);
         }
         final docs = snapshot.data?.docs ?? [];
         final filtered = docs
@@ -303,7 +323,7 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
             )
             .toList();
         if (filtered.isEmpty) {
-          return const Text('No factory ammo found for this caliber');
+          return _buildEmptyState(context);
         }
 
         return _buildDropdownCard(
@@ -314,11 +334,11 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
           itemBuilder: (doc) {
             final d = doc.data() as Map<String, dynamic>;
             final grain =
-                d['bullet_grain'] ?? d['bulletGrain'] ?? 'N/A'; // FIX null
+                d['bullet_grain'] ?? d['bulletGrain'] ?? 'N/A';
             final vel =
                 d['muzzle_velocity'] ??
                 d['muzzleVelocity'] ??
-                'N/A'; // FIX null
+                'N/A';
             final bc = d['bc'];
             final bcText = bc != null ? ' • BC: $bc' : '';
             return '${d['brand']} ${d['description']} • ${grain}gr • ${vel}fps$bcText';
@@ -327,6 +347,48 @@ class _FactoryAmmunitionDropdown extends StatelessWidget {
               onSelected(doc.id, doc.data() as Map<String, dynamic>),
         );
       },
+    );
+  }
+
+  Widget _buildLoadingWidget(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(
+              'Loading ammunition...',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Icon(Icons.search_off, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text(
+              'No factory ammo found for this caliber',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -403,7 +465,7 @@ class _CustomLoadDropdown extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) return Text("Error: ${snapshot.error}");
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+          return _buildLoadingWidget(context);
         }
         final docs = snapshot.data?.docs ?? [];
         final filtered = docs
@@ -417,7 +479,7 @@ class _CustomLoadDropdown extends StatelessWidget {
             })
             .toList();
         if (filtered.isEmpty) {
-          return const Text('No custom loads. Create one in Reloading tab.');
+          return _buildEmptyState(context);
         }
 
         return _buildDropdownCard(
@@ -436,6 +498,53 @@ class _CustomLoadDropdown extends StatelessWidget {
               onSelected(doc.id, doc.data() as Map<String, dynamic>),
         );
       },
+    );
+  }
+
+  Widget _buildLoadingWidget(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(
+              'Loading custom loads...',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 48, color: AppColors.thermalGlow),
+            const SizedBox(height: 8),
+            Text(
+              'No custom loads found',
+              style: TextStyle(
+                color: AppColors.thermalGlow,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Create one in Reloading tab',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -907,6 +1016,7 @@ class _BallisticTrajectorySectionState
               context,
             ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.walnutLuxury.withValues(alpha: 0.3)),
           ),
           child: LineChart(
             LineChartData(
@@ -917,14 +1027,14 @@ class _BallisticTrajectorySectionState
                   spots: _dropSpots,
                   isCurved: true,
                   barWidth: 3,
-                  color: Colors.orange,
+                  color: AppColors.thermalGlow, // Thermal Glow for trajectory
                   dotData: const FlDotData(show: false),
                 ),
                 LineChartBarData(
                   spots: _windDriftSpots,
                   isCurved: true,
                   barWidth: 2,
-                  color: Colors.blue,
+                  color: AppColors.walnutLuxury, // Walnut Luxury for drift
                   dotData: const FlDotData(show: false),
                   dashArray: [5, 5],
                 ),
@@ -939,7 +1049,10 @@ class _BallisticTrajectorySectionState
                     getTitlesWidget: (value, meta) {
                       return Text(
                         value.toInt().toString(),
-                        style: const TextStyle(fontSize: 10),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.thermalGlow,
+                        ),
                       );
                     },
                   ),
@@ -954,14 +1067,23 @@ class _BallisticTrajectorySectionState
                     getTitlesWidget: (value, meta) {
                       return Text(
                         value.toInt().toString(),
-                        style: const TextStyle(fontSize: 10),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.thermalGlow,
+                        ),
                       );
                     },
                   ),
                 ),
               ),
-              gridData: FlGridData(show: true),
-              borderData: FlBorderData(show: true),
+              gridData: FlGridData(
+                show: true,
+                gridColor: AppColors.walnutLuxury.withValues(alpha: 0.2),
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: AppColors.walnutLuxury),
+              ),
             ),
           ),
         ),
