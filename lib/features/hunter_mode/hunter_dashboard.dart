@@ -10,6 +10,7 @@ import 'hunter_profile_screen.dart';
 import 'package:jagspoor/features/game_guide/presentation/field_estimate_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/ballistic_calc_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/ammunition_screen.dart';
+import 'package:jagspoor/features/ballistics/presentation/scope_tools_bottom_sheet.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -159,6 +160,19 @@ class _HunterDashboardState extends State<HunterDashboard> {
           context,
           MaterialPageRoute(builder: (context) => const BallisticCalcScreen()),
         ),
+      ),
+      DashboardFeature(
+        id: 'scope_settings',
+        icon: Icons.center_focus_strong_rounded,
+        title: '🎯 Scope Settings & Tools',
+        description: 'Configure reticle, turrets, and parallax settings.',
+        onTap: (context, theme) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (sheetContext) => const ScopeToolsBottomSheet(),
+          );
+        },
       ),
     ];
 
