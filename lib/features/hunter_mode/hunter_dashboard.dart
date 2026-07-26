@@ -13,6 +13,7 @@ import 'package:jagspoor/features/ballistics/presentation/ammunition_screen.dart
 import 'package:jagspoor/features/ballistics/presentation/scope_tools_bottom_sheet.dart';
 import 'presentation/bug_report_modal.dart';
 import 'presentation/feature_suggestion_modal.dart';
+import 'presentation/saps_tracker_screen.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -173,6 +174,18 @@ class _HunterDashboardState extends State<HunterDashboard> {
             context: context,
             isScrollControlled: true,
             builder: (sheetContext) => const ScopeToolsBottomSheet(),
+          );
+        },
+      ),
+      DashboardFeature(
+        id: 'saps_tracker',
+        icon: Icons.badge_rounded,
+        title: '💳 SAPS Tracker & Competency',
+        description: 'Monitor firearm license and competency application statuses via daily automated scrapers.',
+        onTap: (context, theme) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SapsTrackerScreen()),
           );
         },
       ),
