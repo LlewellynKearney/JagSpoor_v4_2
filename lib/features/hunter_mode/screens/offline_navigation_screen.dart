@@ -24,6 +24,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   // Default center (South Africa - Kruger National Park area)
   static const LatLng _defaultCenter = LatLng(-24.5, 31.5);
   double _currentZoom = 10.0;
+  LatLng _currentCenter = _defaultCenter;
   
   // Offline tile download settings
   final List<LatLng> _preDownloadedMarkers = [];
@@ -61,34 +62,52 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   void _onMapReady() {
-    setState(() {
-      _isMapReady = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _isMapReady = true;
+          _currentCenter = _mapController.camera.center;
+        });
+      }
     });
   }
 
   void _zoomIn() {
     if (_currentZoom < 18 && _isMapReady) {
-      setState(() {
-        _currentZoom += 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _currentZoom += 1;
+          });
+          _mapController.move(_currentCenter, _currentZoom);
+        }
       });
-      _mapController.move(_mapController.camera.center, _currentZoom);
     }
   }
 
   void _zoomOut() {
     if (_currentZoom > 3 && _isMapReady) {
-      setState(() {
-        _currentZoom -= 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _currentZoom -= 1;
+          });
+          _mapController.move(_currentCenter, _currentZoom);
+        }
       });
-      _mapController.move(_mapController.camera.center, _currentZoom);
     }
   }
 
   void _centerOnSouthAfrica() {
     if (_isMapReady) {
-      _mapController.move(_defaultCenter, 10.0);
-      setState(() {
-        _currentZoom = 10.0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _currentZoom = 10.0;
+            _currentCenter = _defaultCenter;
+          });
+          _mapController.move(_defaultCenter, 10.0);
+        }
       });
     }
   }
@@ -363,7 +382,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                 ),
                 Text(
                   _isMapReady
-                      ? '${_mapController.camera.center.latitude.toStringAsFixed(5)}, ${_mapController.camera.center.longitude.toStringAsFixed(5)}'
+                      ? '${_currentCenter.latitude.toStringAsFixed(5)}, ${_currentCenter.longitude.toStringAsFixed(5)}'
                       : 'Loading...',
                   style: TextStyle(
                     color: theme.textColor,
