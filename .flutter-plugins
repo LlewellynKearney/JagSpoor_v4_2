@@ -5,6 +5,7 @@ camera_avfoundation=/home/openhands/.pub-cache/hosted/pub.dev/camera_avfoundatio
 camera_web=/home/openhands/.pub-cache/hosted/pub.dev/camera_web-0.3.5/
 cloud_firestore=/home/openhands/.pub-cache/hosted/pub.dev/cloud_firestore-6.6.0/
 cloud_firestore_web=/home/openhands/.pub-cache/hosted/pub.dev/cloud_firestore_web-5.6.0/
+connectivity_plus=/home/openhands/.pub-cache/hosted/pub.dev/connectivity_plus-7.3.1/
 file_selector_linux=/home/openhands/.pub-cache/hosted/pub.dev/file_selector_linux-0.9.3+2/
 file_selector_macos=/home/openhands/.pub-cache/hosted/pub.dev/file_selector_macos-0.9.4+3/
 file_selector_windows=/home/openhands/.pub-cache/hosted/pub.dev/file_selector_windows-0.9.3+4/

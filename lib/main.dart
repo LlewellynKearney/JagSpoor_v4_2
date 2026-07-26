@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // ADDED
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/splash_screen.dart';
@@ -16,6 +17,7 @@ import 'features/hunter_mode/add_trophy_screen.dart';
 import 'features/hunter_mode/edit_trophy_screen.dart';
 import 'features/outfitter_mode/outfitter_dashboard.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
+import 'features/hunter_mode/services/offline_sync_queue.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +33,17 @@ Future<void> main() async {
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
     );
+
+    // Network connectivity listener - auto-syncs offline queue when connection restored
+    Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) async {
+      if (results.isNotEmpty && results.first != ConnectivityResult.none) {
+        debugPrint('📶 Network link restored. Flushing offline cache data queue...');
+        final result = await OfflineSyncQueue.instance.processQueueWithInternet();
+        if (result.successCount > 0) {
+          debugPrint('✅ Synced ${result.successCount} pending actions directly to Firestore!');
+        }
+      }
+    });
 
     // Temporary database populator hook - RUNS ONCE
     WidgetsBinding.instance.addPostFrameCallback((_) async {
