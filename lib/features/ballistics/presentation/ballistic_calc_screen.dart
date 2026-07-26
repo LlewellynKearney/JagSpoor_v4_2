@@ -195,8 +195,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   double _temperatureCelsius = 20.0;
   double _zeroDistanceMeters = 100.0;
 
-  // Muzzle velocity and bullet weight controls (v17.1)
-  double _muzzleVelocityMs = 820.0; // Range: 400-1200 m/s, Default: 820
+  // Muzzle velocity and bullet weight controls (v17.4)
+  double _muzzleVelocityFps = 2700.0; // Range: 1300-4000 fps, Default: 2700
   double _bulletWeightGrains = 150.0; // Range: 30-300 grains, Default: 150
 
   final List<Map<String, dynamic>> _fallbackAmmunitionCatalog = [
@@ -423,17 +423,17 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
               const SizedBox(height: 16),
 
-              // Muzzle Velocity and Bullet Weight Controls (v17.1)
+              // Muzzle Velocity and Bullet Weight Controls (v17.4)
               _buildHardwareDropdownContainer(
-                label: '🚀 Ballistic Load Parameters',
+                label: '🚀 MUZZLE VELOCITY (fps)',
                 child: Column(
                   children: [
                     _buildParameterRow(
-                        'Muzzle Velocity (m/s)',
-                        _muzzleVelocityMs,
-                        400,
-                        1200,
-                        (v) => setState(() => _muzzleVelocityMs = v)),
+                        'Muzzle Velocity (fps)',
+                        _muzzleVelocityFps,
+                        1300,
+                        4000,
+                        (v) => setState(() => _muzzleVelocityFps = v)),
                     const SizedBox(height: 8),
                     _buildParameterRow(
                         'Bullet Weight (Grains)',
@@ -488,11 +488,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     );
   }
 
-  /// Builds the analytics summary footer card with trajectory telemetry data (v17.1)
+  /// Builds the analytics summary footer card with trajectory telemetry data (v17.4)
   Widget _buildAnalyticsSummaryCard() {
     // Calculate values for display
-    final double muzzleVelocity = _muzzleVelocityMs;
+    final double muzzleVelocityFps = _muzzleVelocityFps;
     final double bulletWeight = _bulletWeightGrains;
+
+    // Convert fps to m/s for internal physics calculations
+    final double internalMuzzleVelocityMs = muzzleVelocityFps * 0.3048;
 
     final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
             _selectedAmmunitionData?['bc'] ??
@@ -500,7 +503,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         .toDouble();
 
     final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
-      muzzleVelocityMs: muzzleVelocity,
+      muzzleVelocityMs: internalMuzzleVelocityMs,
       ballisticCoefficient: bc,
       bulletWeightGrains: bulletWeight,
       zeroDistanceMeters: _zeroDistanceMeters,
@@ -566,7 +569,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           const SizedBox(height: 12),
           _buildSummaryRow(
             'Selected Cartridge Load Weight:',
-            '${bulletWeight.toStringAsFixed(0)} Grains @ ${muzzleVelocity.toStringAsFixed(0)} m/s Muzzle Speed',
+            '${bulletWeight.toStringAsFixed(0)} Grains @ ${muzzleVelocityFps.toStringAsFixed(0)} fps Muzzle Speed',
           ),
           const SizedBox(height: 8),
           _buildSummaryRow(
@@ -669,10 +672,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   }
 
   Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double v0 = (_selectedAmmunitionData?['velocityMs'] ??
+    final double v0Fps = (_selectedAmmunitionData?['velocityMs'] ??
             _selectedAmmunitionData?['muzzleVelocity'] ??
             _selectedAmmunitionData?['velocity'] ??
-            820.0)
+            _muzzleVelocityFps)
         .toDouble();
 
     final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
@@ -680,11 +683,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
             0.45)
         .toDouble();
 
-    final double muzzleVelocity = v0;
+    // Use the slider fps value, converting to m/s for internal physics
+    final double internalMuzzleVelocityMs = _muzzleVelocityFps * 0.3048;
     final double ballisticCoef = bc;
 
     final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
-      muzzleVelocityMs: muzzleVelocity,
+      muzzleVelocityMs: internalMuzzleVelocityMs,
       ballisticCoefficient: ballisticCoef,
       bulletWeightGrains: _bulletWeightGrains,
       zeroDistanceMeters: _zeroDistanceMeters,
