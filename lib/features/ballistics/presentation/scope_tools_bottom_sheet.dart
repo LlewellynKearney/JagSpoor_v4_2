@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' show sin, cos, tan, atan2, sqrt, pi, max, min;
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import '../../../core/theme/app_theme.dart';
