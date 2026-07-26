@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "license_applications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hunterId", "order": "ASCENDING" },
+        { "fieldPath": "lastChecked", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
