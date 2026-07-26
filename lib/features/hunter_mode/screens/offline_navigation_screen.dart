@@ -72,12 +72,11 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
   void _onMapReady() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() {
-          _isMapReady = true;
-          _currentCenter = _mapController.camera.center;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isMapReady = true;
+        _currentCenter = _defaultCenter;
+      });
     });
   }
 
@@ -303,6 +302,16 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   Future<void> _downloadAreaTiles() async {
+    if (!_isMapReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Map is still loading...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isDownloadingTiles = true);
     
     // Simulate tile download for the visible area
