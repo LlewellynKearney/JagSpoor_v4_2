@@ -82,8 +82,7 @@ service cloud.firestore {
     // 💳 SAPS LICENSE & COMPETENCY TRACKER PERMISSIONS
     // ==========================================
     match /license_applications/{docId} {
-      allow create: if request.auth != null && request.resource.data.hunterId == request.auth.uid;
-      allow read, update, delete: if request.auth != null && resource.data.hunterId == request.auth.uid;
+      allow read, write: if request.auth != null;
     }
 
     // Outfitter sub-collection tracking layout
