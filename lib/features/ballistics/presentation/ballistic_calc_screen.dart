@@ -312,11 +312,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   final docs = snapshot.data!.docs;
                   return _buildHardwareDropdownContainer(
                     label: 'Select Firearm Vault Location',
-                    child: DropdownButtonHideUnderline(
+                                          child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        hint: const Text('CHOOSE FIREARM',
-                            style: TextStyle(color: Colors.white70)),
+                        hint: Text('CHOOSE FIREARM',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                         dropdownColor: JagspoorTheme.hudCardBackground,
                         value: _selectedFirearmId,
                         items: docs.map((doc) {
@@ -337,7 +337,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                             value: doc.id,
                             child: Text(
                               '$make $model • [$caliber]',
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                             ),
                           );
                         }).toList(),
@@ -366,23 +366,32 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('RANGE',
+                        Text('RANGE',
                             style:
-                                TextStyle(color: Colors.white70, fontSize: 12)),
+                                TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12)),
                         Text('${_targetRangeMeters.toInt()} m',
                             style: TextStyle(
                                 color: JagspoorTheme.thermalGlow,
                                 fontWeight: FontWeight.bold)),
                       ],
                     ),
-                    Slider(
-                      value: _targetRangeMeters,
-                      min: 50,
-                      max: 1000,
-                      divisions: 19,
-                      activeColor: JagspoorTheme.thermalGlow,
-                      inactiveColor: JagspoorTheme.hudCardBackground,
-                      onChanged: (v) => setState(() => _targetRangeMeters = v),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: Theme.of(context).colorScheme.primary,
+                        inactiveTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.24),
+                        thumbColor: Theme.of(context).colorScheme.secondary,
+                        overlayColor: Theme.of(context).colorScheme.secondary.withOpacity(0.12),
+                        valueIndicatorColor: Theme.of(context).colorScheme.primary,
+                        activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                        inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.12),
+                      ),
+                      child: Slider(
+                        value: _targetRangeMeters,
+                        min: 50,
+                        max: 1000,
+                        divisions: 19,
+                        onChanged: (v) => setState(() => _targetRangeMeters = v),
+                      ),
                     ),
                   ],
                 ),
@@ -624,8 +633,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 12, letterSpacing: 1.2)),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface, fontSize: 12, letterSpacing: 1.2)),
           const SizedBox(height: 8),
           child,
         ],
@@ -640,26 +649,35 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         Expanded(
           flex: 2,
           child: Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12)),
         ),
         Expanded(
           flex: 3,
-          child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            divisions: ((max - min) / 10).round(),
-            activeColor: JagspoorTheme.thermalGlow,
-            inactiveColor: JagspoorTheme.walnutLuxury.withAlpha(77),
-            onChanged: onChanged,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Theme.of(context).colorScheme.primary,
+              inactiveTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.24),
+              thumbColor: Theme.of(context).colorScheme.secondary,
+              overlayColor: Theme.of(context).colorScheme.secondary.withOpacity(0.12),
+              valueIndicatorColor: Theme.of(context).colorScheme.primary,
+              activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+              inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.12),
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              divisions: ((max - min) / 10).round(),
+              onChanged: onChanged,
+            ),
           ),
         ),
         SizedBox(
           width: 60,
           child: Text(
             value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1),
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
             textAlign: TextAlign.right,
           ),
         ),
