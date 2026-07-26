@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/rifle_profile.dart';
@@ -51,6 +52,11 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   // Gyro barrel angle settings
   double _barrelAngle = 0.0; // degrees
   double _lineOfSightDistance = 200.0; // meters
+
+  // Gyroscope sensor state (v20.1)
+  StreamSubscription<AccelerometerEvent>? _gyroLevelerSubscription;
+  bool _isLiveGyroRadarActive = false;
+  double _sensorPitchDegrees = 0.0;
   
   // AI target scanner settings
   double _targetDistance = 100.0; // meters
@@ -83,6 +89,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
   @override
   void dispose() {
+    // Cleanly cancel the gyro subscription to eliminate battery drain
+    _gyroLevelerSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -123,6 +131,56 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       clickValueUnit: _clickValue,
     );
     setState(() => _gyroResult = result);
+  }
+
+  /// Toggles the live gyroscope leveler sensor (v20.1)
+  void _toggleLiveGyroLeveler(bool active) {
+    if (active) {
+      // Start listening to accelerometer events
+      _gyroLevelerSubscription = accelerometerEventStream().listen(
+        (AccelerometerEvent event) {
+          // Calculate vertical incline angle from raw physical gravity metrics
+          // Device orientation when rested flat along rifle chassis:
+          //   - event.x: lateral acceleration (left/right tilt)
+          //   - event.z: vertical acceleration (forward/backward tilt)
+          final double calculatedPitch = math.atan2(-event.x, event.z) * 180.0 / math.pi;
+          
+          // Clamp values securely between -45.0 and 45.0 to filter mechanical tracking spikes
+          final double clampedPitch = calculatedPitch.clamp(-45.0, 45.0);
+          
+          // Update sensor pitch value for display
+          _sensorPitchDegrees = clampedPitch;
+          
+          // Map live sensor reading directly to barrel angle variable
+          setState(() {
+            _barrelAngle = clampedPitch;
+          });
+          
+          // Recalculate gyro values with live sensor data
+          _updateGyroCalculation();
+        },
+        onError: (error) {
+          debugPrint('Gyroscope sensor error: $error');
+        },
+      );
+      
+      setState(() {
+        _isLiveGyroRadarActive = true;
+      });
+      
+      debugPrint('Gyro radar leveler activated - hardware accelerometer streaming');
+    } else {
+      // Cancel the subscription to eliminate battery drain in the field
+      _gyroLevelerSubscription?.cancel();
+      _gyroLevelerSubscription = null;
+      
+      setState(() {
+        _isLiveGyroRadarActive = false;
+        _sensorPitchDegrees = 0.0;
+      });
+      
+      debugPrint('Gyro radar leveler deactivated - hardware accelerometer stream stopped');
+    }
   }
 
   void _runTargetScan() {
@@ -876,6 +934,93 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
           const SizedBox(height: 24),
 
+          // ⚡ ACTIVATE CORE GYRO RADAR LEVELER Toggle Card (v20.1)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _isLiveGyroRadarActive 
+                  ? Colors.green.withValues(alpha: 0.2)
+                  : const Color(0xFF8B4513).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _isLiveGyroRadarActive
+                    ? Colors.green
+                    : const Color(0xFFC5A059).withValues(alpha: 0.3),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: Row(
+                    children: [
+                      Icon(
+                        _isLiveGyroRadarActive 
+                            ? Icons.sensors 
+                            : Icons.sensors_off,
+                        color: const Color(0xFFC5A059),
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          '⚡ ACTIVATE CORE GYRO RADAR LEVELER',
+                          style: TextStyle(
+                            color: Color(0xFFC5A059),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: _isLiveGyroRadarActive
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber, 
+                                   color: Colors.amber, 
+                                   size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '⚠️ HARDWARE GYRO ACTIVE • PLACE FLAT ON BARREL CHASSIS',
+                                  style: TextStyle(
+                                    color: Colors.amber,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Uses built-in accelerometer for real-time pitch detection',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                  value: _isLiveGyroRadarActive,
+                  activeColor: const Color(0xFFC5A059),
+                  activeTrackColor: const Color(0xFFC5A059).withValues(alpha: 0.5),
+                  inactiveThumbColor: Colors.grey,
+                  inactiveTrackColor: Colors.grey.withValues(alpha: 0.3),
+                  onChanged: _toggleLiveGyroLeveler,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // Barrel Angle Slider
           Container(
             padding: const EdgeInsets.all(16),
@@ -901,10 +1046,13 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                         divisions: 90,
                         activeColor: const Color(0xFFC5A059),
                         inactiveColor: Colors.grey.withValues(alpha: 0.3),
-                        onChanged: (v) {
-                          setState(() => _barrelAngle = v);
-                          _updateGyroCalculation();
-                        },
+                        // Disable slider when gyro radar is active
+                        onChanged: _isLiveGyroRadarActive 
+                            ? null 
+                            : (v) {
+                                setState(() => _barrelAngle = v);
+                                _updateGyroCalculation();
+                              },
                       ),
                     ),
                     const Text('+45°', style: TextStyle(color: Colors.white54)),
@@ -918,10 +1066,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   min: 50.0,
                   max: 500.0,
                   divisions: 45,
-                  onChanged: (v) {
-                    setState(() => _lineOfSightDistance = v);
-                    _updateGyroCalculation();
-                  },
+                  onChanged: _isLiveGyroRadarActive 
+                      ? null 
+                      : (v) {
+                          setState(() => _lineOfSightDistance = v);
+                          _updateGyroCalculation();
+                        },
                 ),
               ],
             ),
