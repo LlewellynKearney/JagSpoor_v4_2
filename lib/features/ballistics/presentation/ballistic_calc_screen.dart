@@ -195,7 +195,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   double _temperatureCelsius = 20.0;
   double _zeroDistanceMeters = 100.0;
 
-  // Muzzle velocity and bullet weight controls (v17.4)
+  // Muzzle velocity and bullet weight controls (v19.0)
   double _muzzleVelocityFps = 2700.0; // Range: 1300-4000 fps, Default: 2700
   double _bulletWeightGrains = 150.0; // Range: 30-300 grains, Default: 150
 
@@ -423,7 +423,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
               const SizedBox(height: 16),
 
-              // Muzzle Velocity and Bullet Weight Controls (v17.4)
+              // Muzzle Velocity and Bullet Weight Controls (v19.0)
               _buildHardwareDropdownContainer(
                 label: '🚀 MUZZLE VELOCITY (fps)',
                 child: Column(
@@ -488,7 +488,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     );
   }
 
-  /// Builds the analytics summary footer card with trajectory telemetry data (v17.4)
+  /// Builds the analytics summary footer card with trajectory telemetry data (v19.0)
   Widget _buildAnalyticsSummaryCard() {
     // Calculate values for display
     final double muzzleVelocityFps = _muzzleVelocityFps;

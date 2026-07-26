@@ -1,5 +1,5 @@
 // ============================================================================
-// Bluetooth Mesh Sync Engine Test Suite v16.0
+// Bluetooth Mesh Sync Engine Test Suite v19.0
 // Validates offline peer-to-peer BLE mesh synchronization functionality
 // ============================================================================
 
@@ -127,7 +127,7 @@ class TestMeshSyncPayload {
 
 void runBluetoothMeshTests() {
   print('=' * 70);
-  print('BLUETOOTH MESH SYNC TEST SUITE v16.0');
+  print('BLUETOOTH MESH SYNC TEST SUITE v19.0');
   print('Testing offline peer-to-peer BLE mesh synchronization');
   print('=' * 70);
 
@@ -642,7 +642,7 @@ void runBluetoothMeshTests() {
   // ========================================================================
   print('');
   print('=' * 70);
-  print('BLUETOOTH MESH SYNC TEST SUMMARY v16.0');
+  print('BLUETOOTH MESH SYNC TEST SUMMARY v19.0');
   print('=' * 70);
   print('Total Tests: ${passed + failed}');
   print('Passed: $passed');
