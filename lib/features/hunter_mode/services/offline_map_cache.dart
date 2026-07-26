@@ -18,7 +18,7 @@ class OfflineMapCache {
     cacheOptions = CacheOptions(
       store: _cacheStore,
       policy: CachePolicy.refreshForceCache, // Grab local storage if cell networks drop out completely
-      hitCacheOnErrorExcept: [StatusCode.badGateway, StatusCode.internalServerError],
+      hitCacheOnErrorExcept: [500, 502, 503, 504],
       maxStale: const Duration(days: 30), // Maintain map segments for up to 30 days offline
       priority: CachePriority.high,
     );

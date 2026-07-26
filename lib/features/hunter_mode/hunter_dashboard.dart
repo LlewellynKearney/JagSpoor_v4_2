@@ -15,6 +15,8 @@ import 'presentation/bug_report_modal.dart';
 import 'presentation/feature_suggestion_modal.dart';
 import 'presentation/saps_tracker_screen.dart';
 import 'screens/mesh_radar_screen.dart';
+import 'screens/carcass_matrix_screen.dart';
+import 'screens/offline_navigation_screen.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -198,6 +200,26 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const MeshRadarScreen()),
+        ),
+      ),
+      DashboardFeature(
+        id: 'carcass_matrix',
+        icon: Icons.inventory_2_rounded,
+        title: '🥩 Slaughterhouse Carcass Matrix',
+        description: 'Track hanging game, cold storage positions, and field-to-hanging weight ratios.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => CarcassMatrixScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'offline_map',
+        icon: Icons.map_rounded,
+        title: '🗺️ Off-Grid Topographic Map',
+        description: 'OpenTopoMap contours cached for complete offline navigation in the field.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OfflineNavigationScreen(theme: theme)),
         ),
       ),
       DashboardFeature(

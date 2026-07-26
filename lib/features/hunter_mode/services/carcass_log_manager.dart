@@ -34,8 +34,8 @@ class CarcassLogManager {
   Stream<QuerySnapshot> getActiveChillerLogs() {
     return _firestore
         .collection('carcass_logs')
-        .where('hunterId', '==', _auth.currentUser?.uid)
-        .where('status', '==', 'Hanging')
+        .where('hunterId', isEqualTo: _auth.currentUser?.uid)
+        .where('status', isEqualTo: 'Hanging')
         .snapshots();
   }
 }

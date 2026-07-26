@@ -80,6 +80,8 @@ dependencies:
 
   # Tile caching for offline map support
   flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  dio: ^5.4.0
   dio_cache_interceptor: ^3.5.0
 
 dev_dependencies:
