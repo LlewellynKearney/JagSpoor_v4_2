@@ -34,8 +34,22 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
   late TextEditingController _associationNoController;
   late TextEditingController _motivationController;
 
+  // License type selection
+  String _selectedLicenseType = 'section_16';
   bool _isLoadingProfile = true;
   bool _isGeneratingPdf = false;
+
+  static const Map<String, String> _licenseTypeLabels = {
+    'section_13': 'Section 13 – Self-Defence',
+    'section_15': 'Section 15 – Occasional Sport',
+    'section_16': 'Section 16 – Dedicated Hunting',
+  };
+
+  static const Map<String, String> _motivationTemplates = {
+    'section_13': 'Applicant requires this firearm for personal protection and self-defence as provided under Section 13 of the Firearms Control Act 60 of 2000. The applicant has undergone the required competency assessment and meets all legal requirements for possession of a firearm for self-defence purposes.',
+    'section_15': 'Applicant continues active participation in occasional sport shooting activities as registered with accredited shooting club under FCA 60 of 2000.',
+    'section_16': 'Applicant continues active participation in dedicated hunting and sport shooting activities as registered with accredited hunting association under FCA 60 of 2000.',
+  };
 
   @override
   void initState() {
@@ -50,10 +64,19 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
     _safeTypeController = TextEditingController(text: 'Wall-mounted SABS 953-1 B1 Safe (Floor Anchored)');
     _associationNoController = TextEditingController();
     _motivationController = TextEditingController(
-      text: 'Applicant continues active participation in dedicated hunting and sport shooting activities as registered with accredited hunting association under FCA 60 of 2000.',
+      text: _motivationTemplates['section_16']!,
     );
 
     _loadHunterProfile();
+  }
+
+  void _onLicenseTypeChanged(String? value) {
+    if (value != null) {
+      setState(() {
+        _selectedLicenseType = value;
+        _motivationController.text = _motivationTemplates[value] ?? '';
+      });
+    }
   }
 
   @override
@@ -232,6 +255,25 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
+                      // License Type Dropdown
+                      DropdownButtonFormField<String>(
+                        value: _selectedLicenseType,
+                        decoration: InputDecoration(
+                          labelText: 'License Application Type',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          prefixIcon: Icon(Icons.policy_outlined, color: theme.accentColor),
+                        ),
+                        items: _licenseTypeLabels.entries
+                            .map((e) => DropdownMenuItem(
+                                  value: e.key,
+                                  child: Text(e.value, style: TextStyle(color: theme.textColor)),
+                                ))
+                            .toList(),
+                        onChanged: _onLicenseTypeChanged,
+                      ),
+                      const SizedBox(height: 12),
                       _buildTextField(
                         controller: _policeStationController,
                         label: 'Nearest Police Station (Home DFO Office)',

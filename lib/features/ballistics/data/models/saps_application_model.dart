@@ -115,6 +115,7 @@ class SapsApplication {
   /// Application type options for the dropdown selector.
   static const List<String> applicationTypes = [
     'Competency Certificate',
+    'Section 13 – Licence to possess a firearm for self-defence',
     'Section 15 Occasional Sport',
     'Section 16 Dedicated Hunting',
   ];
