@@ -78,6 +78,10 @@ dependencies:
   flutter_reactive_ble: ^5.5.0
   nearby_connections: ^4.3.0
 
+  # Tile caching for offline map support
+  flutter_map: ^7.0.2
+  dio_cache_interceptor: ^3.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
