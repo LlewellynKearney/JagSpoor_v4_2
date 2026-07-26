@@ -31,13 +31,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
 
   void _finish(Barcode barcode) {
     if (_handled) return;
-    final bytes = switch (barcode.rawDecodedBytes) {
-      DecodedBarcodeBytes(:final bytes) => bytes,
-      DecodedVisionBarcodeBytes(:final bytes) => bytes,
-      null => null,
-    };
-    final raw = barcode.rawValue ??
-        (bytes != null ? String.fromCharCodes(bytes) : '');
+    final List<int>? bytes = barcode.rawBytes;
+    if (bytes == null) return; // Guard against null scan readings safely
+    final raw = barcode.rawValue ?? String.fromCharCodes(bytes);
     if (raw.isEmpty) {
       setState(() => _status = 'Barcode found but could not be read. Try again.');
       return;
@@ -137,7 +133,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
             controller: _controller,
             onDetect: _onDetect,
             fit: BoxFit.cover,
-            errorBuilder: (context, error) => _CameraError(
+            errorBuilder: (context, error, child) => _CameraError(
               error: error,
               theme: theme,
               onPickGallery: _scanFromGallery,
