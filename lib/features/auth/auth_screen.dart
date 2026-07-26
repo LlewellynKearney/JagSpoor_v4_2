@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
 import 'role_selection_screen.dart';
+import 'screens/privacy_policy_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -21,6 +22,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoginMode = true;
   bool _obscurePassword = true;
   bool _keepMeSignedIn = false;
+  bool _hasAcceptedPrivacyPolicy = false;
   bool _isLoading = false;
 
   @override
@@ -32,6 +34,19 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _handleAuth() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // POPIA Compliance: Block registration until privacy policy is accepted
+    if (!_isLoginMode && !_hasAcceptedPrivacyPolicy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Submission Blocked: You must read and accept the Privacy & POPIA Policy before creating an account.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -247,6 +262,97 @@ class _AuthScreenState extends State<AuthScreen> {
                       onChanged: (val) =>
                           setState(() => _keepMeSignedIn = val ?? false),
                     ),
+                    // POPIA Compliance: Privacy Policy acceptance checkbox (registration only)
+                    if (!_isLoginMode) ...[
+                      const SizedBox(height: 16.0),
+                      Container(
+                        padding: const EdgeInsets.all(12.0),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _hasAcceptedPrivacyPolicy
+                                ? Colors.green.withValues(alpha: 0.5)
+                                : theme.colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: _hasAcceptedPrivacyPolicy,
+                              onChanged: (bool? value) {
+                                setState(() {
+                                  _hasAcceptedPrivacyPolicy = value ?? false;
+                                });
+                              },
+                              activeColor: Colors.green,
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const PrivacyPolicyScreen(),
+                                      ),
+                                    );
+                                  },
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style: TextStyle(
+                                        fontFamily: 'Mono',
+                                        fontSize: 11.0,
+                                        color: theme.colorScheme.onSurface,
+                                        height: 1.3,
+                                      ),
+                                      children: [
+                                        const TextSpan(text: 'I have read and accept the '),
+                                        TextSpan(
+                                          text: 'Compliant Privacy & POPIA Policy',
+                                          style: TextStyle(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.bold,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                        const TextSpan(text: ' (Required for registration)'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_hasAcceptedPrivacyPolicy)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 14),
+                              SizedBox(width: 4),
+                              Text(
+                                'Policy Accepted',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 24.0),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
