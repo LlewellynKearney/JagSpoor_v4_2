@@ -14,6 +14,7 @@ import 'package:jagspoor/features/ballistics/presentation/scope_tools_bottom_she
 import 'presentation/bug_report_modal.dart';
 import 'presentation/feature_suggestion_modal.dart';
 import 'presentation/saps_tracker_screen.dart';
+import 'screens/mesh_radar_screen.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -188,6 +189,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
             MaterialPageRoute(builder: (context) => const SapsTrackerScreen()),
           );
         },
+      ),
+      DashboardFeature(
+        id: 'offgrid_mesh_sync',
+        icon: Icons.radar_rounded,
+        title: '📡 Off-Grid Mesh Sync',
+        description: 'P2P Bluetooth telemetry and team radar without cell service.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const MeshRadarScreen()),
+        ),
       ),
       DashboardFeature(
         id: 'report_bug',
