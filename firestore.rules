@@ -78,6 +78,14 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.hunterId);
     }
 
+    // ==========================================
+    // 💳 SAPS LICENSE & COMPETENCY TRACKER PERMISSIONS
+    // ==========================================
+    match /license_applications/{docId} {
+      allow create: if request.auth != null && request.resource.data.hunterId == request.auth.uid;
+      allow read, update, delete: if request.auth != null && resource.data.hunterId == request.auth.uid;
+    }
+
     // Outfitter sub-collection tracking layout
     match /outfitter/{docId} {
       allow read, write: if isSignedIn();
