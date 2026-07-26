@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/carcass_log_manager.dart';
+import '../services/offline_sync_queue.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
   final ThemeController theme;
@@ -120,13 +121,45 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error logging carcass: $e'),
-            backgroundColor: Colors.red,
-          ),
+      // Network link dropped - write to local SQLite storage instead
+      try {
+        await OfflineSyncQueue.instance.enqueueAction(
+          'carcass_logs',
+          'CREATE',
+          {
+            'tagNumber': _tagNumberController.text.trim(),
+            'species': _selectedSpecies,
+            'fieldWeightKg': double.parse(_fieldWeightController.text.trim()),
+            'hangingWeightKg': double.parse(_hangingWeightController.text.trim()),
+            'coldStoragePosition': _selectedChillerPosition,
+            'status': 'Hanging',
+          },
         );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📱 Saved locally. Carcass queued for sync when back in range.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          _formKey.currentState!.reset();
+          _tagNumberController.clear();
+          _fieldWeightController.clear();
+          _hangingWeightController.clear();
+          setState(() {
+            _selectedSpecies = 'Impala';
+            _selectedChillerPosition = 'Chiller A - Hook 1';
+          });
+        }
+      } catch (queueError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error saving carcass: $queueError'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
