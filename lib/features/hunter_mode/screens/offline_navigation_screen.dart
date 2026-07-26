@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_map_cache.dart';
+import '../services/offline_sync_queue.dart';
 
 class OfflineNavigationScreen extends StatefulWidget {
   final ThemeController theme;
@@ -29,6 +32,12 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   // Offline tile download settings
   final List<LatLng> _preDownloadedMarkers = [];
   bool _isDownloadingTiles = false;
+
+  // Active waypoints on the map
+  final List<Marker> _activeWaypointsList = [];
+
+  // Waypoint type options
+  static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Other'];
 
   @override
   void initState() {
@@ -109,6 +118,187 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           _mapController.move(_defaultCenter, 10.0);
         }
       });
+    }
+  }
+
+  void _showWaypointCreationDialog(BuildContext context, LatLng position) {
+    final titleController = TextEditingController();
+    String selectedType = 'Kill Site';
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: widget.theme.cardColor,
+              title: Text(
+                '📍 Drop Waypoint',
+                style: TextStyle(color: widget.theme.textColor),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: titleController,
+                    style: TextStyle(color: widget.theme.textColor),
+                    decoration: InputDecoration(
+                      labelText: 'Waypoint Name',
+                      labelStyle: TextStyle(color: widget.theme.subtitleColor),
+                      hintText: 'e.g. Large Kudu Spoor',
+                      hintStyle: TextStyle(color: widget.theme.subtitleColor.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: InputDecoration(
+                      labelText: 'Waypoint Type',
+                      labelStyle: TextStyle(color: widget.theme.subtitleColor),
+                    ),
+                    dropdownColor: widget.theme.cardColor,
+                    style: TextStyle(color: widget.theme.textColor),
+                    items: _waypointTypes.map((type) {
+                      return DropdownMenuItem(value: type, child: Text(type));
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => selectedType = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '📍 ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
+                    style: TextStyle(
+                      color: widget.theme.subtitleColor,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text('Cancel', style: TextStyle(color: widget.theme.subtitleColor)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.theme.accentColor,
+                  ),
+                  onPressed: () async {
+                    if (titleController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a waypoint name')),
+                      );
+                      return;
+                    }
+
+                    Navigator.pop(dialogContext);
+                    await _saveWaypoint(
+                      titleController.text.trim(),
+                      selectedType,
+                      position,
+                    );
+                  },
+                  child: const Text('Save Waypoint'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _saveWaypoint(String name, String type, LatLng position) async {
+    try {
+      // Live Firestore write attempt
+      await FirebaseFirestore.instance.collection('waypoints').add({
+        'hunterId': FirebaseAuth.instance.currentUser?.uid,
+        'name': name,
+        'type': type,
+        'lat': position.latitude,
+        'lon': position.longitude,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Waypoint "$name" saved to cloud!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      // Network link dropped - fall back to offline sync queue instantly
+      try {
+        await OfflineSyncQueue.instance.enqueueAction(
+          'waypoints',
+          'CREATE',
+          {
+            'hunterId': FirebaseAuth.instance.currentUser?.uid,
+            'name': name,
+            'type': type,
+            'lat': position.latitude,
+            'lon': position.longitude,
+          },
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📱 Waypoint "$name" saved locally. Will sync when back in range.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        // Add to local map markers
+        _addWaypointMarker(name, type, position);
+      } catch (queueError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error saving waypoint: $queueError'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _addWaypointMarker(String name, String type, LatLng position) {
+    final iconData = _getWaypointIcon(type);
+    final marker = Marker(
+      point: position,
+      width: 40,
+      height: 40,
+      child: Icon(iconData, color: Colors.red, size: 32),
+    );
+
+    setState(() {
+      _activeWaypointsList.add(marker);
+    });
+  }
+
+  IconData _getWaypointIcon(String type) {
+    switch (type) {
+      case 'Kill Site':
+        return Icons.location_on;
+      case 'Camp':
+        return Icons.cabin;
+      case 'Spoor Track':
+        return Icons.directions_walk;
+      case 'Water Source':
+        return Icons.water_drop;
+      case 'Vehicle':
+        return Icons.directions_car;
+      default:
+        return Icons.push_pin;
     }
   }
 
@@ -289,6 +479,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             minZoom: 3,
             maxZoom: 18,
             onMapReady: _onMapReady,
+            onLongPress: (tapPosition, point) => _showWaypointCreationDialog(context, point),
             onPositionChanged: (position, hasGesture) {
               if (hasGesture && mounted) {
                 setState(() {
@@ -326,6 +517,11 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   ),
                 );
               }).toList(),
+            ),
+            
+            // Active user waypoint markers
+            MarkerLayer(
+              markers: _activeWaypointsList,
             ),
           ],
         ),
