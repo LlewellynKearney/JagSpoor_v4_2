@@ -362,7 +362,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   ),
                 ),
                 Text(
-                  '${_mapController.camera.center.latitude.toStringAsFixed(5)}, ${_mapController.camera.center.longitude.toStringAsFixed(5)}',
+                  _isMapReady
+                      ? '${_mapController.camera.center.latitude.toStringAsFixed(5)}, ${_mapController.camera.center.longitude.toStringAsFixed(5)}'
+                      : 'Loading...',
                   style: TextStyle(
                     color: theme.textColor,
                     fontWeight: FontWeight.w600,
