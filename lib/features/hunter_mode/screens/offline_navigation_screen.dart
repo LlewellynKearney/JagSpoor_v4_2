@@ -19,6 +19,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   
   bool _isInitialized = false;
   bool _showOfflineWarning = false;
+  bool _isMapReady = false;
   
   // Default center (South Africa - Kruger National Park area)
   static const LatLng _defaultCenter = LatLng(-24.5, 31.5);
@@ -32,6 +33,12 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   void initState() {
     super.initState();
     _initializeCache();
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
   }
 
   Future<void> _initializeCache() async {
@@ -53,8 +60,14 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     }
   }
 
+  void _onMapReady() {
+    setState(() {
+      _isMapReady = true;
+    });
+  }
+
   void _zoomIn() {
-    if (_currentZoom < 18) {
+    if (_currentZoom < 18 && _isMapReady) {
       setState(() {
         _currentZoom += 1;
       });
@@ -63,7 +76,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   void _zoomOut() {
-    if (_currentZoom > 3) {
+    if (_currentZoom > 3 && _isMapReady) {
       setState(() {
         _currentZoom -= 1;
       });
@@ -72,10 +85,12 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   void _centerOnSouthAfrica() {
-    _mapController.move(_defaultCenter, 10.0);
-    setState(() {
-      _currentZoom = 10.0;
-    });
+    if (_isMapReady) {
+      _mapController.move(_defaultCenter, 10.0);
+      setState(() {
+        _currentZoom = 10.0;
+      });
+    }
   }
 
   Future<void> _downloadAreaTiles() async {
@@ -254,6 +269,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             initialZoom: _currentZoom,
             minZoom: 3,
             maxZoom: 18,
+            onMapReady: _onMapReady,
             onPositionChanged: (position, hasGesture) {
               if (hasGesture && mounted) {
                 setState(() {
