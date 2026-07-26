@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import '../../../core/theme/app_theme.dart';
@@ -143,7 +143,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           // Device orientation when rested flat along rifle chassis:
           //   - event.x: lateral acceleration (left/right tilt)
           //   - event.z: vertical acceleration (forward/backward tilt)
-          final double calculatedPitch = math.atan2(-event.x, event.z) * 180.0 / math.pi;
+          final double calculatedPitch = atan2(-event.x, event.z) * 180.0 / pi;
           
           // Clamp values securely between -45.0 and 45.0 to filter mechanical tracking spikes
           final double clampedPitch = calculatedPitch.clamp(-45.0, 45.0);
