@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/carcass_log_manager.dart';
 import '../services/offline_sync_queue.dart';
+import 'meat_processing_screen.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
   final ThemeController theme;
@@ -464,58 +465,106 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.inventory_2_rounded, size: 18, color: theme.accentColor),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    species,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: theme.textColor,
-                      fontSize: 13,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MeatProcessingScreen(
+                theme: widget.theme,
+                prefillTagNumber: tagNumber,
+                prefillSpecies: species,
+                prefillHangingWeight: hangingWeight,
+              ),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.inventory_2_rounded, size: 18, color: theme.accentColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      species,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: theme.textColor,
+                        fontSize: 13,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tag: $tagNumber',
+                style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+              ),
+              Text(
+                position,
+                style: TextStyle(color: theme.accentColor, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Field', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
+                      Text('${fieldWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Hanging', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
+                      Text('${hangingWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.accentColor,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  icon: const Icon(Icons.restaurant_menu, size: 14),
+                  label: const Text(
+                    'PROCESS',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => MeatProcessingScreen(
+                          theme: widget.theme,
+                          prefillTagNumber: tagNumber,
+                          prefillSpecies: species,
+                          prefillHangingWeight: hangingWeight,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tag: $tagNumber',
-              style: TextStyle(color: theme.subtitleColor, fontSize: 11),
-            ),
-            Text(
-              position,
-              style: TextStyle(color: theme.accentColor, fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Field', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
-                    Text('${fieldWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('Hanging', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
-                    Text('${hangingWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
-                  ],
-                ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import 'services/battery_saver_manager.dart';
 
 class HunterProfileScreen extends StatefulWidget {
   final ThemeController theme;
@@ -44,6 +45,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   final _provincialPermitsController = TextEditingController();
 
   bool _hasFirstAid = false;
+  bool _isBatterySaverEnabled = false;
   String? _profileImageUrl;
   bool _isLoading = false;
   bool _isUploading = false;
@@ -53,6 +55,21 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   void initState() {
     super.initState();
     _loadUserProfile();
+    _loadBatterySaverState();
+  }
+
+  Future<void> _loadBatterySaverState() async {
+    final manager = BatterySaverManager();
+    final isEnabled = await manager.isBatterySaverEnabled();
+    if (mounted) {
+      setState(() => _isBatterySaverEnabled = isEnabled);
+    }
+  }
+
+  Future<void> _toggleBatterySaver(bool value) async {
+    final manager = BatterySaverManager();
+    await manager.toggleBatterySaver(value);
+    setState(() => _isBatterySaverEnabled = value);
   }
 
   @override
@@ -649,6 +666,70 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                     _provincialPermitsController,
                     'Active Provincial Permit Numbers',
                     'Comma-separated permit numbers',
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Off-Grid Battery Optimization Mode
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isBatterySaverEnabled
+                          ? Colors.orange.withValues(alpha: 0.1)
+                          : widget.theme.cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isBatterySaverEnabled
+                            ? Colors.orange
+                            : widget.theme.accentColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isBatterySaverEnabled
+                              ? Icons.battery_saver
+                              : Icons.battery_full,
+                          color: _isBatterySaverEnabled
+                              ? Colors.orange
+                              : widget.theme.accentColor,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Off-Grid Battery Optimization',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: widget.theme.textColor,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _isBatterySaverEnabled
+                                    ? '⚡ Performance mode active'
+                                    : '🔋 Energy conservation active',
+                                style: TextStyle(
+                                  color: _isBatterySaverEnabled
+                                      ? Colors.orange
+                                      : widget.theme.subtitleColor,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _isBatterySaverEnabled,
+                          onChanged: _toggleBatterySaver,
+                          activeThumbColor: Colors.orange,
+                          activeTrackColor: Colors.orange.withValues(alpha: 0.5),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   CheckboxListTile(
