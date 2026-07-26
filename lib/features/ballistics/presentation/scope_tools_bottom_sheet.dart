@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import '../../../core/theme/app_theme.dart';
@@ -137,7 +137,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void _toggleLiveGyroLeveler(bool active) {
     if (active) {
       // Start listening to accelerometer events
-      _gyroLevelerSubscription = accelerometerEventStream().listen(
+      _gyroLevelerSubscription = accelerometerEvents.listen(
         (AccelerometerEvent event) {
           // Calculate vertical incline angle from raw physical gravity metrics
           // Device orientation when rested flat along rifle chassis:
@@ -1046,13 +1046,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                         divisions: 90,
                         activeColor: const Color(0xFFC5A059),
                         inactiveColor: Colors.grey.withValues(alpha: 0.3),
-                        // Disable slider when gyro radar is active
-                        onChanged: _isLiveGyroRadarActive 
-                            ? null 
-                            : (v) {
-                                setState(() => _barrelAngle = v);
-                                _updateGyroCalculation();
-                              },
+                        onChanged: (v) {
+                          // Silent execution gate preserves values when gyro is active
+                          if (_isLiveGyroRadarActive) return;
+                          setState(() => _barrelAngle = v);
+                          _updateGyroCalculation();
+                        },
                       ),
                     ),
                     const Text('+45°', style: TextStyle(color: Colors.white54)),
@@ -1066,12 +1065,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   min: 50.0,
                   max: 500.0,
                   divisions: 45,
-                  onChanged: _isLiveGyroRadarActive 
-                      ? null 
-                      : (v) {
-                          setState(() => _lineOfSightDistance = v);
-                          _updateGyroCalculation();
-                        },
+                  onChanged: (v) {
+                    // Silent execution gate preserves values when gyro is active
+                    if (_isLiveGyroRadarActive) return;
+                    setState(() => _lineOfSightDistance = v);
+                    _updateGyroCalculation();
+                  },
                 ),
               ],
             ),

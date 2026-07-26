@@ -67,6 +67,9 @@ dependencies:
   # Hardware compass for tactical navigation
   flutter_compass: ^0.8.0
 
+  # Accelerometer and gyroscope sensors for gyro leveler (v20.2)
+  sensors_plus: ^6.1.1
+
   # Interactive ballistic trajectory charting
   fl_chart: ^0.68.0
   path: ^1.9.0
