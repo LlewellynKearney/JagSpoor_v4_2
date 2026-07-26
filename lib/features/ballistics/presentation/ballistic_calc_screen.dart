@@ -13,29 +13,17 @@ class JagspoorTheme {
   static Color tacticalDark = const Color(0xFF121212);
   static Color hudCardBackground = const Color(0xFF1E1E1E);
 
-  /// Updates theme colors from a ThemeController (hunter profile)
+  /// Updates theme colors dynamically from Theme.of(context) (hunter profile HUD settings)
   static void applyHunterTheme({
-    Color? backgroundColor,
-    Color? accentColor,
-    Color? textColor,
+    required Color backgroundColor,
+    required Color accentColor,
+    required Color cardColor,
+    required Color textColor,
   }) {
-    if (accentColor != null) thermalGlow = accentColor;
-    if (backgroundColor != null) {
-      tacticalDark = _darkenColor(backgroundColor, 0.3);
-      hudCardBackground = _darkenColor(backgroundColor, 0.2);
-    }
-    if (textColor != null) {
-      // Text color influence on other elements
-    }
-  }
-
-  static Color _darkenColor(Color color, double factor) {
-    return Color.fromARGB(
-      (color.a * 255).round(),
-      (color.r * 255 * (1 - factor)).round().clamp(0, 255),
-      (color.g * 255 * (1 - factor)).round().clamp(0, 255),
-      (color.b * 255 * (1 - factor)).round().clamp(0, 255),
-    );
+    thermalGlow = accentColor;
+    walnutLuxury = accentColor.withValues(alpha: 0.6);
+    tacticalDark = backgroundColor;
+    hudCardBackground = cardColor;
   }
 }
 
@@ -266,6 +254,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    JagspoorTheme.applyHunterTheme(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      accentColor: theme.colorScheme.primary,
+      cardColor: theme.cardColor,
+      textColor: theme.colorScheme.onSurface,
+    );
+
     return Scaffold(
       backgroundColor: JagspoorTheme.tacticalDark,
       appBar: AppBar(
@@ -672,12 +668,6 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   }
 
   Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double v0Fps = (_selectedAmmunitionData?['velocityMs'] ??
-            _selectedAmmunitionData?['muzzleVelocity'] ??
-            _selectedAmmunitionData?['velocity'] ??
-            _muzzleVelocityFps)
-        .toDouble();
-
     final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
             _selectedAmmunitionData?['bc'] ??
             0.45)

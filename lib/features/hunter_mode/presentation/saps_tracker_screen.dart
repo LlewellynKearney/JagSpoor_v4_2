@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../ballistics/data/models/saps_application_model.dart';
 
 /// SAPS License & Competency Application Tracker Screen.
@@ -167,7 +166,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                       const SizedBox(height: 12),
                       // Application Type Dropdown
                       DropdownButtonFormField<String>(
-                        value: _selectedApplicationType,
+                        initialValue: _selectedApplicationType,
                         decoration: InputDecoration(
                           labelText: 'Application Type',
                           border: OutlineInputBorder(
@@ -304,8 +303,8 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                           padding: const EdgeInsets.all(16),
                           itemCount: docs.length,
                           itemBuilder: (context, index) {
-                            final app =
-                                SapsApplication.fromFirestore(docs[index]);
+                            final app = SapsApplication.fromFirestore(
+                                docs[index] as DocumentSnapshot<Map<String, dynamic>>);
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: _ApplicationCard(application: app),

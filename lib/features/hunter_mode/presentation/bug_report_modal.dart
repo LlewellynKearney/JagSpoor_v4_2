@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../ballistics/presentation/ballistic_calc_screen.dart';
 import '../services/feedback_firebase_service.dart';
 
 /// BugReportModal provides a bottom sheet form for submitting bug reports.
-/// Styled with Walnut Luxury backgrounds and Thermal Glow accents.
+/// Dynamically styled via Theme.of(context) governed by Hunter Profile HUD settings.
 class BugReportModal extends StatefulWidget {
   const BugReportModal({super.key});
 
@@ -52,10 +51,10 @@ class _BugReportModalState extends State<BugReportModal> {
         body: emailBody,
       );
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to submit bug report: $e'),
@@ -71,12 +70,17 @@ class _BugReportModalState extends State<BugReportModal> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final cardBg = theme.cardColor;
+    final textColor = theme.colorScheme.onSurface;
+
     return Container(
       decoration: BoxDecoration(
-        color: JagspoorTheme.tacticalDark,
+        color: theme.scaffoldBackgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         border: Border.all(
-          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
+          color: primaryColor.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -104,7 +108,7 @@ class _BugReportModalState extends State<BugReportModal> {
                     children: [
                       Icon(
                         Icons.bug_report_rounded,
-                        color: JagspoorTheme.thermalGlow,
+                        color: primaryColor,
                         size: 24,
                       ),
                       const SizedBox(width: 12),
@@ -112,7 +116,7 @@ class _BugReportModalState extends State<BugReportModal> {
                         child: Text(
                           '🪲 REPORT BUG',
                           style: TextStyle(
-                            color: JagspoorTheme.thermalGlow,
+                            color: primaryColor,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.5,
@@ -120,7 +124,7 @@ class _BugReportModalState extends State<BugReportModal> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
+                        icon: Icon(Icons.close, color: textColor.withValues(alpha: 0.6)),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -128,14 +132,15 @@ class _BugReportModalState extends State<BugReportModal> {
                   const SizedBox(height: 24),
 
                   // Bug Title Field
-                  _buildSectionLabel('Bug Title'),
+                  _buildSectionLabel('Bug Title', primaryColor),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _titleController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: textColor),
                     decoration: _buildInputDecoration(
                       hintText: 'Enter a brief title for the bug',
                       prefixIcon: Icons.title,
+                      theme: theme,
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -147,23 +152,23 @@ class _BugReportModalState extends State<BugReportModal> {
                   const SizedBox(height: 20),
 
                   // Severity Level Dropdown
-                  _buildSectionLabel('Severity Level'),
+                  _buildSectionLabel('Severity Level', primaryColor),
                   const SizedBox(height: 8),
                   Container(
                     decoration: BoxDecoration(
-                      color: JagspoorTheme.walnutLuxury.withValues(alpha: 0.3),
+                      color: cardBg,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
+                        color: primaryColor.withValues(alpha: 0.3),
                       ),
                     ),
                     child: DropdownButtonFormField<String>(
-                      value: _selectedSeverity,
-                      dropdownColor: JagspoorTheme.tacticalDark,
-                      style: TextStyle(color: JagspoorTheme.thermalGlow),
-                      icon: Icon(Icons.arrow_drop_down, color: JagspoorTheme.thermalGlow),
+                      initialValue: _selectedSeverity,
+                      dropdownColor: theme.scaffoldBackgroundColor,
+                      style: TextStyle(color: primaryColor),
+                      icon: Icon(Icons.arrow_drop_down, color: primaryColor),
                       decoration: InputDecoration(
-                        prefixIcon: Icon(Icons.warning_amber_rounded, color: JagspoorTheme.thermalGlow),
+                        prefixIcon: Icon(Icons.warning_amber_rounded, color: primaryColor),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
@@ -173,7 +178,7 @@ class _BugReportModalState extends State<BugReportModal> {
                           child: Text(
                             level,
                             style: TextStyle(
-                              color: _getSeverityColor(level),
+                              color: _getSeverityColor(level, primaryColor),
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -189,15 +194,16 @@ class _BugReportModalState extends State<BugReportModal> {
                   const SizedBox(height: 20),
 
                   // Steps to Reproduce Field
-                  _buildSectionLabel('Steps to Reproduce'),
+                  _buildSectionLabel('Steps to Reproduce', primaryColor),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _stepsController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: textColor),
                     maxLines: 4,
                     decoration: _buildInputDecoration(
                       hintText: 'Describe the steps to reproduce this bug...',
                       prefixIcon: Icons.format_list_numbered,
+                      theme: theme,
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -211,8 +217,8 @@ class _BugReportModalState extends State<BugReportModal> {
                   // Submit Button
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: JagspoorTheme.thermalGlow,
-                      foregroundColor: Colors.black,
+                      backgroundColor: primaryColor,
+                      foregroundColor: theme.colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -220,12 +226,12 @@ class _BugReportModalState extends State<BugReportModal> {
                     ),
                     onPressed: _isSubmitting ? null : _submitBugReport,
                     child: _isSubmitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             height: 20,
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.black,
+                              color: theme.colorScheme.onPrimary,
                             ),
                           )
                         : const Row(
@@ -253,11 +259,11 @@ class _BugReportModalState extends State<BugReportModal> {
     );
   }
 
-  Widget _buildSectionLabel(String label) {
+  Widget _buildSectionLabel(String label, Color accentColor) {
     return Text(
       label.toUpperCase(),
       style: TextStyle(
-        color: JagspoorTheme.thermalGlow,
+        color: accentColor,
         fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
@@ -268,29 +274,33 @@ class _BugReportModalState extends State<BugReportModal> {
   InputDecoration _buildInputDecoration({
     required String hintText,
     required IconData prefixIcon,
+    required ThemeData theme,
   }) {
+    final primaryColor = theme.colorScheme.primary;
+    final textColor = theme.colorScheme.onSurface;
+
     return InputDecoration(
       hintText: hintText,
-      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-      prefixIcon: Icon(prefixIcon, color: JagspoorTheme.thermalGlow),
+      hintStyle: TextStyle(color: textColor.withValues(alpha: 0.4)),
+      prefixIcon: Icon(prefixIcon, color: primaryColor),
       filled: true,
-      fillColor: JagspoorTheme.walnutLuxury.withValues(alpha: 0.3),
+      fillColor: theme.cardColor,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
+          color: primaryColor.withValues(alpha: 0.3),
         ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.3),
+          color: primaryColor.withValues(alpha: 0.3),
         ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: JagspoorTheme.thermalGlow,
+          color: primaryColor,
           width: 2,
         ),
       ),
@@ -304,7 +314,7 @@ class _BugReportModalState extends State<BugReportModal> {
     );
   }
 
-  Color _getSeverityColor(String severity) {
+  Color _getSeverityColor(String severity, Color fallbackColor) {
     switch (severity) {
       case 'Low':
         return Colors.green;
@@ -313,7 +323,7 @@ class _BugReportModalState extends State<BugReportModal> {
       case 'Critical':
         return Colors.red;
       default:
-        return JagspoorTheme.thermalGlow;
+        return fallbackColor;
     }
   }
 }

@@ -7,6 +7,7 @@ import 'firearm_detail_screen.dart';
 import 'firearm_maintenance_screen.dart';
 import 'maintenance.dart';
 import '../firearm_safe/data/services/firearm_pdf_generator.dart';
+import 'screens/firearm_renewal_screen.dart';
 
 class FirearmSafeScreen extends StatefulWidget {
   final ThemeController theme;
@@ -327,6 +328,14 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
     final usedPct = barrelLifeUsedPercent(firearm);
     final validity = licenceValidity(firearm['expiry']);
     final expired = validity == 'Expired';
+    int? daysToExpiry;
+    if (firearm['expiry'] != null && firearm['expiry']!.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(firearm['expiry']!);
+        daysToExpiry = dt.difference(DateTime.now()).inDays;
+      } catch (_) {}
+    }
+    final isExpiringSoon = daysToExpiry != null && daysToExpiry <= 180;
 
     return Card(
       color: theme.cardColor,
@@ -421,14 +430,44 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                     color: expired ? Colors.red : theme.accentColor,
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    'Licence: $validity',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: expired ? Colors.red : theme.textColor,
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      'Licence: $validity',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: expired ? Colors.red : theme.textColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
+                  if (isExpiringSoon)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade800,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      icon: const Icon(Icons.autorenew_rounded, size: 14),
+                      label: const Text(
+                        'Renew License',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FirearmRenewalScreen(
+                              theme: theme,
+                              firearm: firearm,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
