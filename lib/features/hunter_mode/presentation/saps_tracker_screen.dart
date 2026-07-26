@@ -167,6 +167,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                       // Application Type Dropdown
                       DropdownButtonFormField<String>(
                         initialValue: _selectedApplicationType,
+                        isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Application Type',
                           border: OutlineInputBorder(
@@ -175,9 +176,14 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                           prefixIcon: const Icon(Icons.category_outlined),
                         ),
                         items: SapsApplication.applicationTypes
-                            .map((type) => DropdownMenuItem(
-                                  value: type,
-                                  child: Text(type),
+                            .map((typeString) => DropdownMenuItem(
+                                  value: typeString,
+                                  child: Text(
+                                    typeString,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: TextStyle(color: theme.colorScheme.onSurface),
+                                  ),
                                 ))
                             .toList(),
                         onChanged: (value) {
