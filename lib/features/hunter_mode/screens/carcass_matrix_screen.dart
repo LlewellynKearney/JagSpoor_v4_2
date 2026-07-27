@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/carcass_log_manager.dart';
 import '../services/offline_sync_queue.dart';
+import '../services/map_path_tracer.dart';
 import 'meat_processing_screen.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
@@ -26,6 +28,98 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
   String _selectedSpecies = 'Impala';
   String _selectedChillerPosition = 'Chiller A - Hook 1';
   bool _isSubmitting = false;
+  bool _isLocationCapturing = false;
+  
+  // Harvest location coordinates
+  double? _capturedLatitude;
+  double? _capturedLongitude;
+  String _locationStatusText = 'No location pinned';
+
+  Future<void> _pinHarvestLocation() async {
+    setState(() {
+      _isLocationCapturing = true;
+      _locationStatusText = 'Acquiring GPS signal...';
+    });
+
+    try {
+      // Check permissions first
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw Exception('Location permission denied');
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission permanently denied');
+      }
+
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw Exception('Location services disabled');
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      setState(() {
+        _capturedLatitude = position.latitude;
+        _capturedLongitude = position.longitude;
+        _locationStatusText = "Coordinates Locked: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}";
+        _isLocationCapturing = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📍 ${_locationStatusText}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      // Fallback to MapPathTracer last known location
+      final lastPath = MapPathTracer.instance.currentPath;
+      if (lastPath.isNotEmpty) {
+        final lastPoint = lastPath.last;
+        setState(() {
+          _capturedLatitude = lastPoint.latitude;
+          _capturedLongitude = lastPoint.longitude;
+          _locationStatusText = "Fallback: ${lastPoint.latitude.toStringAsFixed(4)}, ${lastPoint.longitude.toStringAsFixed(4)} (from trail)";
+          _isLocationCapturing = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📍 Using last known trail coordinates'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() {
+          _locationStatusText = 'Failed to capture location';
+          _isLocationCapturing = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
 
   static const List<String> _speciesOptions = [
     'Impala',
@@ -105,10 +199,37 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         coldStoragePosition: _selectedChillerPosition,
       );
 
+      // If coordinates were captured, also save a Kill Site waypoint
+      if (_capturedLatitude != null && _capturedLongitude != null) {
+        try {
+          await FirebaseFirestore.instance.collection('waypoints').add({
+            'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+            'type': 'Kill Site',
+            'lat': _capturedLatitude,
+            'lon': _capturedLongitude,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        } catch (waypointError) {
+          // Queue waypoint if network fails
+          await OfflineSyncQueue.instance.enqueueAction(
+            'waypoints',
+            'CREATE',
+            {
+              'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+              'type': 'Kill Site',
+              'lat': _capturedLatitude,
+              'lon': _capturedLongitude,
+            },
+          );
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Carcass logged to $_selectedChillerPosition'),
+            content: Text(_capturedLatitude != null 
+                ? '✅ Carcass logged + Kill Site waypoint created'
+                : '✅ Carcass logged to $_selectedChillerPosition'),
             backgroundColor: Colors.green,
           ),
         );
@@ -119,11 +240,15 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         setState(() {
           _selectedSpecies = 'Impala';
           _selectedChillerPosition = 'Chiller A - Hook 1';
+          _capturedLatitude = null;
+          _capturedLongitude = null;
+          _locationStatusText = 'No location pinned';
         });
       }
     } catch (e) {
       // Network link dropped - write to local SQLite storage instead
       try {
+        // Queue Carcass Log
         await OfflineSyncQueue.instance.enqueueAction(
           'carcass_logs',
           'CREATE',
@@ -136,10 +261,27 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
             'status': 'Hanging',
           },
         );
+
+        // Queue Associated Map Pin Waypoint if coordinates captured
+        if (_capturedLatitude != null && _capturedLongitude != null) {
+          await OfflineSyncQueue.instance.enqueueAction(
+            'waypoints',
+            'CREATE',
+            {
+              'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+              'type': 'Kill Site',
+              'lat': _capturedLatitude,
+              'lon': _capturedLongitude,
+            },
+          );
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('📱 Saved locally. Carcass queued for sync when back in range.'),
+            SnackBar(
+              content: Text(_capturedLatitude != null
+                  ? '📱 Saved locally. Carcass + Kill Site queued for sync.'
+                  : '📱 Saved locally. Carcass queued for sync when back in range.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -150,6 +292,9 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
           setState(() {
             _selectedSpecies = 'Impala';
             _selectedChillerPosition = 'Chiller A - Hook 1';
+            _capturedLatitude = null;
+            _capturedLongitude = null;
+            _locationStatusText = 'No location pinned';
           });
         }
       } catch (queueError) {
@@ -304,6 +449,75 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+
+              // Pin Harvest Location Button
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.location_on, color: Colors.amber.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'HARVEST GPS LOCATION',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber.shade700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _locationStatusText,
+                            style: TextStyle(
+                              color: theme.subtitleColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: _isLocationCapturing ? null : _pinHarvestLocation,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: _isLocationCapturing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.location_searching, size: 18),
+                          label: Text(
+                            _capturedLatitude != null ? 'RE-PIN' : 'PIN LOCATION',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
 
