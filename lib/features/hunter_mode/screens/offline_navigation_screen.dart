@@ -3,9 +3,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_map_cache.dart';
 import '../services/offline_sync_queue.dart';
+import '../services/map_path_tracer.dart';
 
 class OfflineNavigationScreen extends StatefulWidget {
   final ThemeController theme;
@@ -36,6 +38,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   // Active waypoints on the map
   final List<Marker> _activeWaypointsList = [];
 
+  // Location tracking subscription
+  StreamSubscription<Position>? _locationSubscription;
+
   // Waypoint type options
   static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Other'];
 
@@ -43,12 +48,71 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   void initState() {
     super.initState();
     _initializeCache();
+    _startLocationTracking();
+  }
+
+  void _startLocationTracking() {
+    if (MapPathTracer.instance.isTracking) {
+      _locationSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5, // Update every 5 meters
+        ),
+      ).listen((Position position) {
+        MapPathTracer.instance.appendCoordinate(position.latitude, position.longitude);
+        if (mounted) {
+          setState(() {
+            _currentCenter = LatLng(position.latitude, position.longitude);
+          });
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _mapController.dispose();
+    _locationSubscription?.cancel();
     super.dispose();
+  }
+
+  void _togglePathTracing() {
+    final tracer = MapPathTracer.instance;
+    if (tracer.isTracking) {
+      tracer.stopPathTracing();
+      _locationSubscription?.cancel();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🛑 Path tracing stopped'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      tracer.startNewPathTracing();
+      _startLocationTracking();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📍 Path tracing started - recording trail breadcrumbs'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+    setState(() {});
+  }
+
+  void _clearRecordedPath() {
+    MapPathTracer.instance.clearRecordedPath();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🗑️ Trail path cleared'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _initializeCache() async {
@@ -505,6 +569,17 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               maxZoom: 18,
             ),
             
+            // Trail path polyline layer - walnut HUD high-contrast path marker
+            PolylineLayer(
+              polylines: [
+                Polyline(
+                  points: MapPathTracer.instance.currentPath,
+                  strokeWidth: 4.0,
+                  color: Colors.orangeAccent,
+                ),
+              ],
+            ),
+            
             // Display cached area markers
             MarkerLayer(
               markers: _preDownloadedMarkers.map((latlng) {
@@ -599,6 +674,65 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ),
           ),
         ),
+        
+        // Path Tracing Toggle FAB
+        Positioned(
+          bottom: 140,
+          right: 16,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Clear path button
+              if (MapPathTracer.instance.currentPath.isNotEmpty)
+                FloatingActionButton.small(
+                  heroTag: 'clearPath',
+                  backgroundColor: theme.cardColor,
+                  onPressed: _clearRecordedPath,
+                  child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
+                ),
+              const SizedBox(height: 8),
+              // Recording toggle FAB
+              FloatingActionButton(
+                heroTag: 'pathTrace',
+                backgroundColor: MapPathTracer.instance.isTracking ? Colors.red : theme.accentColor,
+                onPressed: _togglePathTracing,
+                child: Icon(
+                  MapPathTracer.instance.isTracking ? Icons.stop : Icons.fiber_manual_record,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Tracking indicator
+        if (MapPathTracer.instance.isTracking)
+          Positioned(
+            top: 16,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
+                  SizedBox(width: 8),
+                  Text(
+                    'RECORDING',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
