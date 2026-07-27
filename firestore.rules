@@ -26,6 +26,11 @@ service cloud.firestore {
     match /firearms/{firearmId} {
       allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
+
+      // Allow read/write access to nested ammunition variants belonging to this firearm
+      match /ammunition/{ammoId} {
+        allow read, write: if isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/firearms/$(firearmId)).data.ownerId;
+      }
     }
 
 
