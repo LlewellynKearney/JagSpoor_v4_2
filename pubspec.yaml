@@ -93,7 +93,7 @@ dev_dependencies:
   # Test mocking libraries
   test: ^1.25.0
   mockito: ^5.4.4
-  fake_cloud_firestore: ^2.4.0
+  fake_cloud_firestore: ^4.1.1
 
 flutter:
   uses-material-design: true
