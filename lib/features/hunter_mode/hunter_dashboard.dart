@@ -17,6 +17,7 @@ import 'presentation/saps_tracker_screen.dart';
 import 'screens/mesh_radar_screen.dart';
 import 'screens/carcass_matrix_screen.dart';
 import 'screens/offline_navigation_screen.dart';
+import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -283,11 +284,14 @@ class _HunterDashboardState extends State<HunterDashboard> {
           body: ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              16,
+              0,
               16,
               16 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
+              // 🎯 Network Diagnostic HUD Status Bar
+              const NetworkDiagnosticHud(),
+              const SizedBox(height: 16),
               Card(
                 color: theme.cardColor,
                 shape: RoundedRectangleBorder(
