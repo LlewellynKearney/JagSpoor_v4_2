@@ -378,12 +378,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         activeTrackColor: Theme.of(context).colorScheme.primary,
-                        inactiveTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.24),
+                        inactiveTrackColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.24),
                         thumbColor: Theme.of(context).colorScheme.secondary,
-                        overlayColor: Theme.of(context).colorScheme.secondary.withOpacity(0.12),
+                        overlayColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
                         valueIndicatorColor: Theme.of(context).colorScheme.primary,
-                        activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
-                        inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.12),
+                        activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                        inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
                       ),
                       child: Slider(
                         value: _targetRangeMeters,
@@ -656,12 +656,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: Theme.of(context).colorScheme.primary,
-              inactiveTrackColor: Theme.of(context).colorScheme.primary.withOpacity(0.24),
+              inactiveTrackColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.24),
               thumbColor: Theme.of(context).colorScheme.secondary,
-              overlayColor: Theme.of(context).colorScheme.secondary.withOpacity(0.12),
+              overlayColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
               valueIndicatorColor: Theme.of(context).colorScheme.primary,
-              activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
-              inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.12),
+              activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+              inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
             ),
             child: Slider(
               value: value.clamp(min, max),

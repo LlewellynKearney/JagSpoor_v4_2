@@ -157,7 +157,7 @@ Submitted via Jagspoor App
 
       test('should handle URI encoding for special characters', () {
         const subject = 'Bug: App crashes with "quotes" & symbols';
-        const encodedSubject = Uri.encodeComponent(subject);
+        final encodedSubject = Uri.encodeComponent(subject);
 
         expect(encodedSubject.contains('"'), isFalse);
         expect(encodedSubject.contains('&'), isFalse);

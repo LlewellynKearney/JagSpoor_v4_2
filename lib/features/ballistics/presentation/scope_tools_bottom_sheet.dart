@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:math' show sin, cos, tan, atan2, sqrt, pi, max, min;
+import 'dart:math' show sin, cos, atan2, sqrt, pi;
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import '../../../core/theme/app_theme.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/rifle_profile.dart';
 import '../data/scope_calculator.dart';
@@ -56,7 +55,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   // Gyroscope sensor state (v20.1)
   StreamSubscription<AccelerometerEvent>? _gyroLevelerSubscription;
   bool _isLiveGyroRadarActive = false;
-  double _sensorPitchDegrees = 0.0;
   
   // AI target scanner settings
   double _targetDistance = 100.0; // meters
@@ -137,7 +135,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void _toggleLiveGyroLeveler(bool active) {
     if (active) {
       // Start listening to accelerometer events
-      _gyroLevelerSubscription = accelerometerEvents.listen(
+      _gyroLevelerSubscription = accelerometerEventStream().listen(
         (AccelerometerEvent event) {
           // Calculate vertical incline angle from raw physical gravity metrics
           // Device orientation when rested flat along rifle chassis:
@@ -147,9 +145,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           
           // Clamp values securely between -45.0 and 45.0 to filter mechanical tracking spikes
           final double clampedPitch = calculatedPitch.clamp(-45.0, 45.0);
-          
-          // Update sensor pitch value for display
-          _sensorPitchDegrees = clampedPitch;
           
           // Map live sensor reading directly to barrel angle variable
           setState(() {
@@ -176,7 +171,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       
       setState(() {
         _isLiveGyroRadarActive = false;
-        _sensorPitchDegrees = 0.0;
       });
       
       debugPrint('Gyro radar leveler deactivated - hardware accelerometer stream stopped');
@@ -771,7 +765,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               style: TextStyle(color: Colors.white),
             ),
             value: _isIlluminated,
-            activeColor: const Color(0xFFC5A059),
+            activeTrackColor: const Color(0xFFC5A059),
             onChanged: (v) {
               if (!context.mounted) return;
               setState(() => _isIlluminated = v);
@@ -983,7 +977,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                               Icon(Icons.warning_amber, 
                                    color: Colors.amber, 
                                    size: 16),
-                              const SizedBox(width: 8),
+                              SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   '⚠️ HARDWARE GYRO ACTIVE • PLACE FLAT ON BARREL CHASSIS',
@@ -1008,7 +1002,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           ),
                         ),
                   value: _isLiveGyroRadarActive,
-                  activeColor: const Color(0xFFC5A059),
+                  activeThumbColor: const Color(0xFFC5A059),
                   activeTrackColor: const Color(0xFFC5A059).withValues(alpha: 0.5),
                   inactiveThumbColor: Colors.grey,
                   inactiveTrackColor: Colors.grey.withValues(alpha: 0.3),
@@ -1044,7 +1038,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                         min: -45.0,
                         max: 45.0,
                         divisions: 90,
-                        activeColor: const Color(0xFFC5A059),
+                        thumbColor: const Color(0xFFC5A059),
                         inactiveColor: Colors.grey.withValues(alpha: 0.3),
                         onChanged: (v) {
                           // Silent execution gate preserves values when gyro is active
@@ -1499,7 +1493,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               min: min,
               max: max,
               divisions: divisions,
-              activeColor: const Color(0xFFC5A059),
+              thumbColor: const Color(0xFFC5A059),
               inactiveColor: Colors.grey.withValues(alpha: 0.3),
               onChanged: (v) {
                 if (!context.mounted) return;
