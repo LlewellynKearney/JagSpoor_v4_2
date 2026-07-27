@@ -1,14 +1,18 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
 
     function isSignedIn() {
       return request.auth != null;
     }
 
+
     function isAdmin() {
       return isSignedIn() && request.auth.token.admin == true;
     }
+
 
     // SA Game Guide — global catalogue, readable by ANYONE (even offline/unauthenticated).
     // Writes are strictly locked down to administrators.
@@ -17,20 +21,19 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+
     // Root firearms collection - users can only read/write their own firearms
     match /firearms/{firearmId} {
       allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
-      
-      // Firearms ammunition sub-collection
-      match /ammunition/{ammoId} {
-        allow read, write: if isSignedIn();
-      }
     }
 
+
+    // Trophies - users can read/write if signed in
     match /trophies/{trophyId} {
       allow read, write: if isSignedIn();
     }
+
 
     // User profile documents - users can read/write their own document
     match /users/{userId} {
@@ -45,16 +48,19 @@ service cloud.firestore {
         }
       }
 
+
       // Custom loads - users can read/write their own custom loads
       match /custom_loads/{loadId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
 
+
     // User collection queries - allow bounded collection queries with limit 1 for initialization
     match /users {
       allow list: if request.auth != null && request.query.limit <= 1;
     }
+
 
     // Maintain global access to static ammunition databases
     match /factory_ammunition/{docId} {
@@ -67,15 +73,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
+
     // ==========================================
     // 💳 SAPS LICENSE & COMPETENCY TRACKER PERMISSIONS
     // ==========================================
     match /license_applications/{docId} {
-      allow get: if request.auth != null;
-      allow list: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
     }
+
 
     // ==========================================
     // 🥩 SLAUGHTERHOUSE CARCASS MATRIX PERMISSIONS
@@ -83,6 +88,7 @@ service cloud.firestore {
     match /carcass_logs/{docId} {
       allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
     }
+
 
     // ==========================================
     // 📍 OFFLINE FIELD WAYPOINT PLACER RULES
