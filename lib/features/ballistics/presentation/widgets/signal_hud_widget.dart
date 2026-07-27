@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../outfitter_mode/data/services/outfitter_sync_service.dart';
+import '../../../outfitter_mode/data/services/outfitter_sync_service.dart';
 
 /// A lightweight widget that consumes stream-driven OutfitterSyncService status alerts.
 /// Displays a sync indicator showing pending record count.
