@@ -63,14 +63,14 @@ class MeatProcessingExporter {
 
     // Save PDF directly to local system application storage document profiles
     final Directory outputDir = await getApplicationDocumentsDirectory();
-    final File pdfFile = File("${outputDir.path}/SAPS_Slaughterhouse_Manifest_$carcassTag.pdf");
+    final File pdfFile = File("${outputDir.path}/Slaughterhouse_Manifest_$carcassTag.pdf");
     await pdfFile.writeAsBytes(await pdf.save());
 
     // Trigger phone OS native sharing/email dialog box instantly
     await Share.shareXFiles(
       [XFile(pdfFile.path)],
       text: 'JagSpoor Processing Requirements Manifest for Carcass Tag: $carcassTag',
-      subject: 'SAPS Meat Processing Order: $carcassTag',
+      subject: 'Meat Processing Order: $carcassTag',
     );
   }
 }

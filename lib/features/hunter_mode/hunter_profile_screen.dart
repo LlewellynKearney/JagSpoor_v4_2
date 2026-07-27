@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import 'services/battery_saver_manager.dart';
+import 'services/account_deletion_service.dart';
 
 class HunterProfileScreen extends StatefulWidget {
   final ThemeController theme;
@@ -775,6 +776,74 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                             ),
                     ),
                   ),
+                  const SizedBox(height: 32),
+
+                  // Delete Account & All Personal Data - Danger Zone
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.5),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.red,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'DANGER ZONE',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Permanently delete your account and all associated personal data from the JagSpoor ecosystem.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: widget.theme.subtitleColor,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _showDeleteAccountDialog,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            icon: const Icon(Icons.delete_forever, size: 20),
+                            label: const Text(
+                              'DELETE ACCOUNT & ALL PERSONAL DATA',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.0,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -830,5 +899,193 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showDeleteAccountDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: widget.theme.cardColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: Colors.red.withValues(alpha: 0.5),
+            width: 2,
+          ),
+        ),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Delete Account',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This action is IRREVERSIBLE and will permanently wipe ALL records from the system including:',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildBulletPoint('Your profile and contact information'),
+            _buildBulletPoint('All firearms and ammunition data'),
+            _buildBulletPoint('Carcass logs and waypoints'),
+            _buildBulletPoint('Processing orders and hunt records'),
+            _buildBulletPoint('Your authentication credential'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You will be immediately logged out and cannot recover your account.',
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'CANCEL',
+              style: TextStyle(color: widget.theme.subtitleColor),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text(
+              'DELETE FOREVER',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _handleAccountDeletion();
+    }
+  }
+
+  Widget _buildBulletPoint(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '• ',
+            style: TextStyle(color: Colors.red, fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: widget.theme.subtitleColor,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleAccountDeletion() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final deletionService = AccountDeletionService();
+      await deletionService.deleteUserEntireDataPack();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account and all data has been permanently deleted.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Navigate to login or close the app
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _isLoading = false);
+
+      if (mounted) {
+        if (e.code == 'requires-recent-login') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.lock_outline, color: Colors.white, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Security Verification Required: Please log out and sign back in to complete account deletion.',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange.shade800,
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deletion failed: ${e.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An unexpected error occurred: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
