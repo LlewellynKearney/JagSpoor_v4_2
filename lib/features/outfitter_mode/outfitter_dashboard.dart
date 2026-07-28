@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_screen.dart';
-import 'presentation/lodge_booking_screen.dart';
-import 'presentation/manual_invoice_screen.dart';
-import 'presentation/slaghuis_matrix_screen.dart';
+import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
+import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
+import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
+import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
+import '../hunter_mode/screens/outfitter_revenue_screen.dart';
+import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
 
 class OutfitterDashboard extends StatelessWidget {
   final ThemeController theme;
@@ -49,58 +52,93 @@ class OutfitterDashboard extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   
-                  // Lodge Booking Manager
+                  // 🏡 Manage Farms & Managers
                   _buildFeatureCard(
-                    icon: Icons.calendar_month_rounded,
-                    title: 'Lodge Booking Manager',
-                    description: 'Schedule client arrivals, room layouts, and hunting permits',
+                    icon: Icons.landscape_rounded,
+                    title: '🏡 Manage Farms & Managers',
+                    description: 'Register farms, concessions, and assign managers to your properties.',
                     theme: theme,
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LodgeBookingScreen()),
+                        MaterialPageRoute(builder: (_) => OutfitterEnterprisePanelScreen(theme: theme)),
                       );
                     },
                   ),
                   const SizedBox(height: 12),
 
-                  // Client Price Catalog & Invoicing
+                  // 🥩 Trophy Stock Inventory
                   _buildFeatureCard(
-                    icon: Icons.receipt_long_rounded,
-                    title: 'Price Catalog & Invoicing',
-                    description: 'Manage animal rates, packages, and generate client invoices',
+                    icon: Icons.pets_rounded,
+                    title: '🥩 Trophy Stock Inventory',
+                    description: 'Load trophy species availability and pricing per farm location.',
                     theme: theme,
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ManualInvoiceScreen()),
+                        MaterialPageRoute(builder: (_) => OutfitterTrophyStockScreen(theme: theme)),
                       );
                     },
                   ),
                   const SizedBox(height: 12),
 
-                  // Slaghuis Matrix
+                  // 🏕️ Publish Hunting Package
                   _buildFeatureCard(
-                    icon: Icons.inventory_2_rounded,
-                    title: 'Slaghuis Matrix',
-                    description: 'Track carcass weights and processing status',
+                    icon: Icons.storefront_rounded,
+                    title: '🏕️ Publish Hunting Package',
+                    description: 'Create and list hunting packages with pricing and inclusions.',
                     theme: theme,
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const SlaghuisMatrixScreen()),
+                        MaterialPageRoute(builder: (_) => OutfitterPackageCreatorScreen(theme: theme)),
                       );
                     },
                   ),
                   const SizedBox(height: 12),
 
-                  // Fleet & Inventory Log
+                  // 💳 Incoming Booking Requests
                   _buildFeatureCard(
-                    icon: Icons.directions_car_rounded,
-                    title: 'Fleet & Inventory Log',
-                    description: 'Manage vehicles, field supplies, and radio channel sync',
+                    icon: Icons.assignment_rounded,
+                    title: '💳 Incoming Booking Requests',
+                    description: 'Review and approve/decline hunter booking transactions.',
                     theme: theme,
-                    onTap: () => _showComingSoon(context, 'Fleet Manager', theme),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => OutfitterBookingDashboardScreen(theme: theme)),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 📊 Financial Revenue Summary
+                  _buildFeatureCard(
+                    icon: Icons.bar_chart_rounded,
+                    title: '📊 Financial Revenue Summary',
+                    description: 'View gross earnings, platform fees, and net disbursed revenue.',
+                    theme: theme,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => OutfitterRevenueScreen(theme: theme)),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 📝 Issue Game Transport Permit
+                  _buildFeatureCard(
+                    icon: Icons.description_rounded,
+                    title: '📝 Issue Game Transport Permit',
+                    description: 'Generate statutory SA game transport certificates.',
+                    theme: theme,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => OutfitterTransportPermitScreen(theme: theme)),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -265,16 +303,6 @@ class OutfitterDashboard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showComingSoon(BuildContext context, String title, ThemeController theme) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$title coming soon...'),
-        backgroundColor: theme.accentColor,
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }
