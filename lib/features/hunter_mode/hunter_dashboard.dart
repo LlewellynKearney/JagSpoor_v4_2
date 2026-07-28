@@ -17,6 +17,7 @@ import 'presentation/saps_tracker_screen.dart';
 import 'screens/mesh_radar_screen.dart';
 import 'screens/carcass_matrix_screen.dart';
 import 'screens/offline_navigation_screen.dart';
+import 'screens/blood_tracker_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -221,6 +222,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => OfflineNavigationScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'blood_trail_tracker',
+        icon: Icons.bloodtype_rounded,
+        title: '🩸 Blood Trail Tracking Radar',
+        description: 'Camera overlay with red-tone isolation to locate blood spoor and drop GPS waypoints.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => BloodTrackerScreen(theme: theme)),
         ),
       ),
       DashboardFeature(
