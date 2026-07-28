@@ -24,6 +24,8 @@ import 'screens/outfitter_enterprise_panel_screen.dart';
 import 'screens/outfitter_booking_dashboard_screen.dart';
 import 'screens/outfitter_trophy_stock_screen.dart';
 import 'screens/outfitter_revenue_screen.dart';
+import 'screens/outfitter_transport_permit_screen.dart';
+import 'screens/hunter_trophy_browser_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -80,7 +82,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final List<DashboardFeature> features = [
+    
+    // HUNTER MODE - Field & Tracking Tools
+    final List<DashboardFeature> hunterFeatures = [
       DashboardFeature(
         id: 'weather',
         icon: Icons.wb_sunny_rounded,
@@ -200,72 +204,6 @@ class _HunterDashboardState extends State<HunterDashboard> {
           );
         },
       ),
-      // ==========================================
-      // OUTFITTER MODE - Enterprise Tools
-      // ==========================================
-      DashboardFeature(
-        id: 'enterprise_panel',
-        icon: Icons.landscape_rounded,
-        title: '🏡 Manage Farms & Managers',
-        description: 'Register farms, concessions, and assign managers to your properties.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterEnterprisePanelScreen(theme: theme)),
-        ),
-      ),
-      DashboardFeature(
-        id: 'trophy_stock',
-        icon: Icons.pets_rounded,
-        title: '🥩 Trophy Stock Inventory',
-        description: 'Sync trophy species availability and pricing per farm location.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterTrophyStockScreen(theme: theme)),
-        ),
-      ),
-      DashboardFeature(
-        id: 'publish_package',
-        icon: Icons.storefront_rounded,
-        title: '🏕️ Publish Hunting Package',
-        description: 'Outfitters: Create and list hunting packages with pricing and inclusions.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterPackageCreatorScreen(theme: theme)),
-        ),
-      ),
-      DashboardFeature(
-        id: 'booking_dashboard',
-        icon: Icons.assignment_rounded,
-        title: '💳 Incoming Booking Requests',
-        description: 'Review and approve/decline hunter booking transactions.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterBookingDashboardScreen(theme: theme)),
-        ),
-      ),
-      DashboardFeature(
-        id: 'revenue_screen',
-        icon: Icons.bar_chart_rounded,
-        title: '📊 Financial Revenue Summary',
-        description: 'View gross earnings, platform fees, and net disbursed revenue.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterRevenueScreen(theme: theme)),
-        ),
-      ),
-      // ==========================================
-      // END OUTFITTER MODE
-      // ==========================================
-      DashboardFeature(
-        id: 'marketplace',
-        icon: Icons.shopping_bag_rounded,
-        title: '🎯 Package Marketplace',
-        description: 'Browse and book hunting packages from verified outfitters.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
-        ),
-      ),
       DashboardFeature(
         id: 'offgrid_mesh_sync',
         icon: Icons.radar_rounded,
@@ -334,11 +272,107 @@ class _HunterDashboardState extends State<HunterDashboard> {
       ),
     ];
 
-    features.sort(_sortFeatures);
+    // OUTFITTER MODE - Enterprise Administration
+    final List<DashboardFeature> outfitterFeatures = [
+      DashboardFeature(
+        id: 'enterprise_panel',
+        icon: Icons.landscape_rounded,
+        title: '🏡 Manage Farms & Managers',
+        description: 'Register farms, concessions, and assign managers to your properties.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterEnterprisePanelScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'trophy_stock',
+        icon: Icons.pets_rounded,
+        title: '🥩 Trophy Stock Inventory',
+        description: 'Load trophy species availability and pricing per farm location.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterTrophyStockScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'publish_package',
+        icon: Icons.storefront_rounded,
+        title: '🏕️ Publish Hunting Package',
+        description: 'Create and list hunting packages with pricing and inclusions.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterPackageCreatorScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'booking_dashboard',
+        icon: Icons.assignment_rounded,
+        title: '💳 Incoming Booking Requests',
+        description: 'Review and approve/decline hunter booking transactions.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterBookingDashboardScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'revenue_screen',
+        icon: Icons.bar_chart_rounded,
+        title: '📊 Financial Revenue Summary',
+        description: 'View gross earnings, platform fees, and net disbursed revenue.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterRevenueScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'transport_permit',
+        icon: Icons.description_rounded,
+        title: '📝 Issue Game Transport Permit',
+        description: 'Generate statutory SA game transport certificates.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterTransportPermitScreen(theme: theme)),
+        ),
+      ),
+    ];
+
+    // MARKETPLACE - Consumer Booking Actions
+    final List<DashboardFeature> marketplaceFeatures = [
+      DashboardFeature(
+        id: 'marketplace',
+        icon: Icons.shopping_bag_rounded,
+        title: '🎯 Package Marketplace',
+        description: 'Browse and book hunting packages from verified outfitters.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'trophy_browser',
+        icon: Icons.pets_rounded,
+        title: '🦌 Trophy Registry & Booking',
+        description: 'View trophy species from outfitters and add to your booking log.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HunterTrophyBrowserScreen(theme: theme)),
+        ),
+      ),
+    ];
+
+    // Combine all features for sorting
+    final allFeatures = [
+      ...hunterFeatures,
+      ...outfitterFeatures,
+      ...marketplaceFeatures,
+    ];
+
+    allFeatures.sort(_sortFeatures);
 
     return AnimatedBuilder(
       animation: theme,
       builder: (context, _) {
+        final features = allFeatures;
         return Scaffold(
           backgroundColor: theme.backgroundColor,
           appBar: AppBar(
