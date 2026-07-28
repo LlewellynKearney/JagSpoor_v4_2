@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -40,6 +41,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
   // Location tracking subscription
   StreamSubscription<Position>? _locationSubscription;
+
+  // GPS live tracking state
+  bool _isGpsTrackingActive = false;
 
   // Waypoint type options
   static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Other'];
@@ -181,6 +185,82 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           _mapController.move(_defaultCenter, 10.0);
         }
       });
+    }
+  }
+
+  Future<void> _centerOnMyLocation() async {
+    try {
+      // Check if GPS tracking is already active - toggle it off
+      if (_isGpsTrackingActive) {
+        _locationSubscription?.cancel();
+        setState(() {
+          _isGpsTrackingActive = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🛰️ GPS tracking deactivated'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // Get current GPS position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('GPS timeout'),
+      );
+
+      // Auto-start movement tracking
+      MapPathTracer.instance.startNewPathTracing();
+
+      // Center map on user position
+      final userLatLng = LatLng(position.latitude, position.longitude);
+      _mapController.move(userLatLng, 16.0);
+
+      setState(() {
+        _currentCenter = userLatLng;
+        _currentZoom = 16.0;
+        _isGpsTrackingActive = true;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📍 Centered on location - GPS tracking active'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Start live GPS stream for auto-centering
+      _locationSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 3,
+        ),
+      ).listen((Position pos) {
+        if (!mounted) return;
+        setState(() {
+          final newPos = LatLng(pos.latitude, pos.longitude);
+          MapPathTracer.instance.appendCoordinate(pos.latitude, pos.longitude);
+          _currentCenter = newPos;
+          _mapController.move(newPos, _mapController.camera.zoom);
+        });
+      });
+    } catch (e) {
+      debugPrint('GPS error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ GPS error: $e'),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -577,6 +657,12 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   strokeWidth: 4.0,
                   color: Colors.orangeAccent,
                 ),
+                // Blood trail vector path - dark crimson line for wounded animal escape route
+                Polyline(
+                  points: MapPathTracer.instance.bloodPath,
+                  strokeWidth: 3.0,
+                  color: const Color(0xFFDC143C), // Crimson red for visibility
+                ),
               ],
             ),
             
@@ -634,6 +720,56 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+        
+        // Center on My Location & GPS Track Button
+        Positioned(
+          top: 16,
+          right: 70,
+          child: GestureDetector(
+            onTap: _centerOnMyLocation,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _isGpsTrackingActive
+                    ? Colors.green.withValues(alpha: 0.9)
+                    : theme.cardColor.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _isGpsTrackingActive ? Colors.green : theme.accentColor,
+                  width: _isGpsTrackingActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isGpsTrackingActive
+                        ? Colors.green.withValues(alpha: 0.4)
+                        : Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.my_location,
+                    color: _isGpsTrackingActive ? Colors.white : theme.accentColor,
+                    size: 24,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _isGpsTrackingActive ? 'TRACK' : 'GPS',
+                    style: TextStyle(
+                      color: _isGpsTrackingActive ? Colors.white : theme.textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

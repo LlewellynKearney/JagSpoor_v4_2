@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_sync_queue.dart';
+import '../services/map_path_tracer.dart';
 
 class BloodTrackerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -19,6 +20,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isTorchOn = false;
+  bool _isNightVisionActive = false;
   bool _isDroppingPin = false;
   FlashMode _flashMode = FlashMode.off;
 
@@ -106,6 +108,16 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     }
   }
 
+  void _toggleNightVision() {
+    setState(() {
+      _isNightVisionActive = !_isNightVisionActive;
+    });
+    _showToast(
+      _isNightVisionActive ? '🌙 Night Vision ON - Green phosphor mode' : '☀️ Day Vision ON - Red isolation mode',
+      _isNightVisionActive ? Colors.green : Colors.red,
+    );
+  }
+
   Future<void> _dropBloodPin() async {
     if (_isDroppingPin) return;
 
@@ -136,6 +148,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           'timestamp': DateTime.now().toIso8601String(),
         },
       );
+
+      // Also append to MapPathTracer for drawing the animal's escape route
+      MapPathTracer.instance.appendBloodDropNode(position.latitude, position.longitude);
 
       if (mounted) {
         _showToast(
@@ -272,7 +287,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   Widget _buildColorIsolationOverlay() {
     // Color matrix that boosts red tones and desaturates other colors
     // This enhances blood trail visibility against green/brown backgrounds
-    const colorMatrix = <double>[
+    const redIsolationMatrix = <double>[
       // Red channel - enhance red, reduce green/blue contribution
       1.5, -0.2, -0.1, 0, 0,
       // Green channel - desaturate green
@@ -282,6 +297,21 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       // Alpha channel
       0, 0, 0, 1, 0,
     ];
+
+    // Night vision green phosphor monochrome matrix
+    // Amplifies all luminance but maps it to green channel for night viewing
+    const nightVisionMatrix = <double>[
+      // Red channel - convert to green luminance
+      0.3, 0.59, 0.11, 0, 0,
+      // Green channel - boost green significantly
+      0.2, 0.8, 0.1, 0, 0,
+      // Blue channel - minimal blue contribution
+      0.1, 0.3, 0.4, 0, 0,
+      // Alpha channel
+      0, 0, 0, 1, 0,
+    ];
+
+    final colorMatrix = _isNightVisionActive ? nightVisionMatrix : redIsolationMatrix;
 
     return Positioned.fill(
       child: ColorFiltered(
@@ -383,6 +413,17 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                 : Colors.black.withValues(alpha: 0.6),
             iconColor: _isTorchOn ? Colors.amber : Colors.white70,
             onTap: _toggleTorch,
+          ),
+
+          // Night Vision toggle button
+          _buildHudButton(
+            icon: _isNightVisionActive ? Icons.nightlight_round : Icons.wb_sunny,
+            label: _isNightVisionActive ? 'NV' : 'DAY',
+            backgroundColor: _isNightVisionActive
+                ? Colors.green.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor: _isNightVisionActive ? Colors.green : Colors.white70,
+            onTap: _toggleNightVision,
           ),
 
           // Blood drop pin button

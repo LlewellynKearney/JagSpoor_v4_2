@@ -41,4 +41,9 @@ class MapPathTracer {
     _activeHuntingPath.clear();
     _bloodTrailVectorPath.clear();
   }
+
+  // Alias for clearAllPaths for backward compatibility
+  void clearRecordedPath() {
+    _activeHuntingPath.clear();
+  }
 }
