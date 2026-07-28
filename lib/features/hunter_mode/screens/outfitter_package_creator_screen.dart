@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/package_booking_manager.dart';
 
@@ -20,6 +22,7 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
   final List<String> _inclusions = [];
   final _inclusionController = TextEditingController();
 
+  String? _selectedFarmId;
   bool _isLoading = false;
 
   @override
@@ -50,6 +53,16 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
   Future<void> _publishPackage() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_selectedFarmId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Please select a farm for this package'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_inclusions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -73,6 +86,7 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
         description: _descriptionController.text.trim(),
         basePriceRands: basePrice,
         inclusions: List<String>.from(_inclusions),
+        farmId: _selectedFarmId,
       );
 
       if (mounted) {
@@ -122,6 +136,79 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Farm Selection (Mandatory)
+            _buildSectionLabel('BIND TO FARM *', theme),
+            const SizedBox(height: 8),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('farms')
+                  .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                  .where('status', isEqualTo: 'active')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final farms = snapshot.data?.docs ?? [];
+                
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(color: Colors.green),
+                    ),
+                  );
+                }
+
+                if (farms.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'No farms registered. Register a farm first in Enterprise Panel.',
+                            style: TextStyle(color: Colors.orange.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return DropdownButtonFormField<String>(
+                  value: _selectedFarmId,
+                  decoration: _inputDecoration(
+                    hint: 'Select farm for this package...',
+                    theme: theme,
+                  ),
+                  dropdownColor: theme.cardColor,
+                  style: TextStyle(color: theme.textColor),
+                  items: farms.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return DropdownMenuItem(
+                      value: doc.id,
+                      child: Text(data['name'] ?? 'Unknown'),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedFarmId = value;
+                    });
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
             // Package Title
             _buildSectionLabel('PACKAGE TITLE', theme),
             const SizedBox(height: 8),

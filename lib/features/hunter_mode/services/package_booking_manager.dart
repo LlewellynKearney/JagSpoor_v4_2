@@ -26,6 +26,7 @@ class PackageBookingManager {
   /// - [description]: Detailed description of the package
   /// - [basePriceRands]: Base price in South African Rand
   /// - [inclusions]: List of what's included (e.g., ["Transport", "Accommodation", "Meals"])
+  /// - [farmId]: Optional farm/concession ID to bind the package to
   /// 
   /// Returns: void (saves to Firestore 'packages' collection)
   /// 
@@ -35,6 +36,7 @@ class PackageBookingManager {
     required String description,
     required double basePriceRands,
     required List<String> inclusions,
+    String? farmId,
   }) async {
     // Validate authentication
     if (_currentUserId == null) {
@@ -55,6 +57,7 @@ class PackageBookingManager {
       'description': description.trim(),
       'basePriceRands': basePriceRands,
       'inclusions': inclusions,
+      'farmId': farmId,
       'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

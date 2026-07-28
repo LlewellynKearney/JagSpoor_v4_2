@@ -20,6 +20,9 @@ import 'screens/offline_navigation_screen.dart';
 import 'screens/blood_tracker_screen.dart';
 import 'screens/outfitter_package_creator_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
+import 'screens/outfitter_enterprise_panel_screen.dart';
+import 'screens/outfitter_booking_dashboard_screen.dart';
+import 'screens/outfitter_trophy_stock_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -214,6 +217,36 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'enterprise_panel',
+        icon: Icons.landscape_rounded,
+        title: '🏡 Manage Farms & Managers',
+        description: 'Register farms, concessions, and assign managers to your properties.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterEnterprisePanelScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'trophy_stock',
+        icon: Icons.pets_rounded,
+        title: '🥩 Trophy Stock Inventory',
+        description: 'Sync trophy species availability and pricing per farm location.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterTrophyStockScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'booking_dashboard',
+        icon: Icons.assignment_rounded,
+        title: '💳 Incoming Booking Requests',
+        description: 'Review and approve/decline hunter booking transactions.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterBookingDashboardScreen(theme: theme)),
         ),
       ),
       DashboardFeature(
