@@ -175,10 +175,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       }
 
       return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('GPS timeout'),
       );
     } catch (e) {
       debugPrint('GPS error: $e');
@@ -285,7 +285,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
     return Positioned.fill(
       child: ColorFiltered(
-        colorMatrix: const ColorFilter.matrix(colorMatrix),
+        colorFilter: ColorFilter.matrix(colorMatrix),
         child: Container(),
       ),
     );
