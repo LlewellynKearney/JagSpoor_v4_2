@@ -43,35 +43,36 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
     try {
       QuerySnapshot snapshot;
       
-      if (_selectedProvince != null && _selectedProvince!.isNotEmpty) {
+      // Load from unified /trophies collection
+      if (_selectedProvince != null && _selectedProvince!.isNotEmpty && _selectedProvince != 'All Provinces') {
         snapshot = await FirebaseFirestore.instance
-            .collection('farms')
+            .collection('trophies')
             .where('province', isEqualTo: _selectedProvince)
+            .where('availableCount', isGreaterThan: 0)
             .get();
       } else {
-        snapshot = await FirebaseFirestore.instance.collection('farms').get();
+        snapshot = await FirebaseFirestore.instance
+            .collection('trophies')
+            .where('availableCount', isGreaterThan: 0)
+            .get();
       }
 
       final List<Map<String, dynamic>> loadedTrophies = [];
       
-      for (final farmDoc in snapshot.docs) {
-        final farmData = farmDoc.data() as Map<String, dynamic>;
-        final trophyStock = List<Map<String, dynamic>>.from(farmData['trophyStock'] ?? []);
-        final farmName = farmData['name'] as String? ?? 'Unknown Farm';
-        final province = farmData['province'] as String? ?? '';
-
-        for (final trophy in trophyStock) {
-          loadedTrophies.add({
-            'id': '${farmDoc.id}_${trophy['species']}',
-            'farmId': farmDoc.id,
-            'farmName': farmName,
-            'province': province,
-            'species': trophy['species'] ?? 'Unknown',
-            'available': trophy['available'] ?? 0,
-            'pricePerTrophy': trophy['pricePerTrophy'] ?? 0.0,
-            'sex': trophy['sex'] ?? 'Mixed',
-          });
-        }
+      for (final trophyDoc in snapshot.docs) {
+        final trophyData = trophyDoc.data() as Map<String, dynamic>?;
+        if (trophyData == null) continue;
+        loadedTrophies.add({
+          'id': trophyDoc.id,
+          'farmId': trophyData['farmId'] ?? '',
+          'farmName': trophyData['farmName'] ?? 'Unknown Farm',
+          'province': trophyData['province'] ?? '',
+          'species': trophyData['species'] ?? 'Unknown',
+          'available': trophyData['availableCount'] ?? 0,
+          'pricePerTrophy': trophyData['pricePerTrophyRands'] ?? 0.0,
+          'sex': trophyData['sex'] ?? 'Mixed',
+          'outfitterId': trophyData['outfitterId'] ?? '',
+        });
       }
 
       setState(() {

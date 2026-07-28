@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +17,7 @@ class TransportPermitPdfExporter {
     required String vehicleMake,
     required List<dynamic> speciesList, // Expects lists like [{'species': 'Kudu', 'quantity': 2, 'sex': 'Male'}]
     required String destinationAddress,
+    Uint8List? landownerSignatureBytes,
   }) async {
     final pw.Document pdf = pw.Document();
 
@@ -106,7 +108,13 @@ class TransportPermitPdfExporter {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Column(children: [
-                      pw.Container(width: 120, decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.5, color: PdfColors.black)))),
+                      landownerSignatureBytes != null
+                          ? pw.Container(
+                              width: 150,
+                              height: 60,
+                              child: pw.Image(pw.MemoryImage(landownerSignatureBytes), fit: pw.BoxFit.contain),
+                            )
+                          : pw.Container(width: 120, decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.5, color: PdfColors.black)))),
                       pw.SizedBox(height: 4),
                       pw.Text('Signature: Issuer/Owner', style: const pw.TextStyle(fontSize: 9)),
                     ]),

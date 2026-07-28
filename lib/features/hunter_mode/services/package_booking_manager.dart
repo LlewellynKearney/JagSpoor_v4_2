@@ -51,11 +51,17 @@ class PackageBookingManager {
       throw Exception('Base price must be greater than zero');
     }
 
+    // Calculate commission metrics
+    final double fee = basePriceRands * platformCommissionRate;
+    final double total = basePriceRands + fee;
+
     final packageData = {
       'outfitterId': _currentUserId,
       'title': title.trim(),
       'description': description.trim(),
       'basePriceRands': basePriceRands,
+      'platformCommissionZAR': fee,
+      'totalPriceZAR': total,
       'inclusions': inclusions,
       'farmId': farmId,
       'status': 'active',

@@ -36,8 +36,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   final List<LatLng> _preDownloadedMarkers = [];
   bool _isDownloadingTiles = false;
 
-  // Active waypoints on the map
-  final List<Marker> _activeWaypointsList = [];
+  // Active waypoints on the map (with type metadata)
+  final List<Map<String, dynamic>> _waypointsData = [];
+  List<Marker> get _activeWaypointsList => _buildMarkersForFilter(_selectedWaypointFilter);
 
   // Location tracking subscription
   StreamSubscription<Position>? _locationSubscription;
@@ -47,6 +48,52 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
   // Waypoint type options
   static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Other'];
+  
+  // Waypoint filter options for toolbar
+  static const List<String> _waypointFilterOptions = ['All', 'Kill Site', 'Blood Spoor', 'Water Hole', 'Camp'];
+  String _selectedWaypointFilter = 'All';
+  
+  List<Marker> _buildMarkersForFilter(String filter) {
+    if (filter == 'All') {
+      return _waypointsData.map((w) => _buildMarkerFromData(w)).toList();
+    }
+    return _waypointsData
+        .where((w) => w['type'] == filter)
+        .map((w) => _buildMarkerFromData(w))
+        .toList();
+  }
+  
+  Marker _buildMarkerFromData(Map<String, dynamic> data) {
+    final type = data['type'] as String;
+    final color = _getWaypointColor(type);
+    return Marker(
+      point: data['position'] as LatLng,
+      width: 40,
+      height: 40,
+      child: GestureDetector(
+        onTap: () => _showWaypointDetails(data),
+        child: Container(
+          decoration: BoxDecoration(
+            color: color.withAlpha(200),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 4)],
+          ),
+          child: Icon(_getWaypointIcon(type), color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+  
+  Color _getWaypointColor(String type) {
+    switch (type) {
+      case 'Kill Site': return Colors.red;
+      case 'Blood Spoor': return Colors.deepOrange;
+      case 'Water Hole': return Colors.blue;
+      case 'Camp': return Colors.green;
+      default: return Colors.grey;
+    }
+  }
 
   @override
   void initState() {
@@ -415,23 +462,45 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   void _addWaypointMarker(String name, String type, LatLng position) {
-    final iconData = _getWaypointIcon(type);
-    final marker = Marker(
-      point: position,
-      width: 40,
-      height: 40,
-      child: Icon(iconData, color: Colors.red, size: 32),
-    );
+    final waypointData = {
+      'name': name,
+      'type': type,
+      'position': position,
+      'timestamp': DateTime.now(),
+    };
 
     setState(() {
-      _activeWaypointsList.add(marker);
+      _waypointsData.add(waypointData);
     });
+  }
+  
+  void _showWaypointDetails(Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(data['name'] ?? 'Waypoint'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Type: ${data['type']}'),
+            Text('Position: ${(data['position'] as LatLng).latitude.toStringAsFixed(5)}, ${(data['position'] as LatLng).longitude.toStringAsFixed(5)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   IconData _getWaypointIcon(String type) {
     switch (type) {
       case 'Kill Site':
-        return Icons.location_on;
+        return Icons.whatshot;
       case 'Camp':
         return Icons.cabin;
       case 'Spoor Track':
@@ -538,6 +607,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       ),
       body: Column(
         children: [
+          // Waypoint Filter Toolbar
+          _buildWaypointFilterToolbar(theme),
+          
           // Status Bar
           _buildStatusBar(theme),
           
@@ -565,6 +637,76 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildWaypointFilterToolbar(ThemeController theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        border: Border(
+          bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _waypointFilterOptions.map((filter) {
+            final isSelected = _selectedWaypointFilter == filter;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(
+                  filter,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : theme.textColor,
+                    fontSize: 12,
+                  ),
+                ),
+                selected: isSelected,
+                onSelected: (selected) {
+                  setState(() {
+                    _selectedWaypointFilter = filter;
+                  });
+                },
+                backgroundColor: theme.backgroundColor,
+                selectedColor: _getFilterChipColor(filter, theme),
+                checkmarkColor: Colors.white,
+                side: BorderSide(
+                  color: isSelected ? _getFilterChipColor(filter, theme) : theme.accentColor.withValues(alpha: 0.3),
+                ),
+                avatar: Icon(
+                  _getFilterChipIcon(filter),
+                  size: 16,
+                  color: isSelected ? Colors.white : theme.accentColor,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+  
+  Color _getFilterChipColor(String filter, ThemeController theme) {
+    switch (filter) {
+      case 'Kill Site': return Colors.red;
+      case 'Blood Spoor': return Colors.deepOrange;
+      case 'Water Hole': return Colors.blue;
+      case 'Camp': return Colors.green;
+      default: return theme.accentColor;
+    }
+  }
+  
+  IconData _getFilterChipIcon(String filter) {
+    switch (filter) {
+      case 'Kill Site': return Icons.whatshot;
+      case 'Blood Spoor': return Icons.bloodtype;
+      case 'Water Hole': return Icons.water_drop;
+      case 'Camp': return Icons.cabin;
+      default: return Icons.location_on;
+    }
   }
 
   Widget _buildStatusBar(ThemeController theme) {

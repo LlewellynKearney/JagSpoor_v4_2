@@ -1,6 +1,8 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:signature/signature.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/transport_permit_manager.dart';
 import '../services/transport_permit_pdf_exporter.dart';
@@ -17,6 +19,11 @@ class OutfitterTransportPermitScreen extends StatefulWidget {
 class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermitScreen> {
   final _formKey = GlobalKey<FormState>();
   final _permitManager = TransportPermitManager.instance;
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 3,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
   
   // Form Controllers
   final _hunterNameController = TextEditingController();
@@ -53,6 +60,7 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
     _vehicleRegController.dispose();
     _vehicleMakeController.dispose();
     _destinationAddressController.dispose();
+    _signatureController.dispose();
     super.dispose();
   }
 
@@ -127,6 +135,12 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
       return;
     }
 
+    // Capture signature as bytes
+    Uint8List? signatureBytes;
+    if (_signatureController.isNotEmpty) {
+      signatureBytes = await _signatureController.toPngBytes();
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -144,7 +158,7 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
         destinationAddress: _destinationAddressController.text.trim(),
       );
 
-      // Generate and share the PDF permit
+      // Generate and share the PDF permit with signature
       await TransportPermitPdfExporter().generateAndSharePermit(
         permitId: permitId,
         farmName: _selectedFarmName ?? '',
@@ -156,6 +170,7 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
         vehicleMake: _vehicleMakeController.text.trim(),
         speciesList: _speciesList,
         destinationAddress: _destinationAddressController.text.trim(),
+        landownerSignatureBytes: signatureBytes,
       );
 
       if (mounted) {
@@ -206,6 +221,7 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
               _vehicleRegController.clear();
               _vehicleMakeController.clear();
               _destinationAddressController.clear();
+              _signatureController.clear();
               setState(() {
                 _selectedFarmId = null;
                 _selectedFarmName = null;
@@ -480,6 +496,59 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
                     theme: theme,
                     maxLines: 2,
                     validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Section: Landowner Signature
+                  _buildSectionHeader('Landowner Digital Signature', Icons.draw_rounded, theme),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.accentColor.withValues(alpha: 0.3), width: 2),
+                    ),
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                          child: SizedBox(
+                            height: 150,
+                            child: Signature(
+                              controller: _signatureController,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Sign above with your finger',
+                                style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                              ),
+                              TextButton.icon(
+                                onPressed: () => _signatureController.clear(),
+                                icon: const Icon(Icons.clear, size: 16),
+                                label: const Text('Clear'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 32),
 
