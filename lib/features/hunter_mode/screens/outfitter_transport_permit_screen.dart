@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/transport_permit_manager.dart';
+import '../services/transport_permit_pdf_exporter.dart';
 
 class OutfitterTransportPermitScreen extends StatefulWidget {
   final ThemeController theme;
@@ -129,8 +130,23 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
     setState(() => _isSubmitting = true);
 
     try {
-      await _permitManager.issueTransportPermit(
+      // Issue the permit and get the document ID
+      final permitId = await _permitManager.issueTransportPermit(
         farmId: _selectedFarmId!,
+        farmName: _selectedFarmName ?? '',
+        exemptionNumber: _exemptionNumber ?? '',
+        hunterName: _hunterNameController.text.trim(),
+        hunterIdNumber: _hunterIdController.text.trim(),
+        hunterAddress: _hunterAddressController.text.trim(),
+        vehicleReg: _vehicleRegController.text.trim(),
+        vehicleMake: _vehicleMakeController.text.trim(),
+        speciesList: _speciesList,
+        destinationAddress: _destinationAddressController.text.trim(),
+      );
+
+      // Generate and share the PDF permit
+      await TransportPermitPdfExporter().generateAndSharePermit(
+        permitId: permitId,
         farmName: _selectedFarmName ?? '',
         exemptionNumber: _exemptionNumber ?? '',
         hunterName: _hunterNameController.text.trim(),
@@ -175,7 +191,7 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
           ],
         ),
         content: Text(
-          'The statutory transport permit has been successfully generated and saved to the system.',
+          'The statutory transport permit has been successfully generated, saved, and shared.',
           style: TextStyle(color: widget.theme.subtitleColor),
         ),
         actions: [

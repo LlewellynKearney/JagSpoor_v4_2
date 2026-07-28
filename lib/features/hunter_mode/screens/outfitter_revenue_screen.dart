@@ -1,29 +1,41 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_analytics_service.dart';
 
-class OutfitterRevenueScreen extends StatelessWidget {
+class OutfitterRevenueScreen extends StatefulWidget {
   final ThemeController theme;
 
   const OutfitterRevenueScreen({super.key, required this.theme});
 
   @override
-  Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  State<OutfitterRevenueScreen> createState() => _OutfitterRevenueScreenState();
+}
 
+class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
+  String? _currentUserId;
+  
+  @override
+  void initState() {
+    super.initState();
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: theme.backgroundColor,
+      backgroundColor: widget.theme.backgroundColor,
       appBar: AppBar(
         title: const Text(
-          '📊 Financial Revenue Summary',
+          '📊 Enterprise Business Intelligence',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: widget.theme.backgroundColor,
+        foregroundColor: widget.theme.textColor,
         elevation: 0,
       ),
-      body: currentUserId == null
+      body: _currentUserId == null
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -31,14 +43,14 @@ class OutfitterRevenueScreen extends StatelessWidget {
                   Icon(Icons.error_outline, color: Colors.red, size: 48),
                   const SizedBox(height: 16),
                   Text(
-                    'Please sign in to view revenue',
-                    style: TextStyle(color: theme.textColor),
+                    'Please sign in to view analytics',
+                    style: TextStyle(color: widget.theme.textColor),
                   ),
                 ],
               ),
             )
-          : StreamBuilder<Map<String, double>>(
-              stream: OutfitterAnalyticsService.instance.getRevenueSummaryStream(currentUserId),
+          : StreamBuilder<Map<String, dynamic>>(
+              stream: _combinedAnalyticsStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -54,8 +66,8 @@ class OutfitterRevenueScreen extends StatelessWidget {
                         Icon(Icons.error_outline, color: Colors.red, size: 48),
                         const SizedBox(height: 16),
                         Text(
-                          'Error loading revenue data',
-                          style: TextStyle(color: theme.textColor),
+                          'Error loading analytics',
+                          style: TextStyle(color: widget.theme.textColor),
                         ),
                       ],
                     ),
@@ -63,22 +75,95 @@ class OutfitterRevenueScreen extends StatelessWidget {
                 }
 
                 final data = snapshot.data ?? {};
-                final grossEarnings = data['grossEarnings'] ?? 0.0;
-                final platformFees = data['platformFees'] ?? 0.0;
-                final netEarnings = data['netEarnings'] ?? 0.0;
-                final totalBookings = data['totalBookings']?.toInt() ?? 0;
+                final revenue = Map<String, double>.from(data['revenue'] ?? {});
+                final enterprise = Map<String, int>.from(data['enterprise'] ?? {});
+                final speciesRevenue = List<Map<String, dynamic>>.from(data['speciesRevenue'] ?? []);
+                final monthlyStats = List<Map<String, dynamic>>.from(data['monthlyStats'] ?? []);
+
+                final grossEarnings = revenue['grossEarnings'] ?? 0.0;
+                final platformFees = revenue['platformFees'] ?? 0.0;
+                final netEarnings = revenue['netEarnings'] ?? 0.0;
+                final totalBookings = (revenue['totalBookings'] ?? 0.0).toInt();
+                
+                final totalFarms = enterprise['totalFarms'] ?? 0;
+                final activeManagers = enterprise['activeManagers'] ?? 0;
+                final totalPackages = enterprise['totalPackages'] ?? 0;
+                final pendingBookings = enterprise['pendingBookings'] ?? 0;
 
                 return ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    // Revenue Summary Header
+                    // ═══════════════════════════════════════════
+                    // TOP HEADER: Enterprise Overview Metrics
+                    // ═══════════════════════════════════════════
+                    _buildSectionHeader('🏢 Enterprise Overview', Icons.business_rounded, widget.theme),
+                    const SizedBox(height: 12),
+                    
+                    // Top Metrics Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _EnterpriseMetricCard(
+                            title: 'Active Farms',
+                            value: '$totalFarms',
+                            icon: Icons.landscape_rounded,
+                            color: Colors.brown,
+                            theme: widget.theme,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _EnterpriseMetricCard(
+                            title: 'Managers',
+                            value: '$activeManagers',
+                            icon: Icons.people_rounded,
+                            color: Colors.purple,
+                            theme: widget.theme,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _EnterpriseMetricCard(
+                            title: 'Packages',
+                            value: '$totalPackages',
+                            icon: Icons.inventory_2_rounded,
+                            color: Colors.orange,
+                            theme: widget.theme,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _EnterpriseMetricCard(
+                            title: 'Pending',
+                            value: '$pendingBookings',
+                            icon: Icons.pending_actions_rounded,
+                            color: Colors.amber,
+                            theme: widget.theme,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ═══════════════════════════════════════════
+                    // CORE FINANCIAL CONTAINER GRID
+                    // ═══════════════════════════════════════════
+                    _buildSectionHeader('💰 Financial Performance', Icons.account_balance_rounded, widget.theme),
+                    const SizedBox(height: 12),
+                    
+                    // Total Bookings Hero Banner
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF1B5E20).withValues(alpha: 0.8),
-                            const Color(0xFF2E7D32).withValues(alpha: 0.6),
+                            const Color(0xFF1B5E20).withValues(alpha: 0.9),
+                            const Color(0xFF2E7D32).withValues(alpha: 0.7),
                           ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -86,83 +171,73 @@ class OutfitterRevenueScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.green.withValues(alpha: 0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                            color: Colors.green.withValues(alpha: 0.4),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
                           ),
                         ],
                       ),
                       child: Column(
                         children: [
-                          const Icon(
-                            Icons.trending_up_rounded,
-                            color: Colors.white,
-                            size: 48,
-                          ),
-                          const SizedBox(height: 12),
+                          const Icon(Icons.trending_up_rounded, color: Colors.white, size: 40),
+                          const SizedBox(height: 8),
                           Text(
                             'Total Approved Bookings',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 14),
                           ),
-                          const SizedBox(height: 4),
                           Text(
                             '$totalBookings',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 42,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
 
-                    // Metrics Grid
+                    // Financial Grid
                     Row(
                       children: [
                         Expanded(
                           child: _RevenueMetricCard(
                             title: 'Gross Revenue',
+                            subtitle: 'ZAR',
                             value: grossEarnings,
                             icon: Icons.account_balance_wallet_rounded,
                             color: Colors.blue,
-                            theme: theme,
+                            theme: widget.theme,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: _RevenueMetricCard(
                             title: 'Platform Fees',
+                            subtitle: '5% Admin',
                             value: platformFees,
                             icon: Icons.percent_rounded,
                             color: Colors.amber,
-                            theme: theme,
-                            subtitle: '5% Admin Cut',
+                            theme: widget.theme,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // Net Earnings (Highlighted)
-                    _NetEarningsCard(
-                      value: netEarnings,
-                      theme: theme,
-                    ),
+                    // Net Earnings Highlight
+                    _NetEarningsCard(value: netEarnings, theme: widget.theme),
                     const SizedBox(height: 24),
 
-                    // Revenue Breakdown Details
+                    // ═══════════════════════════════════════════
+                    // REVENUE STREAMS ANALYTICS
+                    // ═══════════════════════════════════════════
+                    _buildSectionHeader('📈 Revenue Streams Analytics', Icons.pie_chart_rounded, widget.theme),
+                    const SizedBox(height: 12),
+
+                    // Species Revenue Breakdown
                     Container(
                       decoration: BoxDecoration(
-                        color: theme.cardColor,
+                        color: widget.theme.cardColor,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: theme.accentColor.withValues(alpha: 0.2),
-                        ),
+                        border: Border.all(color: widget.theme.accentColor.withValues(alpha: 0.2)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,86 +246,123 @@ class OutfitterRevenueScreen extends StatelessWidget {
                             padding: const EdgeInsets.all(16),
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.receipt_long_rounded,
-                                  color: theme.accentColor,
-                                  size: 24,
-                                ),
+                                Icon(Icons.pets_rounded, color: widget.theme.accentColor, size: 24),
                                 const SizedBox(width: 12),
                                 Text(
-                                  'Revenue Breakdown',
+                                  'Species Revenue Breakdown',
                                   style: TextStyle(
-                                    color: theme.textColor,
+                                    color: widget.theme.textColor,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                    fontSize: 14,
                                   ),
                                 ),
                               ],
                             ),
                           ),
                           const Divider(height: 1),
-                          _BreakdownRow(
-                            label: 'Gross Bookings Revenue',
-                            value: grossEarnings,
-                            theme: theme,
-                          ),
-                          _BreakdownRow(
-                            label: '5% Platform Admin Fee',
-                            value: platformFees,
-                            theme: theme,
-                            isNegative: true,
+                          if (speciesRevenue.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.pets_rounded, color: widget.theme.subtitleColor.withValues(alpha: 0.5), size: 32),
+                                    const SizedBox(height: 8),
+                                    Text('No species revenue data yet', style: TextStyle(color: widget.theme.subtitleColor)),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            ...speciesRevenue.take(5).map((item) => _SpeciesRevenueRow(
+                              species: item['species'] ?? 'Unknown',
+                              revenue: (item['revenue'] ?? 0).toDouble(),
+                              count: (item['count'] ?? 0).toInt(),
+                              theme: widget.theme,
+                            )),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Monthly Booking Trends
+                    Container(
+                      decoration: BoxDecoration(
+                        color: widget.theme.cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: widget.theme.accentColor.withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_month_rounded, color: widget.theme.accentColor, size: 24),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Monthly Booking Trends',
+                                  style: TextStyle(
+                                    color: widget.theme.textColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           const Divider(height: 1),
-                          _BreakdownRow(
-                            label: 'Net Disbursed Earnings',
-                            value: netEarnings,
-                            theme: theme,
-                            isTotal: true,
-                          ),
+                          if (monthlyStats.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.calendar_today_rounded, color: widget.theme.subtitleColor.withValues(alpha: 0.5), size: 32),
+                                    const SizedBox(height: 8),
+                                    Text('No monthly data yet', style: TextStyle(color: widget.theme.subtitleColor)),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            ...monthlyStats.take(6).map((item) => _MonthlyTrendRow(
+                              month: item['month'] ?? 'N/A',
+                              bookings: (item['bookings'] ?? 0).toInt(),
+                              revenue: (item['revenue'] ?? 0).toDouble(),
+                              theme: widget.theme,
+                            )),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
 
-                    // Summary Card
+                    // Summary Info
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: theme.cardColor,
+                        color: widget.theme.cardColor,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.green.withValues(alpha: 0.3),
-                        ),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                color: Colors.green,
-                                size: 20,
-                              ),
+                              Icon(Icons.info_outline_rounded, color: Colors.green, size: 20),
                               const SizedBox(width: 8),
                               Text(
-                                'Financial Summary',
-                                style: TextStyle(
-                                  color: theme.textColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
+                                'Enterprise Summary',
+                                style: TextStyle(color: widget.theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Your net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent the total revenue from approved bookings minus the 5% platform administration fee collected by JagSpoor.',
-                            style: TextStyle(
-                              color: theme.subtitleColor,
-                              fontSize: 13,
-                              height: 1.5,
-                            ),
+                            'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings minus the 5% platform administration fee collected by JagSpoor.',
+                            style: TextStyle(color: widget.theme.subtitleColor, fontSize: 13, height: 1.5),
                           ),
                         ],
                       ),
@@ -259,6 +371,125 @@ class OutfitterRevenueScreen extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+
+  Stream<Map<String, dynamic>> _combinedAnalyticsStream() async* {
+    final revenueStream = OutfitterAnalyticsService.instance.getRevenueSummaryStream(_currentUserId!);
+
+    await for (final revenue in revenueStream) {
+      final farms = await _getFarmsData();
+      final managers = await _getManagersData();
+      final packages = await _getPackagesData();
+      final pendingBookings = await _getPendingBookingsCount();
+      final speciesData = await _getSpeciesRevenueData();
+      final monthlyData = await _getMonthlyStatsData();
+
+      yield {
+        'revenue': revenue,
+        'enterprise': {
+          'totalFarms': farms,
+          'activeManagers': managers,
+          'totalPackages': packages,
+          'pendingBookings': pendingBookings,
+        },
+        'speciesRevenue': speciesData,
+        'monthlyStats': monthlyData,
+      };
+    }
+  }
+
+  Future<int> _getFarmsData() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('farms')
+        .where('outfitterId', isEqualTo: _currentUserId)
+        .get();
+    return snapshot.docs.length;
+  }
+
+  Future<int> _getManagersData() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('managers')
+        .where('outfitterId', isEqualTo: _currentUserId)
+        .get();
+    return snapshot.docs.length;
+  }
+
+  Future<int> _getPackagesData() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('packages')
+        .where('outfitterId', isEqualTo: _currentUserId)
+        .where('status', isEqualTo: 'active')
+        .get();
+    return snapshot.docs.length;
+  }
+
+  Future<int> _getPendingBookingsCount() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('outfitterId', isEqualTo: _currentUserId)
+        .where('status', isEqualTo: 'Pending Approval')
+        .get();
+    return snapshot.docs.length;
+  }
+
+  Future<List<Map<String, dynamic>>> _getSpeciesRevenueData() async {
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> _getMonthlyStatsData() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('outfitterId', isEqualTo: _currentUserId)
+        .where('status', isEqualTo: 'Approved')
+        .get();
+    
+    final Map<String, Map<String, dynamic>> monthlyData = {};
+    
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final timestamp = data['bookingTimestamp'] as Timestamp?;
+      if (timestamp != null) {
+        final date = timestamp.toDate();
+        final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+        final monthName = _getMonthName(date.month);
+        
+        if (!monthlyData.containsKey(monthKey)) {
+          monthlyData[monthKey] = {
+            'month': monthName,
+            'bookings': 0,
+            'revenue': 0.0,
+          };
+        }
+        monthlyData[monthKey]!['bookings'] = (monthlyData[monthKey]!['bookings'] as int) + 1;
+        monthlyData[monthKey]!['revenue'] = (monthlyData[monthKey]!['revenue'] as double) + 
+            ((data['totalHunterPriceRands'] ?? 0).toDouble());
+      }
+    }
+    
+    final sortedKeys = monthlyData.keys.toList()..sort();
+    return sortedKeys.map((k) => monthlyData[k]!).toList();
+  }
+
+  String _getMonthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon, ThemeController theme) {
+    return Row(
+      children: [
+        Icon(icon, color: theme.accentColor, size: 22),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            color: theme.textColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -436,46 +667,189 @@ class _NetEarningsCard extends StatelessWidget {
   }
 }
 
-class _BreakdownRow extends StatelessWidget {
-  final String label;
-  final double value;
+class _EnterpriseMetricCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
   final ThemeController theme;
-  final bool isNegative;
-  final bool isTotal;
 
-  const _BreakdownRow({
-    required this.label,
+  const _EnterpriseMetricCard({
+    required this.title,
     required this.value,
+    required this.icon,
+    required this.color,
     required this.theme,
-    this.isNegative = false,
-    this.isTotal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: theme.subtitleColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpeciesRevenueRow extends StatelessWidget {
+  final String species;
+  final double revenue;
+  final int count;
+  final ThemeController theme;
+
+  const _SpeciesRevenueRow({
+    required this.species,
+    required this.revenue,
+    required this.count,
+    required this.theme,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: isTotal ? theme.textColor : theme.subtitleColor,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              fontSize: isTotal ? 14 : 13,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(Icons.pets_rounded, color: Colors.green, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  species,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  '$count booking${count != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    color: theme.subtitleColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
           ),
           Text(
-            '${isNegative ? "- " : ""}R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-            style: TextStyle(
-              color: isNegative
-                  ? Colors.red
-                  : isTotal
-                      ? Colors.green
-                      : theme.textColor,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-              fontSize: isTotal ? 16 : 13,
+            'R ${revenue.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+            style: const TextStyle(
+              color: Colors.green,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MonthlyTrendRow extends StatelessWidget {
+  final String month;
+  final int bookings;
+  final double revenue;
+  final ThemeController theme;
+
+  const _MonthlyTrendRow({
+    required this.month,
+    required this.bookings,
+    required this.revenue,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(Icons.calendar_today_rounded, color: Colors.blue, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  month,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  '$bookings booking${bookings != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    color: theme.subtitleColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            'R ${revenue.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+            style: const TextStyle(
+              color: Colors.blue,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
             ),
           ),
         ],
