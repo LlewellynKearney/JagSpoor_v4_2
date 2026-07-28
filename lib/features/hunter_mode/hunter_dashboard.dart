@@ -18,6 +18,8 @@ import 'screens/mesh_radar_screen.dart';
 import 'screens/carcass_matrix_screen.dart';
 import 'screens/offline_navigation_screen.dart';
 import 'screens/blood_tracker_screen.dart';
+import 'screens/outfitter_package_creator_screen.dart';
+import 'screens/hunter_package_marketplace_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -193,6 +195,26 @@ class _HunterDashboardState extends State<HunterDashboard> {
             MaterialPageRoute(builder: (context) => const SapsTrackerScreen()),
           );
         },
+      ),
+      DashboardFeature(
+        id: 'publish_package',
+        icon: Icons.storefront_rounded,
+        title: '🏕️ Publish Hunting Package',
+        description: 'Outfitters: Create and list hunting packages with pricing and inclusions.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterPackageCreatorScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'marketplace',
+        icon: Icons.shopping_bag_rounded,
+        title: '🎯 Package Marketplace',
+        description: 'Browse and book hunting packages from verified outfitters.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
+        ),
       ),
       DashboardFeature(
         id: 'offgrid_mesh_sync',
