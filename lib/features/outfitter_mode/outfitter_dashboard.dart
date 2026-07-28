@@ -8,6 +8,7 @@ import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
 import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
+import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -130,6 +131,21 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(builder: (_) => OutfitterPackageCreatorScreen(theme: widget.theme)),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          
+                          // AI Scan Paper Price List - Hidden for managers
+                          _buildFeatureCard(
+                            icon: Icons.document_scanner_rounded,
+                            title: 'AI Scan Paper Price List',
+                            description: 'Upload or photograph paper price lists for AI text extraction and digitization.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => OutfitterPricelistScannerScreen(theme: widget.theme)),
                               );
                             },
                           ),

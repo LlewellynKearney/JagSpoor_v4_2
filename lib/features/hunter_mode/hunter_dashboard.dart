@@ -20,6 +20,7 @@ import 'screens/offline_navigation_screen.dart';
 import 'screens/blood_tracker_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
+import 'screens/hunter_custom_package_builder_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -286,6 +287,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => HunterTrophyBrowserScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'custom_package_builder',
+        icon: Icons.construction_rounded,
+        title: '🦌 Custom Package Itinerary Builder',
+        description: 'Build custom hunting itineraries from scanned price lists.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HunterCustomPackageBuilderScreen(theme: theme)),
         ),
       ),
     ];
