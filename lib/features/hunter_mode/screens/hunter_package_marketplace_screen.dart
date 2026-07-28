@@ -1,15 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/package_booking_manager.dart';
+import '../services/outfitter_analytics_service.dart';
 
-class HunterPackageMarketplaceScreen extends StatelessWidget {
+class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
 
   const HunterPackageMarketplaceScreen({super.key, required this.theme});
 
   @override
+  State<HunterPackageMarketplaceScreen> createState() => _HunterPackageMarketplaceScreenState();
+}
+
+class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplaceScreen> {
+  String? _selectedProvince;
+
+  // South African provinces
+  static const List<String> _provinces = [
+    'All Provinces',
+    'Limpopo',
+    'Mpumalanga',
+    'Gauteng',
+    'North West',
+    'Free State',
+    'KwaZulu-Natal',
+    'Eastern Cape',
+    'Western Cape',
+    'Northern Cape',
+  ];
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
@@ -21,86 +44,163 @@ class HunterPackageMarketplaceScreen extends StatelessWidget {
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('packages')
-            .where('status', isEqualTo: 'active')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.green),
-            );
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, color: Colors.red, size: 48),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading packages',
-                    style: TextStyle(color: theme.textColor),
-                  ),
-                  Text(
-                    snapshot.error.toString(),
-                    style: TextStyle(color: theme.subtitleColor, fontSize: 12),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+      body: Column(
+        children: [
+          // Province Filter Dropdown
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              border: Border(
+                bottom: BorderSide(
+                  color: theme.accentColor.withValues(alpha: 0.2),
+                ),
               ),
-            );
-          }
-
-          final packages = snapshot.data?.docs ?? [];
-
-          if (packages.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.terrain_rounded,
-                    color: theme.accentColor.withValues(alpha: 0.5),
-                    size: 64,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No packages available',
-                    style: TextStyle(
-                      color: theme.textColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_on_rounded,
+                  color: theme.accentColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: theme.backgroundColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.accentColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedProvince ?? 'All Provinces',
+                        isExpanded: true,
+                        dropdownColor: theme.cardColor,
+                        style: TextStyle(color: theme.textColor),
+                        icon: Icon(Icons.arrow_drop_down, color: theme.accentColor),
+                        items: _provinces.map((province) {
+                          return DropdownMenuItem(
+                            value: province,
+                            child: Text(
+                              province,
+                              style: TextStyle(color: theme.textColor),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedProvince = value == 'All Provinces' ? null : value;
+                          });
+                        },
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Check back soon for hunting packages',
-                    style: TextStyle(color: theme.subtitleColor),
+                ),
+                if (_selectedProvince != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.clear_rounded, color: theme.subtitleColor),
+                    onPressed: () {
+                      setState(() {
+                        _selectedProvince = null;
+                      });
+                    },
                   ),
                 ],
-              ),
-            );
-          }
+              ],
+            ),
+          ),
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: packages.length,
-            itemBuilder: (context, index) {
-              final package = packages[index];
-              final data = package.data() as Map<String, dynamic>;
-              return _PackageCard(
-                packageId: package.id,
-                data: data,
-                theme: theme,
-                onTap: () => _showBookingSheet(context, package.id, data),
-              );
-            },
-          );
-        },
+          // Package List
+          Expanded(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: OutfitterAnalyticsService.instance.getFilteredPackagesStream(
+                province: _selectedProvince,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.green),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red, size: 48),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error loading packages',
+                          style: TextStyle(color: theme.textColor),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final packages = snapshot.data ?? [];
+
+                if (packages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.terrain_rounded,
+                          color: theme.accentColor.withValues(alpha: 0.5),
+                          size: 64,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _selectedProvince != null
+                              ? 'No packages in $_selectedProvince'
+                              : 'No packages available',
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Check back soon for hunting packages',
+                          style: TextStyle(color: theme.subtitleColor),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: packages.length,
+                  itemBuilder: (context, index) {
+                    final packageData = packages[index];
+                    final packageId = packageData['packageId'] as String;
+                    final data = packageData['packageData'] as Map<String, dynamic>;
+                    final farmName = packageData['farmName'] as String? ?? '';
+                    final province = packageData['province'] as String? ?? '';
+
+                    return _PackageCard(
+                      packageId: packageId,
+                      data: data,
+                      farmName: farmName,
+                      province: province,
+                      theme: theme,
+                      onTap: () => _showBookingSheet(context, packageId, data),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -113,7 +213,7 @@ class HunterPackageMarketplaceScreen extends StatelessWidget {
       builder: (context) => _BookingConfirmationSheet(
         packageId: packageId,
         data: data,
-        theme: theme,
+        theme: widget.theme,
       ),
     );
   }
@@ -122,12 +222,16 @@ class HunterPackageMarketplaceScreen extends StatelessWidget {
 class _PackageCard extends StatelessWidget {
   final String packageId;
   final Map<String, dynamic> data;
+  final String farmName;
+  final String province;
   final ThemeController theme;
   final VoidCallback onTap;
 
   const _PackageCard({
     required this.packageId,
     required this.data,
+    required this.farmName,
+    required this.province,
     required this.theme,
     required this.onTap,
   });
@@ -183,21 +287,45 @@ class _PackageCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
+                        // Location info
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              color: theme.subtitleColor,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              farmName.isNotEmpty
+                                  ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
+                                  : province.isNotEmpty
+                                      ? province
+                                      : 'Location TBD',
+                              style: TextStyle(
+                                color: theme.subtitleColor,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    color: theme.subtitleColor,
-                    size: 16,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
                   ),
                 ],
               ),

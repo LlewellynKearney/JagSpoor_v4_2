@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../services/outfitter_invoice_exporter.dart';
 
 class OutfitterBookingDashboardScreen extends StatelessWidget {
   final ThemeController theme;
@@ -120,6 +121,7 @@ class _BookingCard extends StatefulWidget {
 
 class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
+  bool _isExporting = false;
 
   Future<void> _updateStatus(String newStatus) async {
     setState(() {
@@ -157,6 +159,55 @@ class _BookingCardState extends State<_BookingCard> {
       if (mounted) {
         setState(() {
           _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _exportInvoice() async {
+    setState(() {
+      _isExporting = true;
+    });
+
+    try {
+      final packageName = widget.data['packageName'] as String? ?? 'Hunting Package';
+      final farmName = widget.data['farmName'] as String? ?? 'Outfitter Farm';
+      final hunterName = widget.data['hunterName'] as String? ?? 'Hunter';
+      final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
+      final commission = (widget.data['platformCommissionRands'] ?? 0).toDouble();
+      final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
+
+      await OutfitterInvoiceExporter().generateAndShareInvoice(
+        bookingId: widget.bookingId,
+        packageName: packageName,
+        farmName: farmName,
+        hunterName: hunterName,
+        basePrice: basePrice,
+        platformFee: commission,
+        totalPrice: totalPrice,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Invoice exported and shared!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
         });
       }
     }
@@ -353,65 +404,92 @@ class _BookingCardState extends State<_BookingCard> {
           ),
           const SizedBox(height: 16),
 
-          // Action Buttons (only for Pending Approval)
-          if (status == 'Pending Approval')
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isProcessing ? null : () => _updateStatus('Declined'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+          // Action Buttons
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: status == 'Pending Approval'
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isProcessing ? null : () => _updateStatus('Declined'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: _isProcessing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                                )
+                              : const Icon(Icons.close_rounded),
+                          label: const Text(
+                            'DECLINE',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
-                      icon: _isProcessing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                            )
-                          : const Icon(Icons.close_rounded),
-                      label: const Text(
-                        'DECLINE',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : () => _updateStatus('Approved'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton.icon(
+                          onPressed: _isProcessing ? null : () => _updateStatus('Approved'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: _isProcessing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.check_circle_rounded),
+                          label: const Text(
+                            'APPROVE',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
-                      icon: _isProcessing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.check_circle_rounded),
-                      label: const Text(
-                        'APPROVE',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                    ],
+                  )
+                : status == 'Approved'
+                    ? SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isExporting ? null : _exportInvoice,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1565C0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: _isExporting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.picture_as_pdf_rounded),
+                          label: const Text(
+                            'EXPORT INVOICE',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+          ),
           const SizedBox(height: 16),
         ],
       ),

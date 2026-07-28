@@ -23,6 +23,7 @@ import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/outfitter_enterprise_panel_screen.dart';
 import 'screens/outfitter_booking_dashboard_screen.dart';
 import 'screens/outfitter_trophy_stock_screen.dart';
+import 'screens/outfitter_revenue_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -247,6 +248,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => OutfitterBookingDashboardScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
+        id: 'revenue_screen',
+        icon: Icons.bar_chart_rounded,
+        title: '📊 Financial Revenue Summary',
+        description: 'View gross earnings, platform fees, and net disbursed revenue.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterRevenueScreen(theme: theme)),
         ),
       ),
       DashboardFeature(
