@@ -94,13 +94,13 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
     }
 
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
       );
       
-      if (result != null && result.files.single.path != null) {
-        await _processImage(File(result.files.single.path!));
+      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+        await _processImage(File(result.files.first.path!));
       }
     } catch (e) {
       _showError('Failed to pick file: $e');
