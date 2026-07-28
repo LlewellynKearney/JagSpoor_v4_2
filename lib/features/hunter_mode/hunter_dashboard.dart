@@ -200,26 +200,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
           );
         },
       ),
-      DashboardFeature(
-        id: 'publish_package',
-        icon: Icons.storefront_rounded,
-        title: '🏕️ Publish Hunting Package',
-        description: 'Outfitters: Create and list hunting packages with pricing and inclusions.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OutfitterPackageCreatorScreen(theme: theme)),
-        ),
-      ),
-      DashboardFeature(
-        id: 'marketplace',
-        icon: Icons.shopping_bag_rounded,
-        title: '🎯 Package Marketplace',
-        description: 'Browse and book hunting packages from verified outfitters.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
-        ),
-      ),
+      // ==========================================
+      // OUTFITTER MODE - Enterprise Tools
+      // ==========================================
       DashboardFeature(
         id: 'enterprise_panel',
         icon: Icons.landscape_rounded,
@@ -241,6 +224,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
         ),
       ),
       DashboardFeature(
+        id: 'publish_package',
+        icon: Icons.storefront_rounded,
+        title: '🏕️ Publish Hunting Package',
+        description: 'Outfitters: Create and list hunting packages with pricing and inclusions.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => OutfitterPackageCreatorScreen(theme: theme)),
+        ),
+      ),
+      DashboardFeature(
         id: 'booking_dashboard',
         icon: Icons.assignment_rounded,
         title: '💳 Incoming Booking Requests',
@@ -258,6 +251,19 @@ class _HunterDashboardState extends State<HunterDashboard> {
         onTap: (context, theme) => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => OutfitterRevenueScreen(theme: theme)),
+        ),
+      ),
+      // ==========================================
+      // END OUTFITTER MODE
+      // ==========================================
+      DashboardFeature(
+        id: 'marketplace',
+        icon: Icons.shopping_bag_rounded,
+        title: '🎯 Package Marketplace',
+        description: 'Browse and book hunting packages from verified outfitters.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
         ),
       ),
       DashboardFeature(
