@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_screen.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
@@ -7,143 +8,183 @@ import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
 import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
+import '../hunter_mode/services/user_role_resolver.dart';
 
-class OutfitterDashboard extends StatelessWidget {
+class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
 
   const OutfitterDashboard({super.key, required this.theme});
 
   @override
+  State<OutfitterDashboard> createState() => _OutfitterDashboardState();
+}
+
+class _OutfitterDashboardState extends State<OutfitterDashboard> {
+  bool _isManager = false;
+  String? _assignedFarmId;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveUserRole();
+  }
+
+  Future<void> _resolveUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
+      setState(() {
+        _isManager = UserRoleResolver.instance.isManager;
+        _assignedFarmId = UserRoleResolver.instance.assignedFarmId;
+        _isLoading = false;
+      });
+    } else {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: theme,
+      animation: widget.theme,
       builder: (context, child) {
-        String conceptLabel = _getConceptLabel(theme.currentConcept);
+        String conceptLabel = _getConceptLabel(widget.theme.currentConcept);
 
         return Scaffold(
-          backgroundColor: theme.backgroundColor,
-          appBar: _buildAppBar(context, theme, conceptLabel),
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(-0.8, -0.6),
-                radius: 1.2,
-                colors: [
-                  theme.accentColor.withAlpha(60),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-              child: ListView(
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _buildStatusBanner(theme),
-                  const SizedBox(height: 16),
-                  Text(
-                    'OUTFITTER OPERATIONS',
-                    style: TextStyle(
-                      color: theme.textColor.withAlpha(180),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 2.0,
+          backgroundColor: widget.theme.backgroundColor,
+          appBar: _buildAppBar(context, widget.theme, conceptLabel),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Container(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(-0.8, -0.6),
+                      radius: 1.2,
+                      colors: [
+                        widget.theme.accentColor.withAlpha(60),
+                        Colors.transparent,
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  
-                  // 🏡 Manage Farms & Managers
-                  _buildFeatureCard(
-                    icon: Icons.landscape_rounded,
-                    title: '🏡 Manage Farms & Managers',
-                    description: 'Register farms, concessions, and assign managers to your properties.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterEnterprisePanelScreen(theme: theme)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                    child: ListView(
+                      physics: const BouncingScrollPhysics(),
+                      children: [
+                        _buildStatusBanner(widget.theme),
+                        const SizedBox(height: 16),
+                        Text(
+                          _isManager ? 'FARM MANAGEMENT HUD (MANAGER ACCESS)' : 'OUTFITTER OPERATIONS',
+                          style: TextStyle(
+                            color: widget.theme.textColor.withAlpha(180),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // Manage Farms & Managers - HIDDEN for managers
+                        if (!_isManager) ...[
+                          _buildFeatureCard(
+                            icon: Icons.landscape_rounded,
+                            title: 'Manage Farms & Managers',
+                            description: 'Register farms, concessions, and assign managers to your properties.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => OutfitterEnterprisePanelScreen(theme: widget.theme)),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
 
-                  // 🥩 Trophy Stock Inventory
-                  _buildFeatureCard(
-                    icon: Icons.pets_rounded,
-                    title: '🥩 Trophy Stock Inventory',
-                    description: 'Load trophy species availability and pricing per farm location.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterTrophyStockScreen(theme: theme)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                        // Trophy Stock Inventory
+                        _buildFeatureCard(
+                          icon: Icons.pets_rounded,
+                          title: 'Trophy Stock Inventory',
+                          description: _isManager 
+                              ? 'Manage trophy availability for your assigned farm.'
+                              : 'Load trophy species availability and pricing per farm location.',
+                          theme: widget.theme,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => OutfitterTrophyStockScreen(theme: widget.theme)),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
 
-                  // 🏕️ Publish Hunting Package
-                  _buildFeatureCard(
-                    icon: Icons.storefront_rounded,
-                    title: '🏕️ Publish Hunting Package',
-                    description: 'Create and list hunting packages with pricing and inclusions.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterPackageCreatorScreen(theme: theme)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                        // Publish Hunting Package - Hidden for managers
+                        if (!_isManager) ...[
+                          _buildFeatureCard(
+                            icon: Icons.storefront_rounded,
+                            title: 'Publish Hunting Package',
+                            description: 'Create and list hunting packages with pricing and inclusions.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => OutfitterPackageCreatorScreen(theme: widget.theme)),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
 
-                  // 💳 Incoming Booking Requests
-                  _buildFeatureCard(
-                    icon: Icons.assignment_rounded,
-                    title: '💳 Incoming Booking Requests',
-                    description: 'Review and approve/decline hunter booking transactions.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterBookingDashboardScreen(theme: theme)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                        // Incoming Booking Requests
+                        _buildFeatureCard(
+                          icon: Icons.assignment_rounded,
+                          title: 'Incoming Booking Requests',
+                          description: 'Review and approve/decline hunter booking transactions.',
+                          theme: widget.theme,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => OutfitterBookingDashboardScreen(theme: widget.theme)),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
 
-                  // 📊 Financial Revenue Summary
-                  _buildFeatureCard(
-                    icon: Icons.bar_chart_rounded,
-                    title: '📊 Financial Revenue Summary',
-                    description: 'View gross earnings, platform fees, and net disbursed revenue.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterRevenueScreen(theme: theme)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                        // Financial Revenue Summary - HIDDEN for managers
+                        if (!_isManager) ...[
+                          _buildFeatureCard(
+                            icon: Icons.bar_chart_rounded,
+                            title: 'Financial Revenue Summary',
+                            description: 'View gross earnings, platform fees, and net disbursed revenue.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => OutfitterRevenueScreen(theme: widget.theme)),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
 
-                  // 📝 Issue Game Transport Permit
-                  _buildFeatureCard(
-                    icon: Icons.description_rounded,
-                    title: '📝 Issue Game Transport Permit',
-                    description: 'Generate statutory SA game transport certificates.',
-                    theme: theme,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => OutfitterTransportPermitScreen(theme: theme)),
-                      );
-                    },
+                        // Issue Game Transport Permit
+                        _buildFeatureCard(
+                          icon: Icons.description_rounded,
+                          title: 'Issue Game Transport Permit',
+                          description: 'Generate statutory SA game transport certificates.',
+                          theme: widget.theme,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => OutfitterTransportPermitScreen(theme: widget.theme)),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
-          ),
+                ),
         );
       },
     );
@@ -166,7 +207,7 @@ class OutfitterDashboard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Jagspoor Outfitter',
+            _isManager ? 'Farm Manager' : 'Jagspoor Outfitter',
             style: TextStyle(
               color: theme.textColor,
               fontWeight: FontWeight.w700,
@@ -195,6 +236,7 @@ class OutfitterDashboard extends StatelessWidget {
         IconButton(
           icon: Icon(Icons.lock_reset_rounded, color: theme.accentColor),
           onPressed: () {
+            UserRoleResolver.instance.reset();
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (_) => AuthScreen(themedata: theme)),
@@ -221,7 +263,7 @@ class OutfitterDashboard extends StatelessWidget {
               Icon(Icons.villa_rounded, color: theme.accentColor, size: 32),
               const SizedBox(width: 16),
               Text(
-                'LODGE GATEWAY ONLINE',
+                _isManager ? 'FARM GATEWAY ONLINE' : 'LODGE GATEWAY ONLINE',
                 style: TextStyle(
                   color: theme.textColor,
                   fontWeight: FontWeight.w700,
@@ -233,7 +275,9 @@ class OutfitterDashboard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Outfitter Control Center loaded. Dashboard sync active.',
+            _isManager 
+                ? 'Farm Manager access active. Restricted to ${_assignedFarmId ?? 'N/A'}.'
+                : 'Outfitter Control Center loaded. Dashboard sync active.',
             style: TextStyle(color: theme.textColor.withAlpha(160), fontSize: 13, height: 1.4),
           ),
         ],
@@ -320,7 +364,7 @@ class OutfitterDashboard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'OUTFITTER SETTINGS',
+              _isManager ? 'FARM MANAGER SETTINGS' : 'OUTFITTER SETTINGS',
               style: TextStyle(
                 color: theme.textColor,
                 fontWeight: FontWeight.bold,

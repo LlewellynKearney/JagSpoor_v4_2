@@ -6,6 +6,7 @@ import 'package:signature/signature.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/transport_permit_manager.dart';
 import '../services/transport_permit_pdf_exporter.dart';
+import '../services/user_role_resolver.dart';
 
 class OutfitterTransportPermitScreen extends StatefulWidget {
   final ThemeController theme;
@@ -45,10 +46,15 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
   // Loading states
   bool _isLoading = false;
   bool _isSubmitting = false;
+  bool _isManager = false;
 
   @override
   void initState() {
     super.initState();
+    _isManager = UserRoleResolver.instance.isManager;
+    if (_isManager && UserRoleResolver.instance.assignedFarmId != null) {
+      _selectedFarmId = UserRoleResolver.instance.assignedFarmId;
+    }
     _loadFarms();
   }
 
@@ -303,16 +309,21 @@ class _OutfitterTransportPermitScreenState extends State<OutfitterTransportPermi
                       child: DropdownButton<String>(
                         value: _selectedFarmId,
                         isExpanded: true,
-                        hint: Text('Select Farm/Concession', style: TextStyle(color: theme.subtitleColor)),
+                        hint: Text(
+                          _isManager ? 'Locked to assigned farm' : 'Select Farm/Concession',
+                          style: TextStyle(color: theme.subtitleColor),
+                        ),
                         dropdownColor: theme.cardColor,
                         style: TextStyle(color: theme.textColor),
+                        icon: _isManager ? Icon(Icons.lock_rounded, color: theme.accentColor) : null,
                         items: _farms.map((farm) {
                           return DropdownMenuItem(
                             value: farm['id'] as String,
                             child: Text(farm['name'] as String? ?? 'Unknown Farm'),
                           );
                         }).toList(),
-                        onChanged: (value) {
+                        onChanged: _isManager ? null : (value) {
+                          if (value == null) return;
                           final farm = _farms.firstWhere((f) => f['id'] == value);
                           setState(() {
                             _selectedFarmId = value;

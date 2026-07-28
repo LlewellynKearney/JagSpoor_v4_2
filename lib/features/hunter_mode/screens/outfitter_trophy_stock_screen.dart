@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../services/user_role_resolver.dart';
 
 class OutfitterTrophyStockScreen extends StatefulWidget {
   final ThemeController theme;
@@ -23,6 +24,7 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
   String? _selectedFarmId;
   String? _selectedFarmName;
   bool _isSyncing = false;
+  bool _isManager = false;
 
   // Common species suggestions
   static const List<String> _commonSpecies = [
@@ -47,6 +49,26 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
     'Eland',
     'Hippo',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _isManager = UserRoleResolver.instance.isManager;
+    if (_isManager && UserRoleResolver.instance.assignedFarmId != null) {
+      _selectedFarmId = UserRoleResolver.instance.assignedFarmId;
+      _loadFarmName();
+    }
+  }
+
+  Future<void> _loadFarmName() async {
+    if (_selectedFarmId == null) return;
+    final farmDoc = await FirebaseFirestore.instance.collection('farms').doc(_selectedFarmId).get();
+    if (farmDoc.exists && mounted) {
+      setState(() {
+        _selectedFarmName = (farmDoc.data() as Map<String, dynamic>?)?['name'] ?? 'Unknown Farm';
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -261,10 +283,14 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                             return DropdownButtonFormField<String>(
                               value: _selectedFarmId,
                               decoration: InputDecoration(
-                                hintText: 'Choose a farm...',
+                                hintText: _isManager 
+                                    ? 'Locked to assigned farm' 
+                                    : 'Choose a farm...',
                                 hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
                                 filled: true,
-                                fillColor: theme.backgroundColor,
+                                fillColor: _isManager 
+                                    ? theme.accentColor.withValues(alpha: 0.1) 
+                                    : theme.backgroundColor,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -273,6 +299,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
                                 ),
+                                prefixIcon: _isManager 
+                                    ? Icon(Icons.lock_rounded, color: theme.accentColor) 
+                                    : null,
                               ),
                               dropdownColor: theme.cardColor,
                               style: TextStyle(color: theme.textColor),
@@ -283,7 +312,8 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                   child: Text(data['name'] ?? 'Unknown'),
                                 );
                               }).toList(),
-                              onChanged: (value) {
+                              onChanged: _isManager ? null : (value) {
+                                if (value == null) return;
                                 final farm = farms.firstWhere((doc) => doc.id == value);
                                 setState(() {
                                   _selectedFarmId = value;

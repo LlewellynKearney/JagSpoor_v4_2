@@ -4,34 +4,60 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/outfitter_invoice_exporter.dart';
+import '../services/user_role_resolver.dart';
 
-class OutfitterBookingDashboardScreen extends StatelessWidget {
+class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
 
   const OutfitterBookingDashboardScreen({super.key, required this.theme});
 
   @override
-  Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  State<OutfitterBookingDashboardScreen> createState() => _OutfitterBookingDashboardScreenState();
+}
 
+class _OutfitterBookingDashboardScreenState extends State<OutfitterBookingDashboardScreen> {
+  late Query _bookingQuery;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildBookingQuery();
+  }
+
+  void _buildBookingQuery() {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (UserRoleResolver.instance.isManager) {
+      // Isolate logs purely to the manager's assigned concession property
+      _bookingQuery = FirebaseFirestore.instance
+          .collection('bookings')
+          .where('farmId', isEqualTo: UserRoleResolver.instance.assignedFarmId);
+    } else {
+      // Outfitters pull records matching their corporate profile
+      _bookingQuery = FirebaseFirestore.instance
+          .collection('bookings')
+          .where('outfitterId', isEqualTo: currentUserId);
+    }
+    _bookingQuery = _bookingQuery.orderBy('bookingTimestamp', descending: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: theme.backgroundColor,
+      backgroundColor: widget.theme.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          '💳 Booking Requests',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          UserRoleResolver.instance.isManager 
+              ? '💳 Farm Booking Requests'
+              : '💳 Booking Requests',
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: widget.theme.backgroundColor,
+        foregroundColor: widget.theme.textColor,
         elevation: 0,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where('outfitterId', isEqualTo: currentUserId)
-            .orderBy('bookingTimestamp', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
+      body: StreamBuilder(
+        stream: _bookingQuery.snapshots(),
+        builder: (context, AsyncSnapshot snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(color: Colors.green),
@@ -47,7 +73,7 @@ class OutfitterBookingDashboardScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   Text(
                     'Error loading bookings',
-                    style: TextStyle(color: theme.textColor),
+                    style: TextStyle(color: widget.theme.textColor),
                   ),
                 ],
               ),
@@ -63,14 +89,14 @@ class OutfitterBookingDashboardScreen extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.inbox_rounded,
-                    color: theme.accentColor.withValues(alpha: 0.5),
+                    color: widget.theme.accentColor.withValues(alpha: 0.5),
                     size: 64,
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'No booking requests',
                     style: TextStyle(
-                      color: theme.textColor,
+                      color: widget.theme.textColor,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -78,7 +104,7 @@ class OutfitterBookingDashboardScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Booking requests will appear here',
-                    style: TextStyle(color: theme.subtitleColor),
+                    style: TextStyle(color: widget.theme.subtitleColor),
                   ),
                 ],
               ),
@@ -94,7 +120,7 @@ class OutfitterBookingDashboardScreen extends StatelessWidget {
               return _BookingCard(
                 bookingId: booking.id,
                 data: data,
-                theme: theme,
+                theme: widget.theme,
               );
             },
           );
