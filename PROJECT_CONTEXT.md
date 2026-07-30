@@ -109,7 +109,7 @@ Local SQLite fallback transaction engine:
 - Auto-syncs projected targets to `OfflineSyncQueue`
 
 ### 4.2 Hardware-Driven Activity Forecaster HUD (`network_diagnostic_hud.dart`)
-- Binds to internal hardware barometric pressure sensor (`environment_sensors`)
+- Binds to barometric pressure sensor (platform-native implementation)
 - Overhead solunar transit calculations
 - Streams dynamic game movement probability ticker:
   ```
