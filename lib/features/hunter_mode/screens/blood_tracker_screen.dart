@@ -21,8 +21,18 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   bool _isInitialized = false;
   bool _isTorchOn = false;
   bool _isNightVisionActive = false;
+  bool _isThermalModeActive = false;
   bool _isDroppingPin = false;
   FlashMode _flashMode = FlashMode.off;
+
+  // High-contrast Ironbow pseudo-thermal color filter matrix
+  // Maps luminance deltas to hot reds/oranges while crushing greens and lifting cold shadows to deep blue
+  final List<double> _thermalMatrix = <double>[
+    -1.0,  2.0,  2.0, 0.0, -50.0,  // R channel: aggressive luminance amplification
+     2.0, -1.0,  0.0, 0.0, -100.0,  // G channel: crushes foliage wavelengths
+     0.0,  0.0,  3.0, 0.0, 100.0,   // B channel: lifts cold shadows to blue/indigo
+     0.0,  0.0,  0.0, 1.0,   0.0,   // Alpha: transparency stability
+  ];
 
   @override
   void initState() {
@@ -110,11 +120,29 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
   void _toggleNightVision() {
     setState(() {
+      // Thermal mode overrides night vision - deactivate thermal when switching to night vision
+      if (_isThermalModeActive) {
+        _isThermalModeActive = false;
+      }
       _isNightVisionActive = !_isNightVisionActive;
     });
     _showToast(
-      _isNightVisionActive ? '🌙 Night Vision ON - Green phosphor mode' : '☀️ Day Vision ON - Red isolation mode',
+      _isNightVisionActive ? '🌙 Night Vision ON - Green phosphor mode' : '☀️ Day Vision ON - Normal mode',
       _isNightVisionActive ? Colors.green : Colors.red,
+    );
+  }
+
+  void _toggleThermalVision() {
+    setState(() {
+      // Thermal mode overrides night vision - deactivate NV when switching to thermal
+      if (_isNightVisionActive) {
+        _isNightVisionActive = false;
+      }
+      _isThermalModeActive = !_isThermalModeActive;
+    });
+    _showToast(
+      _isThermalModeActive ? '🌡️ Thermal View ON - Ironbow palette active' : '🌡️ Thermal View OFF - Normal mode',
+      _isThermalModeActive ? Colors.orange : Colors.grey,
     );
   }
 
@@ -311,7 +339,16 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       0, 0, 0, 1, 0,
     ];
 
-    final colorMatrix = _isNightVisionActive ? nightVisionMatrix : redIsolationMatrix;
+    // Determine which matrix to use: Thermal overrides Night Vision
+    List<double> colorMatrix;
+    if (_isThermalModeActive) {
+      // Ironbow pseudo-thermal palette: hot reds/oranges, crushed greens, deep blue cold shadows
+      colorMatrix = _thermalMatrix;
+    } else if (_isNightVisionActive) {
+      colorMatrix = nightVisionMatrix;
+    } else {
+      colorMatrix = redIsolationMatrix;
+    }
 
     return Positioned.fill(
       child: ColorFiltered(
@@ -424,6 +461,17 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                 : Colors.black.withValues(alpha: 0.6),
             iconColor: _isNightVisionActive ? Colors.green : Colors.white70,
             onTap: _toggleNightVision,
+          ),
+
+          // Thermal Vision toggle button - Ironbow palette
+          _buildHudButton(
+            icon: _isThermalModeActive ? Icons.thermostat : Icons.visibility,
+            label: _isThermalModeActive ? 'THERM' : 'THERM',
+            backgroundColor: _isThermalModeActive
+                ? Colors.deepOrange.withValues(alpha: 0.5)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor: _isThermalModeActive ? Colors.orange : Colors.white70,
+            onTap: _toggleThermalVision,
           ),
 
           // Blood drop pin button
