@@ -1,0 +1,140 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Release notes for Firebase App Distribution'
+        required: false
+        default: 'New build available!'
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug.apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+
+  build-ios:
+    name: Build iOS (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS for simulator
+        run: flutter build ios --simulator --no-codesign
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: build/ios/iphonesimulator/
+
+  deploy-firebase:
+    name: Deploy to Firebase App Distribution
+    runs-on: ubuntu-latest
+    needs: build-android
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Get latest commit info
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug.apk
+          path: build/app/outputs/flutter-apk/
+
+      - name: Upload to Firebase App Distribution (Android)
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appClaFile: CLAUDE.md
+          credentialsFile: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: testers
+          file: build/app/outputs/flutter-apk/app-debug.apk
+          release-notes: |
+            ${{ github.event.inputs.release_notes || steps.commit.outputs.message }}
+            Commit: ${{ steps.commit.outputs.sha }}
+            Branch: main
+          notifications: true
+          testers: ${{ secrets.TESTER_EMAILS }}
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-firebase
+    steps:
+      - name: Send Discord Notification
+        if: vars.DISCORD_WEBHOOK != ''
+        uses: aristidp/discord-action@v1
+        with:
+          webhook: ${{ vars.DISCORD_WEBHOOK }}
+          message: |
+            ✅ **Jagspoor Build Deployed!**
+            📱 New APK available on Firebase App Distribution
+            👥 Testers have been emailed
+            🔗 Check Firebase Console for details
