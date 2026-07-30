@@ -207,7 +207,8 @@ lib/
 │   │   │   ├── map_path_tracer.dart              # Breadcrumb tracking
 │   │   │   └── chat_and_filter_service.dart      # Negotiation threads
 │   │   └── widgets/
-│   │       └── network_diagnostic_hud.dart        # Game activity forecaster
+│   │       ├── network_diagnostic_hud.dart        # Game activity forecaster
+│   │       └── vital_zone_painter.dart            # Anatomical overlay renderer
 │   └── outfitter_mode/
 │       ├── screens/
 │       │   ├── outfitter_dashboard.dart          # Enterprise cockpit
