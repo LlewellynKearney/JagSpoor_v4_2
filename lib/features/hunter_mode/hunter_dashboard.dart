@@ -18,6 +18,7 @@ import 'screens/mesh_radar_screen.dart';
 import 'screens/carcass_matrix_screen.dart';
 import 'screens/offline_navigation_screen.dart';
 import 'screens/blood_tracker_screen.dart';
+import 'screens/scope_calibration_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/hunter_custom_package_builder_screen.dart';
@@ -186,6 +187,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
             builder: (sheetContext) => const ScopeToolsBottomSheet(),
           );
         },
+      ),
+      DashboardFeature(
+        id: 'scope_calibration_hud',
+        icon: Icons.gps_fixed,
+        title: '🎯 Rifle Scope Ballistic HUD',
+        description: 'Advanced turret dial calibration with MOA/MRAD click calculator and rangefinder integration.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ScopeCalibrationScreen(theme: theme)),
+        ),
       ),
       DashboardFeature(
         id: 'saps_tracker',
