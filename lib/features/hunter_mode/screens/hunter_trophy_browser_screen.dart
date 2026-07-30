@@ -72,6 +72,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
           'pricePerTrophy': trophyData['pricePerTrophyRands'] ?? 0.0,
           'sex': trophyData['sex'] ?? 'Mixed',
           'outfitterId': trophyData['outfitterId'] ?? '',
+          'imageUrl': trophyData['imageUrl']?.toString() ?? '',
         });
       }
 
@@ -186,6 +187,90 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
         _selectedTrophyIds.clear();
       });
     }
+  }
+
+  /// High-contrast tactical HUD placeholder for missing trophy images
+  Widget _buildTrophyPlaceholder(ThemeController theme) {
+    return Container(
+      width: 70,
+      height: 70,
+      decoration: BoxDecoration(
+        color: theme.backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: theme.accentColor.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Corner HUD markers
+          Positioned(
+            top: 4,
+            left: 4,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  left: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  right: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 4,
+            left: 4,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  left: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 4,
+            right: 4,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  right: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                ),
+              ),
+            ),
+          ),
+          // Center icon
+          Icon(
+            Icons.pets_rounded,
+            color: theme.accentColor.withValues(alpha: 0.7),
+            size: 32,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -318,6 +403,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                           final isSelected = _selectedTrophyIds.contains(trophyId);
                           final price = (trophy['pricePerTrophy'] as num?)?.toDouble() ?? 0.0;
                           final available = (trophy['available'] as num?)?.toInt() ?? 0;
+                          final String imageUrl = trophy['imageUrl']?.toString() ?? '';
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
@@ -338,20 +424,28 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                                 padding: const EdgeInsets.all(16),
                                 child: Row(
                                   children: [
-                                    // Selection Checkbox
+                                    // Trophy Image with Tactical HUD Placeholder
                                     Container(
-                                      width: 40,
-                                      height: 40,
+                                      width: 70,
+                                      height: 70,
                                       decoration: BoxDecoration(
-                                        color: isSelected
-                                            ? Colors.green.withValues(alpha: 0.2)
-                                            : theme.accentColor.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: theme.accentColor.withValues(alpha: 0.5),
+                                          width: 2,
+                                        ),
                                       ),
-                                      child: Center(
-                                        child: isSelected
-                                            ? const Icon(Icons.check_circle, color: Colors.green)
-                                            : Icon(Icons.pets_rounded, color: theme.accentColor),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: imageUrl.isNotEmpty
+                                            ? Image.network(
+                                                imageUrl,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return _buildTrophyPlaceholder(theme);
+                                                },
+                                              )
+                                            : _buildTrophyPlaceholder(theme),
                                       ),
                                     ),
                                     const SizedBox(width: 12),
@@ -360,22 +454,36 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            trophy['species'] as String? ?? 'Unknown',
-                                            style: TextStyle(
-                                              color: theme.textColor,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                            ),
+                                          Row(
+                                            children: [
+                                              if (isSelected)
+                                                const Padding(
+                                                  padding: EdgeInsets.only(right: 6),
+                                                  child: Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                                ),
+                                              Expanded(
+                                                child: Text(
+                                                  trophy['species'] as String? ?? 'Unknown',
+                                                  style: TextStyle(
+                                                    color: theme.textColor,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
                                               Icon(Icons.location_on_rounded, color: theme.subtitleColor, size: 14),
                                               const SizedBox(width: 4),
-                                              Text(
-                                                '${trophy['farmName']} • ${trophy['province']}',
-                                                style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  '${trophy['farmName']} • ${trophy['province']}',
+                                                  style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -422,7 +530,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                                       children: [
                                         Text(
                                           'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             color: Colors.green,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
