@@ -65,7 +65,7 @@ dependencies:
   url_launcher: ^6.3.0
 
   # Hardware compass for tactical navigation
-  flutter_compass: ^0.8.0
+  flutter_compass: ^0.8.1
 
   # Accelerometer and gyroscope sensors for gyro leveler (v20.2)
   sensors_plus: ^6.1.1
@@ -88,6 +88,8 @@ dependencies:
   flutter_local_notifications: ^22.2.0
   signature: ^6.4.0
   file_picker: ^12.0.0-beta.1
+  flutter_blue_plus: ^2.3.11
+  environment_sensors: ^0.3.0
 
 dev_dependencies:
   flutter_test:

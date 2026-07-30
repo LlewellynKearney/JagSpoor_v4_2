@@ -5,11 +5,13 @@ import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_map_cache.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
 import '../services/chat_and_filter_service.dart';
+import '../services/advanced_tactical_service.dart';
 
 class OfflineNavigationScreen extends StatefulWidget {
   final ThemeController theme;
@@ -47,11 +49,19 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   // GPS live tracking state
   bool _isGpsTrackingActive = false;
 
+  // Compass heading from flutter_compass
+  double _currentHeading = 0.0;
+  StreamSubscription<CompassEvent>? _compassSubscription;
+
+  // BLE Rangefinder state
+  bool _isRangefinderConnected = false;
+  bool _isSimulatingRangefinder = false;
+
   // Waypoint type options
-  static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Other'];
+  static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Rangefinder Target', 'Other'];
   
-  // Waypoint filter options for toolbar
-  static const List<String> _waypointFilterOptions = ['All', 'Kill Site', 'Blood Spoor', 'Water Hole', 'Camp'];
+  // Waypoint filter options for toolbar (includes Rangefinder Target)
+  static const List<String> _waypointFilterOptions = ['All', 'Kill Site', 'Blood Spoor', 'Water Hole', 'Camp', 'Rangefinder Target'];
   String _selectedWaypointFilter = 'All';
 
   // Advanced Filter State
@@ -165,6 +175,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     super.initState();
     _initializeCache();
     _startLocationTracking();
+    _startCompassTracking();
   }
 
   void _startLocationTracking() {
@@ -185,10 +196,21 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     }
   }
 
+  void _startCompassTracking() {
+    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
+      if (mounted && event.heading != null) {
+        setState(() {
+          _currentHeading = event.heading!;
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
     _mapController.dispose();
     _locationSubscription?.cancel();
+    _compassSubscription?.cancel();
     super.dispose();
   }
 
@@ -229,6 +251,114 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  /// Simulates a rangefinder trigger event for testing BLE rangefinder integration.
+  /// Captures current location and heading, projects target coordinates,
+  /// and adds a 'Rangefinder Target' waypoint to the map and sync queue.
+  Future<void> _simulateRangefinderTrigger() async {
+    setState(() {
+      _isSimulatingRangefinder = true;
+    });
+
+    try {
+      // Get current position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Simulate a random distance between 50-500 yards for testing
+      final simulatedDistance = 50.0 + (DateTime.now().millisecond % 450).toDouble();
+
+      // Project target coordinates using the tactical service
+      final projectedCoords = AdvancedTacticalService.instance.projectTargetCoordinates(
+        startLat: position.latitude,
+        startLon: position.longitude,
+        bearingDegrees: _currentHeading,
+        distanceYards: simulatedDistance,
+      );
+
+      // Add as rangefinder target waypoint
+      await _addRangefinderTarget(
+        targetLat: projectedCoords['lat']!,
+        targetLon: projectedCoords['lon']!,
+        distanceYards: simulatedDistance,
+        bearingDegrees: _currentHeading,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '🎯 Rangefinder target projected: ${simulatedDistance.toStringAsFixed(0)}y @ ${_currentHeading.toStringAsFixed(0)}°',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Rangefinder error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isSimulatingRangefinder = false;
+      });
+    }
+  }
+
+  /// Adds a rangefinder target waypoint to the map and syncs to offline queue.
+  Future<void> _addRangefinderTarget({
+    required double targetLat,
+    required double targetLon,
+    required double distanceYards,
+    required double bearingDegrees,
+  }) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final waypointId = 'rf_${timestamp}_$userId';
+
+    final waypointData = {
+      'id': waypointId,
+      'position': LatLng(targetLat, targetLon),
+      'type': 'Rangefinder Target',
+      'hunterId': userId,
+      'createdAtMillis': timestamp,
+      'distanceYards': distanceYards,
+      'bearingDegrees': bearingDegrees,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    // Add to local map markers
+    _waypointsData.add(waypointData as Map<String, dynamic>);
+
+    // Sync to offline queue for later cloud sync
+    await OfflineSyncQueue.instance.enqueueAction(
+      'waypoints',
+      'create',
+      {
+        'documentId': waypointId,
+        'hunterId': userId,
+        'position': {
+          'lat': targetLat,
+          'lon': targetLon,
+        },
+        'type': 'Rangefinder Target',
+        'createdAtMillis': timestamp,
+        'distanceYards': distanceYards,
+        'bearingDegrees': bearingDegrees,
+      },
+    );
+
+    setState(() {});
   }
 
   Future<void> _initializeCache() async {
@@ -1181,6 +1311,65 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+        
+        // Bluetooth Rangefinder Sync Button
+        Positioned(
+          top: 16,
+          right: 134,
+          child: GestureDetector(
+            onTap: _isSimulatingRangefinder ? null : _simulateRangefinderTrigger,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _isRangefinderConnected
+                    ? Colors.blue.withValues(alpha: 0.9)
+                    : theme.cardColor.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _isRangefinderConnected ? Colors.blue : theme.accentColor,
+                  width: _isRangefinderConnected ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isRangefinderConnected
+                        ? Colors.blue.withValues(alpha: 0.4)
+                        : Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: _isSimulatingRangefinder
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.accentColor,
+                      ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.bluetooth_searching,
+                          color: _isRangefinderConnected ? Colors.white : theme.accentColor,
+                          size: 24,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'RF',
+                          style: TextStyle(
+                            color: _isRangefinderConnected ? Colors.white : theme.textColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ),
