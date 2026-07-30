@@ -324,7 +324,7 @@ class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplac
           itemCount: bookings.length,
           itemBuilder: (context, index) {
             final booking = bookings[index];
-            final data = booking.data() as Map<String, dynamic>;
+            final data = booking.data();
             final bookingId = booking.id;
 
             return _HunterBookingCard(

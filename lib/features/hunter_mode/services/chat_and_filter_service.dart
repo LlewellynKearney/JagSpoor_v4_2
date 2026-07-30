@@ -61,7 +61,7 @@ class ChatAndFilterService {
         .collection('chats')
         .add(messageData);
 
-    print('✅ Chat message sent to booking $bookingId by $senderName');
+    // Chat message sent successfully - Firestore write complete
   }
 
   // ==========================================
