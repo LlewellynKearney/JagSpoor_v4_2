@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mockito/mock.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:jagspoor_v4_2/features/hunter_mode/services/offline_sync_queue.dart';
+import 'package:jagspoor/features/hunter_mode/services/offline_sync_queue.dart';
 
 
 void main() {

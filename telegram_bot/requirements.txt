@@ -1,0 +1,17 @@
+# JagSpoor Telegram Bot Dependencies
+
+# Core Telegram bot framework
+python-telegram-bot>=22.0
+
+# Firebase Admin SDK (optional - for production)
+firebase-admin==6.4.0
+
+# HTTP requests
+requests==2.31.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Webhook server
+flask==3.0.0
+gunicorn==21.2.0
