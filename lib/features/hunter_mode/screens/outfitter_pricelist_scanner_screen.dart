@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../services/user_role_resolver.dart';
+import 'outfitter_pricelist_verification_screen.dart';
 
 class OutfitterPricelistScannerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -111,17 +112,31 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
     setState(() => _isLoading = true);
 
     try {
-      await _pricelistService.processAndUploadPricelistImage(
+      // Extract items for verification instead of directly saving
+      final extractedItems = await _pricelistService.extractPricelistItems(
         farmId: _selectedFarmId!,
         imageFile: file,
       );
 
-      if (mounted) {
-        _showSuccess('Price list uploaded successfully! ${_selectedFarmName ?? 'Farm'}');
+      if (mounted && extractedItems.isNotEmpty) {
+        // Navigate to verification screen with extracted items
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => OutfitterPricelistVerificationScreen(
+              theme: widget.theme,
+              extractedItems: extractedItems,
+              farmId: _selectedFarmId,
+              farmName: _selectedFarmName,
+              imageFileName: file.path.split('/').last,
+            ),
+          ),
+        );
+      } else if (mounted) {
+        _showError('No items could be extracted from the image');
       }
     } catch (e) {
       if (mounted) {
-        _showError('Upload failed: $e');
+        _showError('Processing failed: $e');
       }
     } finally {
       if (mounted) {

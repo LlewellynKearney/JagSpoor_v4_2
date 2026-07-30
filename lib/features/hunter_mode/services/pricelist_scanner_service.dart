@@ -29,6 +29,46 @@ class PricelistScannerService {
   /// Processing steps:
   /// 1. Simulate text extraction from image
   /// 2. Parse raw strings into structured data
+  /// 3. Return extracted items for verification
+  Future<List<Map<String, dynamic>>> extractPricelistItems({
+    required String farmId,
+    required File imageFile,
+  }) async {
+    // Simulate high-fidelity text extraction
+    // In production, replace with actual OCR integration (ML Kit, AWS Textract, etc.)
+    final List<Map<String, dynamic>> simulatedLines = _simulateTextExtraction();
+
+    // Process and clean extracted data
+    final List<Map<String, dynamic>> processedItems = [];
+    
+    for (final line in simulatedLines) {
+      final speciesName = line['species'] as String;
+      final basePrice = (line['basePrice'] as num).toDouble();
+      
+      // Store base price (display price will be calculated on save)
+      processedItems.add({
+        'name': speciesName,
+        'outfitterBasePrice': basePrice,
+      });
+    }
+
+    print('✅ Pricelist extracted: ${processedItems.length} items ready for verification');
+    return processedItems;
+  }
+
+  /// Processes and uploads a price list image to Firestore.
+  /// 
+  /// This method is kept for backward compatibility.
+  /// New code should use extractPricelistItems() followed by
+  /// OutfitterPricelistVerificationScreen for proper workflow.
+  /// 
+  /// Parameters:
+  /// - [farmId]: The farm/concession ID this price list belongs to
+  /// - [imageFile]: The image file containing the price list (for future OCR integration)
+  /// 
+  /// Processing steps:
+  /// 1. Simulate text extraction from image
+  /// 2. Parse raw strings into structured data
   /// 3. Calculate 5% platform fee for each item
   /// 4. Upload structured document to Firestore
   Future<void> processAndUploadPricelistImage({

@@ -148,6 +148,7 @@ class _BookingCard extends StatefulWidget {
 class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
   bool _isExporting = false;
+  bool _isCustomItemsExpanded = false;
 
   Future<void> _updateStatus(String newStatus) async {
     setState(() {
@@ -254,6 +255,156 @@ class _BookingCardState extends State<_BookingCard> {
       default:
         return Colors.grey;
     }
+  }
+
+  Widget _buildCustomItemsSection() {
+    final selectedItems = widget.data['selectedItemsList'] as List<dynamic>? ?? [];
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: widget.theme.accentColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.theme.accentColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Expandable Header
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isCustomItemsExpanded = !_isCustomItemsExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.list_alt_rounded,
+                      color: widget.theme.accentColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CUSTOM BUILT PACKAGE',
+                          style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${selectedItems.length} item${selectedItems.length != 1 ? 's' : ''} selected',
+                          style: TextStyle(
+                            color: widget.theme.subtitleColor,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _isCustomItemsExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: widget.theme.accentColor,
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expandable Content
+          if (_isCustomItemsExpanded && selectedItems.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  ...selectedItems.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value as Map<String, dynamic>;
+                    final itemName = item['name'] ?? 'Unknown Item';
+                    final hunterPrice = (item['hunterPrice'] ?? 0.0).toDouble();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: widget.theme.backgroundColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: widget.theme.accentColor.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 24,
+                            height: 24,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: widget.theme.accentColor.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: widget.theme.accentColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              itemName,
+                              style: TextStyle(
+                                color: widget.theme.textColor,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'R ${hunterPrice.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -394,6 +545,12 @@ class _BookingCardState extends State<_BookingCard> {
               ],
             ),
           ),
+
+          // CUSTOM_BUILT Expandable Container
+          if (packageId == 'CUSTOM_BUILT') ...[
+            _buildCustomItemsSection(),
+            const SizedBox(height: 8),
+          ],
 
           // Financial Breakdown
           Container(
