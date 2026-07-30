@@ -146,6 +146,15 @@ Offline point-mass ballistic calculator featuring:
   - Dope card (Data On Previous Engagement) history
   - Zero range confirmation marker
 
+### 4.5 Ballistic Trajectory Solver Engine (`ballistic_solver_service.dart`)
+Central offline ballistic processing engine providing:
+- **Point-mass trajectory calculation** with gravity (32.174 ft/s²)
+- **Slant-range cosine angle corrections** for uphill/downhill shots
+- **Air density factor** derived from barometric pressure (hPa)
+- **MOA/MRAD conversion** with integer click count output
+- **Effective range estimation** based on maximum allowable drop
+- **Trajectory table generation** for dope card building
+
 ---
 
 ## 5. Compliance & Documentation Exporters
@@ -184,6 +193,7 @@ lib/
 │   │   │   └── outfitter_booking_dashboard_screen.dart  # Booking queue
 │   │   ├── services/
 │   │   │   ├── advanced_tactical_service.dart    # BLE rangefinder math
+│   │   │   ├── ballistic_solver_service.dart      # Ballistic trajectory engine
 │   │   │   ├── offline_sync_queue.dart           # SQLite fallback
 │   │   │   ├── map_path_tracer.dart              # Breadcrumb tracking
 │   │   │   └── chat_and_filter_service.dart      # Negotiation threads
