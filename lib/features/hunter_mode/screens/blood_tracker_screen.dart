@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
+import '../widgets/vital_zone_painter.dart';
 
 class BloodTrackerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -24,6 +25,11 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   bool _isThermalModeActive = false;
   bool _isDroppingPin = false;
   FlashMode _flashMode = FlashMode.off;
+
+  // Vital zone anatomy overlay state
+  String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
+  double _anatomyScale = 1.0;
+  Offset _anatomyOffset = Offset.zero;
 
   // High-contrast Ironbow pseudo-thermal color filter matrix
   // Maps luminance deltas to hot reds/oranges while crushing greens and lifting cold shadows to deep blue
@@ -264,6 +270,33 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           // Camera viewport layer
           _buildCameraViewport(),
 
+          // Vital zone anatomy overlay (pinch to scale, drag to move)
+          if (_selectedSpecies != 'None')
+            Positioned.fill(
+              child: GestureDetector(
+                onScaleUpdate: (ScaleUpdateDetails details) {
+                  setState(() {
+                    _anatomyScale = (details.scale * _anatomyScale).clamp(0.5, 3.0);
+                    _anatomyOffset += details.focalPointDelta;
+                  });
+                },
+                onDoubleTap: () {
+                  setState(() {
+                    _anatomyScale = 1.0;
+                    _anatomyOffset = Offset.zero;
+                  });
+                },
+                child: CustomPaint(
+                  painter: VitalZonePainter(
+                    species: _selectedSpecies,
+                    scale: _anatomyScale,
+                    offset: _anatomyOffset,
+                  ),
+                  child: Container(),
+                ),
+              ),
+            ),
+
           // Red color isolation overlay
           _buildColorIsolationOverlay(),
 
@@ -272,6 +305,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
           // Tactical radar HUD controls
           _buildHudDashboard(theme),
+
+          // Anatomy selection toolbar
+          _buildAnatomySelectionToolbar(theme),
 
           // Crosshair reticle
           _buildCrosshairReticle(),
@@ -724,5 +760,124 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         ),
       ),
     ];
+  }
+
+  /// Anatomy species selection toolbar for vital zone overlays
+  Widget _buildAnatomySelectionToolbar(ThemeController theme) {
+    return Positioned(
+      bottom: 160,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: Colors.orange.withValues(alpha: 0.4),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // Kudu button
+              _buildAnatomyButton(
+                label: 'KUDU',
+                icon: '🦌',
+                isSelected: _selectedSpecies == 'Kudu',
+                onTap: () => _selectSpecies('Kudu'),
+              ),
+              // Impala button
+              _buildAnatomyButton(
+                label: 'IMPALA',
+                icon: '🦌',
+                isSelected: _selectedSpecies == 'Impala',
+                onTap: () => _selectSpecies('Impala'),
+              ),
+              // Warthog button
+              _buildAnatomyButton(
+                label: 'WARTHOG',
+                icon: '🐗',
+                isSelected: _selectedSpecies == 'Warthog',
+                onTap: () => _selectSpecies('Warthog'),
+              ),
+              // Hide button
+              _buildAnatomyButton(
+                label: 'HIDE',
+                icon: '🚫',
+                isSelected: _selectedSpecies == 'None',
+                onTap: () => _selectSpecies('None'),
+                isRed: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnatomyButton({
+    required String label,
+    required String icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    bool isRed = false,
+  }) {
+    final activeColor = isRed ? Colors.red : Colors.orange;
+    final inactiveColor = Colors.white54;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor.withValues(alpha: 0.3)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeColor : inactiveColor,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              icon,
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? activeColor : inactiveColor,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectSpecies(String species) {
+    setState(() {
+      _selectedSpecies = species;
+      // Reset scale and offset when switching species
+      _anatomyScale = 1.0;
+      _anatomyOffset = Offset.zero;
+    });
+
+    if (species == 'None') {
+      _showToast('Vital zone overlay hidden', Colors.grey);
+    } else {
+      _showToast('🦌 $species vital zone overlay active', Colors.orange);
+    }
   }
 }
