@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
@@ -24,7 +26,12 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   bool _isNightVisionActive = false;
   bool _isThermalModeActive = false;
   bool _isDroppingPin = false;
+  bool _showMapView = false;
   FlashMode _flashMode = FlashMode.off;
+  
+  // GPS waypoint tracking
+  final List<Map<String, dynamic>> _waypoints = [];
+  double _totalDistance = 0;
 
   // Vital zone anatomy overlay state
   String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
@@ -171,6 +178,26 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         return;
       }
 
+      // Calculate distance from last waypoint
+      double distanceFromLast = 0;
+      if (_waypoints.isNotEmpty) {
+        final lastLat = _waypoints.last['lat'] as double;
+        final lastLon = _waypoints.last['lon'] as double;
+        distanceFromLast = _calculateDistance(lastLat, lastLon, position.latitude, position.longitude);
+        _totalDistance += distanceFromLast;
+      }
+
+      // Create waypoint entry
+      final waypoint = {
+        'lat': position.latitude,
+        'lon': position.longitude,
+        'timestamp': DateTime.now(),
+        'number': _waypoints.length + 1,
+        'distanceFromLast': distanceFromLast,
+      };
+      
+      _waypoints.add(waypoint);
+
       // Enqueue waypoint to OfflineSyncQueue
       await OfflineSyncQueue.instance.enqueueAction(
         'waypoints',
@@ -188,8 +215,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       MapPathTracer.instance.appendBloodDropNode(position.latitude, position.longitude);
 
       if (mounted) {
+        setState(() {});
         _showToast(
-          '🩸 Blood waypoint dropped at ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
+          '🩸 WP#${waypoint['number']} | ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)} | +${distanceFromLast.toStringAsFixed(0)}m',
           const Color(0xFFFF6B00),
         );
       }
@@ -203,6 +231,98 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         });
       }
     }
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const Distance distance = Distance();
+    return distance.as(LengthUnit.Meter, LatLng(lat1, lon1), LatLng(lat2, lon2));
+  }
+
+  void _toggleMapView() {
+    setState(() {
+      _showMapView = !_showMapView;
+    });
+  }
+
+  void _showMapFullScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _BloodTrailMapScreen(
+          waypoints: _waypoints,
+          totalDistance: _totalDistance,
+          theme: widget.theme,
+        ),
+      ),
+    );
+  }
+
+  void _exportGpsData() {
+    if (_waypoints.isEmpty) {
+      _showErrorSnackBar('No waypoints to export');
+      return;
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln('Blood Trail GPS Export');
+    buffer.writeln('Generated: ${DateTime.now().toIso8601String()}');
+    buffer.writeln('Total Distance: ${_totalDistance.toStringAsFixed(0)}m');
+    buffer.writeln('Total Waypoints: ${_waypoints.length}');
+    buffer.writeln('');
+    buffer.writeln('Waypoint,Latitude,Longitude,Distance from Last (m),Timestamp');
+    
+    for (int i = 0; i < _waypoints.length; i++) {
+      final wp = _waypoints[i];
+      buffer.writeln(
+        '${wp['number']},${wp['lat']},${wp['lon']},${(wp['distanceFromLast'] as double).toStringAsFixed(1)},${wp['timestamp']}'
+      );
+    }
+
+    _showGpsExportDialog(buffer.toString());
+  }
+
+  void _showGpsExportDialog(String gpsData) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('📍 GPS Export', style: TextStyle(color: Colors.white)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${_waypoints.length} waypoints | ${_totalDistance.toStringAsFixed(0)}m total',
+                style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  gpsData,
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<Position?> _getCurrentPosition() async {
@@ -501,27 +621,29 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
             onTap: _toggleNightVision,
           ),
 
-          // Thermal Vision toggle button - Ironbow palette
-          _buildHudButton(
-            icon: _isThermalModeActive ? Icons.thermostat : Icons.visibility,
-            label: _isThermalModeActive ? 'THERM' : 'THERM',
-            backgroundColor: _isThermalModeActive
-                ? Colors.deepOrange.withValues(alpha: 0.5)
-                : Colors.black.withValues(alpha: 0.6),
-            iconColor: _isThermalModeActive ? Colors.orange : Colors.white70,
-            onTap: _toggleThermalVision,
-          ),
-
           // Blood drop pin button
           _buildBloodPinButton(theme),
 
-          // Zoom indicator placeholder
+          // Map View button
           _buildHudButton(
-            icon: Icons.zoom_in,
-            label: '1.0x',
-            backgroundColor: Colors.black.withValues(alpha: 0.6),
-            iconColor: Colors.white70,
-            onTap: () {},
+            icon: Icons.map,
+            label: '${_waypoints.length} WP',
+            backgroundColor: _showMapView
+                ? Colors.blue.withValues(alpha: 0.5)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor: _showMapView ? Colors.lightBlueAccent : Colors.white70,
+            onTap: _showMapFullScreen,
+          ),
+
+          // Export GPS button
+          _buildHudButton(
+            icon: Icons.download,
+            label: _totalDistance > 0 ? '${_totalDistance.toStringAsFixed(0)}m' : 'GPS',
+            backgroundColor: _totalDistance > 0
+                ? Colors.green.withValues(alpha: 0.5)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor: _totalDistance > 0 ? Colors.lightGreenAccent : Colors.white70,
+            onTap: _exportGpsData,
           ),
         ],
       ),
@@ -973,5 +1095,255 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     setState(() {
       _currentStanceAngle = angle;
     });
+  }
+}
+
+/// Full-screen map view for blood trail visualization
+class _BloodTrailMapScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> waypoints;
+  final double totalDistance;
+  final ThemeController theme;
+
+  const _BloodTrailMapScreen({
+    required this.waypoints,
+    required this.totalDistance,
+    required this.theme,
+  });
+
+  @override
+  State<_BloodTrailMapScreen> createState() => _BloodTrailMapScreenState();
+}
+
+class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
+  final MapController _mapController = MapController();
+  double _currentZoom = 17.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final center = widget.waypoints.isNotEmpty
+        ? LatLng(
+            widget.waypoints.first['lat'] as double,
+            widget.waypoints.first['lon'] as double,
+          )
+        : const LatLng(-25.7479, 25.4833); // Center of South Africa
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text(
+          '🩸 Blood Trail Map',
+          style: TextStyle(color: widget.theme.accentColor),
+        ),
+        iconTheme: IconThemeData(color: widget.theme.accentColor),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.my_location, color: Colors.orange),
+            onPressed: _centerOnTrail,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Stats bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Colors.grey[900],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatChip('📍', '${widget.waypoints.length}', 'Waypoints'),
+                _buildStatChip('📏', '${widget.totalDistance.toStringAsFixed(0)}m', 'Distance'),
+                _buildStatChip('🩸', '${widget.waypoints.length}', 'Blood Spots'),
+              ],
+            ),
+          ),
+          // Map
+          Expanded(
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: center,
+                initialZoom: _currentZoom,
+                minZoom: 5,
+                maxZoom: 19,
+                onPositionChanged: (position, hasGesture) {
+                  if (position.zoom != null) {
+                    _currentZoom = position.zoom!;
+                  }
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.jagspoor.app',
+                ),
+                // Blood trail polyline
+                if (widget.waypoints.length > 1)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: widget.waypoints
+                            .map((wp) => LatLng(
+                                  wp['lat'] as double,
+                                  wp['lon'] as double,
+                                ))
+                            .toList(),
+                        strokeWidth: 4,
+                        color: Colors.red,
+                        borderColor: Colors.red[800]!,
+                        borderStrokeWidth: 2,
+                      ),
+                    ],
+                  ),
+                // Waypoint markers
+                MarkerLayer(
+                  markers: widget.waypoints.map((wp) {
+                    final number = wp['number'] as int;
+                    final distance = wp['distanceFromLast'] as double;
+                    return Marker(
+                      point: LatLng(wp['lat'] as double, wp['lon'] as double),
+                      width: 50,
+                      height: 60,
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: number == 1 ? Colors.green : Colors.red,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              '$number',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          if (number > 1)
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '+${distance.toStringAsFixed(0)}m',
+                                style: const TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          // Waypoint list
+          if (widget.waypoints.isNotEmpty)
+            Container(
+              height: 150,
+              color: Colors.grey[900],
+              child: ListView.builder(
+                itemCount: widget.waypoints.length,
+                itemBuilder: (context, index) {
+                  final wp = widget.waypoints[index];
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: index == 0 ? Colors.green : Colors.red,
+                      child: Text(
+                        '${wp['number']}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      '${(wp['lat'] as double).toStringAsFixed(6)}, ${(wp['lon'] as double).toStringAsFixed(6)}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    subtitle: Text(
+                      index > 0
+                          ? '+${(wp['distanceFromLast'] as double).toStringAsFixed(0)}m from last'
+                          : 'Start point',
+                      style: const TextStyle(color: Colors.orange, fontSize: 11),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.near_me, color: Colors.orange, size: 18),
+                      onPressed: () => _navigateToWaypoint(wp),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String icon, String value, String label) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(icon, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  void _centerOnTrail() {
+    if (widget.waypoints.isEmpty) return;
+
+    final center = LatLng(
+      widget.waypoints.first['lat'] as double,
+      widget.waypoints.first['lon'] as double,
+    );
+
+    _mapController.move(center, _currentZoom);
+  }
+
+  void _navigateToWaypoint(Map<String, dynamic> wp) {
+    _mapController.move(
+      LatLng(wp['lat'] as double, wp['lon'] as double),
+      18,
+    );
   }
 }
