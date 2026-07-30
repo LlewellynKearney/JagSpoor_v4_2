@@ -28,7 +28,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
   // Vital zone anatomy overlay state
   String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
-  String _stanceAngle = 'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
+  String _currentStanceAngle = 'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
   double _anatomyScale = 1.0;
   Offset _anatomyOffset = Offset.zero;
 
@@ -292,7 +292,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                     species: _selectedSpecies,
                     scale: _anatomyScale,
                     offset: _anatomyOffset,
-                    stanceAngle: _stanceAngle,
+                    stanceAngle: _currentStanceAngle,
                   ),
                   child: Container(),
                 ),
@@ -789,24 +789,24 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
               children: [
                 // Broadside button
                 _buildStanceButton(
-                  label: 'BROADSIDE',
-                  icon: '📐',
-                  isSelected: _stanceAngle == 'Broadside',
-                  onTap: () => _setStanceAngle('Broadside'),
+                  label: 'BROADSIDE (0°)',
+                  icon: '🏹',
+                  isSelected: _currentStanceAngle == 'Broadside',
+                  onTap: () => _setCurrentStanceAngle('Broadside'),
                 ),
                 // Quartering Towards button
                 _buildStanceButton(
-                  label: '←QTR',
-                  icon: '↙',
-                  isSelected: _stanceAngle == 'Quartering-Towards',
-                  onTap: () => _setStanceAngle('Quartering-Towards'),
+                  label: 'TOWARDS (+30°)',
+                  icon: '🏹',
+                  isSelected: _currentStanceAngle == 'Quartering-Towards',
+                  onTap: () => _setCurrentStanceAngle('Quartering-Towards'),
                 ),
                 // Quartering Away button
                 _buildStanceButton(
-                  label: 'QTR→',
-                  icon: '↘',
-                  isSelected: _stanceAngle == 'Quartering-Away',
-                  onTap: () => _setStanceAngle('Quartering-Away'),
+                  label: 'AWAY (-30°)',
+                  icon: '🏹',
+                  isSelected: _currentStanceAngle == 'Quartering-Away',
+                  onTap: () => _setCurrentStanceAngle('Quartering-Away'),
                 ),
               ],
             ),
@@ -969,9 +969,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     }
   }
 
-  void _setStanceAngle(String angle) {
+  void _setCurrentStanceAngle(String angle) {
     setState(() {
-      _stanceAngle = angle;
+      _currentStanceAngle = angle;
     });
   }
 }
