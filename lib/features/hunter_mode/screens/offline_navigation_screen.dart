@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../services/offline_map_cache.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
+import '../services/chat_and_filter_service.dart';
 
 class OfflineNavigationScreen extends StatefulWidget {
   final ThemeController theme;
@@ -52,15 +53,79 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   // Waypoint filter options for toolbar
   static const List<String> _waypointFilterOptions = ['All', 'Kill Site', 'Blood Spoor', 'Water Hole', 'Camp'];
   String _selectedWaypointFilter = 'All';
+
+  // Advanced Filter State
+  bool _showAdvancedFilters = false;
+  
+  // Time Range Filter (hours: 0=24h, 1=48h, 2=Unlimited)
+  double _timeRangeFilter = 2.0;
+  static const List<String> _timeRangeLabels = ['24 Hours', '48 Hours', 'All Time'];
+  
+  // Radius Filter (km: 0=1km, 1=5km, 2=10km, 3=Unlimited)
+  double _radiusFilter = 3.0;
+  static const List<String> _radiusLabels = ['1 km', '5 km', '10 km', 'Unlimited'];
   
   List<Marker> _buildMarkersForFilter(String filter) {
+    // Get filtered waypoints based on advanced filters
+    List<Map<String, dynamic>> filteredWaypoints = _applyAdvancedFilters(_waypointsData);
+    
     if (filter == 'All') {
-      return _waypointsData.map((w) => _buildMarkerFromData(w)).toList();
+      return filteredWaypoints.map((w) => _buildMarkerFromData(w)).toList();
     }
-    return _waypointsData
+    return filteredWaypoints
         .where((w) => w['type'] == filter)
         .map((w) => _buildMarkerFromData(w))
         .toList();
+  }
+  
+  List<Map<String, dynamic>> _applyAdvancedFilters(List<Map<String, dynamic>> waypoints) {
+    return waypoints.where((waypoint) {
+      // Skip if no position data
+      if (!waypoint.containsKey('position') || waypoint['position'] == null) {
+        return true; // Keep waypoints without position
+      }
+      
+      final position = waypoint['position'] as LatLng;
+      final createdAtMillis = waypoint['createdAtMillis'] as int? ?? 0;
+      
+      // Apply time filter
+      int hoursFilter;
+      if (_timeRangeFilter < 0.5) {
+        hoursFilter = 24;
+      } else if (_timeRangeFilter < 1.5) {
+        hoursFilter = 48;
+      } else {
+        hoursFilter = 999999; // Unlimited
+      }
+      
+      final passesTimeFilter = ChatAndFilterService.instance.isTimestampWithinHours(
+        documentTimestampMillis: createdAtMillis,
+        maxHoursFilter: hoursFilter,
+      );
+      
+      // Apply radius filter
+      double maxRadiusKm;
+      if (_radiusFilter < 0.5) {
+        maxRadiusKm = 1.0;
+      } else if (_radiusFilter < 1.5) {
+        maxRadiusKm = 5.0;
+      } else if (_radiusFilter < 2.5) {
+        maxRadiusKm = 10.0;
+      } else {
+        maxRadiusKm = double.infinity; // Unlimited
+      }
+      
+      final passesRadiusFilter = maxRadiusKm == double.infinity ||
+          ChatAndFilterService.instance.isCoordinateWithinRadius(
+            centerLat: _currentCenter.latitude,
+            centerLon: _currentCenter.longitude,
+            targetLat: position.latitude,
+            targetLon: position.longitude,
+            maxRadiusKm: maxRadiusKm,
+          );
+      
+      return passesTimeFilter && passesRadiusFilter;
+    }).toList();
   }
   
   Marker _buildMarkerFromData(Map<String, dynamic> data) {
@@ -640,51 +705,255 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   }
 
   Widget _buildWaypointFilterToolbar(ThemeController theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Filter Chips Row
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            border: Border(
+              bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Category Filter Chips
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _waypointFilterOptions.map((filter) {
+                      final isSelected = _selectedWaypointFilter == filter;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(
+                            filter,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : theme.textColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedWaypointFilter = filter;
+                            });
+                          },
+                          backgroundColor: theme.backgroundColor,
+                          selectedColor: _getFilterChipColor(filter, theme),
+                          checkmarkColor: Colors.white,
+                          side: BorderSide(
+                            color: isSelected ? _getFilterChipColor(filter, theme) : theme.accentColor.withValues(alpha: 0.3),
+                          ),
+                          avatar: Icon(
+                            _getFilterChipIcon(filter),
+                            size: 16,
+                            color: isSelected ? Colors.white : theme.accentColor,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              // Advanced Filter Toggle Button
+              Container(
+                decoration: BoxDecoration(
+                  color: _showAdvancedFilters
+                      ? theme.accentColor.withValues(alpha: 0.2)
+                      : theme.backgroundColor,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _showAdvancedFilters
+                        ? theme.accentColor
+                        : theme.accentColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _showAdvancedFilters = !_showAdvancedFilters;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.tune,
+                          size: 18,
+                          color: _showAdvancedFilters
+                              ? theme.accentColor
+                              : theme.textColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Filters',
+                          style: TextStyle(
+                            color: _showAdvancedFilters
+                                ? theme.accentColor
+                                : theme.textColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Advanced Filter Panel (Slider)
+        if (_showAdvancedFilters) _buildAdvancedFilterPanel(theme),
+      ],
+    );
+  }
+  
+  Widget _buildAdvancedFilterPanel(ThemeController theme) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: theme.accentColor.withValues(alpha: 0.05),
         border: Border(
           bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
         ),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: _waypointFilterOptions.map((filter) {
-            final isSelected = _selectedWaypointFilter == filter;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(
-                  filter,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Time Range Slider
+          Row(
+            children: [
+              Icon(
+                Icons.access_time,
+                color: theme.accentColor,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Time Range:',
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.accentColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  _timeRangeLabels[_timeRangeFilter.round().clamp(0, 2)],
                   style: TextStyle(
-                    color: isSelected ? Colors.white : theme.textColor,
+                    color: theme.accentColor,
+                    fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
                 ),
-                selected: isSelected,
-                onSelected: (selected) {
-                  setState(() {
-                    _selectedWaypointFilter = filter;
-                  });
-                },
-                backgroundColor: theme.backgroundColor,
-                selectedColor: _getFilterChipColor(filter, theme),
-                checkmarkColor: Colors.white,
-                side: BorderSide(
-                  color: isSelected ? _getFilterChipColor(filter, theme) : theme.accentColor.withValues(alpha: 0.3),
+              ),
+            ],
+          ),
+          Slider(
+            value: _timeRangeFilter,
+            min: 0,
+            max: 2,
+            divisions: 2,
+            activeColor: theme.accentColor,
+            inactiveColor: theme.accentColor.withValues(alpha: 0.3),
+            onChanged: (value) {
+              setState(() {
+                _timeRangeFilter = value;
+              });
+            },
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: _timeRangeLabels.map((label) {
+              return Text(
+                label,
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 10,
                 ),
-                avatar: Icon(
-                  _getFilterChipIcon(filter),
-                  size: 16,
-                  color: isSelected ? Colors.white : theme.accentColor,
+              );
+            }).toList(),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Radius Range Slider
+          Row(
+            children: [
+              Icon(
+                Icons.radar,
+                color: theme.accentColor,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Distance:',
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
                 ),
               ),
-            );
-          }).toList(),
-        ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.accentColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  _radiusLabels[_radiusFilter.round().clamp(0, 3)],
+                  style: TextStyle(
+                    color: theme.accentColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _radiusFilter,
+            min: 0,
+            max: 3,
+            divisions: 3,
+            activeColor: theme.accentColor,
+            inactiveColor: theme.accentColor.withValues(alpha: 0.3),
+            onChanged: (value) {
+              setState(() {
+                _radiusFilter = value;
+              });
+            },
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: _radiusLabels.map((label) {
+              return Text(
+                label,
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 10,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

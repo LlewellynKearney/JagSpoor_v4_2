@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
+import '../services/chat_and_filter_service.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -12,8 +15,9 @@ class HunterPackageMarketplaceScreen extends StatefulWidget {
   State<HunterPackageMarketplaceScreen> createState() => _HunterPackageMarketplaceScreenState();
 }
 
-class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplaceScreen> {
+class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplaceScreen> with SingleTickerProviderStateMixin {
   String? _selectedProvince;
+  late TabController _tabController;
 
   // South African provinces
   static const List<String> _provinces = [
@@ -28,6 +32,18 @@ class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplac
     'Western Cape',
     'Northern Cape',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,162 +62,279 @@ class _HunterPackageMarketplaceScreenState extends State<HunterPackageMarketplac
       ),
       body: Column(
         children: [
-          // Province Filter Dropdown
+          // Tab Bar
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.cardColor,
-              border: Border(
-                bottom: BorderSide(
-                  color: theme.accentColor.withValues(alpha: 0.2),
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.location_on_rounded,
-                  color: theme.accentColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: theme.backgroundColor,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: theme.accentColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _selectedProvince ?? 'All Provinces',
-                        isExpanded: true,
-                        dropdownColor: theme.cardColor,
-                        style: TextStyle(color: theme.textColor),
-                        icon: Icon(Icons.arrow_drop_down, color: theme.accentColor),
-                        items: _provinces.map((province) {
-                          return DropdownMenuItem(
-                            value: province,
-                            child: Text(
-                              province,
-                              style: TextStyle(color: theme.textColor),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedProvince = value == 'All Provinces' ? null : value;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                if (_selectedProvince != null) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(Icons.clear_rounded, color: theme.subtitleColor),
-                    onPressed: () {
-                      setState(() {
-                        _selectedProvince = null;
-                      });
-                    },
-                  ),
-                ],
+            color: theme.cardColor,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: theme.accentColor,
+              unselectedLabelColor: theme.subtitleColor,
+              indicatorColor: theme.accentColor,
+              tabs: const [
+                Tab(text: '📦 Packages'),
+                Tab(text: '💬 My Bookings'),
               ],
             ),
           ),
 
-          // Package List
+          // Tab Views
           Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: OutfitterAnalyticsService.instance.getFilteredPackagesStream(
-                province: _selectedProvince,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.green),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red, size: 48),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading packages',
-                          style: TextStyle(color: theme.textColor),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                final packages = snapshot.data ?? [];
-
-                if (packages.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.terrain_rounded,
-                          color: theme.accentColor.withValues(alpha: 0.5),
-                          size: 64,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _selectedProvince != null
-                              ? 'No packages in $_selectedProvince'
-                              : 'No packages available',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Check back soon for hunting packages',
-                          style: TextStyle(color: theme.subtitleColor),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: packages.length,
-                  itemBuilder: (context, index) {
-                    final packageData = packages[index];
-                    final packageId = packageData['packageId'] as String;
-                    final data = packageData['packageData'] as Map<String, dynamic>;
-                    final farmName = packageData['farmName'] as String? ?? '';
-                    final province = packageData['province'] as String? ?? '';
-
-                    return _PackageCard(
-                      packageId: packageId,
-                      data: data,
-                      farmName: farmName,
-                      province: province,
-                      theme: theme,
-                      onTap: () => _showBookingSheet(context, packageId, data),
-                    );
-                  },
-                );
-              },
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Packages Tab
+                _buildPackagesTab(theme),
+                // My Bookings Tab with Chat
+                _buildMyBookingsTab(theme),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPackagesTab(ThemeController theme) {
+    return Column(
+      children: [
+        // Province Filter Dropdown
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            border: Border(
+              bottom: BorderSide(
+                color: theme.accentColor.withValues(alpha: 0.2),
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.location_on_rounded,
+                color: theme.accentColor,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: theme.backgroundColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: theme.accentColor.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedProvince ?? 'All Provinces',
+                      isExpanded: true,
+                      dropdownColor: theme.cardColor,
+                      style: TextStyle(color: theme.textColor),
+                      icon: Icon(Icons.arrow_drop_down, color: theme.accentColor),
+                      items: _provinces.map((province) {
+                        return DropdownMenuItem(
+                          value: province,
+                          child: Text(
+                            province,
+                            style: TextStyle(color: theme.textColor),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedProvince = value == 'All Provinces' ? null : value;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              if (_selectedProvince != null) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(Icons.clear_rounded, color: theme.subtitleColor),
+                  onPressed: () {
+                    setState(() {
+                      _selectedProvince = null;
+                    });
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // Package List
+        Expanded(
+          child: StreamBuilder<List<Map<String, dynamic>>>(
+            stream: OutfitterAnalyticsService.instance.getFilteredPackagesStream(
+              province: _selectedProvince,
+            ),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.green),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red, size: 48),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading packages',
+                        style: TextStyle(color: theme.textColor),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final packages = snapshot.data ?? [];
+
+              if (packages.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.terrain_rounded,
+                        color: theme.accentColor.withValues(alpha: 0.5),
+                        size: 64,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _selectedProvince != null
+                            ? 'No packages in $_selectedProvince'
+                            : 'No packages available',
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Check back soon for hunting packages',
+                        style: TextStyle(color: theme.subtitleColor),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: packages.length,
+                itemBuilder: (context, index) {
+                  final packageData = packages[index];
+                  final packageId = packageData['packageId'] as String;
+                  final data = packageData['packageData'] as Map<String, dynamic>;
+                  final farmName = packageData['farmName'] as String? ?? '';
+                  final province = packageData['province'] as String? ?? '';
+
+                  return _PackageCard(
+                    packageId: packageId,
+                    data: data,
+                    farmName: farmName,
+                    province: province,
+                    theme: theme,
+                    onTap: () => _showBookingSheet(context, packageId, data),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMyBookingsTab(ThemeController theme) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) {
+      return Center(
+        child: Text(
+          'Please sign in to view your bookings',
+          style: TextStyle(color: theme.textColor),
+        ),
+      );
+    }
+
+    return StreamBuilder(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('hunterId', isEqualTo: currentUserId)
+          .orderBy('bookingTimestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.green),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading bookings',
+              style: TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        final bookings = snapshot.data?.docs ?? [];
+
+        if (bookings.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.book_online_rounded,
+                  color: theme.accentColor.withValues(alpha: 0.5),
+                  size: 64,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No bookings yet',
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Book a package to start chatting with outfitters',
+                  style: TextStyle(color: theme.subtitleColor),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: bookings.length,
+          itemBuilder: (context, index) {
+            final booking = bookings[index];
+            final data = booking.data() as Map<String, dynamic>;
+            final bookingId = booking.id;
+
+            return _HunterBookingCard(
+              bookingId: bookingId,
+              data: data,
+              theme: theme,
+            );
+          },
+        );
+      },
     );
   }
 
@@ -706,6 +839,403 @@ class _PriceRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HunterBookingCard extends StatefulWidget {
+  final String bookingId;
+  final Map<String, dynamic> data;
+  final ThemeController theme;
+
+  const _HunterBookingCard({
+    required this.bookingId,
+    required this.data,
+    required this.theme,
+  });
+
+  @override
+  State<_HunterBookingCard> createState() => _HunterBookingCardState();
+}
+
+class _HunterBookingCardState extends State<_HunterBookingCard> {
+  bool _isChatExpanded = false;
+  final TextEditingController _chatController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Pending Approval': return Colors.orange;
+      case 'Approved': return Colors.green;
+      case 'Declined': return Colors.red;
+      case 'Completed': return Colors.blue;
+      case 'Cancelled': return Colors.grey;
+      default: return Colors.grey;
+    }
+  }
+
+  @override
+  void dispose() {
+    _chatController.dispose();
+    _chatScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = widget.data['status'] ?? 'Pending Approval';
+    final packageName = widget.data['packageName'] as String? ?? 'Custom Package';
+    final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: widget.theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _getStatusColor(status).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(status).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.book_online_rounded,
+                    color: _getStatusColor(status),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        packageName,
+                        style: TextStyle(
+                          color: widget.theme.textColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(status).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            color: _getStatusColor(status),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  'R ${totalPrice.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 💬 Chat & Negotiation Thread Panel
+          _buildChatDrawer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatDrawer() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: widget.theme.accentColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.theme.accentColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Expandable Header
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isChatExpanded = !_isChatExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.chat_rounded,
+                      color: widget.theme.accentColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '💬 Open Chat & Negotiation Thread',
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _isChatExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: widget.theme.accentColor,
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expandable Chat Content
+          if (_isChatExpanded)
+            Container(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+
+                  // Chat Messages Stream
+                  SizedBox(
+                    height: 200,
+                    child: StreamBuilder(
+                      stream: FirebaseFirestore.instance
+                          .collection('bookings')
+                          .doc(widget.bookingId)
+                          .collection('chats')
+                          .orderBy('timestamp', descending: false)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: Colors.green),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Error loading chat',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        final messages = snapshot.data?.docs ?? [];
+                        if (messages.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No messages yet - start the conversation!',
+                              style: TextStyle(
+                                color: widget.theme.subtitleColor,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          controller: _chatScrollController,
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = messages[index].data();
+                            final senderId = msg['senderId'] as String? ?? '';
+                            final isMe = senderId == FirebaseAuth.instance.currentUser?.uid;
+
+                            return _ChatBubbleHunter(
+                              text: msg['text'] as String? ?? '',
+                              senderName: msg['senderName'] as String? ?? 'Unknown',
+                              isMe: isMe,
+                              theme: widget.theme,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Chat Input Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _chatController,
+                          style: TextStyle(color: widget.theme.textColor),
+                          decoration: InputDecoration(
+                            hintText: 'Type a message...',
+                            hintStyle: TextStyle(color: widget.theme.subtitleColor),
+                            filled: true,
+                            fillColor: widget.theme.backgroundColor,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: widget.theme.accentColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send_rounded, color: Colors.white),
+                          onPressed: _sendChatMessage,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendChatMessage() async {
+    final text = _chatController.text.trim();
+    if (text.isEmpty) return;
+
+    try {
+      await ChatAndFilterService.instance.sendChatMessage(
+        bookingId: widget.bookingId,
+        messageText: text,
+        senderName: FirebaseAuth.instance.currentUser?.displayName ?? 'Hunter',
+      );
+      _chatController.clear();
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send message: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+class _ChatBubbleHunter extends StatelessWidget {
+  final String text;
+  final String senderName;
+  final bool isMe;
+  final ThemeController theme;
+
+  const _ChatBubbleHunter({
+    required this.text,
+    required this.senderName,
+    required this.isMe,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: isMe
+              ? theme.accentColor.withValues(alpha: 0.2)
+              : theme.cardColor,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 16),
+          ),
+          border: Border.all(
+            color: isMe
+                ? theme.accentColor.withValues(alpha: 0.3)
+                : theme.accentColor.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (!isMe)
+              Text(
+                senderName,
+                style: TextStyle(
+                  color: theme.accentColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            const SizedBox(height: 2),
+            Text(
+              text,
+              style: TextStyle(
+                color: theme.textColor,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

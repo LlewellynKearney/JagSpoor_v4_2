@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/outfitter_invoice_exporter.dart';
 import '../services/user_role_resolver.dart';
+import '../services/chat_and_filter_service.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -149,6 +150,9 @@ class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
   bool _isExporting = false;
   bool _isCustomItemsExpanded = false;
+  bool _isChatExpanded = false;
+  final TextEditingController _chatController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
 
   Future<void> _updateStatus(String newStatus) async {
     setState(() {
@@ -673,8 +677,284 @@ class _BookingCardState extends State<_BookingCard> {
                       )
                     : const SizedBox.shrink(),
           ),
+
+          // 💬 Chat & Negotiation Thread Panel
+          _buildChatDrawer(),
+
           const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+
+  Widget _buildChatDrawer() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: widget.theme.accentColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.theme.accentColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Expandable Header
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isChatExpanded = !_isChatExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.chat_rounded,
+                      color: widget.theme.accentColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '💬 Open Chat & Negotiation Thread',
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _isChatExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: widget.theme.accentColor,
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expandable Chat Content
+          if (_isChatExpanded)
+            Container(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+
+                  // Chat Messages Stream
+                  SizedBox(
+                    height: 200,
+                    child: StreamBuilder(
+                      stream: FirebaseFirestore.instance
+                          .collection('bookings')
+                          .doc(widget.bookingId)
+                          .collection('chats')
+                          .orderBy('timestamp', descending: false)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: Colors.green),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Error loading chat',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        final messages = snapshot.data?.docs ?? [];
+                        if (messages.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No messages yet',
+                              style: TextStyle(
+                                color: widget.theme.subtitleColor,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          controller: _chatScrollController,
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = messages[index].data();
+                            final senderId = msg['senderId'] as String? ?? '';
+                            final isMe = senderId == FirebaseAuth.instance.currentUser?.uid;
+
+                            return _ChatBubble(
+                              text: msg['text'] as String? ?? '',
+                              senderName: msg['senderName'] as String? ?? 'Unknown',
+                              isMe: isMe,
+                              theme: widget.theme,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Chat Input Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _chatController,
+                          style: TextStyle(color: widget.theme.textColor),
+                          decoration: InputDecoration(
+                            hintText: 'Type a message...',
+                            hintStyle: TextStyle(color: widget.theme.subtitleColor),
+                            filled: true,
+                            fillColor: widget.theme.backgroundColor,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: widget.theme.accentColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send_rounded, color: Colors.white),
+                          onPressed: _sendChatMessage,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendChatMessage() async {
+    final text = _chatController.text.trim();
+    if (text.isEmpty) return;
+
+    try {
+      await ChatAndFilterService.instance.sendChatMessage(
+        bookingId: widget.bookingId,
+        messageText: text,
+        senderName: FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+      );
+      _chatController.clear();
+      // Scroll to bottom after sending
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send message: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+class _ChatBubble extends StatelessWidget {
+  final String text;
+  final String senderName;
+  final bool isMe;
+  final ThemeController theme;
+
+  const _ChatBubble({
+    required this.text,
+    required this.senderName,
+    required this.isMe,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: isMe
+              ? theme.accentColor.withValues(alpha: 0.2)
+              : theme.cardColor,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 16),
+          ),
+          border: Border.all(
+            color: isMe
+                ? theme.accentColor.withValues(alpha: 0.3)
+                : theme.accentColor.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (!isMe)
+              Text(
+                senderName,
+                style: TextStyle(
+                  color: theme.accentColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            const SizedBox(height: 2),
+            Text(
+              text,
+              style: TextStyle(
+                color: theme.textColor,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
