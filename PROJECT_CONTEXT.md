@@ -164,6 +164,15 @@ Vector-drawn anatomical overlay engine for precision shot placement:
 - **Distance-scaled overlays** adjusting zone size based on estimated range
 - **Shot angle compensation** for quartering-away/quartering-toward presentations
 
+### 4.7 Shot Placement Angle Compensator (`vital_zone_painter.dart`)
+Dynamic perspective transformation layer for quartering shot compensation:
+- **Lateral skew matrix** that shifts vital zone centroids horizontally
+- **Horizontal transformation matrices** applying organic path warping
+- **Perspective deformation simulation** mimicking camera-to-game angle
+- **Quartering-away skew**: Shifts zones toward shoulder, exposes lung rear
+- **Quartering-toward skew**: Exposes opposite-side lung, shifts heart position
+- **Continuous interpolation** between presentation angles for moving targets
+
 ---
 
 ## 5. Compliance & Documentation Exporters
