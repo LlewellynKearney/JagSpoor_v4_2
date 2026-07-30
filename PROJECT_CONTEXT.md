@@ -134,6 +134,18 @@ final List<double> thermalMatrix = <double>[
 ];
 ```
 
+### 4.4 Ballistic Scope Calibration & Reticle HUD System (`scope_calibration_screen.dart`)
+Offline point-mass ballistic calculator featuring:
+- **Rifle drag profile parsing** (G1/G7 ballistic coefficients)
+- **Scope click value inputs** (MOA, MIL, IPHY adjustment resolution)
+- **Barometric metrics integration** (temperature, pressure, humidity corrections)
+- **Laser distance telemetry** (auto-populated from rangefinder via `advanced_tactical_service.dart`)
+- **Interactive turret click dial HUD overlay** displaying:
+  - Elevation adjustments in current unit system
+  - Windage corrections with direction indicators
+  - Dope card (Data On Previous Engagement) history
+  - Zero range confirmation marker
+
 ---
 
 ## 5. Compliance & Documentation Exporters
