@@ -155,6 +155,15 @@ Central offline ballistic processing engine providing:
 - **Effective range estimation** based on maximum allowable drop
 - **Trajectory table generation** for dope card building
 
+### 4.6 Interactive Vital Zone Anatomy HUD Overlay (`vital_zone_painter.dart`)
+Vector-drawn anatomical overlay engine for precision shot placement:
+- **Species-specific overlays** for Kudu, Impala, Warthog, and other SA game
+- **Anatomical structure targeting**: Heart, lung, and skeletal vital zones
+- **Camera radar integration** with live overlay rendering
+- **Color-coded zone highlighting**: Red for lethal, orange for marginal, yellow for reference
+- **Distance-scaled overlays** adjusting zone size based on estimated range
+- **Shot angle compensation** for quartering-away/quartering-toward presentations
+
 ---
 
 ## 5. Compliance & Documentation Exporters
