@@ -28,6 +28,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
   // Vital zone anatomy overlay state
   String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
+  String _stanceAngle = 'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
   double _anatomyScale = 1.0;
   Offset _anatomyOffset = Offset.zero;
 
@@ -291,6 +292,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                     species: _selectedSpecies,
                     scale: _anatomyScale,
                     offset: _anatomyOffset,
+                    stanceAngle: _stanceAngle,
                   ),
                   child: Container(),
                 ),
@@ -762,58 +764,144 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     ];
   }
 
-  /// Anatomy species selection toolbar for vital zone overlays
+  /// Anatomy species and stance selection toolbar for vital zone overlays
   Widget _buildAnatomySelectionToolbar(ThemeController theme) {
     return Positioned(
       bottom: 160,
       left: 0,
       right: 0,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: Colors.orange.withValues(alpha: 0.4),
-              width: 1,
+      child: Column(
+        children: [
+          // Stance angle selector row
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.cyan.withValues(alpha: 0.4),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Broadside button
+                _buildStanceButton(
+                  label: 'BROADSIDE',
+                  icon: '📐',
+                  isSelected: _stanceAngle == 'Broadside',
+                  onTap: () => _setStanceAngle('Broadside'),
+                ),
+                // Quartering Towards button
+                _buildStanceButton(
+                  label: '←QTR',
+                  icon: '↙',
+                  isSelected: _stanceAngle == 'Quartering-Towards',
+                  onTap: () => _setStanceAngle('Quartering-Towards'),
+                ),
+                // Quartering Away button
+                _buildStanceButton(
+                  label: 'QTR→',
+                  icon: '↘',
+                  isSelected: _stanceAngle == 'Quartering-Away',
+                  onTap: () => _setStanceAngle('Quartering-Away'),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              // Kudu button
-              _buildAnatomyButton(
-                label: 'KUDU',
-                icon: '🦌',
-                isSelected: _selectedSpecies == 'Kudu',
-                onTap: () => _selectSpecies('Kudu'),
+          const SizedBox(height: 8),
+          // Species selector row
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: Colors.orange.withValues(alpha: 0.4),
+                width: 1,
               ),
-              // Impala button
-              _buildAnatomyButton(
-                label: 'IMPALA',
-                icon: '🦌',
-                isSelected: _selectedSpecies == 'Impala',
-                onTap: () => _selectSpecies('Impala'),
-              ),
-              // Warthog button
-              _buildAnatomyButton(
-                label: 'WARTHOG',
-                icon: '🐗',
-                isSelected: _selectedSpecies == 'Warthog',
-                onTap: () => _selectSpecies('Warthog'),
-              ),
-              // Hide button
-              _buildAnatomyButton(
-                label: 'HIDE',
-                icon: '🚫',
-                isSelected: _selectedSpecies == 'None',
-                onTap: () => _selectSpecies('None'),
-                isRed: true,
-              ),
-            ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Kudu button
+                _buildAnatomyButton(
+                  label: 'KUDU',
+                  icon: '🦌',
+                  isSelected: _selectedSpecies == 'Kudu',
+                  onTap: () => _selectSpecies('Kudu'),
+                ),
+                // Impala button
+                _buildAnatomyButton(
+                  label: 'IMPALA',
+                  icon: '🦌',
+                  isSelected: _selectedSpecies == 'Impala',
+                  onTap: () => _selectSpecies('Impala'),
+                ),
+                // Warthog button
+                _buildAnatomyButton(
+                  label: 'WARTHOG',
+                  icon: '🐗',
+                  isSelected: _selectedSpecies == 'Warthog',
+                  onTap: () => _selectSpecies('Warthog'),
+                ),
+                // Hide button
+                _buildAnatomyButton(
+                  label: 'HIDE',
+                  icon: '🚫',
+                  isSelected: _selectedSpecies == 'None',
+                  onTap: () => _selectSpecies('None'),
+                  isRed: true,
+                ),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStanceButton({
+    required String label,
+    required String icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Colors.cyan.withValues(alpha: 0.3)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? Colors.cyan : Colors.white38,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              icon,
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.cyan : Colors.white54,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -879,5 +967,11 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     } else {
       _showToast('🦌 $species vital zone overlay active', Colors.orange);
     }
+  }
+
+  void _setStanceAngle(String angle) {
+    setState(() {
+      _stanceAngle = angle;
+    });
   }
 }
