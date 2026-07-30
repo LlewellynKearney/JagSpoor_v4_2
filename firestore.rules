@@ -123,6 +123,15 @@ service cloud.firestore {
         isManagerOfFarm(resource.data.farmId)
       );
       allow create: if request.auth != null;
+
+      // 🎯 FIX: Allow read/write access to negotiated chat threads nested inside this specific booking
+      match /chats/{messageId} {
+        allow read, write: if request.auth != null && (
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.hunterId == request.auth.uid ||
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.outfitterId == request.auth.uid ||
+          isManagerOfFarm(get(/databases/$(database)/documents/bookings/$(bookingId)).data.farmId)
+        );
+      }
     }
 
 
@@ -175,6 +184,15 @@ service cloud.firestore {
         isManagerOfFarm(resource.data.farmId)
       );
       allow create: if request.auth != null;
+
+      // 🎯 FIX: Allow read/write access to negotiated chat threads nested inside this specific booking
+      match /chats/{messageId} {
+        allow read, write: if request.auth != null && (
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.hunterId == request.auth.uid ||
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.outfitterId == request.auth.uid ||
+          isManagerOfFarm(get(/databases/$(database)/documents/bookings/$(bookingId)).data.farmId)
+        );
+      }
     }
 
 
