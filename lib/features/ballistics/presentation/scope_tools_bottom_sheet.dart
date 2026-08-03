@@ -337,8 +337,22 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                       
                       final rifles = riflesSnapshot.data ?? [];
                       
+                      // Filter out demo/seeded rifles - only show user's real registered firearms
+                      final userRifles = rifles.where((r) {
+                        final serial = r.serialNumber?.toUpperCase() ?? '';
+                        // Exclude demo rifles with TIKKA-, SAKO- prefixes
+                        if (serial.startsWith('TIKKA-') || serial.startsWith('SAKO-')) {
+                          return false;
+                        }
+                        // Exclude rifles with "Unknown" in the name
+                        if (r.name.toLowerCase().contains('unknown')) {
+                          return false;
+                        }
+                        return true;
+                      }).toList();
+                      
                       // Update selected rifle when stream data changes
-                      if (rifles.isNotEmpty) {
+                      if (userRifles.isNotEmpty) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (!context.mounted) return;
                           _updateRifleFromSnapshots(rifles);
@@ -348,7 +362,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                       return _buildInventoryDropdown(
                         label: 'Select Weapon from Safe',
                         value: _selectedRifleId,
-                        items: rifles.map((r) => DropdownMenuItem(
+                        items: userRifles.map((r) => DropdownMenuItem(
                           value: r.id,
                           child: Text('${r.name} (${r.caliber})'),
                         )).toList(),
@@ -357,9 +371,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           _onRifleSelected(id);
                         },
                         isLoading: false,
-                        onSeedRequested: rifles.isEmpty
-                            ? () => _seedDefaultVaultHardware(context)
-                            : null,
+                        onSeedRequested: null, // Disabled - only show real user firearms
                       );
                     },
                   ),
