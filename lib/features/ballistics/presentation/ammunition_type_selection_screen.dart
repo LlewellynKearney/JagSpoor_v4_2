@@ -443,7 +443,7 @@ class _AmmunitionTypeSelectionScreenState
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('factory_ammunition')
-                        .where('caliber', '==', widget.firearm['caliber'])
+                        .where('caliber', isEqualTo: widget.firearm['caliber'])
                         .snapshots(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {

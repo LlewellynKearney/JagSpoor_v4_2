@@ -243,7 +243,7 @@ class PackageBookingManager {
   Stream<QuerySnapshot> getFactoryAmmunitionByCaliber(String firearmCaliber) {
     return _firestore
         .collection('factory_ammunition')
-        .where('caliber', '==', firearmCaliber)
+        .where('caliber', isEqualTo: firearmCaliber)
         .snapshots();
   }
 
@@ -251,7 +251,7 @@ class PackageBookingManager {
   Future<QuerySnapshot> fetchFactoryAmmunitionByCaliber(String firearmCaliber) async {
     return await _firestore
         .collection('factory_ammunition')
-        .where('caliber', '==', firearmCaliber)
+        .where('caliber', isEqualTo: firearmCaliber)
         .get();
   }
 }
