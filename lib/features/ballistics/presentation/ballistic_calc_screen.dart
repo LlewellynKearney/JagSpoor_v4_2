@@ -790,7 +790,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       getTitlesWidget: (value, meta) => Text(
                         value.toStringAsFixed(0),
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 10),
+                          color: Color(0xFF1A2421),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ),
@@ -801,7 +804,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       getTitlesWidget: (value, meta) => Text(
                         '${value.toInt()}m',
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 10),
+                          color: Color(0xFF1A2421),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ),
@@ -827,9 +833,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                         show: true,
                         alignment: Alignment.topRight,
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold),
+                          color: Color(0xFF1A2421),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                         labelResolver: (line) =>
                             'TARGET: ${_targetRangeMeters.toStringAsFixed(0)}m',
                       ),
