@@ -225,7 +225,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 1, vsync: this);
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     _firearmsStream = FirebaseFirestore.instance
@@ -275,10 +275,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           controller: _tabController,
           indicatorColor: JagspoorTheme.thermalGlow,
           labelColor: JagspoorTheme.thermalGlow,
-          unselectedLabelColor: Colors.white70,
+          unselectedLabelColor: Colors.white,
           tabs: const [
-            Tab(icon: Icon(Icons.layers), text: 'FACTORY CARTRIDGE'),
-            Tab(icon: Icon(Icons.tune), text: 'CUSTOM AMMO DATA'),
+            Tab(icon: Icon(Icons.tune), text: 'Cartridge Data'),
           ],
         ),
       ),
@@ -600,17 +599,17 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('• ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+        const Text('• ', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
         Expanded(
           child: Text(
             '$label ',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ),
         Text(
           value,
-          style: TextStyle(
-            color: JagspoorTheme.thermalGlow,
+          style: const TextStyle(
+            color: Colors.orangeAccent,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),

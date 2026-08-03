@@ -234,4 +234,25 @@ class PackageBookingManager {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  // ==========================================
+  // AMMUNITION MANAGER - CALIBER MATCHING
+  // ==========================================
+  /// Stream or query factory ammunition inventory matching selected firearm caliber.
+  /// Enforces structural caliber dimension filter constraints.
+  Stream<QuerySnapshot> getFactoryAmmunitionByCaliber(String firearmCaliber) {
+    return _firestore
+        .collection('factory_ammunition')
+        .where('caliber', '==', firearmCaliber)
+        .snapshots();
+  }
+
+  /// Fetch snapshot of factory ammunition matching selected firearm caliber.
+  Future<QuerySnapshot> fetchFactoryAmmunitionByCaliber(String firearmCaliber) async {
+    return await _firestore
+        .collection('factory_ammunition')
+        .where('caliber', '==', firearmCaliber)
+        .get();
+  }
 }
+

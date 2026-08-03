@@ -567,14 +567,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 children: [
                   Icon(
                     Icons.speed,
-                    color: Colors.orange.withValues(alpha: 0.8),
+                    color: Colors.orangeAccent,
                     size: 16,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'Barometric Correction Active: ${_calculationResults?['barometricPressureHpa']?.toStringAsFixed(1) ?? '1013.25'} hPa',
-                    style: TextStyle(
-                      color: Colors.orange.withValues(alpha: 0.9),
+                    style: const TextStyle(
+                      color: Colors.orangeAccent,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -582,14 +582,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   const SizedBox(width: 12),
                   Icon(
                     Icons.straighten,
-                    color: Colors.orange.withValues(alpha: 0.8),
+                    color: Colors.orangeAccent,
                     size: 16,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
-                    style: TextStyle(
-                      color: Colors.orange.withValues(alpha: 0.9),
+                    style: const TextStyle(
+                      color: Colors.orangeAccent,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -633,8 +633,8 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       children: [
         Text(
           label,
-          style: TextStyle(
-            color: Colors.orange.withValues(alpha: 0.6),
+          style: const TextStyle(
+            color: Colors.orangeAccent,
             fontSize: 10,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,

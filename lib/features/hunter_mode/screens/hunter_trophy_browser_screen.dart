@@ -189,17 +189,17 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
     }
   }
 
-  /// High-contrast tactical HUD placeholder for missing trophy images
+  /// High-contrast dark amber bordered fallback visual placeholder container for missing trophy images
   Widget _buildTrophyPlaceholder(ThemeController theme) {
     return Container(
       width: 70,
       height: 70,
       decoration: BoxDecoration(
-        color: theme.backgroundColor,
+        color: const Color(0xFF23180C),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: theme.accentColor.withValues(alpha: 0.3),
-          width: 1,
+          color: Colors.amber.shade800,
+          width: 1.5,
         ),
       ),
       child: Stack(
@@ -214,8 +214,8 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
               height: 8,
               decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
-                  left: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  top: BorderSide(color: Colors.amber.shade700, width: 2),
+                  left: BorderSide(color: Colors.amber.shade700, width: 2),
                 ),
               ),
             ),
@@ -228,8 +228,8 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
               height: 8,
               decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
-                  right: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  top: BorderSide(color: Colors.amber.shade700, width: 2),
+                  right: BorderSide(color: Colors.amber.shade700, width: 2),
                 ),
               ),
             ),
@@ -242,8 +242,8 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
               height: 8,
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
-                  left: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  bottom: BorderSide(color: Colors.amber.shade700, width: 2),
+                  left: BorderSide(color: Colors.amber.shade700, width: 2),
                 ),
               ),
             ),
@@ -256,16 +256,16 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
               height: 8,
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
-                  right: BorderSide(color: theme.accentColor.withValues(alpha: 0.5), width: 2),
+                  bottom: BorderSide(color: Colors.amber.shade700, width: 2),
+                  right: BorderSide(color: Colors.amber.shade700, width: 2),
                 ),
               ),
             ),
           ),
-          // Center icon
-          Icon(
-            Icons.pets_rounded,
-            color: theme.accentColor.withValues(alpha: 0.7),
+          // Center icon inside dark amber bordered frame
+          const Icon(
+            Icons.pets,
+            color: Colors.amber,
             size: 32,
           ),
         ],

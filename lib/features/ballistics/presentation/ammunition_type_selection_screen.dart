@@ -23,6 +23,7 @@ class _AmmunitionTypeSelectionScreenState
   final _formKey = GlobalKey<FormState>();
   final _muzzleVelocityController = TextEditingController();
   final _primerController = TextEditingController();
+  final _roundTplController = TextEditingController();
 
   bool _showFactoryForm = false;
   bool _showCustomForm = false;
@@ -59,6 +60,7 @@ class _AmmunitionTypeSelectionScreenState
   void dispose() {
     _muzzleVelocityController.dispose();
     _primerController.dispose();
+    _roundTplController.dispose();
     super.dispose();
   }
 
@@ -165,6 +167,7 @@ class _AmmunitionTypeSelectionScreenState
         'muzzleVelocity':
             int.tryParse(_muzzleVelocityController.text.trim()) ?? 0,
         'primer': _primerController.text.trim(),
+        'roundTPL': double.tryParse(_roundTplController.text.trim()) ?? 0.0,
         'type': 'custom',
       };
 
@@ -212,6 +215,7 @@ class _AmmunitionTypeSelectionScreenState
 
       _muzzleVelocityController.clear();
       _primerController.clear();
+      _roundTplController.clear();
     });
   }
 
@@ -439,6 +443,7 @@ class _AmmunitionTypeSelectionScreenState
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('factory_ammunition')
+                        .where('caliber', '==', widget.firearm['caliber'])
                         .snapshots(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
@@ -961,6 +966,27 @@ class _AmmunitionTypeSelectionScreenState
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
                                 return 'Primer specification is required';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: _roundTplController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            style: TextStyle(color: theme.textColor),
+                            decoration: _inputDecoration(
+                              'Round TPL (Total Product Length / mm)',
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'Round TPL is required';
+                              }
+                              if (double.tryParse(val.trim()) == null) {
+                                return 'Enter a valid numeric value';
                               }
                               return null;
                             },
