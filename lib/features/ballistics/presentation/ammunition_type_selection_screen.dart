@@ -56,6 +56,46 @@ class _AmmunitionTypeSelectionScreenState
     return wClean.contains(dClean) || dClean.contains(wClean);
   }
 
+  /// Generates normalized caliber variations for robust Firestore queries.
+  /// Handles common formatting differences like '.308 Win' vs '308 Win'.
+  List<String> getCaliberVariations(String caliber) {
+    if (caliber.isEmpty) return [''];
+    
+    final variations = <String>{caliber};
+    
+    // Strip leading dot: '.308 Win' -> '308 Win'
+    if (caliber.startsWith('.')) {
+      variations.add(caliber.substring(1));
+    }
+    
+    // Add leading dot: '308 Win' -> '.308 Win'
+    variations.add('.$caliber');
+    
+    // Strip all dots
+    variations.add(caliber.replaceAll('.', ''));
+    
+    // Strip whitespace
+    variations.add(caliber.trim());
+    
+    // Lowercase version
+    variations.add(caliber.toLowerCase());
+    
+    return variations.toList();
+  }
+
+  /// Builds a Firestore stream for factory ammunition with normalized caliber variations.
+  /// Handles case-sensitive and character-mismatch issues between firearm and inventory.
+  Stream<QuerySnapshot> _buildFactoryAmmoStream() {
+    final caliber = widget.firearm['caliber'] ?? '';
+    final caliberVariations = getCaliberVariations(caliber);
+    
+    // Use whereIn with all normalized variations for robust matching
+    return FirebaseFirestore.instance
+        .collection('factory_ammunition')
+        .where('caliber', whereIn: caliberVariations)
+        .snapshots();
+  }
+
   @override
   void dispose() {
     _muzzleVelocityController.dispose();
@@ -441,10 +481,7 @@ class _AmmunitionTypeSelectionScreenState
                 Form(
                   key: _formKey,
                   child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('factory_ammunition')
-                        .where('caliber', isEqualTo: widget.firearm['caliber'])
-                        .snapshots(),
+                    stream: _buildFactoryAmmoStream(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
                         return Text(
