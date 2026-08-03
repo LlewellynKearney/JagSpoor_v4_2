@@ -309,6 +309,33 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   }
 
                   final docs = snapshot.data!.docs;
+                  
+                  // Filter out demo/seeded rifles - only show user's real registered firearms
+                  final userDocs = docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final serial = (data['serialNumber']?.toString().toUpperCase() ?? '');
+                    final name = (data['name']?.toString().toLowerCase() ?? '');
+                    // Exclude demo rifles with TIKKA-, SAKO- prefixes
+                    if (serial.startsWith('TIKKA-') || serial.startsWith('SAKO-')) {
+                      return false;
+                    }
+                    // Exclude rifles with "Unknown" in the name
+                    if (name.contains('unknown')) {
+                      return false;
+                    }
+                    return true;
+                  }).toList();
+                  
+                  // Show empty state if no real firearms
+                  if (userDocs.isEmpty) {
+                    return _buildHardwareDropdownContainer(
+                      label: 'Select Firearm Vault Location',
+                      child: Text('NO REGISTERED FIREARMS',
+                          style: TextStyle(
+                              color: JagspoorTheme.thermalGlow, fontSize: 14)),
+                    );
+                  }
+                  
                   return _buildHardwareDropdownContainer(
                     label: 'Select Firearm Vault Location',
                                           child: DropdownButtonHideUnderline(
@@ -318,7 +345,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                             style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                         dropdownColor: JagspoorTheme.hudCardBackground,
                         value: _selectedFirearmId,
-                        items: docs.map((doc) {
+                        items: userDocs.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
                           final String make = (data['make'] ??
                                   data['brand'] ??
@@ -342,7 +369,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                         }).toList(),
                         onChanged: (id) {
                           if (id == null) return;
-                          final doc = docs.firstWhere((d) => d.id == id);
+                          final doc = userDocs.firstWhere((d) => d.id == id);
                           setState(() {
                             _selectedFirearmId = id;
                             _selectedFirearmData =
