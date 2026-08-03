@@ -626,17 +626,17 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('• ', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+        const Text('• ', style: TextStyle(color: Color(0xFF1A2421), fontSize: 12, fontWeight: FontWeight.bold)),
         Expanded(
           child: Text(
             '$label ',
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+            style: const TextStyle(color: Color(0xFF1A2421), fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ),
         Text(
           value,
           style: const TextStyle(
-            color: Colors.orangeAccent,
+            color: Color(0xFF2E3D2F),
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -933,7 +933,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 color: color, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 6),
         Text(label,
-            style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            style: const TextStyle(
+              color: Color(0xFF1A2421),
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            )),
       ],
     );
   }
