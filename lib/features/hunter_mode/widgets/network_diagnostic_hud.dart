@@ -419,144 +419,144 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           ),
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Deer icon
-          Text(
-            activityIcon,
-            style: const TextStyle(fontSize: 18),
+          // First row: Main forecast
+          Row(
+            children: [
+              // Deer icon
+              Text(
+                activityIcon,
+                style: const TextStyle(fontSize: 18),
+              ),
+              const SizedBox(width: 8),
+              
+              // Main forecast text
+              Expanded(
+                child: Text(
+                  'AI GAME MOVEMENT ACTIVITY FORECASTER: ',
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: activityColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${_movementProbability.toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: activityColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '($activityLabel)',
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          
-          // Main forecast text
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 4),
+          // Second row: Telemetry data
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    const Text(
-                      '🦌 AI GAME MOVEMENT ACTIVITY FORECASTER: ',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: activityColor.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '${_movementProbability.toStringAsFixed(0)}%',
-                        style: TextStyle(
-                          color: activityColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: activityColor.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '($activityLabel)',
-                        style: TextStyle(
-                          color: activityColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
+                // Pressure info
+                Icon(
+                  Icons.speed,
+                  color: Color(0xFF2E3D2F),
+                  size: 12,
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    // Pressure info
-                    Icon(
-                      Icons.speed,
-                      color: Colors.white54,
-                      size: 12,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${_barometricPressureHpa.toStringAsFixed(1)} hPa',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Weather condition
-                    Icon(
-                      _pressureDeltaLast3Hours < 0 ? Icons.arrow_downward : Icons.arrow_upward,
-                      color: Colors.white54,
-                      size: 12,
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      weatherCondition,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Moon phase indicator
-                    Icon(
-                      Icons.nightlight_round,
-                      color: Colors.white54,
-                      size: 12,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Moon $_moonPhasePercent%',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10,
-                      ),
-                    ),
-                    // Solunar indicator
-                    if (_isMajorSolunarWindow) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              color: Colors.amber,
-                              size: 10,
-                            ),
-                            SizedBox(width: 2),
-                            Text(
-                              'SOLUNAR',
-                              style: TextStyle(
-                                color: Colors.amber,
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                const SizedBox(width: 4),
+                Text(
+                  '${_barometricPressureHpa.toStringAsFixed(1)} hPa',
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontSize: 11,
+                  ),
                 ),
+                const SizedBox(width: 8),
+                // Weather condition
+                Icon(
+                  _pressureDeltaLast3Hours < 0 ? Icons.arrow_downward : Icons.arrow_upward,
+                  color: Color(0xFF2E3D2F),
+                  size: 12,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  weatherCondition,
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Moon phase indicator
+                Icon(
+                  Icons.nightlight_round,
+                  color: Color(0xFF2E3D2F),
+                  size: 12,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Moon $_moonPhasePercent%',
+                  style: TextStyle(
+                    color: Color(0xFF2E3D2F),
+                    fontSize: 11,
+                  ),
+                ),
+                // Solunar indicator
+                if (_isMajorSolunarWindow) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          color: Color(0xFF2E3D2F),
+                          size: 10,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          'SOLUNAR',
+                          style: TextStyle(
+                            color: Color(0xFF2E3D2F),
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
