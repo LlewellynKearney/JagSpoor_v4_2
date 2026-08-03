@@ -23,12 +23,9 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Suppress Java/Gradle warnings from third-party plugins
 subprojects {
-    afterEvaluate {
-        tasks.withType<JavaCompile>().configureEach {
-            options.compilerArgs.addAll(listOf("-Xlint:-options", "-Xlint:-deprecation", "-Xlint:-unchecked"))
-        }
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.addAll(listOf("-Xlint:-options", "-Xlint:-deprecation", "-Xlint:-unchecked"))
     }
 }
 
