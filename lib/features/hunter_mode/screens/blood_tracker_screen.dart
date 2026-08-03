@@ -146,20 +146,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     );
   }
 
-  void _toggleThermalVision() {
-    setState(() {
-      // Thermal mode overrides night vision - deactivate NV when switching to thermal
-      if (_isNightVisionActive) {
-        _isNightVisionActive = false;
-      }
-      _isThermalModeActive = !_isThermalModeActive;
-    });
-    _showToast(
-      _isThermalModeActive ? '🌡️ Thermal View ON - Ironbow palette active' : '🌡️ Thermal View OFF - Normal mode',
-      _isThermalModeActive ? Colors.orange : Colors.grey,
-    );
-  }
-
   Future<void> _dropBloodPin() async {
     if (_isDroppingPin) return;
 
@@ -236,12 +222,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const Distance distance = Distance();
     return distance.as(LengthUnit.Meter, LatLng(lat1, lon1), LatLng(lat2, lon2));
-  }
-
-  void _toggleMapView() {
-    setState(() {
-      _showMapView = !_showMapView;
-    });
   }
 
   void _showMapFullScreen() {
@@ -1168,9 +1148,7 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
                 minZoom: 5,
                 maxZoom: 19,
                 onPositionChanged: (position, hasGesture) {
-                  if (position.zoom != null) {
-                    _currentZoom = position.zoom!;
-                  }
+                  _currentZoom = position.zoom;
                 },
               ),
               children: [

@@ -137,7 +137,7 @@ class InventoryBridge {
       debugPrint('InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId');
       return ammoList;
     } on PlatformException catch (pe) {
-      print('Caught Firebase Platform Exception: $pe');
+      debugPrint('InventoryBridge: Platform exception fetching ammunition: $pe');
       return _getFallbackLocalAmmunition();
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching ammunition: $e');
@@ -246,7 +246,7 @@ class InventoryBridge {
           return ammoList;
         })
         .handleError((error) {
-          print('Caught Firebase Platform Exception in stream: $error');
+          debugPrint('InventoryBridge: Stream error watching ammunition: $error');
           return _getFallbackLocalAmmunition();
         });
   }
