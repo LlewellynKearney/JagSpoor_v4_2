@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../ballistics/data/inventory_bridge.dart';
+import '../../ballistics/data/models/rifle_profile.dart';
 import '../services/ballistic_solver_service.dart';
 
 class ScopeCalibrationScreen extends StatefulWidget {
@@ -21,7 +23,13 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   final BallisticSolverService _ballisticSolver =
       BallisticSolverService.instance;
 
-  // Rifle profile selection
+  // Digital Firearm Safe integration
+  final InventoryBridge _inventoryBridge = InventoryBridge();
+  List<RifleProfile> _safeFirearms = [];
+  RifleProfile? _selectedRifleFromSafe;
+  AmmoProfile? _selectedAmmo;
+
+  // Rifle profile selection (fallback defaults)
   String _selectedRifleProfile = '.308 Win';
   double _muzzleVelocityFps = 2700.0;
   double _ballisticCoefficient = 0.45;
@@ -36,10 +44,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   // Calculated results
   Map<String, dynamic>? _calculationResults;
   bool _isCalculating = false;
-
-  // Rangefinder memory
-  double? _lastRangefinderDistance;
-  double? _lastRangefinderAngle;
 
   // AI Shot Group Analyzer state
   dynamic _shotGroupImage;
@@ -75,7 +79,43 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     _dialRotationAnimation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _dialAnimationController, curve: Curves.easeOut),
     );
+    _loadSafeFirearms();
     _calculateTrajectory();
+  }
+
+  Future<void> _loadSafeFirearms() async {
+    final rifles = await _inventoryBridge.fetchSafeFirearms();
+    if (mounted && rifles.isNotEmpty) {
+      setState(() {
+        _safeFirearms = rifles;
+        // Auto-select first rifle if none selected
+        if (_selectedRifleFromSafe == null) {
+          _selectSafeRifle(rifles.first);
+        }
+      });
+    }
+  }
+
+  void _selectSafeRifle(RifleProfile rifle) {
+    setState(() {
+      _selectedRifleFromSafe = rifle;
+      _selectedRifleProfile = '${rifle.name} (${rifle.caliber})';
+      // Load ammunition for this rifle
+      _loadAmmunitionForRifle(rifle.id);
+    });
+    _calculateTrajectory();
+  }
+
+  Future<void> _loadAmmunitionForRifle(String rifleId) async {
+    final ammoList = await _inventoryBridge.fetchAvailableAmmunition(rifleId);
+    if (mounted && ammoList.isNotEmpty) {
+      setState(() {
+        _selectedAmmo = ammoList.first;
+        _muzzleVelocityFps = _selectedAmmo!.velocityMs * 3.28084; // m/s to ft/s
+        _ballisticCoefficient = _selectedAmmo!.ballisticCoefficient;
+      });
+      _calculateTrajectory();
+    }
   }
 
   @override
@@ -123,28 +163,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       // Animate dial
       _dialAnimationController.forward(from: 0);
     });
-  }
-
-  void _pullLastRangefinderTarget() {
-    // In production, this would pull from AdvancedTacticalService memory
-    // For demo, simulate with random values
-    setState(() {
-      _lastRangefinderDistance = 250.0 + (DateTime.now().millisecond % 200);
-      _lastRangefinderAngle = (DateTime.now().millisecond % 30) - 15.0;
-      _distanceYards = _lastRangefinderDistance!;
-      _angleDegrees = _lastRangefinderAngle!;
-    });
-    _calculateTrajectory();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '🎯 Target pulled: ${_distanceYards.toStringAsFixed(0)}y @ ${_angleDegrees.toStringAsFixed(1)}°',
-        ),
-        backgroundColor: Colors.green.shade700,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
@@ -195,20 +213,20 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(
-        children: [
-          // Upper Row: Rifle Profile & Ballistic Parameters
-          _buildUpperInputPanel(theme),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 32),
+        child: Column(
+          children: [
+            // Upper Row: Rifle Profile & Ballistic Parameters
+            _buildUpperInputPanel(theme),
 
-          // AI Shot Group Analyzer
-          _buildShotGroupAnalyzer(theme),
+            // AI Shot Group Analyzer
+            _buildShotGroupAnalyzer(theme),
 
-          // Middle Panel: Visual Turret Dial
-          Expanded(child: _buildTurretDialPanel(theme)),
-
-          // Bottom Row: Quick Actions
-          _buildBottomActionRow(theme),
-        ],
+            // Middle Panel: Visual Turret Dial
+            _buildTurretDialPanel(theme),
+          ],
+        ),
       ),
     );
   }
@@ -504,25 +522,68 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                       color: Colors.orange,
                     ),
                     style: const TextStyle(color: Colors.white, fontSize: 14),
-                    items:
-                        _rifleProfiles.keys.map((profile) {
-                          return DropdownMenuItem(
-                            value: profile,
+                    items: [
+                      // Section header for Digital Safe
+                      if (_safeFirearms.isNotEmpty) ...[
+                        DropdownMenuItem<String>(
+                          enabled: false,
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock, color: Colors.orange.withValues(alpha: 0.5), size: 14),
+                              const SizedBox(width: 8),
+                              Text(
+                                'DIGITAL FIREARM SAFE',
+                                style: TextStyle(
+                                  color: Colors.orange.withValues(alpha: 0.7),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ..._safeFirearms.map((rifle) {
+                          return DropdownMenuItem<String>(
+                            value: 'safe:${rifle.id}',
                             child: Row(
                               children: [
-                                const Icon(
-                                  Icons.radio_button_checked,
-                                  color: Colors.orange,
-                                  size: 16,
-                                ),
+                                const Icon(Icons.rifle, color: Colors.orange, size: 16),
                                 const SizedBox(width: 8),
-                                Text(profile),
+                                Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
                               ],
                             ),
                           );
-                        }).toList(),
+                        }),
+                        const DropdownMenuItem<String>(
+                          enabled: false,
+                          child: Divider(color: Colors.orange, height: 8),
+                        ),
+                      ],
+                      // Fallback profiles
+                      ..._rifleProfiles.keys.map((profile) {
+                        return DropdownMenuItem<String>(
+                          value: 'fallback:$profile',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.radio_button_checked, color: Colors.orange, size: 16),
+                              const SizedBox(width: 8),
+                              Text(profile),
+                            ],
+                          ),
+                        );
+                        }),
+                    ],
                     onChanged: (value) {
-                      if (value != null) _selectRifleProfile(value);
+                      if (value != null) {
+                        if (value.startsWith('safe:')) {
+                          final rifleId = value.substring(5);
+                          final rifle = _safeFirearms.firstWhere((r) => r.id == rifleId);
+                          _selectSafeRifle(rifle);
+                        } else if (value.startsWith('fallback:')) {
+                          final profile = value.substring(9);
+                          _selectRifleProfile(profile);
+                        }
+                      }
                     },
                   ),
                 ),
@@ -919,87 +980,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildBottomActionRow(ThemeController theme) {
-    return SafeArea(
-      top: false,
-      bottom: true,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [const Color(0xFF141915), const Color(0xFF1A1F1C)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-          border: Border(
-            top: BorderSide(
-              color: Colors.orange.withValues(alpha: 0.3),
-              width: 1,
-            ),
-          ),
-        ),
-      child: Row(
-        children: [
-          // Quick Sync Button
-          Expanded(
-            child: GestureDetector(
-              onTap: _pullLastRangefinderTarget,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.orange.withValues(alpha: 0.3),
-                      Colors.orange.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.orange.withValues(alpha: 0.2),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.gps_fixed, color: Colors.orange, size: 24),
-                    const SizedBox(width: 12),
-                    Column(
-                      children: [
-                        const Text(
-                          'PULL LAST RANGEFINDER TARGET',
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        if (_lastRangefinderDistance != null)
-                          Text(
-                            'Last: ${_lastRangefinderDistance!.toStringAsFixed(0)}y @ ${_lastRangefinderAngle!.toStringAsFixed(1)}°',
-                            style: TextStyle(
-                              color: Colors.orange.withValues(alpha: 0.7),
-                              fontSize: 10,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
     );
   }
 
