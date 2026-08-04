@@ -33,6 +33,14 @@ Streamlined client view panel stripped of all administrative tools:
 - Marketplace booking interface
 - Trophy browser access
 
+### 1.4 Two-Factor Authentication & Google Sign-In Infrastructure (`auth_gate_service.dart`)
+An advanced authentication shield combining Google OAuth federated logins with an offline-fallback phone number SMS OTP 2FA authorization gateway context to protect high-tier outfitter revenue metrics:
+- **Google OAuth 2.0 Integration**: Federated identity via Firebase Auth Google provider
+- **SMS OTP Fallback**: Phone number verification with time-based one-time passwords
+- **Offline Resilience**: Cached credential validation when network connectivity is unavailable
+- **Role-Gated Triggering**: 2FA enforcement for outfitter/enterprise accounts accessing sensitive dashboards
+- **Session Token Management**: Secure token refresh with biometric confirmation on supported devices
+
 ---
 
 ## 2. Marketplace & Financial Layer (Locked to ZAR)
