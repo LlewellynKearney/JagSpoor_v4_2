@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -26,7 +27,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   // Digital Firearm Safe integration
   final InventoryBridge _inventoryBridge = InventoryBridge();
 
-  // Active rifle selection state
+  // Live firearm list from safe (managed via stream subscription)
+  List<RifleProfile> _safeFirearms = [];
+  StreamSubscription<List<RifleProfile>>? _firearmsSubscription;
+
+  // Active rifle selection state - preserved across rebuilds
   RifleProfile? _selectedRifle;
   AmmoProfile? _selectedAmmo;
 
@@ -66,11 +71,26 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     _dialRotationAnimation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _dialAnimationController, curve: Curves.easeOut),
     );
+
+    // Subscribe to firearm safe stream once in initState
+    _firearmsSubscription = _inventoryBridge.watchSafeFirearms().listen((rifles) {
+      if (mounted) {
+        setState(() {
+          _safeFirearms = rifles;
+          // Auto-select first rifle if none selected and list has items
+          if (_selectedRifle == null && rifles.isNotEmpty) {
+            _selectRifle(rifles.first);
+          }
+        });
+      }
+    });
+
     _calculateTrajectory();
   }
 
   @override
   void dispose() {
+    _firearmsSubscription?.cancel();
     _dialAnimationController.dispose();
     super.dispose();
   }
@@ -200,7 +220,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         color: const Color(0xFF1A1F1C),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+          color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
           width: 1,
         ),
       ),
@@ -232,7 +252,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    const Color(0xFFE6A15C).withValues(alpha: 0.35),
                     const Color(0xFFE6A15C).withValues(alpha: 0.15),
                   ],
                 ),
@@ -240,7 +260,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 border: Border.all(color: const Color(0xFFE6A15C), width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -276,7 +296,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 color: const Color(0xFF141915),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                  color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                   style: BorderStyle.solid,
                 ),
               ),
@@ -344,7 +364,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     color: const Color(0xFF141915),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                      color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                     ),
                   ),
                   child: DropdownButton<String>(
@@ -382,11 +402,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -417,11 +437,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -460,7 +480,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 color: const Color(0xFFE6A15C).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                  color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                 ),
               ),
               child: Column(
@@ -513,7 +533,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         ),
         border: Border(
           bottom: BorderSide(
-            color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+            color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
             width: 1,
           ),
         ),
@@ -524,57 +544,48 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           Row(
             children: [
               Expanded(
-                child: StreamBuilder<List<RifleProfile>>(
-                  stream: _inventoryBridge.watchSafeFirearms(),
-                  builder: (context, snapshot) {
-                    final rifles = snapshot.data ?? [];
-                    final selectedRifle = rifles.contains(_selectedRifle) 
-                        ? _selectedRifle 
-                        : (rifles.isNotEmpty ? rifles.first : null);
-
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF141915),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141915),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: DropdownButton<RifleProfile>(
+                    value: _selectedRifle ?? (_safeFirearms.isNotEmpty ? _safeFirearms.first : null),
+                    isExpanded: true,
+                    dropdownColor: const Color(0xFF1A1F1C),
+                    underline: const SizedBox(),
+                    icon: const Icon(
+                      Icons.arrow_drop_down,
+                      color: Color(0xFFE6A15C),
+                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    hint: const Text(
+                      'Select firearm from safe',
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                    items: _safeFirearms.map((rifle) {
+                      return DropdownMenuItem<RifleProfile>(
+                        value: rifle,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
+                          ],
                         ),
-                      ),
-                      child: DropdownButton<RifleProfile>(
-                        value: selectedRifle,
-                        isExpanded: true,
-                        dropdownColor: const Color(0xFF1A1F1C),
-                        underline: const SizedBox(),
-                        icon: const Icon(
-                          Icons.arrow_drop_down,
-                          color: const Color(0xFFE6A15C),
-                        ),
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        hint: const Text(
-                          'Select firearm from safe',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                        items: rifles.map((rifle) {
-                          return DropdownMenuItem<RifleProfile>(
-                            value: rifle,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (rifle) {
-                          if (rifle != null) {
-                            _selectRifle(rifle);
-                          }
-                        },
-                      ),
-                    );
-                  },
+                      );
+                    }).toList(),
+                    onChanged: (rifle) {
+                      if (rifle != null) {
+                        _selectRifle(rifle);
+                      }
+                    },
+                  ),
                 ),
               ),
             ],
@@ -697,13 +708,13 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: BorderSide(
-                color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: BorderSide(
-                color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -728,7 +739,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+          color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
           width: 2,
         ),
         boxShadow: [
@@ -765,7 +776,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 border: Border.all(color: const Color(0xFFE6A15C), width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                     blurRadius: 30,
                     spreadRadius: 5,
                   ),
@@ -792,74 +803,99 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Elevation direction indicator
+                      // Elevation direction card
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE6A15C).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF141915),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                             width: 1.5,
                           ),
                         ),
-                        child: Text(
-                          _calculationResults?['isDropPositive'] == true
-                              ? '⬆ DIAL UP'
-                              : '⬇ HOLD OVER',
-                          style: const TextStyle(
-                            color: Color(0xFFE6A15C),
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _calculationResults?['isDropPositive'] == true
+                                      ? Icons.arrow_upward
+                                      : Icons.unfold_more,
+                                  color: const Color(0xFFE6A15C),
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _calculationResults?['isDropPositive'] == true
+                                      ? 'DIAL UP'
+                                      : 'HOLD OVER',
+                                  style: const TextStyle(
+                                    color: Color(0xFFE6A15C),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _isCalculating
+                                  ? '---'
+                                  : '${_calculationResults?['clicksToDial'] ?? 0}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 36,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
+                                letterSpacing: 2,
+                              ),
+                            ),
+                            const Text(
+                              'ELEVATION CLICKS',
+                              style: TextStyle(
+                                color: Color(0xFFE6A15C),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _isCalculating
-                            ? '---'
-                            : '${_calculationResults?['clicksToDial'] ?? 0}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'monospace',
-                          letterSpacing: 4,
-                        ),
-                      ),
-                      const Text(
-                        'CLICKS',
-                        style: TextStyle(
-                          color: Color(0xFFE6A15C),
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 3,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Windage direction indicator
+                      const SizedBox(height: 12),
+                      // Windage direction card
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE6A15C).withValues(alpha: 0.15),
+                          color: const Color(0xFF141915),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: const Color(0xFFE6A15C).withValues(alpha: 0.3),
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                             width: 1.5,
                           ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            Icon(
+                              (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 < 0
+                                  ? Icons.arrow_back
+                                  : (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 > 0
+                                      ? Icons.arrow_forward
+                                      : Icons.remove,
+                              color: const Color(0xFFE6A15C),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
                             Text(
-                              _calculationResults?['windageMOA'] != null &&
-                                      (_calculationResults?['windageMOA'] as num) < 0
-                                  ? '⬅ LEFT'
-                                  : _calculationResults?['windageMOA'] != null &&
-                                          (_calculationResults?['windageMOA'] as num) > 0
-                                      ? '➡ RIGHT'
-                                      : '– NO WIND',
+                              (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 < 0
+                                  ? 'DIAL LEFT'
+                                  : (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 > 0
+                                      ? 'DIAL RIGHT'
+                                      : 'NO WIND',
                               style: const TextStyle(
                                 color: Color(0xFFE6A15C),
                                 fontSize: 11,
@@ -868,10 +904,20 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '${_calculationResults?['windageClicks'] ?? 0} CLICKS',
+                              '${_calculationResults?['windageClicks']?.abs() ?? 0}',
                               style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'CLICKS',
+                              style: TextStyle(
+                                color: Color(0xFFE6A15C),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
@@ -892,7 +938,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1512),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -905,7 +951,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     width: 1,
                     height: 40,
                     margin: const EdgeInsets.symmetric(horizontal: 16),
-                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                   ),
                   _buildMetricDisplay(
                     'MRAD',
@@ -915,7 +961,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     width: 1,
                     height: 40,
                     margin: const EdgeInsets.symmetric(horizontal: 16),
-                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
                   ),
                   _buildMetricDisplay(
                     'DROP',
@@ -936,7 +982,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFE6A15C).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
+                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.35)),
               ),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
