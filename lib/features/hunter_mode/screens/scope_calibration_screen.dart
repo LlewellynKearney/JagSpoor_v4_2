@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../ballistics/data/inventory_bridge.dart';
+import '../../shared/utils/firebase_diagnostic.dart';
 import '../../ballistics/data/models/rifle_profile.dart';
 import '../services/ballistic_solver_service.dart';
 
@@ -95,6 +96,72 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       });
       _calculateTrajectory();
     }
+  }
+
+  Future<void> _testFirebaseConnection() async {
+    final diagnostic = FirebaseDiagnostic();
+    final results = await diagnostic.run();
+    
+    if (!mounted) return;
+    
+    final passed = results.where((r) => r.pass).length;
+    final total = results.length;
+    final allPassed = passed == total;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F1C),
+        title: Row(
+          children: [
+            Icon(
+              allPassed ? Icons.check_circle : Icons.error,
+              color: allPassed ? Colors.green : Colors.red,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              allPassed ? 'Firebase OK' : 'Firebase Error',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$passed/$total checks passed',
+                  style: TextStyle(
+                    color: allPassed ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Divider(),
+                ...results.map((r) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    r.message,
+                    style: TextStyle(
+                      color: r.pass ? Colors.green : Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CLOSE', style: TextStyle(color: Color(0xFFE6A15C))),
+          ),
+        ],
+      ),
+    );
   }
 
   void _calculateTrajectory() {
@@ -623,6 +690,31 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+
+          // Debug: Test Firebase Connection Button
+          GestureDetector(
+            onTap: _testFirebaseConnection,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bug_report, color: Colors.red, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'TEST FIREBASE',
+                    style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 12),
 
