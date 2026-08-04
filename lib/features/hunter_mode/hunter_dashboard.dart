@@ -198,20 +198,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
           );
         },
       ),
-      DashboardFeature(
-        id: 'scope_calibration_hud',
-        icon: Icons.gps_fixed,
-        title: '🎯 Rifle Scope Ballistic HUD',
-        description:
-            'Advanced turret dial calibration with MOA/MRAD click calculator and rangefinder integration.',
-        onTap:
-            (context, theme) => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ScopeCalibrationScreen(theme: theme),
-              ),
-            ),
-      ),
+      // REMOVED: ScopeCalibrationHud DashboardFeature(
+      //   id: 'scope_calibration_hud',
+      //   icon: Icons.gps_fixed,
+      //   title: '🎯 Rifle Scope Ballistic HUD',
+      //   description: 'Advanced turret dial calibration with MOA/MRAD click calculator and rangefinder integration.',
+      //   onTap: (context, theme) => Navigator.push(
+      //     context,
+      //     MaterialPageRoute(builder: (context) => ScopeCalibrationScreen(theme: theme)),
+      //   ),
+      // ),
       DashboardFeature(
         id: 'saps_tracker',
         icon: Icons.badge_rounded,

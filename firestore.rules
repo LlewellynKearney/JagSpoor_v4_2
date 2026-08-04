@@ -11,23 +11,17 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.admin == true;
     }
 
-    function isManagerOfFarm(farmId) {
-      return request.auth != null && 
-        exists(/databases/$(database)/documents/farm_managers/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/farm_managers/$(request.auth.uid)).data.farmId == farmId;
-    }
-
     function isOutfitter() {
       return isSignedIn() && request.auth.token.role == 'outfitter';
     }
 
-    // SA Game Guide — global catalogue, readable by ANYONE (even offline/unauthenticated).
+    // Animals - public read
     match /animals/{animalId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 
-    // Root firearms collection - users can only read/write their own firearms
+    // Firearms
     match /firearms/{firearmId} {
       allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
@@ -37,18 +31,17 @@ service cloud.firestore {
       }
     }
 
-    // Trophies - users can read/write if signed in
+    // Trophies
     match /trophies/{trophyId} {
       allow read, write: if isSignedIn();
     }
 
-    // User profile documents
+    // Users
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      
+
       match /firearms/{firearmId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
-        
         match /ammunition/{ammoId} {
           allow read, write: if request.auth != null && request.auth.uid == userId;
         }
@@ -63,7 +56,7 @@ service cloud.firestore {
       allow list: if request.auth != null && request.query.limit <= 1;
     }
 
-    // Static ammunition databases - readable by authenticated users
+    // Catalog - read by authenticated
     match /factory_ammunition/{docId} {
       allow read: if request.auth != null;
     }
@@ -74,177 +67,119 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
 
-    // SAPS LICENSE & COMPETENCY TRACKER
+    // License applications
     match /license_applications/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
+      allow read, write: if request.auth != null;
     }
 
-    // SLAUGHTERHOUSE CARCASS MATRIX
+    // Carcass logs
     match /carcass_logs/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
+      allow read, write: if request.auth != null;
     }
 
-    // OFFLINE FIELD WAYPOINT PLACER
+    // Waypoints
     match /waypoints/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
+      allow read, write: if request.auth != null;
     }
 
-    // ==========================================
-    // 🏕️ OUTFITTER PACKAGE & BOOKING SYSTEM
-    // ==========================================
+    // Packages
     match /packages/{packageId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
-    }
-
-    // ROOT BOOKINGS COLLECTION - Allow hunters to read their own bookings
-    match /bookings/{bookingId} {
-      allow read: if request.auth != null && (
-        resource.data.hunterId == request.auth.uid || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow update: if request.auth != null && (
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow create: if request.auth != null;
-
-      match /chats/{messageId} {
-        allow read, write: if request.auth != null && (
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.hunterId == request.auth.uid ||
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.outfitterId == request.auth.uid ||
-          isManagerOfFarm(get(/databases/$(database)/documents/bookings/$(bookingId)).data.farmId)
-        );
-      }
-    }
-
-    // ROOT LODGING COLLECTION - Allow all authenticated users to browse
-    match /lodging/{lodgingId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && (
-        isOutfitter() || 
-        isManagerOfFarm(resource.data.farmId) ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
-    }
-
-    // ROOT FLEET COLLECTION - Allow hunters to read related vehicles
-    match /fleet/{vehicleId} {
-      allow read: if request.auth != null && (
-        resource.data.hunterId == request.auth.uid || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow write: if request.auth != null && (
-        isOutfitter() || 
-        isManagerOfFarm(resource.data.farmId) ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
-    }
-
-    // FARMS & MANAGERS
-    match /farms/{farmId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
-    }
-
-    match /farm_managers/{managerId} {
       allow read: if request.auth != null;
       allow create, update, delete: if request.auth != null;
     }
 
-    match /trophies/{trophyId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (
-        resource == null || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId) ||
-        request.resource.data.outfitterId == request.auth.uid ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
-    }
-
-    match /transport_permits/{permitId} {
-      allow read: if request.auth != null && (
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow write: if request.auth != null && (
-        resource == null || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId) ||
-        request.resource.data.outfitterId == request.auth.uid ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
-    }
-
-    // SCANNED PRICE LISTS
-    match /scanned_pricelists/{listId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
-    }
-
-    // USER AMMUNITION INVENTORY
-    match /ammunition/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
-    }
-
-    // SPOOR SCANS & TRACK ANALYSIS
-    match /spoor_scans/{docId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-    }
-
-    // ==========================================
-    // 🏨 OUTFITTER SUB-COLLECTIONS
-    // ==========================================
-    
-    // Outfitter Bookings (sub-collection path: outfitter/bookings)
-    match /outfitter/bookings/{bookingId} {
-      allow read: if request.auth != null && (resource.data.outfitterId == request.auth.uid || resource.data.hunterId == request.auth.uid);
+    // BOOKINGS - Hunters can read their own
+    match /bookings/{bookingId} {
+      allow read: if request.auth != null && (resource.data.hunterId == request.auth.uid || resource.data.outfitterId == request.auth.uid);
+      allow update: if request.auth != null && resource.data.outfitterId == request.auth.uid;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && resource.data.outfitterId == request.auth.uid;
-    }
-    
-    // Outfitter Lodging (sub-collection path: outfitter/lodging)
-    match /outfitter/lodging/{unitId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
-    }
-    
-    // Outfitter Fleet (sub-collection path: outfitter/fleet)
-    match /outfitter/fleet/{vehicleId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
+      allow delete: if request.auth != null && resource.data.outfitterId == request.auth.uid;
+
+      match /chats/{messageId} {
+        allow read, write: if request.auth != null;
+      }
     }
 
-    // ADDITIONAL COLLECTIONS
+    // LODGING - All can read, outfitters can write
+    match /lodging/{lodgingId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isOutfitter();
+    }
+
+    // FLEET - Hunters can read, outfitters can write
+    match /fleet/{vehicleId} {
+      allow read: if request.auth != null && (resource.data.hunterId == request.auth.uid || resource.data.outfitterId == request.auth.uid);
+      allow write: if request.auth != null && isOutfitter();
+    }
+
+    // Farms
+    match /farms/{farmId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    // Farm managers
+    match /farm_managers/{managerId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Transport permits
+    match /transport_permits/{permitId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Scanned pricelists
+    match /scanned_pricelists/{listId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Ammunition inventory
+    match /ammunition/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Spoor scans
+    match /spoor_scans/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Outfitter sub-collections
+    match /outfitter/bookings/{bookingId} {
+      allow read, write: if request.auth != null;
+    }
+    match /outfitter/lodging/{unitId} {
+      allow read, write: if request.auth != null;
+    }
+    match /outfitter/fleet/{vehicleId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Managers
     match /managers/{managerId} {
       allow read, write: if request.auth != null;
     }
-    
+
+    // Records
     match /records/{recordId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
-    }
-    
-    match /assets/{assetId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
-    }
-    
-    match /units/{unitId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid);
+      allow read, write: if request.auth != null;
     }
 
-    // ROOT-LEVEL CHATS COLLECTION
+    // Assets
+    match /assets/{assetId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Units
+    match /units/{unitId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Chats
     match /chats/{chatId} {
       allow read, write: if request.auth != null;
     }
 
-    // DEFAULT DENY - SECURITY
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
