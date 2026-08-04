@@ -341,7 +341,7 @@ class _HunterPackageMarketplaceScreenState
           itemCount: bookings.length,
           itemBuilder: (context, index) {
             final booking = bookings[index];
-            final data = booking.data();
+            final data = booking.data() as Map<String, dynamic>;
             final bookingId = booking.id;
 
             return _HunterBookingCard(
