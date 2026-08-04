@@ -79,7 +79,9 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           _safeFirearms = rifles;
           // Auto-select first rifle if none selected and list has items
           if (_selectedRifle == null && rifles.isNotEmpty) {
-            _selectRifle(rifles.first);
+            _selectedRifle = rifles.first;
+            _loadAmmunitionForRifle(rifles.first.id);
+            _calculateTrajectory();
           }
         });
       }
@@ -544,48 +546,60 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           Row(
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141915),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: DropdownButton<RifleProfile>(
-                    value: _selectedRifle ?? (_safeFirearms.isNotEmpty ? _safeFirearms.first : null),
-                    isExpanded: true,
-                    dropdownColor: const Color(0xFF1A1F1C),
-                    underline: const SizedBox(),
-                    icon: const Icon(
-                      Icons.arrow_drop_down,
-                      color: Color(0xFFE6A15C),
-                    ),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    hint: const Text(
-                      'Select firearm from safe',
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                    items: _safeFirearms.map((rifle) {
-                      return DropdownMenuItem<RifleProfile>(
-                        value: rifle,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
-                          ],
+                child: StreamBuilder<List<RifleProfile>>(
+                  stream: _inventoryBridge.watchSafeFirearms(),
+                  initialData: _safeFirearms,
+                  builder: (context, snapshot) {
+                    final rifles = snapshot.data ?? [];
+                    // Ensure selected rifle is valid for the current list
+                    final selectedRifle = rifles.contains(_selectedRifle)
+                        ? _selectedRifle
+                        : (rifles.isNotEmpty ? rifles.first : null);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141915),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
+                          width: 1.5,
                         ),
-                      );
-                    }).toList(),
-                    onChanged: (rifle) {
-                      if (rifle != null) {
-                        _selectRifle(rifle);
-                      }
-                    },
-                  ),
+                      ),
+                      child: DropdownButton<RifleProfile>(
+                        value: selectedRifle,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF1A1F1C),
+                        underline: const SizedBox(),
+                        icon: const Icon(
+                          Icons.arrow_drop_down,
+                          color: Color(0xFFE6A15C),
+                        ),
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        hint: const Text(
+                          'Select firearm from safe',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                        items: rifles.map((rifle) {
+                          return DropdownMenuItem<RifleProfile>(
+                            value: rifle,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (rifle) {
+                          if (rifle != null) {
+                            _selectRifle(rifle);
+                          }
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
