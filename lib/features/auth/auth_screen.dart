@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
+import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
 
@@ -18,6 +19,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _otpController = TextEditingController();
+  final _authGateService = AuthGateService();
 
   bool _isLoginMode = true;
   bool _obscurePassword = true;
@@ -29,7 +32,71 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _otpController.dispose();
     super.dispose();
+  }
+
+  /// Handle Google Sign-In
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final credential = await _authGateService.signInWithGoogle();
+
+      if (credential != null) {
+        // Check if user needs 2FA
+        if (_requires2FA(credential.user)) {
+          _show2FAVerificationSheet();
+        } else {
+          _navigateToRoleSelection();
+        }
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google Sign-In failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Check if user requires 2FA (outfitter/enterprise accounts)
+  bool _requires2FA(User? user) {
+    // For now, check if user has phone number linked
+    // In production, check Firestore user profile for 2FA flag
+    return user?.phoneNumber != null;
+  }
+
+  /// Show 2FA Verification Bottom Sheet
+  void _show2FAVerificationSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _TwoFAVerificationSheet(
+        onVerified: _navigateToRoleSelection,
+        onCancel: () {
+          Navigator.pop(context);
+          _authGateService.signOut();
+          setState(() => _isLoading = false);
+        },
+      ),
+    );
+  }
+
+  void _navigateToRoleSelection() {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+    );
   }
 
   Future<void> _handleAuth() async {
@@ -398,6 +465,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                 style: TextStyle(fontFamily: 'Mono'),
                               ),
                     ),
+                    const SizedBox(height: 12.0),
+                    
+                    // Google Sign-In Button
+                    _buildGoogleSignInButton(),
+                    
                     const SizedBox(height: 16.0),
                     TextButton(
                       onPressed:
@@ -417,6 +489,285 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Premium Google Sign-In Button
+  Widget _buildGoogleSignInButton() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF3C2A21), // Dark walnut
+            Color(0xFF5C4033), // Walnut brown
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _isLoading ? null : _handleGoogleSignIn,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'G',
+                      style: TextStyle(
+                        color: Color(0xFF4285F4),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Continue with Google',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 2FA SMS OTP Verification Bottom Sheet
+class _TwoFAVerificationSheet extends StatefulWidget {
+  final VoidCallback onVerified;
+  final VoidCallback onCancel;
+
+  const _TwoFAVerificationSheet({
+    required this.onVerified,
+    required this.onCancel,
+  });
+
+  @override
+  State<_TwoFAVerificationSheet> createState() => _TwoFAVerificationSheetState();
+}
+
+class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
+  final _otpController = TextEditingController();
+  final _authGateService = AuthGateService();
+  bool _isVerifying = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _otpController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.length != 6) {
+      setState(() => _errorMessage = 'Please enter 6-digit code');
+      return;
+    }
+
+    setState(() {
+      _isVerifying = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final credential = await _authGateService.verifySMSOTP(
+        verificationId: _otpController.text,
+        smsCode: _otpController.text,
+      );
+
+      if (credential != null) {
+        if (!mounted) return;
+        Navigator.pop(context);
+        widget.onVerified();
+      } else {
+        setState(() {
+          _errorMessage = 'Invalid verification code';
+          _isVerifying = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Verification failed: $e';
+        _isVerifying = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1F1C),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE6A15C), width: 2),
+          left: BorderSide(color: Color(0xFFE6A15C), width: 1),
+          right: BorderSide(color: Color(0xFFE6A15C), width: 1),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Header
+            const Row(
+              children: [
+                Icon(Icons.security, color: Color(0xFFE6A15C), size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'TWO-FACTOR AUTHENTICATION',
+                    style: TextStyle(
+                      color: Color(0xFFE6A15C),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Enter the 6-digit security code sent to your verified phone number.',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            
+            // OTP Input
+            TextFormField(
+              controller: _otpController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 8,
+                color: Colors.white,
+              ),
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: '------',
+                hintStyle: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  fontSize: 28,
+                  letterSpacing: 8,
+                ),
+                filled: true,
+                fillColor: const Color(0xFF2A2F2C),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.5),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE6A15C), width: 2),
+                ),
+              ),
+            ),
+            
+            // Error message
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 24),
+            
+            // Verify Button
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE6A15C),
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _isVerifying ? null : _verifyOTP,
+              child: _isVerifying
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(
+                      'VERIFY IDENTITY',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Cancel Button
+            TextButton(
+              onPressed: widget.onCancel,
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          ],
         ),
       ),
     );
