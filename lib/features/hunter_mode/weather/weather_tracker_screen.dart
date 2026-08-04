@@ -314,13 +314,14 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
         (_currentPosition != null
             ? 'Lat ${_currentPosition!.latitude.toStringAsFixed(5)}, Lon ${_currentPosition!.longitude.toStringAsFixed(5)}'
             : 'Press update to fetch hunter location.');
-    final updatedText = _weather != null
-        ? 'Last update ${_weather!.fetchedAt.toLocal().toString().replaceFirst(RegExp(r"\.\d+"), "")}'
-        : 'No weather data loaded yet.';
+    final updatedText =
+        _weather != null
+            ? 'Last update ${_weather!.fetchedAt.toLocal().toString().replaceFirst(RegExp(r"\.\d+"), "")}'
+            : 'No weather data loaded yet.';
     final townSubtitle =
         _resolvedTownName != null && _resolvedTownName!.isNotEmpty
-        ? 'Near $_resolvedTownName${_weather == null ? ' (cached)' : ''}'
-        : null;
+            ? 'Near $_resolvedTownName${_weather == null ? ' (cached)' : ''}'
+            : null;
 
     return Container(
       width: double.infinity,
@@ -391,18 +392,22 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   }
 
   Widget _buildWeatherMetricsGrid(ThemeController theme) {
-    final temperature = _weather != null
-        ? '${_weather!.temperatureC.toStringAsFixed(1)}°C'
-        : '--°C';
-    final humidity = _weather != null
-        ? '${_weather!.humidityPercent.toStringAsFixed(0)}%'
-        : '--%';
-    final pressure = _weather != null
-        ? '${_weather!.surfacePressureHpa.toStringAsFixed(0)} hPa'
-        : '-- hPa';
-    final windValue = _weather != null
-        ? '${_weather!.windSpeedKmh.toStringAsFixed(1)} km/h • Gust ${_weather!.windGustKmh.toStringAsFixed(1)} km/h\n${_weather!.windClockFace}'
-        : '--';
+    final temperature =
+        _weather != null
+            ? '${_weather!.temperatureC.toStringAsFixed(1)}°C'
+            : '--°C';
+    final humidity =
+        _weather != null
+            ? '${_weather!.humidityPercent.toStringAsFixed(0)}%'
+            : '--%';
+    final pressure =
+        _weather != null
+            ? '${_weather!.surfacePressureHpa.toStringAsFixed(0)} hPa'
+            : '-- hPa';
+    final windValue =
+        _weather != null
+            ? '${_weather!.windSpeedKmh.toStringAsFixed(1)} km/h • Gust ${_weather!.windGustKmh.toStringAsFixed(1)} km/h\n${_weather!.windClockFace}'
+            : '--';
 
     return Column(
       children: [
@@ -513,9 +518,10 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   }
 
   Widget _buildWindSummaryCard(ThemeController theme) {
-    final text = _weather != null
-        ? 'Wind from ${_weather!.windClockFace} (${_weather!.windDirectionDegrees.toStringAsFixed(0)}°).'
-        : 'Awaiting location update to see wind direction.';
+    final text =
+        _weather != null
+            ? 'Wind from ${_weather!.windClockFace} (${_weather!.windDirectionDegrees.toStringAsFixed(0)}°).'
+            : 'Awaiting location update to see wind direction.';
 
     return Container(
       width: double.infinity,
@@ -652,25 +658,26 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   void _showStalkingGuideDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.info_outline, color: widget.theme.accentColor),
-            const SizedBox(width: 8),
-            const Text('Stalking Guide'),
-          ],
-        ),
-        content: const Text(
-          'Keep the orange wind vector arrow pointing down/away from your phone\'s heading indicator needle to stay downwind of your quarry.',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.info_outline, color: widget.theme.accentColor),
+                const SizedBox(width: 8),
+                const Text('Stalking Guide'),
+              ],
+            ),
+            content: const Text(
+              'WEATHER & WIND HUD LOGISTICS: Utilizes your phone\'s internal hardware barometric sensor and magnetometer to determine off-grid stalking profiles. Scent Cone Vectors display local drift direction. Cross-reference your micro-climate readouts to remain downwind of plains game during close-range approaches.\n\nKeep the orange wind vector arrow pointing down/away from your phone\'s heading indicator needle to stay downwind of your quarry.',
+              style: TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Got it'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -815,22 +822,26 @@ class _CompassDialPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 10;
 
-    final dialPaint = Paint()
-      ..color = theme.textColor.withAlpha(30)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+    final dialPaint =
+        Paint()
+          ..color = theme.textColor.withAlpha(30)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2;
 
-    final tickPaint = Paint()
-      ..color = theme.textColor.withAlpha(60)
-      ..strokeWidth = 2;
+    final tickPaint =
+        Paint()
+          ..color = theme.textColor.withAlpha(60)
+          ..strokeWidth = 2;
 
-    final cardinalPaint = Paint()
-      ..color = theme.accentColor
-      ..strokeWidth = 3;
+    final cardinalPaint =
+        Paint()
+          ..color = theme.accentColor
+          ..strokeWidth = 3;
 
-    final northPaint = Paint()
-      ..color = Colors.red
-      ..strokeWidth = 4;
+    final northPaint =
+        Paint()
+          ..color = Colors.red
+          ..strokeWidth = 4;
 
     canvas.drawCircle(center, radius, dialPaint);
 
@@ -839,9 +850,8 @@ class _CompassDialPainter extends CustomPainter {
       final isNorth = i == 0;
       final isCardinal = i % 90 == 0;
       final tickLength = isNorth ? 20.0 : (isCardinal ? 15.0 : 8.0);
-      final paint = isNorth
-          ? northPaint
-          : (isCardinal ? cardinalPaint : tickPaint);
+      final paint =
+          isNorth ? northPaint : (isCardinal ? cardinalPaint : tickPaint);
 
       final start = Offset(
         center.dx + (radius - tickLength) * math.cos(angle),

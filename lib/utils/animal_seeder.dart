@@ -8,31 +8,138 @@ import '../models/animal.dart';
 class RolandWardMetrics {
   final String rwMinimum;
   final double? earLength;
+  final String? measurementMethod;
+  final String? hornDescription;
 
-  const RolandWardMetrics({required this.rwMinimum, this.earLength});
+  const RolandWardMetrics({
+    required this.rwMinimum,
+    this.earLength,
+    this.measurementMethod,
+    this.hornDescription,
+  });
 }
 
 const _rolandWardMetrics = <String, RolandWardMetrics>{
-  'greater kudu': RolandWardMetrics(rwMinimum: '53.875', earLength: 12.0),
-  'kudu (eastern cape)': RolandWardMetrics(rwMinimum: '53.0', earLength: 11.0),
-  'kudu (southern greater)': RolandWardMetrics(rwMinimum: '53.875', earLength: 12.0),
-  'cape eland': RolandWardMetrics(rwMinimum: '35.0', earLength: 12.0),
-  'eland': RolandWardMetrics(rwMinimum: '35.0', earLength: 12.0),
-  'eland (cape)': RolandWardMetrics(rwMinimum: '35.0', earLength: 12.0),
-  'gemsbok (oryx)': RolandWardMetrics(rwMinimum: '40.0', earLength: 9.0),
-  'gemsbok': RolandWardMetrics(rwMinimum: '40.0', earLength: 9.0),
-  'nyala': RolandWardMetrics(rwMinimum: '26.0', earLength: 8.5),
-  'blue wildebeest': RolandWardMetrics(rwMinimum: '28.5', earLength: 8.0),
-  'black wildebeest': RolandWardMetrics(rwMinimum: '22.875', earLength: 6.0),
-  'impala': RolandWardMetrics(rwMinimum: '23.5', earLength: 6.0),
-  'impala (southern)': RolandWardMetrics(rwMinimum: '23.5', earLength: 6.0),
-  'blesbok': RolandWardMetrics(rwMinimum: '16.5', earLength: 6.0),
-  'bontebok': RolandWardMetrics(rwMinimum: '14.0', earLength: 6.0),
-  'bontebok (purebred)': RolandWardMetrics(rwMinimum: '14.0', earLength: 6.0),
+  // Spiral Curve Method (Method 8)
+  'kudu': RolandWardMetrics(
+    rwMinimum: '53 7/8" (136.8 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length measured along spiral',
+  ),
+  'greater kudu': RolandWardMetrics(
+    rwMinimum: '53 7/8" (136.8 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length measured along spiral',
+  ),
+  'kudu (eastern cape)': RolandWardMetrics(
+    rwMinimum: '53" (134.6 cm)',
+    earLength: 11.0,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length measured along spiral',
+  ),
+  'kudu (southern greater)': RolandWardMetrics(
+    rwMinimum: '53 7/8" (136.8 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length measured along spiral',
+  ),
+  // Cape Eland - Horn Length (Method 8)
+  'cape eland': RolandWardMetrics(
+    rwMinimum: '35" (88.9 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Horn Length',
+    hornDescription: 'Horn length measured along curve',
+  ),
+  'eland': RolandWardMetrics(
+    rwMinimum: '35" (88.9 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Horn Length',
+    hornDescription: 'Horn length measured along curve',
+  ),
+  'eland (cape)': RolandWardMetrics(
+    rwMinimum: '35" (88.9 cm)',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Horn Length',
+    hornDescription: 'Horn length measured along curve',
+  ),
+  // Gemsbok - Horn Length (Method 7-a)
+  'gemsbok (oryx)': RolandWardMetrics(
+    rwMinimum: '40" (101.6 cm)',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length straight line',
+  ),
+  'gemsbok': RolandWardMetrics(
+    rwMinimum: '40" (101.6 cm)',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length straight line',
+  ),
+  // Nyala - Spiral Curve (Method 8)
+  'nyala': RolandWardMetrics(
+    rwMinimum: '27" (68.6 cm)',
+    earLength: 8.5,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length along spiral',
+  ),
+  // Blue Wildebeest - Outside Spread (Method 13)
+  'blue wildebeest': RolandWardMetrics(
+    rwMinimum: '28 1/2" (72.4 cm)',
+    earLength: 8.0,
+    measurementMethod: 'Method 13 - Outside Spread',
+    hornDescription: 'Horn spread measured outside',
+  ),
+  // Black Wildebeest - Boss Curve (Method 13)
+  'black wildebeest': RolandWardMetrics(
+    rwMinimum: '22 7/8" (58.1 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 13 - Boss Curve',
+    hornDescription: 'Boss curve measurement',
+  ),
+  // Impala - Straight Line (Method 7-a)
+  'impala': RolandWardMetrics(
+    rwMinimum: '23 6/8" (60.0 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Straight Line',
+    hornDescription: 'Horn length straight line',
+  ),
+  'impala (southern)': RolandWardMetrics(
+    rwMinimum: '23 6/8" (60.0 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Straight Line',
+    hornDescription: 'Horn length straight line',
+  ),
+  // Blesbok - Ridge Length (Method 7-a)
+  'blesbok': RolandWardMetrics(
+    rwMinimum: '16 1/2" (41.9 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Ridge Length',
+    hornDescription: 'Horn ridge length',
+  ),
+  'bontebok': RolandWardMetrics(
+    rwMinimum: '14" (35.6 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Ridge Length',
+    hornDescription: 'Horn ridge length',
+  ),
+  'bontebok (purebred)': RolandWardMetrics(
+    rwMinimum: '14" (35.6 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Ridge Length',
+    hornDescription: 'Horn ridge length',
+  ),
   'cape buffalo': RolandWardMetrics(rwMinimum: '42.0', earLength: 9.0),
-  'buffalo (southern african)': RolandWardMetrics(rwMinimum: '42.0', earLength: 9.0),
+  'buffalo (southern african)': RolandWardMetrics(
+    rwMinimum: '42.0',
+    earLength: 9.0,
+  ),
   'southern bushbuck': RolandWardMetrics(rwMinimum: '15.0', earLength: 6.0),
-  'bushbuck (southern african)': RolandWardMetrics(rwMinimum: '15.0', earLength: 6.0),
+  'bushbuck (southern african)': RolandWardMetrics(
+    rwMinimum: '15.0',
+    earLength: 6.0,
+  ),
   'bushbuck (chobe)': RolandWardMetrics(rwMinimum: '14.0', earLength: 9.0),
   'cheetah': RolandWardMetrics(rwMinimum: '12.5', earLength: null),
   'nile crocodile': RolandWardMetrics(rwMinimum: '14 ft', earLength: null),
@@ -43,17 +150,40 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
   'red duiker': RolandWardMetrics(rwMinimum: '2.5', earLength: null),
   'common duiker': RolandWardMetrics(rwMinimum: '4.75', earLength: 4.0),
   'bushpig': RolandWardMetrics(rwMinimum: '5.5', earLength: null),
-  'common warthog': RolandWardMetrics(rwMinimum: '13.0', earLength: 5.0),
-  'springbok': RolandWardMetrics(rwMinimum: '13.0', earLength: 6.0),
-  'springbok (cape)': RolandWardMetrics(rwMinimum: '13.0', earLength: 6.0),
-  'springbok (kalahari)': RolandWardMetrics(rwMinimum: '13.5', earLength: 7.0),
+  'common warthog': RolandWardMetrics(
+    rwMinimum: '13" (33.0 cm)',
+    earLength: 5.0,
+    measurementMethod: 'Method 5 - Upper Tusk Curve',
+    hornDescription: 'Upper tusk curve length',
+  ),
+  'springbok': RolandWardMetrics(
+    rwMinimum: '14" (35.6 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
+  ),
+  'springbok (cape)': RolandWardMetrics(
+    rwMinimum: '14" (35.6 cm)',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
+  ),
+  'springbok (kalahari)': RolandWardMetrics(
+    rwMinimum: '14" (35.6 cm)',
+    earLength: 7.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
+  ),
   'cape grysbok': RolandWardMetrics(rwMinimum: '3.0', earLength: null),
   'grysbok (cape)': RolandWardMetrics(rwMinimum: '3.0', earLength: null),
   "sharpe's grysbok": RolandWardMetrics(rwMinimum: '1.5', earLength: null),
   'grybok (sharp’s)': RolandWardMetrics(rwMinimum: '1.5', earLength: null),
   'red hartebeest': RolandWardMetrics(rwMinimum: '23.0', earLength: 8.0),
   'hartebeest (cape/red)': RolandWardMetrics(rwMinimum: '23.0', earLength: 8.0),
-  'hartebeest (lichtensteins)': RolandWardMetrics(rwMinimum: '18.5', earLength: 9.5),
+  'hartebeest (lichtensteins)': RolandWardMetrics(
+    rwMinimum: '18.5',
+    earLength: 9.5,
+  ),
   'oribi': RolandWardMetrics(rwMinimum: '5.5', earLength: 3.5),
   'mountain reedbuck': RolandWardMetrics(rwMinimum: '6.25', earLength: 6.0),
   'southern reedbuck': RolandWardMetrics(rwMinimum: '14.0', earLength: 7.0),
@@ -61,11 +191,17 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
   'roan antelope': RolandWardMetrics(rwMinimum: '27.0', earLength: 12.0),
   'sable antelope': RolandWardMetrics(rwMinimum: '40.0', earLength: 9.0),
   'black rhinoceros': RolandWardMetrics(rwMinimum: '24.0', earLength: null),
-  'southern white rhinoceros': RolandWardMetrics(rwMinimum: '26.0', earLength: 10.0),
+  'southern white rhinoceros': RolandWardMetrics(
+    rwMinimum: '26.0',
+    earLength: 10.0,
+  ),
   'hippopotamus': RolandWardMetrics(rwMinimum: '29.5', earLength: null),
   'elephant (african)': RolandWardMetrics(rwMinimum: '80 lb', earLength: null),
   'african elephant': RolandWardMetrics(rwMinimum: '80 lb', earLength: null),
-  'leopard (southern african)': RolandWardMetrics(rwMinimum: '15 pts', earLength: null),
+  'leopard (southern african)': RolandWardMetrics(
+    rwMinimum: '15 pts',
+    earLength: null,
+  ),
   'lion (african)': RolandWardMetrics(rwMinimum: '23 pts', earLength: null),
   'waterbuck (common)': RolandWardMetrics(rwMinimum: '28.0', earLength: 9.0),
   'tsessebe': RolandWardMetrics(rwMinimum: '15.0', earLength: null),
@@ -94,7 +230,7 @@ RolandWardMetrics? getRolandWardMetricsForSpecies(String speciesName) {
   return _rolandWardMetrics[normalizedName];
 }
 
- double? getEarLengthForSpecies(String speciesName) {
+double? getEarLengthForSpecies(String speciesName) {
   final normalizedName = speciesName.trim().toLowerCase();
   return _rolandWardMetrics[normalizedName]?.earLength;
 }
@@ -154,9 +290,10 @@ Future<void> seedAnimalsFromCSV() async {
         .replaceAll("'", '');
 
     // Parse provinces (split by hyphen)
-    final regions = provinceOfOrigin.isNotEmpty
-        ? provinceOfOrigin.split('-').map((p) => p.trim()).toList()
-        : <String>[];
+    final regions =
+        provinceOfOrigin.isNotEmpty
+            ? provinceOfOrigin.split('-').map((p) => p.trim()).toList()
+            : <String>[];
 
     // Build hunting notes from caliber and season
     final huntingNotes = <String>[];
@@ -187,8 +324,8 @@ Future<void> seedAnimalsFromCSV() async {
       huntingNotes: huntingNotes.isNotEmpty ? huntingNotes.join('\n') : null,
       recommendedCaliber:
           recommendedCaliber.isNotEmpty && recommendedCaliber != 'N/A'
-          ? recommendedCaliber
-          : null,
+              ? recommendedCaliber
+              : null,
       trophyMinimumRW: getRolandWardMinimumForSpecies(commonName),
       rolandWardMinimum: getRolandWardMinimumForSpecies(commonName),
       rwMinimum: getRolandWardMinimumForSpecies(commonName),
