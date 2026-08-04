@@ -600,8 +600,8 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   Widget _buildHudDashboard(ThemeController theme) {
     return Positioned(
       bottom: MediaQuery.of(context).padding.bottom + 24,
-      left: 16,
-      right: 16,
+      left: 8,
+      right: 8,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -675,8 +675,8 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 72,
-        height: 72,
+        width: 64,
+        height: 64,
         decoration: BoxDecoration(
           color: backgroundColor,
           shape: BoxShape.circle,
@@ -695,13 +695,13 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: iconColor, size: 28),
+            Icon(icon, color: iconColor, size: 24),
             const SizedBox(height: 2),
             Text(
               label,
               style: const TextStyle(
                 color: Colors.white70,
-                fontSize: 9,
+                fontSize: 8,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -715,8 +715,8 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     return GestureDetector(
       onTap: _dropBloodPin,
       child: Container(
-        width: 80,
-        height: 80,
+        width: 72,
+        height: 72,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
