@@ -53,6 +53,9 @@ dependencies:
   # Offline-capable animal profile images (SA Game Guide)
   cached_network_image: ^3.4.1
 
+  # Camera permissions handler
+  permission_handler: ^11.3.0
+
   # CSV parsing for animal data seeding
   csv: ^6.0.0
 

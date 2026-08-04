@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/theme/app_theme.dart';
 
 class LicenseScannerScreen extends StatefulWidget {
@@ -13,15 +14,77 @@ class LicenseScannerScreen extends StatefulWidget {
 
 class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
   // Live scanner locked to PDF417 (the dense 2D format on SA documents).
-  final MobileScannerController _controller = MobileScannerController(
-    formats: const [BarcodeFormat.pdf417],
-    detectionSpeed: DetectionSpeed.noDuplicates,
-  );
+  MobileScannerController? _controller;
   final ImagePicker _picker = ImagePicker();
 
   bool _handled = false;
   bool _torchOn = false;
+  bool _hasPermission = false;
+  bool _permissionDenied = false;
   String? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkCameraPermissions();
+  }
+
+  /// Runtime camera permission check using permission_handler
+  Future<void> _checkCameraPermissions() async {
+    var status = await Permission.camera.status;
+    
+    if (!status.isGranted) {
+      status = await Permission.camera.request();
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      if (status.isGranted) {
+        _hasPermission = true;
+        _permissionDenied = false;
+        _initializeScannerController();
+      } else if (status.isPermanentlyDenied) {
+        _hasPermission = false;
+        _permissionDenied = true;
+      } else {
+        _hasPermission = false;
+        _permissionDenied = false;
+      }
+    });
+  }
+
+  /// Initialize the scanner controller after permission is granted
+  void _initializeScannerController() {
+    _controller = MobileScannerController(
+      formats: const [BarcodeFormat.pdf417],
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+  }
+
+  /// Request camera permission again
+  Future<void> _requestCameraPermission() async {
+    final status = await Permission.camera.request();
+    
+    if (!mounted) return;
+    
+    if (status.isGranted) {
+      setState(() {
+        _hasPermission = true;
+        _permissionDenied = false;
+      });
+      _initializeScannerController();
+    } else if (status.isPermanentlyDenied) {
+      setState(() {
+        _permissionDenied = true;
+      });
+    }
+  }
+
+  /// Open app settings
+  Future<void> _openSettings() async {
+    await openAppSettings();
+  }
 
   void _onDetect(BarcodeCapture capture) {
     if (_handled || capture.barcodes.isEmpty) return;
@@ -46,11 +109,12 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
   }
 
   Future<void> _scanFromGallery() async {
+    if (_controller == null) return;
     setState(() => _status = null);
     try {
       final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
       if (file == null) return;
-      final BarcodeCapture? capture = await _controller.analyzeImage(file.path);
+      final BarcodeCapture? capture = await _controller!.analyzeImage(file.path);
       if (capture == null || capture.barcodes.isEmpty) {
         setState(
           () =>
@@ -62,15 +126,6 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
       _finish(capture.barcodes.first);
     } catch (e) {
       setState(() => _status = 'Could not read image: $e');
-    }
-  }
-
-  Future<void> _toggleTorch() async {
-    try {
-      await _controller.toggleTorch();
-      setState(() => _torchOn = !_torchOn);
-    } catch (_) {
-      // Torch unavailable on this device/camera; ignore.
     }
   }
 
@@ -106,13 +161,89 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleTorch() async {
+    if (_controller == null) return;
+    try {
+      await _controller!.toggleTorch();
+      setState(() => _torchOn = !_torchOn);
+    } catch (_) {
+      // Torch unavailable on this device/camera; ignore.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    
+    // Show loading while checking permission
+    if (!_hasPermission && !_permissionDenied) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          title: Text('SCAN LICENSE', style: TextStyle(color: theme.textColor)),
+          backgroundColor: theme.backgroundColor,
+          iconTheme: IconThemeData(color: theme.accentColor),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: Color(0xFFE6A15C)),
+        ),
+      );
+    }
+    
+    // Show permission denied screen
+    if (_permissionDenied) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          title: Text('SCAN LICENSE', style: TextStyle(color: theme.textColor)),
+          backgroundColor: theme.backgroundColor,
+          iconTheme: IconThemeData(color: theme.accentColor),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt_outlined, size: 72, color: Color(0xFFE6A15C)),
+                const SizedBox(height: 16),
+                const Text(
+                  'Camera Permission Required',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Camera access is needed to scan license barcodes. Please enable camera permission in Settings.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE6A15C),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: _openSettings,
+                  icon: const Icon(Icons.settings),
+                  label: const Text('OPEN SETTINGS'),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _requestCameraPermission,
+                  child: const Text('TRY AGAIN', style: TextStyle(color: Color(0xFFE6A15C))),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
