@@ -170,6 +170,15 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 letterSpacing: 1.5,
               ),
             ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showScopeInfoDialog(context),
+              child: Icon(
+                Icons.info_outline,
+                color: Colors.orange.withValues(alpha: 0.8),
+                size: 20,
+              ),
+            ),
           ],
         ),
         leading: IconButton(
@@ -565,31 +574,34 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.speed, color: Colors.orangeAccent, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Barometric Correction Active: ${_calculationResults?['barometricPressureHpa']?.toStringAsFixed(1) ?? '1013.25'} hPa',
-                    style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.speed, color: Colors.orangeAccent, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Barometric Correction Active: ${_calculationResults?['barometricPressureHpa']?.toStringAsFixed(1) ?? '1013.25'} hPa',
+                      style: const TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Icon(Icons.straighten, color: Colors.orangeAccent, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
-                    style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(width: 12),
+                    Icon(Icons.straighten, color: Colors.orangeAccent, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
+                      style: const TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
@@ -649,21 +661,24 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   }
 
   Widget _buildBottomActionRow(ThemeController theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [const Color(0xFF1A1512), const Color(0xFF2D2520)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        border: Border(
-          top: BorderSide(
-            color: Colors.orange.withValues(alpha: 0.3),
-            width: 1,
+    return SafeArea(
+      top: false,
+      bottom: true,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [const Color(0xFF1A1512), const Color(0xFF2D2520)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+          border: Border(
+            top: BorderSide(
+              color: Colors.orange.withValues(alpha: 0.3),
+              width: 1,
+            ),
           ),
         ),
-      ),
       child: Row(
         children: [
           // Quick Sync Button
@@ -717,6 +732,56 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+    );
+  }
+
+  void _showScopeInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2D2520),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.orange.withValues(alpha: 0.5), width: 1),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.gps_fixed, color: Colors.orange.withValues(alpha: 0.9), size: 24),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Ballistic Solver HUD',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'BALLISTIC SOLVER HUD: Provides real-time scope adjustment matrices completely offline. The interactive central dial visually calculates necessary scope elevation clicks (MOA/MRAD turret clicks) to achieve a flat path holdover based on current environmental pressure, slope angles, and muzzle dynamics. Tap the bluetooth sync icon or pull action targets directly from your BLE rangefinder telemetry to calibrate drop offsets instantly.',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              'GOT IT',
+              style: TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
