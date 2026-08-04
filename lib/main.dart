@@ -252,21 +252,6 @@ class _AppCheckDebugBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.copy, color: Colors.white, size: 18),
-                onPressed: () {
-                  // Copy to clipboard functionality would go here
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Token copied!'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                tooltip: 'Copy token',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
             ],
           ),
         ),
