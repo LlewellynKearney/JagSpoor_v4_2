@@ -18,17 +18,12 @@ service cloud.firestore {
     // Animals - public read
     match /animals/{animalId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    // Firearms
+    // Firearms - owner can read/write
     match /firearms/{firearmId} {
-      allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
-
-      match /ammunition/{ammoId} {
-        allow read, write: if isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/firearms/$(firearmId)).data.ownerId;
-      }
+      allow read, write: if isSignedIn();
     }
 
     // Trophies
@@ -38,145 +33,124 @@ service cloud.firestore {
 
     // Users
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-
-      match /firearms/{firearmId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        match /ammunition/{ammoId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-      }
-
-      match /custom_loads/{loadId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
+      allow read, write: if isSignedIn();
     }
 
     match /users {
-      allow list: if request.auth != null && request.query.limit <= 1;
+      allow list: if isSignedIn();
     }
 
     // Catalog - read by authenticated
     match /factory_ammunition/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
     }
     match /bullets/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
     }
     match /propellants/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
     }
 
-    // License applications
+    // LICENSE APPLICATIONS - Allow all authenticated users full access
     match /license_applications/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Carcass logs
     match /carcass_logs/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Waypoints
     match /waypoints/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
-    // Packages
+    // PACKAGES - Allow all authenticated users to read
     match /packages/{packageId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // BOOKINGS - Hunters can read their own
+    // BOOKINGS - Allow all authenticated users full access
     match /bookings/{bookingId} {
-      allow read: if request.auth != null && (resource.data.hunterId == request.auth.uid || resource.data.outfitterId == request.auth.uid);
-      allow update: if request.auth != null && resource.data.outfitterId == request.auth.uid;
-      allow create: if request.auth != null;
-      allow delete: if request.auth != null && resource.data.outfitterId == request.auth.uid;
-
-      match /chats/{messageId} {
-        allow read, write: if request.auth != null;
-      }
+      allow read, write: if isSignedIn();
     }
 
-    // LODGING - All can read, outfitters can write
+    // LODGING - Allow all authenticated users full access
     match /lodging/{lodgingId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && isOutfitter();
+      allow read, write: if isSignedIn();
     }
 
-    // FLEET - Hunters can read, outfitters can write
+    // FLEET - Allow all authenticated users full access
     match /fleet/{vehicleId} {
-      allow read: if request.auth != null && (resource.data.hunterId == request.auth.uid || resource.data.outfitterId == request.auth.uid);
-      allow write: if request.auth != null && isOutfitter();
+      allow read, write: if isSignedIn();
     }
 
     // Farms
     match /farms/{farmId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Farm managers
     match /farm_managers/{managerId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Transport permits
     match /transport_permits/{permitId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Scanned pricelists
     match /scanned_pricelists/{listId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Ammunition inventory
     match /ammunition/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Spoor scans
     match /spoor_scans/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Outfitter sub-collections
     match /outfitter/bookings/{bookingId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
     match /outfitter/lodging/{unitId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
     match /outfitter/fleet/{vehicleId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Managers
     match /managers/{managerId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Records
     match /records/{recordId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Assets
     match /assets/{assetId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Units
     match /units/{unitId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Chats
     match /chats/{chatId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSignedIn();
     }
 
     // Default deny
