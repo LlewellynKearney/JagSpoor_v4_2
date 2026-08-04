@@ -89,6 +89,7 @@ dependencies:
   signature: ^6.4.0
   file_picker: ^8.0.0
   flutter_blue_plus: ^2.3.11
+  firebase_app_check: ^0.4.6
 
 dev_dependencies:
   flutter_test:

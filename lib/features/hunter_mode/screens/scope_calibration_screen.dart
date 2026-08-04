@@ -84,6 +84,27 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     _calculateTrajectory();
   }
 
+  // Helper getters for turret direction display
+  bool get _isElevationUp => _calculationResults?['isDropPositive'] == true;
+  
+  int get _elevationClicks => ((_calculationResults?['clicksToDial'] as num?)?.abs() ?? 0).toInt();
+  
+  int get _windageClicks => ((_calculationResults?['windageClicks'] as num?)?.abs() ?? 0).toInt();
+  
+  String get _windageDirection {
+    final windage = (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0;
+    if (windage < 0) return 'DIAL LEFT';
+    if (windage > 0) return 'DIAL RIGHT';
+    return 'NO WIND';
+  }
+  
+  IconData get _windageIcon {
+    final windage = (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0;
+    if (windage < 0) return Icons.arrow_back;
+    if (windage > 0) return Icons.arrow_forward;
+    return Icons.remove;
+  }
+
   Future<void> _loadAmmunitionForRifle(String rifleId) async {
     final ammoList = await _inventoryBridge.fetchAvailableAmmunition(rifleId);
     if (mounted) {
@@ -946,17 +967,13 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  _calculationResults?['isDropPositive'] == true
-                                      ? Icons.arrow_upward
-                                      : Icons.unfold_more,
+                                  _isElevationUp ? Icons.arrow_upward : Icons.arrow_downward,
                                   color: const Color(0xFFE6A15C),
                                   size: 16,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  _calculationResults?['isDropPositive'] == true
-                                      ? 'DIAL UP'
-                                      : 'HOLD OVER',
+                                  _isElevationUp ? 'DIAL UP' : 'DIAL DOWN',
                                   style: const TextStyle(
                                     color: Color(0xFFE6A15C),
                                     fontSize: 12,
@@ -968,9 +985,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _isCalculating
-                                  ? '---'
-                                  : '${_calculationResults?['clicksToDial'] ?? 0}',
+                              _isCalculating ? '---' : '$_elevationClicks',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 36,
@@ -1007,42 +1022,25 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) < 0
-                                  ? Icons.arrow_back
-                                  : ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) > 0
-                                      ? Icons.arrow_forward
-                                      : Icons.remove,
+                              _windageIcon,
                               color: const Color(0xFFE6A15C),
                               size: 16,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) < 0
-                                  ? 'DIAL LEFT'
-                                  : ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) > 0
-                                      ? 'DIAL RIGHT'
-                                      : 'NO WIND',
+                              '$_windageDirection:',
                               style: const TextStyle(
                                 color: Color(0xFFE6A15C),
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 4),
                             Text(
-                              '${_calculationResults?['windageClicks']?.abs() ?? 0}',
+                              '$_windageClicks CLICKS',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Text(
-                              'CLICKS',
-                              style: TextStyle(
-                                color: Color(0xFFE6A15C),
-                                fontSize: 10,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
