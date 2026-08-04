@@ -9,13 +9,11 @@ import 'models/rifle_profile.dart';
 /// Provides functions to dynamically feed user dropdown menus.
 class InventoryBridge {
   final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
 
-  InventoryBridge({FirebaseFirestore? firestore, FirebaseAuth? auth})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _auth = auth ?? FirebaseAuth.instance;
+  InventoryBridge({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   /// Returns a fallback list of common caliber ammunition records
   /// for offline mode when Firestore queries fail (e.g., DEVELOPER_ERROR).
@@ -199,47 +197,10 @@ class InventoryBridge {
     }
   }
 
-  /// Returns fallback mock firearms for demo/offline mode.
-  List<RifleProfile> _getFallbackFirearms() {
-    return [
-      RifleProfile(
-        id: 'mock_musgrave',
-        ownerId: 'demo',
-        name: 'Musgrave 6mm',
-        caliber: '6mm BR',
-        barrelLengthInches: 24.0,
-        scopeHeightInches: 1.8,
-        muzzleVelocityFps: 2950.0,
-        ballisticCoefficient: 0.42,
-      ),
-      RifleProfile(
-        id: 'mock_marlin',
-        ownerId: 'demo',
-        name: 'Marlin XS7',
-        caliber: '.308 Win',
-        barrelLengthInches: 22.0,
-        scopeHeightInches: 1.75,
-        muzzleVelocityFps: 2700.0,
-        ballisticCoefficient: 0.45,
-      ),
-      RifleProfile(
-        id: 'mock_glock',
-        ownerId: 'demo',
-        name: 'Glock 19',
-        caliber: '9mm',
-        barrelLengthInches: 4.0,
-        scopeHeightInches: 0.5,
-        muzzleVelocityFps: 1150.0,
-        ballisticCoefficient: 0.15,
-      ),
-    ];
-  }
-
   /// Stream of firearms for reactive UI updates.
   Stream<List<RifleProfile>> watchSafeFirearms() {
     if (_currentUserId == null) {
-      debugPrint('InventoryBridge: User not authenticated, using fallback firearms');
-      return Stream.value(_getFallbackFirearms());
+      return Stream.value(<RifleProfile>[]);
     }
 
     return _firestore
@@ -248,17 +209,13 @@ class InventoryBridge {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          if (snapshot.docs.isEmpty) {
-            debugPrint('InventoryBridge: No firearms found, using fallback');
-            return _getFallbackFirearms();
-          }
           return snapshot.docs
               .map((doc) => RifleProfile.fromFirestore(doc))
               .toList();
         })
         .handleError((error) {
           debugPrint('InventoryBridge: Error watching firearms: $error');
-          return _getFallbackFirearms();
+          return <RifleProfile>[];
         });
   }
 
