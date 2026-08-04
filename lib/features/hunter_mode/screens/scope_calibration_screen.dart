@@ -29,8 +29,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   RifleProfile? _selectedRifleFromSafe;
   AmmoProfile? _selectedAmmo;
 
+  // Dropdown value tracking (uses prefixed format)
+  String? _dropdownValue; // 'safe:xxx' or 'fallback:xxx'
+
   // Rifle profile selection (fallback defaults)
-  String _selectedRifleProfile = '.308 Win';
+  String _selectedRifleProfile = '';
   double _muzzleVelocityFps = 2700.0;
   double _ballisticCoefficient = 0.45;
   double _scopeHeightInches = 1.8;
@@ -85,12 +88,16 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
 
   Future<void> _loadSafeFirearms() async {
     final rifles = await _inventoryBridge.fetchSafeFirearms();
-    if (mounted && rifles.isNotEmpty) {
+    if (mounted) {
       setState(() {
         _safeFirearms = rifles;
-        // Auto-select first rifle if none selected
-        if (_selectedRifleFromSafe == null) {
+        // Auto-select first rifle from safe if available, otherwise use fallback
+        if (rifles.isNotEmpty) {
           _selectSafeRifle(rifles.first);
+        } else {
+          // Use fallback profile if no firearms in safe
+          _dropdownValue = 'fallback:.308 Win';
+          _selectRifleProfile('.308 Win');
         }
       });
     }
@@ -99,6 +106,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   void _selectSafeRifle(RifleProfile rifle) {
     setState(() {
       _selectedRifleFromSafe = rifle;
+      _dropdownValue = 'safe:${rifle.id}';
       _selectedRifleProfile = '${rifle.name} (${rifle.caliber})';
       // Load ammunition for this rifle
       _loadAmmunitionForRifle(rifle.id);
@@ -128,6 +136,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     final profileData = _rifleProfiles[profile];
     if (profileData != null) {
       setState(() {
+        _dropdownValue = 'fallback:$profile';
         _selectedRifleProfile = profile;
         _muzzleVelocityFps = profileData['muzzleVelocity']!;
         _ballisticCoefficient = profileData['ballisticCoefficient']!;
@@ -513,7 +522,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     ),
                   ),
                   child: DropdownButton<String>(
-                    value: _selectedRifleProfile,
+                    value: _dropdownValue,
                     isExpanded: true,
                     dropdownColor: const Color(0xFF1A1F1C),
                     underline: const SizedBox(),
@@ -525,16 +534,16 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     items: [
                       // Section header for Digital Safe
                       if (_safeFirearms.isNotEmpty) ...[
-                        DropdownMenuItem<String>(
+                        const DropdownMenuItem<String>(
                           enabled: false,
                           child: Row(
                             children: [
-                              Icon(Icons.lock, color: Colors.orange.withValues(alpha: 0.5), size: 14),
-                              const SizedBox(width: 8),
+                              Icon(Icons.lock, color: Colors.orange, size: 14),
+                              SizedBox(width: 8),
                               Text(
                                 'DIGITAL FIREARM SAFE',
                                 style: TextStyle(
-                                  color: Colors.orange.withValues(alpha: 0.7),
+                                  color: Colors.orange,
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -577,7 +586,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                       if (value != null) {
                         if (value.startsWith('safe:')) {
                           final rifleId = value.substring(5);
-                          final rifle = _safeFirearms.firstWhere((r) => r.id == rifleId);
+                          final rifle = _safeFirearms.firstWhere((r) => r.id == rifleId, orElse: () => _safeFirearms.first);
                           _selectSafeRifle(rifle);
                         } else if (value.startsWith('fallback:')) {
                           final profile = value.substring(9);
