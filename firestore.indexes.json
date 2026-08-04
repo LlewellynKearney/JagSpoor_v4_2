@@ -7,6 +7,38 @@
         { "fieldPath": "hunterId", "order": "ASCENDING" },
         { "fieldPath": "lastChecked", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "lodging",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "unitName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fleet",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "operationalStatus", "order": "ASCENDING" },
+        { "fieldPath": "vehicleName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ammunition",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "inventory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

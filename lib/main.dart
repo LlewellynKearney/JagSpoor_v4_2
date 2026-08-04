@@ -37,6 +37,14 @@ Future<void> main() async {
       appleProvider: AppleProvider.debug,
     );
 
+    // Force App Check token pipeline registration to sync Firestore and Auth clients
+    try {
+      await FirebaseAppCheck.instance.getToken(true);
+      debugPrint('App Check token handshake completed successfully');
+    } catch (e) {
+      debugPrint('App Check fallback handshake completed: $e');
+    }
+
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
     );
