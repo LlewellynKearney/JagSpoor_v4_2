@@ -881,9 +881,9 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 < 0
+                              ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) < 0
                                   ? Icons.arrow_back
-                                  : (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 > 0
+                                  : ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) > 0
                                       ? Icons.arrow_forward
                                       : Icons.remove,
                               color: const Color(0xFFE6A15C),
@@ -891,9 +891,9 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 < 0
+                              ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) < 0
                                   ? 'DIAL LEFT'
-                                  : (_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0 > 0
+                                  : ((_calculationResults?['windageMOA'] as num?)?.compareTo(0) ?? 0) > 0
                                       ? 'DIAL RIGHT'
                                       : 'NO WIND',
                               style: const TextStyle(
