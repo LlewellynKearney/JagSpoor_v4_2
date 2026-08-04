@@ -547,7 +547,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                             value: 'safe:${rifle.id}',
                             child: Row(
                               children: [
-                                const Icon(Icons.rifle, color: Colors.orange, size: 16),
+                                const Icon(Icons.gavel, color: Colors.orange, size: 16),
                                 const SizedBox(width: 8),
                                 Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
                               ],
