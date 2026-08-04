@@ -3,235 +3,248 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
+    
     function isSignedIn() {
       return request.auth != null;
     }
-
 
     function isAdmin() {
       return isSignedIn() && request.auth.token.admin == true;
     }
 
-
-    // SA Game Guide — global catalogue, readable by ANYONE (even offline/unauthenticated).
-    // Writes are strictly locked down to administrators.
-    match /animals/{animalId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-
-    // Root firearms collection - users can only read/write their own firearms
-    match /firearms/{firearmId} {
-      allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerId;
-
-      // Allow read/write access to nested ammunition variants belonging to this firearm
-      match /ammunition/{ammoId} {
-        allow read, write: if isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/firearms/$(firearmId)).data.ownerId;
-      }
-    }
-
-
-    // Trophies - users can read/write if signed in
-    match /trophies/{trophyId} {
-      allow read, write: if isSignedIn();
-    }
-
-
-    // User profile documents - users can read/write their own document
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      // Cascade permissions downward into firearms and nested ammunition tracks
-      match /firearms/{firearmId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        
-        match /ammunition/{ammoId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-      }
-
-
-      // Custom loads - users can read/write their own custom loads
-      match /custom_loads/{loadId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-    }
-
-
-    // User collection queries - allow bounded collection queries with limit 1 for initialization
-    match /users {
-      allow list: if request.auth != null && request.query.limit <= 1;
-    }
-
-
-    // Maintain global access to static ammunition databases
-    match /factory_ammunition/{docId} {
-      allow read: if request.auth != null;
-    }
-    match /bullets/{docId} {
-      allow read: if request.auth != null;
-    }
-    match /propellants/{docId} {
-      allow read: if request.auth != null;
-    }
-
-
-    // ==========================================
-    // 💳 SAPS LICENSE & COMPETENCY TRACKER PERMISSIONS
-    // ==========================================
-    match /license_applications/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
-    }
-
-
-    // ==========================================
-    // 🥩 SLAUGHTERHOUSE CARCASS MATRIX PERMISSIONS
-    // ==========================================
-    match /carcass_logs/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
-    }
-
-
-    // ==========================================
-    // 📍 OFFLINE FIELD WAYPOINT PLACER RULES
-    // Covers all waypoint types: Kill Sites, Camps, Spoor Tracks, Water Sources,
-    // Vehicle Markers, Rangefinder Targets, Forecast Logs, and all other field markers.
-    // Permissions are based on hunterId ownership - authenticated users can only
-    // read/write waypoints they created.
-    // ==========================================
-    match /waypoints/{docId} {
-      allow read, write: if request.auth != null && (resource == null || resource.data.hunterId == request.auth.uid || request.resource.data.hunterId == request.auth.uid);
-    }
-
-
-    // ==========================================
-    // 🏕️ OUTFITTER PACKAGE & BOOKING SYSTEM MATRIX
-    // ==========================================
-    match /packages/{packageId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
-    }
-
-
-    match /bookings/{bookingId} {
-      allow read: if request.auth != null && (
-        resource.data.hunterId == request.auth.uid || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow update: if request.auth != null && (
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow create: if request.auth != null;
-
-      // 🎯 FIX: Allow read/write access to negotiated chat threads nested inside this specific booking
-      match /chats/{messageId} {
-        allow read, write: if request.auth != null && (
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.hunterId == request.auth.uid ||
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.outfitterId == request.auth.uid ||
-          isManagerOfFarm(get(/databases/$(database)/documents/bookings/$(bookingId)).data.farmId)
-        );
-      }
-    }
-
-
-    // ==========================================
-    // 🏡 MULTI-FARM CONCESSION & MANAGER ROLES MATRIX
-    // ==========================================
-    match /farms/{farmId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
-    }
-
-
-    match /farm_managers/{managerId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null;
-    }
-
-    // ==========================================
-    // 🏕️ ENTERPRISE ROLE-BASED ACCESS CONTROL (RBAC)
-    // ==========================================
-    
-    // Helper function to check if the authenticated user is a manager assigned to this specific farm
     function isManagerOfFarm(farmId) {
       return request.auth != null && 
         exists(/databases/$(database)/documents/farm_managers/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/farm_managers/$(request.auth.uid)).data.farmId == farmId;
     }
 
-
-    match /farms/{farmId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
+    function isOwner'sData(fieldName) {
+      return resource == null || resource.data[fieldName] == request.auth.uid;
     }
 
-
-    match /packages/{packageId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
+    function isOwner'sOrNull(fieldName) {
+      return resource == null || resource.data[fieldName] == request.auth.uid || request.resource.data[fieldName] == request.auth.uid;
     }
 
+    // ==========================================
+    // 📱 USER PROFILES
+    // ==========================================
+    
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
 
-    match /bookings/{bookingId} {
-      allow read: if request.auth != null && (
-        resource.data.hunterId == request.auth.uid || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow update: if request.auth != null && (
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow create: if request.auth != null;
-
-      // 🎯 FIX: Allow read/write access to negotiated chat threads nested inside this specific booking
-      match /chats/{messageId} {
-        allow read, write: if request.auth != null && (
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.hunterId == request.auth.uid ||
-          get(/databases/$(database)/documents/bookings/$(bookingId)).data.outfitterId == request.auth.uid ||
-          isManagerOfFarm(get(/databases/$(database)/documents/bookings/$(bookingId)).data.farmId)
-        );
+    // ==========================================
+    // 🔫 FIREARMS & AMMUNITION
+    // ==========================================
+    
+    match /firearms/{firearmId} {
+      allow read: if isSignedIn() && isOwner'sData('ownerId');
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      // Nested ammunition sub-collection
+      match /ammunition/{ammoId} {
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/firearms/$(firearmId)).data.ownerId == request.auth.uid;
       }
     }
 
+    // User's ammunition inventory
+    match /ammunition/{docId} {
+      allow read, write: if isSignedIn() && isOwner'sData('ownerId');
+    }
 
+    // ==========================================
+    // 🎯 BALLISTICS CATALOG (Read-only for users)
+    // ==========================================
+    
+    match /factory_ammunition/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /bullets/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /propellants/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================
+    // 🦌 WILDLIFE DATABASE
+    // ==========================================
+    
+    match /animals/{animalId} {
+      allow read: if true;  // Public read for offline access
+      allow write: if isAdmin();
+    }
+
+    // ==========================================
+    // 🏆 TROPHIES
+    // ==========================================
+    
     match /trophies/{trophyId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (
-        resource == null || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId) ||
-        request.resource.data.outfitterId == request.auth.uid ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
-    }
-
-
-    match /transport_permits/{permitId} {
-      allow read: if request.auth != null && (
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId)
-      );
-      allow write: if request.auth != null && (
-        resource == null || 
-        resource.data.outfitterId == request.auth.uid || 
-        isManagerOfFarm(resource.data.farmId) ||
-        request.resource.data.outfitterId == request.auth.uid ||
-        isManagerOfFarm(request.resource.data.farmId)
-      );
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isOwner'sData('hunterId') || isOwner'sData('outfitterId'));
     }
 
     // ==========================================
-    // 📸 AI-DRIVEN SCANNED PRICE LIST & CUSTOM PACKAGES
+    // 📄 LICENSE APPLICATIONS (SAPS)
     // ==========================================
-    match /scanned_pricelists/{listId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && (resource == null || resource.data.outfitterId == request.auth.uid || request.resource.data.outfitterId == request.auth.uid);
+    
+    match /license_applications/{docId} {
+      allow read, write: if isSignedIn() && isOwner'sOrNull('hunterId');
+    }
+
+    // ==========================================
+    // 🚗 TRANSPORT PERMITS
+    // ==========================================
+    
+    match /transport_permits/{docId} {
+      allow read, write: if isSignedIn() && isOwner'sOrNull('hunterId');
+    }
+
+    // ==========================================
+    // 🥩 CARCASS LOGS
+    // ==========================================
+    
+    match /carcass_logs/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isOwner'sOrNull('hunterId') || isOwner'sOrNull('outfitterId'));
+    }
+
+    // ==========================================
+    // 📍 WAYPOINTS & SPOOR
+    // ==========================================
+    
+    match /waypoints/{docId} {
+      allow read, write: if isSignedIn() && isOwner'sOrNull('userId');
+    }
+
+    match /spoor_scans/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('userId');
+    }
+
+    // ==========================================
+    // 🏕️ OUTFITTER BOOKINGS (Root level)
+    // ==========================================
+    
+    match /bookings/{bookingId} {
+      allow read: if isSignedIn() && (isOwner'sData('hunterId') || isOwner'sData('outfitterId') || isManagerOfFarm(resource.data.farmId));
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (isOwner'sData('outfitterId') || isManagerOfFarm(resource.data.farmId));
+      allow delete: if isSignedIn() && isOwner'sData('outfitterId');
+      
+      // Nested chats under booking
+      match /chats/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // ==========================================
+    // 🏨 OUTFITTER sub-collections (/outfitter/bookings, /outfitter/lodging, /outfitter/fleet)
+    // ==========================================
+    
+    // Outfitter Bookings (sub-collection path)
+    match /outfitter/bookings/{bookingId} {
+      allow read: if isSignedIn() && (isOwner'sData('outfitterId') || isOwner'sData('hunterId'));
+      allow create, update, delete: if isSignedIn() && isOwner'sData('outfitterId');
+    }
+    
+    // Outfitter Lodging
+    match /outfitter/lodging/{unitId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+    
+    // Outfitter Fleet
+    match /outfitter/fleet/{vehicleId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+
+    // ==========================================
+    // 🏡 FARMS & MANAGERS
+    // ==========================================
+    
+    match /farms/{farmId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+
+    match /farm_managers/{managerId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /managers/{managerId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ==========================================
+    // 📦 PACKAGES
+    // ==========================================
+    
+    match /packages/{packageId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('outfitterId');
+    }
+
+    // ==========================================
+    // 💬 CHATS
+    // ==========================================
+    
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ==========================================
+    // 📋 RECORDS & ASSETS
+    // ==========================================
+    
+    match /records/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+
+    match /assets/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+
+    match /units/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('ownerId');
+    }
+
+    // ==========================================
+    // 📸 SCANNED PRICE LISTS
+    // ==========================================
+    
+    match /scanned_pricelists/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isOwner'sOrNull('userId');
+    }
+
+    // ==========================================
+    // DEFAULT DENY
+    // ==========================================
+    
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
