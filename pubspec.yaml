@@ -48,6 +48,7 @@ dependencies:
   cloud_firestore: ^6.6.0
   firebase_storage: ^13.4.3  # <-- CHANGED from 12.3.1
   firebase_crashlytics: ^5.2.4
+  google_sign_in: ^6.2.1
 
   # Offline-capable animal profile images (SA Game Guide)
   cached_network_image: ^3.4.1
