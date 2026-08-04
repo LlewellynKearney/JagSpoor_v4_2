@@ -1,5 +1,6 @@
 // ADDED
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -20,6 +21,12 @@ import 'features/outfitter_mode/outfitter_dashboard.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 
+// Global debug token holder for App Check
+String? _debugAppCheckToken;
+
+/// Getter to expose the debug token to widgets
+String? getDebugAppCheckToken() => _debugAppCheckToken;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -35,6 +42,16 @@ Future<void> main() async {
       androidProvider: AndroidProvider.debug,
       appleProvider: AppleProvider.debug,
     );
+
+    // Force-fetch the debug token and print to console/logcat
+    if (kDebugMode) {
+      try {
+        _debugAppCheckToken = await FirebaseAppCheck.instance.getToken(true);
+        debugPrint("🚫 TARGET SECRET TOKEN IS: $_debugAppCheckToken");
+      } catch (e) {
+        debugPrint("Token fetch error: $e");
+      }
+    }
 
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
@@ -78,7 +95,7 @@ Future<void> main() async {
       }
     });
 
-    runApp(JagspoorApp(themeController: themeController));
+    runApp(JagspoorApp(themeController: themeController, debugToken: _debugAppCheckToken));
   } catch (e) {
     runApp(
       MaterialApp(
@@ -126,7 +143,8 @@ Future<void> main() async {
 
 class JagspoorApp extends StatelessWidget {
   final ThemeController themeController;
-  const JagspoorApp({super.key, required this.themeController});
+  final String? debugToken;
+  const JagspoorApp({super.key, required this.themeController, this.debugToken});
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +156,23 @@ class JagspoorApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: themeController.materialTheme,
           initialRoute: '/splash',
+          builder: (context, child) {
+            // Add debug overlay for App Check token in debug mode
+            if (kDebugMode && debugToken != null && debugToken!.isNotEmpty) {
+              child = Stack(
+                children: [
+                  child ?? const SizedBox(),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _AppCheckDebugBanner(token: debugToken!),
+                  ),
+                ],
+              );
+            }
+            return child ?? const SizedBox();
+          },
           routes: {
             '/splash': (context) => SplashScreen(theme: themeController),
             '/': (context) => AuthScreen(themedata: themeController),
@@ -170,6 +205,70 @@ class JagspoorApp extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// Debug banner widget to display App Check token on screen
+class _AppCheckDebugBanner extends StatelessWidget {
+  final String token;
+  const _AppCheckDebugBanner({required this.token});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.red.shade900,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.red.shade900,
+            border: Border(
+              bottom: BorderSide(color: Colors.red.shade700, width: 2),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.key, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                '🔑 APP CHECK TOKEN: ',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: SelectableText(
+                  token,
+                  style: const TextStyle(
+                    color: Colors.yellow,
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy, color: Colors.white, size: 18),
+                onPressed: () {
+                  // Copy to clipboard functionality would go here
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Token copied!'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+                tooltip: 'Copy token',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
