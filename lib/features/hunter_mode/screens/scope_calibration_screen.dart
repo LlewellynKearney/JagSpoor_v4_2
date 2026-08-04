@@ -376,7 +376,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                   decoration: InputDecoration(
                     labelText: 'Distance (yds)',
-                    labelStyle: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
+                    labelStyle: const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
                     filled: true,
                     fillColor: const Color(0xFF141915),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -411,7 +411,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             style: const TextStyle(color: Colors.white70, fontSize: 12),
             decoration: InputDecoration(
               labelText: 'Bullet Caliber (e.g. .308)',
-              labelStyle: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
+              labelStyle: const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
               filled: true,
               fillColor: const Color(0xFF141915),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -491,7 +491,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   ),
                   Text(
                     'Suggested Turret Tweak: ${_analysisResults!['tweak']}',
-                    style: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Color(0xFFE6A15C), fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
