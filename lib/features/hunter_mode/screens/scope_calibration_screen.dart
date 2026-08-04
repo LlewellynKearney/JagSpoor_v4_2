@@ -130,7 +130,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     final theme = widget.theme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF141915), // Standard dark charcoal background
+      backgroundColor: const Color(0xFF141915), // Matte Obsidian Charcoal
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1F1C),
         title: Row(
@@ -138,12 +138,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.15),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: const Icon(
                 Icons.gps_fixed,
-                color: Colors.orange,
+                color: const Color(0xFFE6A15C),
                 size: 20,
               ),
             ),
@@ -151,7 +151,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             const Text(
               'SCOPE CALIBRATION HUD',
               style: TextStyle(
-                color: Colors.orange,
+                color: const Color(0xFFE6A15C),
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.5,
@@ -162,14 +162,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               onTap: () => _showScopeInfoDialog(context),
               child: Icon(
                 Icons.info_outline,
-                color: Colors.orange.withValues(alpha: 0.8),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.8),
                 size: 20,
               ),
             ),
           ],
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.orange),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFFE6A15C)),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -200,7 +200,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         color: const Color(0xFF1A1F1C),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.orange.withValues(alpha: 0.3),
+          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
           width: 1,
         ),
       ),
@@ -209,12 +209,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.psychology, color: Colors.orange, size: 20),
+              const Icon(Icons.psychology, color: Color(0xFFE6A15C), size: 20),
               const SizedBox(width: 8),
               const Text(
                 'AI SHOT GROUP ANALYZER',
                 style: TextStyle(
-                  color: Colors.orange,
+                  color: const Color(0xFFE6A15C),
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
@@ -232,15 +232,15 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.orange.withValues(alpha: 0.3),
-                    Colors.orange.withValues(alpha: 0.15),
+                    const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                    const Color(0xFFE6A15C).withValues(alpha: 0.15),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.orange, width: 2),
+                border: Border.all(color: const Color(0xFFE6A15C), width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.orange.withValues(alpha: 0.3),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -249,12 +249,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: const [
-                  Icon(Icons.camera_alt, color: Colors.orange, size: 24),
+                  Icon(Icons.camera_alt, color: const Color(0xFFE6A15C), size: 24),
                   SizedBox(width: 10),
                   Text(
                     'TAKE LIVE TARGET PHOTO',
                     style: TextStyle(
-                      color: Colors.orange,
+                      color: const Color(0xFFE6A15C),
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,
@@ -276,7 +276,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 color: const Color(0xFF141915),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.orange.withValues(alpha: 0.3),
+                  color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                   style: BorderStyle.solid,
                 ),
               ),
@@ -298,7 +298,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.orange.withValues(alpha: 0.8),
+                              color: const Color(0xFFE6A15C).withValues(alpha: 0.8),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Text(
@@ -314,14 +314,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                       children: [
                         Icon(
                           Icons.add_photo_alternate_outlined,
-                          color: Colors.orange.withValues(alpha: 0.6),
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.6),
                           size: 36,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'TAP TO UPLOAD TARGET IMAGE',
                           style: TextStyle(
-                            color: Colors.orange.withValues(alpha: 0.6),
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.6),
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
@@ -344,7 +344,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     color: const Color(0xFF141915),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.4),
+                      color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                     ),
                   ),
                   child: DropdownButton<String>(
@@ -352,7 +352,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     isExpanded: true,
                     dropdownColor: const Color(0xFF1A1F1C),
                     underline: const SizedBox(),
-                    icon: const Icon(Icons.straighten, color: Colors.orange, size: 18),
+                    icon: const Icon(Icons.straighten, color: Color(0xFFE6A15C), size: 18),
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                     items: const [
                       DropdownMenuItem(value: '5-Rand Coin', child: Text('5-Rand Coin (26mm)')),
@@ -376,21 +376,21 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                   decoration: InputDecoration(
                     labelText: 'Distance (yds)',
-                    labelStyle: const TextStyle(color: Colors.orange, fontSize: 10),
+                    labelStyle: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
                     filled: true,
                     fillColor: const Color(0xFF141915),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.orange.withValues(alpha: 0.4)),
+                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.orange.withValues(alpha: 0.4)),
+                      borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.orange),
+                      borderSide: const BorderSide(color: const Color(0xFFE6A15C)),
                     ),
                   ),
                   onChanged: (v) {
@@ -411,21 +411,21 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             style: const TextStyle(color: Colors.white70, fontSize: 12),
             decoration: InputDecoration(
               labelText: 'Bullet Caliber (e.g. .308)',
-              labelStyle: const TextStyle(color: Colors.orange, fontSize: 10),
+              labelStyle: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 10),
               filled: true,
               fillColor: const Color(0xFF141915),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.orange.withValues(alpha: 0.4)),
+                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.orange.withValues(alpha: 0.4)),
+                borderSide: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Colors.orange),
+                borderSide: const BorderSide(color: const Color(0xFFE6A15C)),
               ),
             ),
             onChanged: (v) => setState(() => _bulletCaliber = v),
@@ -440,12 +440,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               icon: const Icon(Icons.analytics, size: 18),
               label: const Text('ANALYZE SHOT GROUP'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange.withValues(alpha: 0.2),
-                foregroundColor: Colors.orange,
+                backgroundColor: const Color(0xFFE6A15C).withValues(alpha: 0.2),
+                foregroundColor: const Color(0xFFE6A15C),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.orange.withValues(alpha: 0.5)),
+                  side: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.5)),
                 ),
               ),
             ),
@@ -457,10 +457,10 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.orange.withValues(alpha: 0.4),
+                  color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                 ),
               ),
               child: Column(
@@ -468,12 +468,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.auto_graph, color: Colors.orange, size: 16),
+                      const Icon(Icons.auto_graph, color: Color(0xFFE6A15C), size: 16),
                       const SizedBox(width: 6),
                       const Text(
                         'AI Spatial Analysis',
                         style: TextStyle(
-                          color: Colors.orange,
+                          color: const Color(0xFFE6A15C),
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -491,7 +491,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                   ),
                   Text(
                     'Suggested Turret Tweak: ${_analysisResults!['tweak']}',
-                    style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const const TextStyle(color: Color(0xFFE6A15C), fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -513,7 +513,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         ),
         border: Border(
           bottom: BorderSide(
-            color: Colors.orange.withValues(alpha: 0.3),
+            color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
             width: 1,
           ),
         ),
@@ -538,7 +538,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                         color: const Color(0xFF141915),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.orange.withValues(alpha: 0.4),
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                         ),
                       ),
                       child: DropdownButton<RifleProfile>(
@@ -548,7 +548,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                         underline: const SizedBox(),
                         icon: const Icon(
                           Icons.arrow_drop_down,
-                          color: Colors.orange,
+                          color: const Color(0xFFE6A15C),
                         ),
                         style: const TextStyle(color: Colors.white, fontSize: 14),
                         hint: const Text(
@@ -560,7 +560,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                             value: rifle,
                             child: Row(
                               children: [
-                                const Icon(Icons.gavel, color: Colors.orange, size: 16),
+                                const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
                                 const SizedBox(width: 8),
                                 Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
                               ],
@@ -669,7 +669,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         Text(
           label,
           style: TextStyle(
-            color: Colors.orange.withValues(alpha: 0.7),
+            color: const Color(0xFFE6A15C).withValues(alpha: 0.7),
             fontSize: 10,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,
@@ -697,18 +697,18 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: BorderSide(
-                color: Colors.orange.withValues(alpha: 0.4),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: BorderSide(
-                color: Colors.orange.withValues(alpha: 0.3),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
               ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Colors.orange),
+              borderSide: const BorderSide(color: const Color(0xFFE6A15C)),
             ),
           ),
           onChanged: onChanged,
@@ -728,12 +728,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.orange.withValues(alpha: 0.4),
+          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
           width: 2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.orange.withValues(alpha: 0.1),
+            color: const Color(0xFFE6A15C).withValues(alpha: 0.1),
             blurRadius: 20,
             spreadRadius: 2,
           ),
@@ -758,14 +758,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    Colors.orange.withValues(alpha: 0.2),
-                    Colors.orange.withValues(alpha: 0.05),
+                    const Color(0xFFE6A15C).withValues(alpha: 0.2),
+                    const Color(0xFFE6A15C).withValues(alpha: 0.05),
                   ],
                 ),
-                border: Border.all(color: Colors.orange, width: 4),
+                border: Border.all(color: const Color(0xFFE6A15C), width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.orange.withValues(alpha: 0.3),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                     blurRadius: 30,
                     spreadRadius: 5,
                   ),
@@ -783,27 +783,39 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                         child: Container(
                           width: 2,
                           height: 15,
-                          color: Colors.orange.withValues(alpha: 0.8),
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.8),
                         ),
                       ),
                     );
                   }),
-                  // Center display
+                  // Center display with directional indicators
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        _calculationResults?['isDropPositive'] == true
-                            ? 'DIAL UP'
-                            : 'HOLD',
-                        style: TextStyle(
-                          color: Colors.orange.withValues(alpha: 0.7),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
+                      // Elevation direction indicator
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          _calculationResults?['isDropPositive'] == true
+                              ? '⬆ DIAL UP'
+                              : '⬇ HOLD OVER',
+                          style: const TextStyle(
+                            color: Color(0xFFE6A15C),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Text(
                         _isCalculating
                             ? '---'
@@ -816,13 +828,53 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           letterSpacing: 4,
                         ),
                       ),
-                      Text(
+                      const Text(
                         'CLICKS',
                         style: TextStyle(
-                          color: Colors.orange.withValues(alpha: 0.7),
+                          color: Color(0xFFE6A15C),
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 3,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Windage direction indicator
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE6A15C).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _calculationResults?['windageMOA'] != null &&
+                                      (_calculationResults?['windageMOA'] as num) < 0
+                                  ? '⬅ LEFT'
+                                  : _calculationResults?['windageMOA'] != null &&
+                                          (_calculationResults?['windageMOA'] as num) > 0
+                                      ? '➡ RIGHT'
+                                      : '– NO WIND',
+                              style: const TextStyle(
+                                color: Color(0xFFE6A15C),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_calculationResults?['windageClicks'] ?? 0} CLICKS',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -840,7 +892,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1512),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -853,7 +905,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     width: 1,
                     height: 40,
                     margin: const EdgeInsets.symmetric(horizontal: 16),
-                    color: Colors.orange.withValues(alpha: 0.3),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                   ),
                   _buildMetricDisplay(
                     'MRAD',
@@ -863,7 +915,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     width: 1,
                     height: 40,
                     margin: const EdgeInsets.symmetric(horizontal: 16),
-                    color: Colors.orange.withValues(alpha: 0.3),
+                    color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
                   ),
                   _buildMetricDisplay(
                     'DROP',
@@ -882,32 +934,32 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               margin: const EdgeInsets.symmetric(horizontal: 32),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                border: Border.all(color: const Color(0xFFE6A15C).withValues(alpha: 0.4)),
               ),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.speed, color: Colors.orangeAccent, size: 16),
+                    Icon(Icons.speed, color: const Color(0xFFE6A15C), size: 16),
                     const SizedBox(width: 8),
                     Text(
                       'Barometric Correction Active: ${_calculationResults?['barometricPressureHpa']?.toStringAsFixed(1) ?? '1013.25'} hPa',
                       style: const TextStyle(
-                        color: Colors.orangeAccent,
+                        color: const Color(0xFFE6A15C),
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Icon(Icons.straighten, color: Colors.orangeAccent, size: 16),
+                    Icon(Icons.straighten, color: const Color(0xFFE6A15C), size: 16),
                     const SizedBox(width: 8),
                     Text(
                       'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
                       style: const TextStyle(
-                        color: Colors.orangeAccent,
+                        color: const Color(0xFFE6A15C),
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -922,18 +974,18 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.2),
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.trending_up, color: Colors.amber, size: 14),
+                  const Icon(Icons.trending_up, color: Color(0xFFE6A15C), size: 14),
                   const SizedBox(width: 4),
                   Text(
                     'UPHILL COMPENSATION ACTIVE',
                     style: TextStyle(
-                      color: Colors.amber.withValues(alpha: 0.9),
+                      color: const Color(0xFFE6A15C).withValues(alpha: 0.9),
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -953,7 +1005,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         Text(
           label,
           style: const TextStyle(
-            color: Colors.orangeAccent,
+            color: Color(0xFFE6A15C),
             fontSize: 10,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,
@@ -979,17 +1031,17 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         backgroundColor: const Color(0xFF1A1F1C),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.orange.withValues(alpha: 0.5), width: 1),
+          side: BorderSide(color: const Color(0xFFE6A15C).withValues(alpha: 0.5), width: 1),
         ),
         title: Row(
           children: [
-            Icon(Icons.gps_fixed, color: Colors.orange.withValues(alpha: 0.9), size: 24),
+            Icon(Icons.gps_fixed, color: const Color(0xFFE6A15C).withValues(alpha: 0.9), size: 24),
             const SizedBox(width: 12),
             const Expanded(
               child: Text(
                 'AI Ballistic Calibration HUD',
                 style: TextStyle(
-                  color: Colors.orange,
+                  color: const Color(0xFFE6A15C),
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1011,7 +1063,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             child: const Text(
               'GOT IT',
               style: TextStyle(
-                color: Colors.orange,
+                color: const Color(0xFFE6A15C),
                 fontWeight: FontWeight.bold,
               ),
             ),
