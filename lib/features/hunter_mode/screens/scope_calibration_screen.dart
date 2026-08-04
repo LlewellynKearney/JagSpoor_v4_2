@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -26,10 +25,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
 
   // Digital Firearm Safe integration
   final InventoryBridge _inventoryBridge = InventoryBridge();
-
-  // Live firearm list from safe (managed via stream subscription)
-  List<RifleProfile> _safeFirearms = [];
-  StreamSubscription<List<RifleProfile>>? _firearmsSubscription;
 
   // Active rifle selection state - preserved across rebuilds
   RifleProfile? _selectedRifle;
@@ -71,28 +66,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     _dialRotationAnimation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _dialAnimationController, curve: Curves.easeOut),
     );
-
-    // Subscribe to firearm safe stream once in initState
-    _firearmsSubscription = _inventoryBridge.watchSafeFirearms().listen((rifles) {
-      if (mounted) {
-        setState(() {
-          _safeFirearms = rifles;
-          // Auto-select first rifle if none selected and list has items
-          if (_selectedRifle == null && rifles.isNotEmpty) {
-            _selectedRifle = rifles.first;
-            _loadAmmunitionForRifle(rifles.first.id);
-            _calculateTrajectory();
-          }
-        });
-      }
-    });
-
     _calculateTrajectory();
   }
 
   @override
   void dispose() {
-    _firearmsSubscription?.cancel();
     _dialAnimationController.dispose();
     super.dispose();
   }
@@ -102,6 +80,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       _selectedRifle = rifle;
     });
     _loadAmmunitionForRifle(rifle.id);
+    _calculateTrajectory();
   }
 
   Future<void> _loadAmmunitionForRifle(String rifleId) async {
@@ -548,10 +527,41 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               Expanded(
                 child: StreamBuilder<List<RifleProfile>>(
                   stream: _inventoryBridge.watchSafeFirearms(),
-                  initialData: _safeFirearms,
                   builder: (context, snapshot) {
+                    // Debug: Show connection state
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141915),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFE6A15C),
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Loading firearms...',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
                     final rifles = snapshot.data ?? [];
-                    // Ensure selected rifle is valid for the current list
                     final selectedRifle = rifles.contains(_selectedRifle)
                         ? _selectedRifle
                         : (rifles.isNotEmpty ? rifles.first : null);
@@ -580,18 +590,28 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           'Select firearm from safe',
                           style: TextStyle(color: Colors.white54),
                         ),
-                        items: rifles.map((rifle) {
-                          return DropdownMenuItem<RifleProfile>(
-                            value: rifle,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                        items: rifles.isEmpty
+                            ? [
+                                const DropdownMenuItem<RifleProfile>(
+                                  value: null,
+                                  child: Text(
+                                    'No firearms found',
+                                    style: TextStyle(color: Colors.white54),
+                                  ),
+                                ),
+                              ]
+                            : rifles.map((rifle) {
+                                return DropdownMenuItem<RifleProfile>(
+                                  value: rifle,
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.gavel, color: Color(0xFFE6A15C), size: 16),
+                                      const SizedBox(width: 8),
+                                      Expanded(child: Text('${rifle.name} (${rifle.caliber})')),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                         onChanged: (rifle) {
                           if (rifle != null) {
                             _selectRifle(rifle);
