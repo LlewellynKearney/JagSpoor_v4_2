@@ -161,7 +161,7 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                           ),
                           const SizedBox(height: 20),
                           DropdownButtonFormField<String>(
-                            initialValue: _selectedSpecies,
+                            value: _selectedSpecies,
                             dropdownColor: Colors.black,
                             style: const TextStyle(color: Colors.white),
                             items:

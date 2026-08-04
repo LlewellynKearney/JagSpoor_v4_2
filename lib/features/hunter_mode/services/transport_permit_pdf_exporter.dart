@@ -257,12 +257,10 @@ class TransportPermitPdfExporter {
     );
     await permitFile.writeAsBytes(await pdf.save());
 
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(permitFile.path)],
-        text: 'Statutory SA Game Transport Permit for Hunter: $hunterName',
-        subject: 'SA Game Transport Permit: $farmName',
-      ),
+    await Share.shareXFiles(
+      [XFile(permitFile.path)],
+      text: 'Statutory SA Game Transport Permit for Hunter: $hunterName',
+      subject: 'SA Game Transport Permit: $farmName',
     );
   }
 }

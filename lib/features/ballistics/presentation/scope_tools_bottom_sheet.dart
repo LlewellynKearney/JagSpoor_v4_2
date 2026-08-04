@@ -1056,11 +1056,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                             ),
                           ),
                   value: _isLiveGyroRadarActive,
-                  activeThumbColor: const Color(0xFFC5A059),
                   activeTrackColor: const Color(
                     0xFFC5A059,
                   ).withValues(alpha: 0.5),
-                  inactiveThumbColor: Colors.grey,
                   inactiveTrackColor: Colors.grey.withValues(alpha: 0.3),
                   onChanged: _toggleLiveGyroLeveler,
                   contentPadding: EdgeInsets.zero,
@@ -1094,7 +1092,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                         min: -45.0,
                         max: 45.0,
                         divisions: 90,
-                        thumbColor: const Color(0xFFC5A059),
                         inactiveColor: Colors.grey.withValues(alpha: 0.3),
                         onChanged: (v) {
                           // Silent execution gate preserves values when gyro is active
@@ -1566,7 +1563,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               min: min,
               max: max,
               divisions: divisions,
-              thumbColor: const Color(0xFFC5A059),
               inactiveColor: Colors.grey.withValues(alpha: 0.3),
               onChanged: (v) {
                 if (!context.mounted) return;

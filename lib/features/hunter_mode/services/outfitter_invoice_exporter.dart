@@ -292,13 +292,10 @@ class OutfitterInvoiceExporter {
     );
     await invoiceFile.writeAsBytes(await pdf.save());
 
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(invoiceFile.path)],
-        text:
-            'JagSpoor Slaughterhouse Manifest - Booking Confirmation: $bookingId',
-        subject: 'JagSpoor Slaughterhouse Manifest: $bookingId',
-      ),
+    await Share.shareXFiles(
+      [XFile(invoiceFile.path)],
+      text: 'JagSpoor Slaughterhouse Manifest - Booking Confirmation: $bookingId',
+      subject: 'JagSpoor Slaughterhouse Manifest: $bookingId',
     );
   }
 

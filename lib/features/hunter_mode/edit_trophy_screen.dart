@@ -862,7 +862,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
         }
 
         return DropdownButtonFormField<String>(
-          initialValue: _selectedFirearmId,
+          value: _selectedFirearmId,
           onChanged: (value) {
             if (value != null) {
               final firearm = firearms.firstWhere(

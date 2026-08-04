@@ -402,7 +402,6 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                       trailing: Switch(
                         value: widget.theme.isDarkMode,
-                        activeThumbColor: widget.theme.accentColor,
                         onChanged: (v) => widget.theme.toggleThemeMode(),
                       ),
                     ),
@@ -741,7 +740,6 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                         Switch(
                           value: _isBatterySaverEnabled,
                           onChanged: _toggleBatterySaver,
-                          activeThumbColor: Colors.orange,
                           activeTrackColor: Colors.orange.withValues(
                             alpha: 0.5,
                           ),

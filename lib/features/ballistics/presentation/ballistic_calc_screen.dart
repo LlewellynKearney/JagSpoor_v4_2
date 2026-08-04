@@ -467,7 +467,6 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                         inactiveTrackColor: Theme.of(
                           context,
                         ).colorScheme.primary.withValues(alpha: 0.24),
-                        thumbColor: Theme.of(context).colorScheme.secondary,
                         overlayColor: Theme.of(
                           context,
                         ).colorScheme.secondary.withValues(alpha: 0.12),
@@ -806,7 +805,6 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               inactiveTrackColor: Theme.of(
                 context,
               ).colorScheme.primary.withValues(alpha: 0.24),
-              thumbColor: Theme.of(context).colorScheme.secondary,
               overlayColor: Theme.of(
                 context,
               ).colorScheme.secondary.withValues(alpha: 0.12),

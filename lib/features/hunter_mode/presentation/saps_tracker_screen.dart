@@ -163,7 +163,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                       const SizedBox(height: 12),
                       // Application Type Dropdown
                       DropdownButtonFormField<String>(
-                        initialValue: _selectedApplicationType,
+                        value: _selectedApplicationType,
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Application Type',

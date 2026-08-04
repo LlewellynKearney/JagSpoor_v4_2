@@ -145,7 +145,7 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: _selectedSpecies,
+              value: _selectedSpecies,
               decoration: InputDecoration(
                 labelText: 'Species',
                 border: OutlineInputBorder(
@@ -268,7 +268,6 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
                 inactiveTrackColor: widget.theme.accentColor.withValues(
                   alpha: 0.2,
                 ),
-                thumbColor: widget.theme.accentColor,
                 overlayColor: widget.theme.accentColor.withValues(alpha: 0.12),
               ),
               child: Slider(

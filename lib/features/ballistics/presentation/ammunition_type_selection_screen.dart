@@ -573,7 +573,7 @@ class _AmmunitionTypeSelectionScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           DropdownButtonFormField<String>(
-                            initialValue:
+                            value:
                                 brands.contains(_selectedBrand)
                                     ? _selectedBrand
                                     : null,
@@ -600,7 +600,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue: widget.firearm['caliber'],
+                            value: widget.firearm['caliber'],
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Caliber (Read-Only)'),
                             onChanged: null,
@@ -617,7 +617,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<int>(
-                            initialValue:
+                            value:
                                 grains.contains(_selectedGrain)
                                     ? _selectedGrain
                                     : null,
@@ -646,7 +646,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue:
+                            value:
                                 descriptions.contains(_selectedDescription)
                                     ? _selectedDescription
                                     : null,
@@ -892,7 +892,7 @@ class _AmmunitionTypeSelectionScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           DropdownButtonFormField<String>(
-                            initialValue:
+                            value:
                                 bulletBrands.contains(_selectedBulletBrand)
                                     ? _selectedBulletBrand
                                     : null,
@@ -918,7 +918,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue: widget.firearm['caliber'],
+                            value: widget.firearm['caliber'],
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Caliber (Read-Only)'),
                             onChanged: null,
@@ -935,7 +935,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<int>(
-                            initialValue:
+                            value:
                                 bulletWeights.contains(_selectedBulletWeight)
                                     ? _selectedBulletWeight
                                     : null,
@@ -963,7 +963,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue:
+                            value:
                                 propellantBrands.contains(
                                       _selectedPropellantBrand,
                                     )
@@ -991,7 +991,7 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue:
+                            value:
                                 propellantTypes.contains(
                                       _selectedPropellantType,
                                     )

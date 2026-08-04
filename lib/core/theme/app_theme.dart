@@ -120,7 +120,6 @@ class ThemeController extends ChangeNotifier {
         displayColor: textColor,
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) => accentColor),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => accentColor.withValues(alpha: 0.4),
         ),

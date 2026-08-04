@@ -167,7 +167,7 @@ class _BugReportModalState extends State<BugReportModal> {
                       ),
                     ),
                     child: DropdownButtonFormField<String>(
-                      initialValue: _selectedSeverity,
+                      value: _selectedSeverity,
                       dropdownColor: theme.scaffoldBackgroundColor,
                       style: TextStyle(color: primaryColor),
                       icon: Icon(Icons.arrow_drop_down, color: primaryColor),

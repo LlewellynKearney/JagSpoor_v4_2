@@ -172,7 +172,7 @@ class _ClassificationResultWidgetState
               }
 
               return DropdownButtonFormField<String>(
-                initialValue: _selectedFirearmId,
+                value: _selectedFirearmId,
                 dropdownColor: widget.theme.backgroundColor,
                 decoration: InputDecoration(
                   contentPadding: const EdgeInsets.symmetric(

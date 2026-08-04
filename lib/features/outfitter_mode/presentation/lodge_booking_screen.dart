@@ -155,7 +155,7 @@ class _LodgeBookingScreenState extends State<LodgeBookingScreen> {
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
-                            initialValue: _selectedLodging,
+                            value: _selectedLodging,
                             dropdownColor: Colors.black,
                             style: const TextStyle(color: Colors.white),
                             items:
@@ -181,7 +181,7 @@ class _LodgeBookingScreenState extends State<LodgeBookingScreen> {
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
-                            initialValue: _selectedVehicle,
+                            value: _selectedVehicle,
                             dropdownColor: Colors.black,
                             style: const TextStyle(color: Colors.white),
                             items:

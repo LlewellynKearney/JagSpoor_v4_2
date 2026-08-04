@@ -293,7 +293,7 @@ class _AddBookingSheetState extends State<AddBookingSheet> {
                             stream: _service.getVacantLodgingStream(),
                             builder: (context, snapshot) {
                               return DropdownButtonFormField<String>(
-                                initialValue: _selectedLodgingId,
+                                value: _selectedLodgingId,
                                 decoration: InputDecoration(
                                   labelText: 'Select Lodging Unit',
                                   labelStyle: TextStyle(
@@ -359,7 +359,7 @@ class _AddBookingSheetState extends State<AddBookingSheet> {
                             stream: _service.getActiveFleetStream(),
                             builder: (context, snapshot) {
                               return DropdownButtonFormField<String>(
-                                initialValue: _selectedVehicleId,
+                                value: _selectedVehicleId,
                                 decoration: InputDecoration(
                                   labelText: 'Select Vehicle',
                                   labelStyle: TextStyle(

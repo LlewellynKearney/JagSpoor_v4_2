@@ -62,7 +62,6 @@ class _MeshRadarScreenState extends State<MeshRadarScreen> {
           Switch(
             value: _isMeshActive,
             onChanged: _toggleMesh,
-            activeThumbColor: Colors.greenAccent,
           ),
         ],
       ),

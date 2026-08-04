@@ -35,7 +35,7 @@ class BookingStatusService {
     );
 
     await _notifications.initialize(
-      settings: initializationSettings,
+      initializationSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
@@ -140,11 +140,10 @@ class BookingStatusService {
     );
 
     await _notifications.show(
-      id: bookingId.hashCode,
-      title: '✅ BOOKING APPROVED!',
-      body:
-          'Your $packageName booking has been approved!\nTotal: R ${totalPrice.toStringAsFixed(2)} ZAR',
-      notificationDetails: details,
+      bookingId.hashCode,
+      '✅ BOOKING APPROVED!',
+      'Your $packageName booking has been approved!\nTotal: R ${totalPrice.toStringAsFixed(2)} ZAR',
+      details,
       payload: bookingId,
     );
   }
@@ -179,11 +178,10 @@ class BookingStatusService {
     );
 
     await _notifications.show(
-      id: bookingId.hashCode,
-      title: '❌ Booking Declined',
-      body:
-          'Your $packageName booking was not approved. Please try another package.',
-      notificationDetails: details,
+      bookingId.hashCode,
+      '❌ Booking Declined',
+      'Your $packageName booking was not approved. Please try another package.',
+      details,
       payload: bookingId,
     );
   }
@@ -201,10 +199,10 @@ class BookingStatusService {
     const details = NotificationDetails(android: androidDetails);
 
     await _notifications.show(
-      id: 0,
-      title: 'JagSpoor Alert',
-      body: 'Booking notifications are active!',
-      notificationDetails: details,
+      0,
+      'JagSpoor Alert',
+      'Booking notifications are active!',
+      details,
     );
   }
 }
