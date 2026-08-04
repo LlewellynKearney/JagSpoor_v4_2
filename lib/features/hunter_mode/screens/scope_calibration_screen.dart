@@ -25,15 +25,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
 
   // Digital Firearm Safe integration
   final InventoryBridge _inventoryBridge = InventoryBridge();
-  List<RifleProfile> _safeFirearms = [];
-  RifleProfile? _selectedRifleFromSafe;
+
+  // Active rifle selection state
+  RifleProfile? _selectedRifle;
   AmmoProfile? _selectedAmmo;
 
-  // Dropdown value tracking (uses prefixed format)
-  String? _dropdownValue; // 'safe:xxx' or 'fallback:xxx'
-
-  // Rifle profile selection (fallback defaults)
-  String _selectedRifleProfile = '';
+  // Ballistic parameters
   double _muzzleVelocityFps = 2700.0;
   double _ballisticCoefficient = 0.45;
   double _scopeHeightInches = 1.8;
@@ -59,19 +56,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   late AnimationController _dialAnimationController;
   late Animation<double> _dialRotationAnimation;
 
-  // Predefined rifle profiles
-  static const Map<String, Map<String, double>> _rifleProfiles = {
-    '.308 Win': {'muzzleVelocity': 2700.0, 'ballisticCoefficient': 0.45},
-    '6.5 Creedmoor': {'muzzleVelocity': 2900.0, 'ballisticCoefficient': 0.52},
-    '30-06 Springfield': {
-      'muzzleVelocity': 2800.0,
-      'ballisticCoefficient': 0.48,
-    },
-    '.300 Win Mag': {'muzzleVelocity': 3100.0, 'ballisticCoefficient': 0.55},
-    '.243 Win': {'muzzleVelocity': 3100.0, 'ballisticCoefficient': 0.40},
-    '.270 Win': {'muzzleVelocity': 3060.0, 'ballisticCoefficient': 0.46},
-  };
-
   @override
   void initState() {
     super.initState();
@@ -82,48 +66,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     _dialRotationAnimation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _dialAnimationController, curve: Curves.easeOut),
     );
-    _loadSafeFirearms();
     _calculateTrajectory();
-  }
-
-  Future<void> _loadSafeFirearms() async {
-    final rifles = await _inventoryBridge.fetchSafeFirearms();
-    if (mounted) {
-      setState(() {
-        _safeFirearms = rifles;
-        // Auto-select first rifle from safe if available, otherwise use fallback
-        if (rifles.isNotEmpty) {
-          _selectSafeRifle(rifles.first);
-        } else {
-          // Use fallback profile if no firearms in safe
-          _dropdownValue = 'fallback:.308 Win';
-          _selectRifleProfile('.308 Win');
-        }
-      });
-    }
-  }
-
-  void _selectSafeRifle(RifleProfile rifle) {
-    setState(() {
-      _selectedRifleFromSafe = rifle;
-      _dropdownValue = 'safe:${rifle.id}';
-      _selectedRifleProfile = '${rifle.name} (${rifle.caliber})';
-      // Load ammunition for this rifle
-      _loadAmmunitionForRifle(rifle.id);
-    });
-    _calculateTrajectory();
-  }
-
-  Future<void> _loadAmmunitionForRifle(String rifleId) async {
-    final ammoList = await _inventoryBridge.fetchAvailableAmmunition(rifleId);
-    if (mounted && ammoList.isNotEmpty) {
-      setState(() {
-        _selectedAmmo = ammoList.first;
-        _muzzleVelocityFps = _selectedAmmo!.velocityMs * 3.28084; // m/s to ft/s
-        _ballisticCoefficient = _selectedAmmo!.ballisticCoefficient;
-      });
-      _calculateTrajectory();
-    }
   }
 
   @override
@@ -132,14 +75,22 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     super.dispose();
   }
 
-  void _selectRifleProfile(String profile) {
-    final profileData = _rifleProfiles[profile];
-    if (profileData != null) {
+  void _selectRifle(RifleProfile rifle) {
+    setState(() {
+      _selectedRifle = rifle;
+    });
+    _loadAmmunitionForRifle(rifle.id);
+  }
+
+  Future<void> _loadAmmunitionForRifle(String rifleId) async {
+    final ammoList = await _inventoryBridge.fetchAvailableAmmunition(rifleId);
+    if (mounted) {
       setState(() {
-        _dropdownValue = 'fallback:$profile';
-        _selectedRifleProfile = profile;
-        _muzzleVelocityFps = profileData['muzzleVelocity']!;
-        _ballisticCoefficient = profileData['ballisticCoefficient']!;
+        if (ammoList.isNotEmpty) {
+          _selectedAmmo = ammoList.first;
+          _muzzleVelocityFps = _selectedAmmo!.velocityMs * 3.28084;
+          _ballisticCoefficient = _selectedAmmo!.ballisticCoefficient;
+        }
       });
       _calculateTrajectory();
     }
@@ -273,6 +224,48 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           ),
           const SizedBox(height: 12),
 
+          // Camera Capture Button
+          GestureDetector(
+            onTap: _takeLiveTargetPhoto,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.orange.withValues(alpha: 0.3),
+                    Colors.orange.withValues(alpha: 0.15),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(Icons.camera_alt, color: Colors.orange, size: 24),
+                  SizedBox(width: 10),
+                  Text(
+                    'TAKE LIVE TARGET PHOTO',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Image Upload Section
           GestureDetector(
             onTap: _pickShotGroupImage,
@@ -288,14 +281,33 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 ),
               ),
               child: _shotGroupImage != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        _shotGroupImage!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: 120,
-                      ),
+                  ? Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            _shotGroupImage!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: 120,
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'TAP TO CHANGE',
+                              style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
                     )
                   : Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -508,52 +520,44 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       ),
       child: Column(
         children: [
-          // Rifle Profile Dropdown
+          // Rifle Profile Dropdown - Live from Firearm Safe
           Row(
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141915),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: DropdownButton<String>(
-                    value: _dropdownValue,
-                    isExpanded: true,
-                    dropdownColor: const Color(0xFF1A1F1C),
-                    underline: const SizedBox(),
-                    icon: const Icon(
-                      Icons.arrow_drop_down,
-                      color: Colors.orange,
-                    ),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    items: [
-                      // Section header for Digital Safe
-                      if (_safeFirearms.isNotEmpty) ...[
-                        const DropdownMenuItem<String>(
-                          enabled: false,
-                          child: Row(
-                            children: [
-                              Icon(Icons.lock, color: Colors.orange, size: 14),
-                              SizedBox(width: 8),
-                              Text(
-                                'DIGITAL FIREARM SAFE',
-                                style: TextStyle(
-                                  color: Colors.orange,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                child: StreamBuilder<List<RifleProfile>>(
+                  stream: _inventoryBridge.watchSafeFirearms(),
+                  builder: (context, snapshot) {
+                    final rifles = snapshot.data ?? [];
+                    final selectedRifle = rifles.contains(_selectedRifle) 
+                        ? _selectedRifle 
+                        : (rifles.isNotEmpty ? rifles.first : null);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141915),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.4),
                         ),
-                        ..._safeFirearms.map((rifle) {
-                          return DropdownMenuItem<String>(
-                            value: 'safe:${rifle.id}',
+                      ),
+                      child: DropdownButton<RifleProfile>(
+                        value: selectedRifle,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF1A1F1C),
+                        underline: const SizedBox(),
+                        icon: const Icon(
+                          Icons.arrow_drop_down,
+                          color: Colors.orange,
+                        ),
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        hint: const Text(
+                          'Select firearm from safe',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                        items: rifles.map((rifle) {
+                          return DropdownMenuItem<RifleProfile>(
+                            value: rifle,
                             child: Row(
                               children: [
                                 const Icon(Icons.gavel, color: Colors.orange, size: 16),
@@ -562,39 +566,15 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                               ],
                             ),
                           );
-                        }),
-                        const DropdownMenuItem<String>(
-                          enabled: false,
-                          child: Divider(color: Colors.orange, height: 8),
-                        ),
-                      ],
-                      // Fallback profiles
-                      ..._rifleProfiles.keys.map((profile) {
-                        return DropdownMenuItem<String>(
-                          value: 'fallback:$profile',
-                          child: Row(
-                            children: [
-                              const Icon(Icons.radio_button_checked, color: Colors.orange, size: 16),
-                              const SizedBox(width: 8),
-                              Text(profile),
-                            ],
-                          ),
-                        );
-                        }),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        if (value.startsWith('safe:')) {
-                          final rifleId = value.substring(5);
-                          final rifle = _safeFirearms.firstWhere((r) => r.id == rifleId, orElse: () => _safeFirearms.first);
-                          _selectSafeRifle(rifle);
-                        } else if (value.startsWith('fallback:')) {
-                          final profile = value.substring(9);
-                          _selectRifleProfile(profile);
-                        }
-                      }
-                    },
-                  ),
+                        }).toList(),
+                        onChanged: (rifle) {
+                          if (rifle != null) {
+                            _selectRifle(rifle);
+                          }
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -1056,6 +1036,23 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         _shotGroupImage = File(image.path);
         _analysisResults = null;
       });
+    }
+  }
+
+  // Camera capture for live target photo
+  Future<void> _takeLiveTargetPhoto() async {
+    final XFile? image = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 95,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (image != null) {
+      setState(() {
+        _shotGroupImage = File(image.path);
+        _analysisResults = null;
+      });
+      _analyzeShotGroup();
     }
   }
 
