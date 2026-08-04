@@ -38,6 +38,8 @@ Future<void> main() async {
     );
 
     // Initialize Firebase App Check with debug providers for local testing
+    // NOTE: Debug tokens rotate on each compilation. Register the displayed token in
+    // Firebase Console > App Check > Debug tokens for persistent device access.
     await FirebaseAppCheck.instance.activate(
       androidProvider: AndroidProvider.debug,
       appleProvider: AppleProvider.debug,
