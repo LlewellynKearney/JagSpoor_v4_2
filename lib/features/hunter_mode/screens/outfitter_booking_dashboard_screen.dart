@@ -40,7 +40,8 @@ class _OutfitterBookingDashboardScreenState
           .collection('bookings')
           .where('outfitterId', isEqualTo: currentUserId);
     }
-    _bookingQuery = _bookingQuery.orderBy('bookingTimestamp', descending: true);
+    // Note: orderBy removed to avoid composite index requirement
+    // Sorting is done in-memory in the StreamBuilder below
   }
 
   @override
@@ -83,7 +84,14 @@ class _OutfitterBookingDashboardScreenState
             );
           }
 
-          final bookings = snapshot.data?.docs ?? [];
+          // Sort bookings in-memory by timestamp (descending)
+          final List docs = snapshot.data?.docs ?? [];
+          docs.sort((a, b) {
+            final aTime = a['bookingTimestamp'] ?? 0;
+            final bTime = b['bookingTimestamp'] ?? 0;
+            return bTime.compareTo(aTime);
+          });
+          final bookings = docs;
 
           if (bookings.isEmpty) {
             return Center(
