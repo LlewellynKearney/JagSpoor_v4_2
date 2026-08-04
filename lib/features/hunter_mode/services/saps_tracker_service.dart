@@ -7,21 +7,24 @@ class SapsTrackerService {
   final FirebaseFirestore _firestore;
 
   SapsTrackerService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Triggers a remote scraper check via Apify API webhook.
-  /// 
+  ///
   /// In production, this sends a POST request to the configured Apify Actor webhook URL.
   /// Currently implemented as a mock for offline development.
-  /// 
+  ///
   /// Returns the scraped status response or null on failure.
-  Future<SapsScraperResult?> triggerRemoteScraperCheck(String applicationId) async {
+  Future<SapsScraperResult?> triggerRemoteScraperCheck(
+    String applicationId,
+  ) async {
     try {
       // Fetch the application document to get details
-      final docSnapshot = await _firestore
-          .collection('license_applications')
-          .doc(applicationId)
-          .get();
+      final docSnapshot =
+          await _firestore
+              .collection('license_applications')
+              .doc(applicationId)
+              .get();
 
       if (!docSnapshot.exists) {
         debugPrint('SapsTrackerService: Application $applicationId not found');
@@ -35,9 +38,9 @@ class SapsTrackerService {
       // Mock response for offline development
       // In production, replace with actual Apify API call:
       // final response = await _callApifyWebhook(applicationId, idNumber, referenceNumber);
-      
+
       final mockStatus = _generateMockStatus();
-      
+
       return SapsScraperResult(
         applicationId: applicationId,
         status: mockStatus,
@@ -63,7 +66,7 @@ class SapsTrackerService {
       'CFR Processing',
       'Licence approved and printed',
     ];
-    
+
     // Generate a semi-random but consistent status based on current time
     final hour = DateTime.now().hour;
     final index = hour % statuses.length;
@@ -71,14 +74,14 @@ class SapsTrackerService {
   }
 
   /// Converts raw scraper status strings to standardized UI stage indices.
-  /// 
+  ///
   /// Stage indices:
   /// - 0: Submitted (DFO stage)
   /// - 1: Provincial Office
   /// - 2: Central Firearms Registry (CFR)
   /// - 3: Printed/Ready for Collection
   /// - -1: Not Found / Error
-  /// 
+  ///
   /// Returns 0 (Submitted) as default for null or unrecognized inputs.
   static int convertRawStatusToStage(String? rawStatus) {
     if (rawStatus == null || rawStatus.trim().isEmpty) {
@@ -151,12 +154,14 @@ class SapsTrackerService {
     }
 
     // Default to Submitted (0) for any unrecognized status
-    debugPrint('SapsTrackerService: Unrecognized status "$rawStatus", defaulting to Submitted');
+    debugPrint(
+      'SapsTrackerService: Unrecognized status "$rawStatus", defaulting to Submitted',
+    );
     return 0;
   }
 
   /// Maps raw status string to a display-friendly status label.
-  /// 
+  ///
   /// Returns 'Pending Review' for null, empty, or unrecognized inputs
   /// to ensure safe display without runtime crashes.
   static String convertRawStatusToDisplay(String? rawStatus) {
@@ -167,7 +172,7 @@ class SapsTrackerService {
     final normalizedStatus = rawStatus.toLowerCase().trim();
 
     // Already at a known stage
-    if (normalizedStatus.contains('submitted') || 
+    if (normalizedStatus.contains('submitted') ||
         normalizedStatus.contains('received') ||
         normalizedStatus.contains('dfos')) {
       return 'Submitted to DFO';
@@ -177,20 +182,20 @@ class SapsTrackerService {
       return 'At Provincial Office';
     }
 
-    if (normalizedStatus.contains('cfr') || 
+    if (normalizedStatus.contains('cfr') ||
         normalizedStatus.contains('registry') ||
         normalizedStatus.contains('central firearms')) {
       return 'At Central Registry';
     }
 
-    if (normalizedStatus.contains('printed') || 
+    if (normalizedStatus.contains('printed') ||
         normalizedStatus.contains('ready') ||
         normalizedStatus.contains('approved') ||
         normalizedStatus.contains('completed')) {
       return 'Ready for Collection';
     }
 
-    if (normalizedStatus.contains('not found') || 
+    if (normalizedStatus.contains('not found') ||
         normalizedStatus.contains('invalid') ||
         normalizedStatus.contains('error')) {
       return 'Status Unavailable';
@@ -221,10 +226,10 @@ class SapsTrackerService {
           .collection('license_applications')
           .doc(applicationId)
           .update({
-        'currentStatus': newStatus,
-        'lastChecked': lastChecked.toIso8601String(),
-        'statusCode': convertRawStatusToStage(newStatus),
-      });
+            'currentStatus': newStatus,
+            'lastChecked': lastChecked.toIso8601String(),
+            'statusCode': convertRawStatusToStage(newStatus),
+          });
       return true;
     } catch (e) {
       debugPrint('SapsTrackerService: Failed to update application status: $e');
@@ -237,9 +242,8 @@ class SapsTrackerService {
     int updatedCount = 0;
 
     try {
-      final snapshot = await _firestore
-          .collection('license_applications')
-          .get();
+      final snapshot =
+          await _firestore.collection('license_applications').get();
 
       for (final doc in snapshot.docs) {
         final result = await triggerRemoteScraperCheck(doc.id);
@@ -283,20 +287,22 @@ class SapsScraperResult {
       applicationId: json['applicationId'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusCode: json['statusCode'] as int? ?? 0,
-      lastChecked: json['lastChecked'] != null
-          ? DateTime.tryParse(json['lastChecked'] as String) ?? DateTime.now()
-          : DateTime.now(),
+      lastChecked:
+          json['lastChecked'] != null
+              ? DateTime.tryParse(json['lastChecked'] as String) ??
+                  DateTime.now()
+              : DateTime.now(),
       success: json['success'] as bool? ?? false,
       error: json['error'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'applicationId': applicationId,
-        'status': status,
-        'statusCode': statusCode,
-        'lastChecked': lastChecked.toIso8601String(),
-        'success': success,
-        if (error != null) 'error': error,
-      };
+    'applicationId': applicationId,
+    'status': status,
+    'statusCode': statusCode,
+    'lastChecked': lastChecked.toIso8601String(),
+    'success': success,
+    if (error != null) 'error': error,
+  };
 }

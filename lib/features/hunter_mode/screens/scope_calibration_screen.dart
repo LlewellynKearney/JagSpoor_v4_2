@@ -16,7 +16,8 @@ class ScopeCalibrationScreen extends StatefulWidget {
 class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
     with SingleTickerProviderStateMixin {
   // Ballistic solver service
-  final BallisticSolverService _ballisticSolver = BallisticSolverService.instance;
+  final BallisticSolverService _ballisticSolver =
+      BallisticSolverService.instance;
 
   // Rifle profile selection
   String _selectedRifleProfile = '.308 Win';
@@ -46,7 +47,10 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   static const Map<String, Map<String, double>> _rifleProfiles = {
     '.308 Win': {'muzzleVelocity': 2700.0, 'ballisticCoefficient': 0.45},
     '6.5 Creedmoor': {'muzzleVelocity': 2900.0, 'ballisticCoefficient': 0.52},
-    '30-06 Springfield': {'muzzleVelocity': 2800.0, 'ballisticCoefficient': 0.48},
+    '30-06 Springfield': {
+      'muzzleVelocity': 2800.0,
+      'ballisticCoefficient': 0.48,
+    },
     '.300 Win Mag': {'muzzleVelocity': 3100.0, 'ballisticCoefficient': 0.55},
     '.243 Win': {'muzzleVelocity': 3100.0, 'ballisticCoefficient': 0.40},
     '.270 Win': {'muzzleVelocity': 3060.0, 'ballisticCoefficient': 0.46},
@@ -150,7 +154,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 color: Colors.orange.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(Icons.gps_fixed, color: Colors.orange, size: 20),
+              child: const Icon(
+                Icons.gps_fixed,
+                color: Colors.orange,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             const Text(
@@ -175,9 +183,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           _buildUpperInputPanel(theme),
 
           // Middle Panel: Visual Turret Dial
-          Expanded(
-            child: _buildTurretDialPanel(theme),
-          ),
+          Expanded(child: _buildTurretDialPanel(theme)),
 
           // Bottom Row: Quick Actions
           _buildBottomActionRow(theme),
@@ -191,10 +197,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFF2D2520),
-            const Color(0xFF1A1512),
-          ],
+          colors: [const Color(0xFF2D2520), const Color(0xFF1A1512)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -225,21 +228,28 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     isExpanded: true,
                     dropdownColor: const Color(0xFF2D2520),
                     underline: const SizedBox(),
-                    icon: const Icon(Icons.arrow_drop_down, color: Colors.orange),
+                    icon: const Icon(
+                      Icons.arrow_drop_down,
+                      color: Colors.orange,
+                    ),
                     style: const TextStyle(color: Colors.white, fontSize: 14),
-                    items: _rifleProfiles.keys.map((profile) {
-                      return DropdownMenuItem(
-                        value: profile,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.radio_button_checked, 
-                                color: Colors.orange, size: 16),
-                            const SizedBox(width: 8),
-                            Text(profile),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                    items:
+                        _rifleProfiles.keys.map((profile) {
+                          return DropdownMenuItem(
+                            value: profile,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.radio_button_checked,
+                                  color: Colors.orange,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(profile),
+                              ],
+                            ),
+                          );
+                        }).toList(),
                     onChanged: (value) {
                       if (value != null) _selectRifleProfile(value);
                     },
@@ -357,7 +367,10 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
             fontWeight: FontWeight.bold,
           ),
           decoration: InputDecoration(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 8,
+            ),
             filled: true,
             fillColor: const Color(0xFF1A1512),
             border: OutlineInputBorder(
@@ -388,10 +401,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: RadialGradient(
-          colors: [
-            const Color(0xFF2D2520),
-            const Color(0xFF1A1512),
-          ],
+          colors: [const Color(0xFF2D2520), const Color(0xFF1A1512)],
           center: Alignment.center,
           radius: 1.0,
         ),
@@ -431,10 +441,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     Colors.orange.withValues(alpha: 0.05),
                   ],
                 ),
-                border: Border.all(
-                  color: Colors.orange,
-                  width: 4,
-                ),
+                border: Border.all(color: Colors.orange, width: 4),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.orange.withValues(alpha: 0.3),
@@ -512,9 +519,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1512),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.orange.withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -558,18 +563,12 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
               decoration: BoxDecoration(
                 color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.orange.withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.speed,
-                    color: Colors.orangeAccent,
-                    size: 16,
-                  ),
+                  Icon(Icons.speed, color: Colors.orangeAccent, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Barometric Correction Active: ${_calculationResults?['barometricPressureHpa']?.toStringAsFixed(1) ?? '1013.25'} hPa',
@@ -580,11 +579,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Icon(
-                    Icons.straighten,
-                    color: Colors.orangeAccent,
-                    size: 16,
-                  ),
+                  Icon(Icons.straighten, color: Colors.orangeAccent, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
@@ -658,10 +653,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFF1A1512),
-            const Color(0xFF2D2520),
-          ],
+          colors: [const Color(0xFF1A1512), const Color(0xFF2D2520)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -688,10 +680,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.orange,
-                    width: 2,
-                  ),
+                  border: Border.all(color: Colors.orange, width: 2),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.orange.withValues(alpha: 0.2),
@@ -703,11 +692,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.gps_fixed,
-                      color: Colors.orange,
-                      size: 24,
-                    ),
+                    const Icon(Icons.gps_fixed, color: Colors.orange, size: 24),
                     const SizedBox(width: 12),
                     Column(
                       children: [

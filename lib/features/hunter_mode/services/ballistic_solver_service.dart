@@ -3,7 +3,8 @@ import 'dart:math' as math;
 /// Offline ballistic trajectory processing engine for scope adjustment calculations.
 /// Implements point-mass trajectory model with air density and angle corrections.
 class BallisticSolverService {
-  static final BallisticSolverService _instance = BallisticSolverService._internal();
+  static final BallisticSolverService _instance =
+      BallisticSolverService._internal();
   static BallisticSolverService get instance => _instance;
   BallisticSolverService._internal();
 
@@ -19,13 +20,13 @@ class BallisticSolverService {
   }
 
   /// Calculates bullet trajectory drop using simplified point-mass model.
-  /// 
+  ///
   /// Physics model:
   /// - Horizontal velocity: vx = v₀ × cos(θ)
   /// - Vertical velocity: vy = v₀ × sin(θ) - g × t
   /// - Position: y = v₀ × sin(θ) × t - ½ × g × t²
   /// - x = v₀ × cos(θ) × t (horizontal range)
-  /// 
+  ///
   /// Where:
   /// - v₀ = muzzle velocity (fps)
   /// - θ = launch angle (degrees)
@@ -43,46 +44,50 @@ class BallisticSolverService {
     // Convert to consistent units (feet)
     final distanceFeet = distanceYards * 3.0;
     final scopeHeightFeet = scopeHeightInches / 12.0;
-    
+
     // Calculate slant range angle cosine for horizontal component
     final angleRadians = angleDegrees * (math.pi / 180.0);
     final cosAngle = math.cos(angleRadians);
-    
+
     // Time of flight estimate using simplified ballistic formula
     // t ≈ range / (muzzle velocity × cos(angle) × density correction)
     // This accounts for drag via ballistic coefficient and air density
     final velocityComponent = muzzleVelocityFps * cosAngle;
-    final dragFactor = 1.0 / (1.0 + (0.05 / ballisticCoefficient) * (1.0 / densityFactor));
+    final dragFactor =
+        1.0 / (1.0 + (0.05 / ballisticCoefficient) * (1.0 / densityFactor));
     final timeOfFlightSeconds = distanceFeet / (velocityComponent * dragFactor);
-    
+
     // Gravitational acceleration in ft/s²
     const g = 32.174;
-    
+
     // Calculate vertical drop relative to bore line
     // Bullet starts below line of sight by scope height
     // Net drop relative to scope height:
     // drop = scopeHeightFeet + (v₀ × sin(θ) × t) - ½ × g × t²
     final sinAngle = math.sin(angleRadians);
-    final verticalComponent = muzzleVelocityFps * sinAngle * timeOfFlightSeconds;
-    final gravitationalDrop = 0.5 * g * timeOfFlightSeconds * timeOfFlightSeconds;
-    
+    final verticalComponent =
+        muzzleVelocityFps * sinAngle * timeOfFlightSeconds;
+    final gravitationalDrop =
+        0.5 * g * timeOfFlightSeconds * timeOfFlightSeconds;
+
     // Total drop relative to bore centerline, then convert to line-of-sight drop
     // The cosine of the angle gives us the LOS drop component
     final rawDropFeet = scopeHeightFeet + verticalComponent - gravitationalDrop;
     final losDropFeet = rawDropFeet * cosAngle;
-    
+
     // Convert to inches (positive = drop below target)
     final dropInches = losDropFeet * 12.0;
-    
+
     // Apply additional ballistic coefficient drag correction
     // Higher BC = less drop, lower BC = more drop
-    final bcCorrectionFactor = 1.0 - (0.1 / ballisticCoefficient.clamp(0.1, 2.0));
-    
+    final bcCorrectionFactor =
+        1.0 - (0.1 / ballisticCoefficient.clamp(0.1, 2.0));
+
     return dropInches * bcCorrectionFactor * densityFactor;
   }
 
   /// Calculates total MOA (Minutes of Angle) required for the given drop.
-  /// 
+  ///
   /// MOA formula: MOA = (drop_inches / distance_yards) × 100
   /// At 100 yards, 1 MOA ≈ 1.047 inches (using standard approximation of 1 inch)
   double _calculateTotalMOA({
@@ -96,7 +101,7 @@ class BallisticSolverService {
   }
 
   /// Calculates total MRAD (Milliradians) required for the given drop.
-  /// 
+  ///
   /// MRAD formula: MRAD = drop_inches / (distance_yards × 36 / 1000)
   /// Simplifies to: MRAD = drop_inches × 1000 / (distance_yards × 36)
   double _calculateTotalMRAD({
@@ -110,7 +115,7 @@ class BallisticSolverService {
   }
 
   /// Calculates integer click count for the given angular adjustment.
-  /// 
+  ///
   /// clicks = total_angle / click_value
   /// Where click_value is expressed in the same unit system (MOA or MRAD)
   int _calculateClickCount({
@@ -122,16 +127,16 @@ class BallisticSolverService {
   }
 
   /// Main entry point: Calculates scope adjustments for given parameters.
-  /// 
+  ///
   /// Implements precise physical trajectory estimation formula factoring in:
   /// - Gravity (32.174 ft/s²)
   /// - Slant-range cosine angle shortcuts
   /// - Air density corrections based on barometric pressure
-  /// 
+  ///
   /// Returns structured data map tracking:
   /// - dropInches: Bullet drop in inches (positive = below target)
   /// - totalMOA: Total MOA adjustment needed
-  /// - totalMRAD: Total MRAD adjustment needed  
+  /// - totalMRAD: Total MRAD adjustment needed
   /// - clicksToDial: Integer count of 1/4 MOA clicks required
   /// - densityFactor: Air density multiplier relative to sea level
   Map<String, dynamic> calculateScopeAdjustments({
@@ -265,7 +270,11 @@ class BallisticSolverService {
     final List<Map<String, dynamic>> table = [];
     final densityFactor = _calculateAirDensityFactor(barometricPressureHpa);
 
-    for (double distance = startYards; distance <= endYards; distance += stepYards) {
+    for (
+      double distance = startYards;
+      distance <= endYards;
+      distance += stepYards
+    ) {
       final drop = _calculateTrajectoryDrop(
         distanceYards: distance,
         angleDegrees: 0,
@@ -275,8 +284,14 @@ class BallisticSolverService {
         densityFactor: densityFactor,
       );
 
-      final moa = _calculateTotalMOA(dropInches: drop.abs(), distanceYards: distance);
-      final clicks = _calculateClickCount(totalAngle: moa, clickValue: turretClickValue);
+      final moa = _calculateTotalMOA(
+        dropInches: drop.abs(),
+        distanceYards: distance,
+      );
+      final clicks = _calculateClickCount(
+        totalAngle: moa,
+        clickValue: turretClickValue,
+      );
 
       table.add({
         'range': distance.toInt(),

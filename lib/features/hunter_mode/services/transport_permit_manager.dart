@@ -2,11 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 /// TransportPermitManager - Central statutory South African Game Transport Permit engine
-/// 
+///
 /// Handles the creation and management of transport permits in compliance with
 /// South African wildlife and game transport regulations (Nemba Act / Cape Nature ordinances).
 class TransportPermitManager {
-  static final TransportPermitManager _instance = TransportPermitManager._internal();
+  static final TransportPermitManager _instance =
+      TransportPermitManager._internal();
   static TransportPermitManager get instance => _instance;
 
   TransportPermitManager._internal();
@@ -14,7 +15,7 @@ class TransportPermitManager {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// Issue a new South African Game Transport Permit
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: Document ID of the issuing farm/concession
   /// - [farmName]: Registered name of the farm
@@ -62,7 +63,9 @@ class TransportPermitManager {
       'permitNumber': _generatePermitNumber(),
     };
 
-    final docRef = await _firestore.collection('transport_permits').add(permitData);
+    final docRef = await _firestore
+        .collection('transport_permits')
+        .add(permitData);
     return docRef.id;
   }
 
@@ -132,9 +135,10 @@ class TransportPermitManager {
 
   /// Get a single permit by ID
   Future<Map<String, dynamic>?> getPermitById(String permitId) async {
-    final doc = await _firestore.collection('transport_permits').doc(permitId).get();
+    final doc =
+        await _firestore.collection('transport_permits').doc(permitId).get();
     if (!doc.exists) return null;
-    
+
     final data = doc.data()!;
     data['id'] = doc.id;
     return data;
@@ -154,7 +158,9 @@ class TransportPermitManager {
     if (!farmDoc.exists) return false;
 
     final farmData = farmDoc.data()!;
-    final trophyStock = List<Map<String, dynamic>>.from(farmData['trophyStock'] ?? []);
+    final trophyStock = List<Map<String, dynamic>>.from(
+      farmData['trophyStock'] ?? [],
+    );
 
     for (final requested in requestedSpecies) {
       final speciesName = requested['species'] as String;
@@ -175,7 +181,9 @@ class TransportPermitManager {
 
   /// Calculate total species count from permit
   int calculateTotalSpecies(Map<String, dynamic> permitData) {
-    final speciesList = List<Map<String, dynamic>>.from(permitData['speciesList'] ?? []);
+    final speciesList = List<Map<String, dynamic>>.from(
+      permitData['speciesList'] ?? [],
+    );
     return speciesList.fold(0, (total, species) {
       return total + ((species['quantity'] as num?)?.toInt() ?? 0);
     });
@@ -183,11 +191,13 @@ class TransportPermitManager {
 
   /// Format species list for display
   String formatSpeciesSummary(List<Map<String, dynamic>> speciesList) {
-    return speciesList.map((s) {
-      final name = s['species'] ?? 'Unknown';
-      final qty = (s['quantity'] as num?)?.toInt() ?? 1;
-      final sex = s['sex'] ?? '';
-      return '$name (${qty}x ${sex.isNotEmpty ? sex : "N/A"})';
-    }).join(', ');
+    return speciesList
+        .map((s) {
+          final name = s['species'] ?? 'Unknown';
+          final qty = (s['quantity'] as num?)?.toInt() ?? 1;
+          final sex = s['sex'] ?? '';
+          return '$name (${qty}x ${sex.isNotEmpty ? sex : "N/A"})';
+        })
+        .join(', ');
   }
 }

@@ -35,7 +35,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
     if (bytes == null) return; // Guard against null scan readings safely
     final raw = barcode.rawValue ?? String.fromCharCodes(bytes);
     if (raw.isEmpty) {
-      setState(() => _status = 'Barcode found but could not be read. Try again.');
+      setState(
+        () => _status = 'Barcode found but could not be read. Try again.',
+      );
       return;
     }
     _handled = true;
@@ -50,8 +52,11 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
       if (file == null) return;
       final BarcodeCapture? capture = await _controller.analyzeImage(file.path);
       if (capture == null || capture.barcodes.isEmpty) {
-        setState(() => _status =
-            'No PDF417 barcode found in that image. Use a sharp, straight, fully-visible shot.');
+        setState(
+          () =>
+              _status =
+                  'No PDF417 barcode found in that image. Use a sharp, straight, fully-visible shot.',
+        );
         return;
       }
       _finish(capture.barcodes.first);
@@ -111,17 +116,24 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text('SCAN LICENSE',
-            style: TextStyle(
-                color: theme.textColor, fontFamily: 'Mono', letterSpacing: 1.2)),
+        title: Text(
+          'SCAN LICENSE',
+          style: TextStyle(
+            color: theme.textColor,
+            fontFamily: 'Mono',
+            letterSpacing: 1.2,
+          ),
+        ),
         backgroundColor: theme.backgroundColor,
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
           IconButton(
             tooltip: 'Toggle torch',
-            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off,
-                color: theme.accentColor),
+            icon: Icon(
+              _torchOn ? Icons.flash_on : Icons.flash_off,
+              color: theme.accentColor,
+            ),
             onPressed: _toggleTorch,
           ),
         ],
@@ -133,11 +145,12 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
             controller: _controller,
             onDetect: _onDetect,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, child) => _CameraError(
-              error: error,
-              theme: theme,
-              onPickGallery: _scanFromGallery,
-            ),
+            errorBuilder:
+                (context, error, child) => _CameraError(
+                  error: error,
+                  theme: theme,
+                  onPickGallery: _scanFromGallery,
+                ),
           ),
           // Viewfinder frame.
           Center(
@@ -165,9 +178,11 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
                 ),
                 if (_status != null) ...[
                   const SizedBox(height: 12),
-                  Text(_status!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.amberAccent)),
+                  Text(
+                    _status!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.amberAccent),
+                  ),
                 ],
                 const SizedBox(height: 20),
                 OutlinedButton.icon(
@@ -176,12 +191,17 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
                     minimumSize: const Size.fromHeight(52),
                     backgroundColor: Colors.black54,
                   ),
-                  icon: Icon(Icons.photo_library_rounded,
-                      color: theme.accentColor),
-                  label: Text('SELECT FROM GALLERY',
-                      style: TextStyle(
-                          color: theme.accentColor,
-                          fontWeight: FontWeight.bold)),
+                  icon: Icon(
+                    Icons.photo_library_rounded,
+                    color: theme.accentColor,
+                  ),
+                  label: Text(
+                    'SELECT FROM GALLERY',
+                    style: TextStyle(
+                      color: theme.accentColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   onPressed: _scanFromGallery,
                 ),
               ],
@@ -197,8 +217,11 @@ class _CameraError extends StatelessWidget {
   final MobileScannerException error;
   final ThemeController theme;
   final VoidCallback onPickGallery;
-  const _CameraError(
-      {required this.error, required this.theme, required this.onPickGallery});
+  const _CameraError({
+    required this.error,
+    required this.theme,
+    required this.onPickGallery,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -210,8 +233,11 @@ class _CameraError extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.no_photography_rounded,
-              size: 72, color: theme.accentColor),
+          Icon(
+            Icons.no_photography_rounded,
+            size: 72,
+            color: theme.accentColor,
+          ),
           const SizedBox(height: 16),
           Text(
             isPermission
@@ -227,9 +253,13 @@ class _CameraError extends StatelessWidget {
               minimumSize: const Size.fromHeight(52),
             ),
             icon: Icon(Icons.photo_library_rounded, color: theme.accentColor),
-            label: Text('SELECT FROM GALLERY',
-                style: TextStyle(
-                    color: theme.accentColor, fontWeight: FontWeight.bold)),
+            label: Text(
+              'SELECT FROM GALLERY',
+              style: TextStyle(
+                color: theme.accentColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             onPressed: onPickGallery,
           ),
         ],

@@ -5,20 +5,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class BookingStatusService {
-  static final BookingStatusService _instance = BookingStatusService._internal();
+  static final BookingStatusService _instance =
+      BookingStatusService._internal();
   static BookingStatusService get instance => _instance;
 
   BookingStatusService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-  
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
+
   StreamSubscription<QuerySnapshot>? _bookingSubscription;
   String? _lastKnownStatus;
 
   /// Initialize the notification service
   Future<void> initialize() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -40,9 +44,12 @@ class BookingStatusService {
   }
 
   Future<void> _requestPermissions() async {
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    
+    final androidPlugin =
+        _notifications
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
+
     if (androidPlugin != null) {
       await androidPlugin.requestNotificationsPermission();
     }
@@ -55,13 +62,13 @@ class BookingStatusService {
   /// Start listening to booking status changes for the current hunter
   void startListening() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    
+
     if (currentUserId == null) {
       return;
     }
 
     _bookingSubscription?.cancel();
-    
+
     _bookingSubscription = _firestore
         .collection('bookings')
         .where('hunterId', isEqualTo: currentUserId)
@@ -90,7 +97,7 @@ class BookingStatusService {
 
     if (currentStatus != null && currentStatus != _lastKnownStatus) {
       _lastKnownStatus = currentStatus;
-      
+
       // Only trigger notifications for status changes to Approved or Declined
       if (currentStatus == 'Approved') {
         _showBookingApprovedNotification(bookingId, packageName, data);
@@ -106,7 +113,7 @@ class BookingStatusService {
     Map<String, dynamic> data,
   ) async {
     final totalPrice = (data['totalHunterPriceRands'] ?? 0).toDouble();
-    
+
     final androidDetails = AndroidNotificationDetails(
       'booking_status_channel',
       'Booking Status',
@@ -135,7 +142,8 @@ class BookingStatusService {
     await _notifications.show(
       id: bookingId.hashCode,
       title: '✅ BOOKING APPROVED!',
-      body: 'Your $packageName booking has been approved!\nTotal: R ${totalPrice.toStringAsFixed(2)} ZAR',
+      body:
+          'Your $packageName booking has been approved!\nTotal: R ${totalPrice.toStringAsFixed(2)} ZAR',
       notificationDetails: details,
       payload: bookingId,
     );
@@ -173,7 +181,8 @@ class BookingStatusService {
     await _notifications.show(
       id: bookingId.hashCode,
       title: '❌ Booking Declined',
-      body: 'Your $packageName booking was not approved. Please try another package.',
+      body:
+          'Your $packageName booking was not approved. Please try another package.',
       notificationDetails: details,
       payload: bookingId,
     );

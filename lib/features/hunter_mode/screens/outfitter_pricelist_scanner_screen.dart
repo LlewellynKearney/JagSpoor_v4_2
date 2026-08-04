@@ -15,12 +15,15 @@ class OutfitterPricelistScannerScreen extends StatefulWidget {
   const OutfitterPricelistScannerScreen({super.key, required this.theme});
 
   @override
-  State<OutfitterPricelistScannerScreen> createState() => _OutfitterPricelistScannerScreenState();
+  State<OutfitterPricelistScannerScreen> createState() =>
+      _OutfitterPricelistScannerScreenState();
 }
 
-class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScannerScreen> {
+class _OutfitterPricelistScannerScreenState
+    extends State<OutfitterPricelistScannerScreen> {
   final ImagePicker _imagePicker = ImagePicker();
-  final PricelistScannerService _pricelistService = PricelistScannerService.instance;
+  final PricelistScannerService _pricelistService =
+      PricelistScannerService.instance;
 
   String? _selectedFarmId;
   String? _selectedFarmName;
@@ -42,20 +45,27 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    final farmsQuery = _isManager
-        ? FirebaseFirestore.instance.collection('farms').where('outfitterId', isEqualTo: currentUser.uid)
-        : FirebaseFirestore.instance.collection('farms').where('outfitterId', isEqualTo: currentUser.uid);
+    final farmsQuery =
+        _isManager
+            ? FirebaseFirestore.instance
+                .collection('farms')
+                .where('outfitterId', isEqualTo: currentUser.uid)
+            : FirebaseFirestore.instance
+                .collection('farms')
+                .where('outfitterId', isEqualTo: currentUser.uid);
 
-    final snapshot = await farmsQuery.where('status', isEqualTo: 'active').get();
-    
+    final snapshot =
+        await farmsQuery.where('status', isEqualTo: 'active').get();
+
     if (mounted) {
       setState(() {
-        _farms = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-        
+        _farms =
+            snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            }).toList();
+
         // Auto-select farm name for managers
         if (_isManager && _selectedFarmId != null) {
           final farm = _farms.firstWhere(
@@ -79,7 +89,7 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
         source: ImageSource.camera,
         imageQuality: 90,
       );
-      
+
       if (image != null) {
         await _processImage(File(image.path));
       }
@@ -99,8 +109,10 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
       );
-      
-      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+
+      if (result != null &&
+          result.files.isNotEmpty &&
+          result.files.first.path != null) {
         await _processImage(File(result.files.first.path!));
       }
     } catch (e) {
@@ -122,13 +134,14 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
         // Navigate to verification screen with extracted items
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => OutfitterPricelistVerificationScreen(
-              theme: widget.theme,
-              extractedItems: extractedItems,
-              farmId: _selectedFarmId,
-              farmName: _selectedFarmName,
-              imageFileName: file.path.split('/').last,
-            ),
+            builder:
+                (context) => OutfitterPricelistVerificationScreen(
+                  theme: widget.theme,
+                  extractedItems: extractedItems,
+                  farmId: _selectedFarmId,
+                  farmName: _selectedFarmName,
+                  imageFileName: file.path.split('/').last,
+                ),
           ),
         );
       } else if (mounted) {
@@ -147,19 +160,13 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('⚠️ $message'),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('✅ $message'),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text('✅ $message'), backgroundColor: Colors.green),
     );
   }
 
@@ -205,10 +212,7 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
           const SizedBox(height: 8),
           Text(
             'Extracting... Applying 5% Platform Fees...',
-            style: TextStyle(
-              color: widget.theme.subtitleColor,
-              fontSize: 14,
-            ),
+            style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14),
           ),
         ],
       ),
@@ -283,69 +287,79 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
               color: widget.theme.cardColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _isManager 
-                    ? widget.theme.accentColor.withValues(alpha: 0.5)
-                    : widget.theme.accentColor.withValues(alpha: 0.3),
+                color:
+                    _isManager
+                        ? widget.theme.accentColor.withValues(alpha: 0.5)
+                        : widget.theme.accentColor.withValues(alpha: 0.3),
               ),
             ),
-            child: _isManager
-                ? Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.lock_rounded, color: widget.theme.accentColor),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _selectedFarmName ?? 'Loading...',
-                                style: TextStyle(
-                                  color: widget.theme.textColor,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Text(
-                                'Locked to assigned farm',
-                                style: TextStyle(
-                                  color: widget.theme.subtitleColor,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+            child:
+                _isManager
+                    ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.lock_rounded,
+                            color: widget.theme.accentColor,
                           ),
-                        ),
-                      ],
-                    ),
-                  )
-                : DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedFarmId,
-                      isExpanded: true,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      hint: Text(
-                        'Choose a farm...',
-                        style: TextStyle(color: widget.theme.subtitleColor),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedFarmName ?? 'Loading...',
+                                  style: TextStyle(
+                                    color: widget.theme.textColor,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Text(
+                                  'Locked to assigned farm',
+                                  style: TextStyle(
+                                    color: widget.theme.subtitleColor,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      dropdownColor: widget.theme.cardColor,
-                      style: TextStyle(color: widget.theme.textColor),
-                      items: _farms.map((farm) {
-                        return DropdownMenuItem(
-                          value: farm['id'] as String,
-                          child: Text(farm['name'] as String? ?? 'Unknown'),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        final farm = _farms.firstWhere((f) => f['id'] == value);
-                        setState(() {
-                          _selectedFarmId = value;
-                          _selectedFarmName = farm['name'] as String?;
-                        });
-                      },
+                    )
+                    : DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedFarmId,
+                        isExpanded: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        hint: Text(
+                          'Choose a farm...',
+                          style: TextStyle(color: widget.theme.subtitleColor),
+                        ),
+                        dropdownColor: widget.theme.cardColor,
+                        style: TextStyle(color: widget.theme.textColor),
+                        items:
+                            _farms.map((farm) {
+                              return DropdownMenuItem(
+                                value: farm['id'] as String,
+                                child: Text(
+                                  farm['name'] as String? ?? 'Unknown',
+                                ),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          final farm = _farms.firstWhere(
+                            (f) => f['id'] == value,
+                          );
+                          setState(() {
+                            _selectedFarmId = value;
+                            _selectedFarmName = farm['name'] as String?;
+                          });
+                        },
+                      ),
                     ),
-                  ),
           ),
           const SizedBox(height: 32),
 
@@ -427,10 +441,7 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: color.withValues(alpha: 0.3),
-          width: 1.5,
-        ),
+        side: BorderSide(color: color.withValues(alpha: 0.3), width: 1.5),
       ),
       child: InkWell(
         onTap: onTap,
@@ -472,11 +483,7 @@ class _OutfitterPricelistScannerScreenState extends State<OutfitterPricelistScan
                   ],
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: color,
-                size: 20,
-              ),
+              Icon(Icons.arrow_forward_ios_rounded, color: color, size: 20),
             ],
           ),
         ),

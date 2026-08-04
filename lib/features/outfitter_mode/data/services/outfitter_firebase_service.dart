@@ -13,13 +13,14 @@ class OutfitterFirebaseService {
         .orderBy('arrivalDate', descending: false)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => ClientBooking.fromFirestore(doc))
-          .toList();
-    }).handleError((error) {
-      debugPrint('Error fetching bookings stream: $error');
-      return <ClientBooking>[];
-    });
+          return snapshot.docs
+              .map((doc) => ClientBooking.fromFirestore(doc))
+              .toList();
+        })
+        .handleError((error) {
+          debugPrint('Error fetching bookings stream: $error');
+          return <ClientBooking>[];
+        });
   }
 
   Stream<List<LodgingUnit>> getLodgingStream() {
@@ -28,13 +29,14 @@ class OutfitterFirebaseService {
         .orderBy('unitName')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => LodgingUnit.fromFirestore(doc))
-          .toList();
-    }).handleError((error) {
-      debugPrint('Error fetching lodging stream: $error');
-      return <LodgingUnit>[];
-    });
+          return snapshot.docs
+              .map((doc) => LodgingUnit.fromFirestore(doc))
+              .toList();
+        })
+        .handleError((error) {
+          debugPrint('Error fetching lodging stream: $error');
+          return <LodgingUnit>[];
+        });
   }
 
   Stream<List<FleetAsset>> getFleetStream() {
@@ -43,13 +45,14 @@ class OutfitterFirebaseService {
         .orderBy('vehicleName')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => FleetAsset.fromFirestore(doc))
-          .toList();
-    }).handleError((error) {
-      debugPrint('Error fetching fleet stream: $error');
-      return <FleetAsset>[];
-    });
+          return snapshot.docs
+              .map((doc) => FleetAsset.fromFirestore(doc))
+              .toList();
+        })
+        .handleError((error) {
+          debugPrint('Error fetching fleet stream: $error');
+          return <FleetAsset>[];
+        });
   }
 
   Stream<List<LodgingUnit>> getVacantLodgingStream() {
@@ -59,13 +62,14 @@ class OutfitterFirebaseService {
         .orderBy('unitName')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => LodgingUnit.fromFirestore(doc))
-          .toList();
-    }).handleError((error) {
-      debugPrint('Error fetching vacant lodging stream: $error');
-      return <LodgingUnit>[];
-    });
+          return snapshot.docs
+              .map((doc) => LodgingUnit.fromFirestore(doc))
+              .toList();
+        })
+        .handleError((error) {
+          debugPrint('Error fetching vacant lodging stream: $error');
+          return <LodgingUnit>[];
+        });
   }
 
   Stream<List<FleetAsset>> getActiveFleetStream() {
@@ -75,13 +79,14 @@ class OutfitterFirebaseService {
         .orderBy('vehicleName')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => FleetAsset.fromFirestore(doc))
-          .toList();
-    }).handleError((error) {
-      debugPrint('Error fetching active fleet stream: $error');
-      return <FleetAsset>[];
-    });
+          return snapshot.docs
+              .map((doc) => FleetAsset.fromFirestore(doc))
+              .toList();
+        })
+        .handleError((error) {
+          debugPrint('Error fetching active fleet stream: $error');
+          return <FleetAsset>[];
+        });
   }
 
   Future<String> createBooking({
@@ -108,7 +113,9 @@ class OutfitterFirebaseService {
       final batch = _firestore.batch();
       batch.set(bookingRef, booking.toFirestore());
 
-      final lodgingRef = _firestore.collection('outfitter/lodging').doc(lodgingId);
+      final lodgingRef = _firestore
+          .collection('outfitter/lodging')
+          .doc(lodgingId);
       batch.update(lodgingRef, {'status': 'occupied'});
 
       await batch.commit();
@@ -125,10 +132,9 @@ class OutfitterFirebaseService {
     required int newOccupantCount,
   }) async {
     try {
-      await _firestore
-          .collection('outfitter/lodging')
-          .doc(lodgingId)
-          .update({'currentOccupants': newOccupantCount});
+      await _firestore.collection('outfitter/lodging').doc(lodgingId).update({
+        'currentOccupants': newOccupantCount,
+      });
       debugPrint('Lodging occupants updated: $lodgingId');
     } catch (e) {
       debugPrint('Error updating lodging occupants: $e');
@@ -141,10 +147,9 @@ class OutfitterFirebaseService {
     required String newStatus,
   }) async {
     try {
-      await _firestore
-          .collection('outfitter/lodging')
-          .doc(lodgingId)
-          .update({'status': newStatus});
+      await _firestore.collection('outfitter/lodging').doc(lodgingId).update({
+        'status': newStatus,
+      });
       debugPrint('Lodging status updated: $lodgingId -> $newStatus');
     } catch (e) {
       debugPrint('Error updating lodging status: $e');
@@ -157,10 +162,9 @@ class OutfitterFirebaseService {
     required String newStatus,
   }) async {
     try {
-      await _firestore
-          .collection('outfitter/fleet')
-          .doc(vehicleId)
-          .update({'operationalStatus': newStatus});
+      await _firestore.collection('outfitter/fleet').doc(vehicleId).update({
+        'operationalStatus': newStatus,
+      });
       debugPrint('Fleet asset status updated: $vehicleId -> $newStatus');
     } catch (e) {
       debugPrint('Error toggling asset operational state: $e');
@@ -173,10 +177,9 @@ class OutfitterFirebaseService {
     required String newStatus,
   }) async {
     try {
-      await _firestore
-          .collection('outfitter/bookings')
-          .doc(bookingId)
-          .update({'status': newStatus});
+      await _firestore.collection('outfitter/bookings').doc(bookingId).update({
+        'status': newStatus,
+      });
       debugPrint('Booking status updated: $bookingId -> $newStatus');
     } catch (e) {
       debugPrint('Error updating booking status: $e');
@@ -189,10 +192,9 @@ class OutfitterFirebaseService {
     required int fuelPercentage,
   }) async {
     try {
-      await _firestore
-          .collection('outfitter/fleet')
-          .doc(vehicleId)
-          .update({'fuelLevelPercentage': fuelPercentage});
+      await _firestore.collection('outfitter/fleet').doc(vehicleId).update({
+        'fuelLevelPercentage': fuelPercentage,
+      });
       debugPrint('Fuel level updated: $vehicleId -> $fuelPercentage%');
     } catch (e) {
       debugPrint('Error updating fuel level: $e');

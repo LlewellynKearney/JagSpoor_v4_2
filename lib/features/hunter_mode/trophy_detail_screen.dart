@@ -88,11 +88,12 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
                   final result = await Navigator.push<Map<String, dynamic>>(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EditTrophyScreen(
-                        theme: widget.theme,
-                        trophy: widget.trophy,
-                        firearms: widget.firearms,
-                      ),
+                      builder:
+                          (context) => EditTrophyScreen(
+                            theme: widget.theme,
+                            trophy: widget.trophy,
+                            firearms: widget.firearms,
+                          ),
                     ),
                   );
 
@@ -143,9 +144,10 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
   }
 
   Widget _buildImageSection() {
-    final photos = (widget.trophy['photos'] as List<dynamic>?)
-        ?.map((e) => e.toString())
-        .toList();
+    final photos =
+        (widget.trophy['photos'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList();
 
     if (photos == null || photos.isEmpty) {
       return Container(
@@ -260,9 +262,9 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
   Widget _buildMeasurementsCard() {
     final hasMeasurements =
         (widget.trophy['antlerSpread'] != null ||
-        widget.trophy['antlerLength'] != null ||
-        widget.trophy['antlerCircumference'] != null ||
-        widget.trophy['weight'] != null);
+            widget.trophy['antlerLength'] != null ||
+            widget.trophy['antlerCircumference'] != null ||
+            widget.trophy['weight'] != null);
 
     if (!hasMeasurements) {
       return const SizedBox.shrink();
@@ -379,9 +381,10 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
   }
 
   Widget _buildTagsSection() {
-    final tags = (widget.trophy['tags'] as List<dynamic>?)
-        ?.map((e) => e.toString())
-        .toList();
+    final tags =
+        (widget.trophy['tags'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList();
     if (tags == null || tags.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -400,31 +403,34 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: tags
-              .map(
-                (tag) => Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.theme.accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: widget.theme.accentColor.withValues(alpha: 0.3),
+          children:
+              tags
+                  .map(
+                    (tag) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: widget.theme.accentColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: widget.theme.accentColor.withValues(
+                            alpha: 0.3,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        tag,
+                        style: TextStyle(
+                          color: widget.theme.accentColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    tag,
-                    style: TextStyle(
-                      color: widget.theme.accentColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
+                  )
+                  .toList(),
         ),
       ],
     );

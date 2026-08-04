@@ -4,20 +4,20 @@ import '../../../outfitter_mode/data/services/outfitter_sync_service.dart';
 
 /// A lightweight widget that consumes stream-driven OutfitterSyncService status alerts.
 /// Displays a sync indicator showing pending record count.
-/// 
+///
 /// When unsynced items remain (isDirty == 1), renders a status block in
 /// Thermal Glow text highlighting the pending count.
 /// Triggers a smooth green fade once synced.
 class SignalHudWidget extends StatefulWidget {
   /// The sync service to consume status from.
   final OutfitterSyncService syncService;
-  
+
   /// Whether to show a static header block (true) or inline widget (false).
   final bool isHeaderBlock;
-  
+
   /// Callback when sync is complete.
   final VoidCallback? onSynced;
-  
+
   /// Callback when user taps sync button.
   final VoidCallback? onSyncRequested;
 
@@ -39,7 +39,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
   int _pendingCount = 0;
   bool _isSyncing = false;
   bool _justSynced = false;
-  
+
   // Animation controller for fade effect
   late AnimationController _fadeController;
   late Animation<Color?> _fadeAnimation;
@@ -47,21 +47,18 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animation controller
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
+
     _fadeAnimation = ColorTween(
       begin: const Color(0xFF4CAF50), // Green
       end: const Color(0xFFC5A059), // Thermal Glow
-    ).animate(CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    ));
-    
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
+
     // Subscribe to sync status stream
     _subscription = widget.syncService.dirtyCountStream.listen((count) {
       setState(() {
@@ -74,7 +71,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         }
       });
     });
-    
+
     // Initial status check
     widget.syncService.checkSyncStatus();
   }
@@ -88,9 +85,9 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
 
   Future<void> _handleSync() async {
     if (_isSyncing) return;
-    
+
     setState(() => _isSyncing = true);
-    
+
     try {
       await widget.syncService.syncAll();
       widget.onSyncRequested?.call();
@@ -104,11 +101,11 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
   @override
   Widget build(BuildContext context) {
     final hasPending = _pendingCount > 0;
-    
+
     if (widget.isHeaderBlock) {
       return _buildHeaderBlock(hasPending);
     }
-    
+
     return _buildInlineWidget(hasPending);
   }
 
@@ -117,14 +114,16 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: hasPending
-            ? const Color(0xFF8B4513).withValues(alpha: 0.4)
-            : const Color(0xFF1A1A1A).withValues(alpha: 0.8),
+        color:
+            hasPending
+                ? const Color(0xFF8B4513).withValues(alpha: 0.4)
+                : const Color(0xFF1A1A1A).withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasPending
-              ? const Color(0xFFC5A059)
-              : const Color(0xFFC5A059).withValues(alpha: 0.3),
+          color:
+              hasPending
+                  ? const Color(0xFFC5A059)
+                  : const Color(0xFFC5A059).withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -134,10 +133,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
           _buildSyncIcon(hasPending),
           const SizedBox(width: 8),
           _buildStatusText(hasPending),
-          if (hasPending) ...[
-            const SizedBox(width: 12),
-            _buildSyncButton(),
-          ],
+          if (hasPending) ...[const SizedBox(width: 12), _buildSyncButton()],
         ],
       ),
     );
@@ -150,10 +146,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         _buildSyncIcon(hasPending),
         const SizedBox(width: 8),
         _buildStatusText(hasPending),
-        if (hasPending) ...[
-          const SizedBox(width: 8),
-          _buildSyncButton(),
-        ],
+        if (hasPending) ...[const SizedBox(width: 8), _buildSyncButton()],
       ],
     );
   }
@@ -169,7 +162,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         ),
       );
     }
-    
+
     if (_justSynced) {
       return AnimatedBuilder(
         animation: _fadeAnimation,
@@ -182,20 +175,12 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         },
       );
     }
-    
+
     if (hasPending) {
-      return const Icon(
-        Icons.cloud_off,
-        size: 18,
-        color: Color(0xFFC5A059),
-      );
+      return const Icon(Icons.cloud_off, size: 18, color: Color(0xFFC5A059));
     }
-    
-    return const Icon(
-      Icons.cloud_done,
-      size: 18,
-      color: Color(0xFFC5A059),
-    );
+
+    return const Icon(Icons.cloud_done, size: 18, color: Color(0xFFC5A059));
   }
 
   Widget _buildStatusText(bool hasPending) {
@@ -215,7 +200,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         },
       );
     }
-    
+
     if (hasPending) {
       return Text(
         '⚠️ [$_pendingCount RECORD${_pendingCount > 1 ? 'S' : ''} PENDING SYNC]',
@@ -227,7 +212,7 @@ class _SignalHudWidgetState extends State<SignalHudWidget>
         ),
       );
     }
-    
+
     return const Text(
       'ALL SYNCED',
       style: TextStyle(
@@ -283,11 +268,7 @@ class SignalHudIcon extends StatelessWidget {
   final OutfitterSyncService syncService;
   final VoidCallback? onTap;
 
-  const SignalHudIcon({
-    super.key,
-    required this.syncService,
-    this.onTap,
-  });
+  const SignalHudIcon({super.key, required this.syncService, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +278,7 @@ class SignalHudIcon extends StatelessWidget {
       builder: (context, snapshot) {
         final count = snapshot.data ?? 0;
         final hasPending = count > 0;
-        
+
         return IconButton(
           icon: Stack(
             clipBehavior: Clip.none,
@@ -334,9 +315,10 @@ class SignalHudIcon extends StatelessWidget {
             ],
           ),
           onPressed: onTap,
-          tooltip: hasPending
-              ? '$count record${count > 1 ? 's' : ''} pending sync'
-              : 'All synced',
+          tooltip:
+              hasPending
+                  ? '$count record${count > 1 ? 's' : ''} pending sync'
+                  : 'All synced',
         );
       },
     );

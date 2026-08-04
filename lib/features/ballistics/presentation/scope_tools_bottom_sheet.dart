@@ -19,14 +19,14 @@ class ScopeToolsBottomSheet extends StatefulWidget {
 class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   // Inventory Bridge for firearm and ammunition data
   final InventoryBridge _inventoryBridge = InventoryBridge();
-  
+
   // Persistent stream references - initialized once in initState to prevent rebuild loops
   late Stream<List<RifleProfile>> _firearmsStream;
   Stream<List<AmmoProfile>>? _ammunitionStream;
-  
+
   // State variables
   String? _selectedRifleId;
   String? _selectedAmmoId;
@@ -55,7 +55,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   // Gyroscope sensor state (v20.1)
   StreamSubscription<AccelerometerEvent>? _gyroLevelerSubscription;
   bool _isLiveGyroRadarActive = false;
-  
+
   // AI target scanner settings
   double _targetDistance = 100.0; // meters
   String _scopeUnitType = 'MOA';
@@ -95,7 +95,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
   void _onRifleSelected(String? rifleId) {
     if (rifleId == null) return;
-    
+
     // Create new ammunition stream for the selected rifle
     // This is assigned in setState to trigger a rebuild with the new stream
     setState(() {
@@ -107,8 +107,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
   void _updateRifleFromSnapshots(List<RifleProfile> rifles) {
     if (_selectedRifleId == null) return;
-    
-    final selectedRifle = rifles.where((r) => r.id == _selectedRifleId).firstOrNull;
+
+    final selectedRifle =
+        rifles.where((r) => r.id == _selectedRifleId).firstOrNull;
     if (selectedRifle != null && selectedRifle.id != _selectedRifle?.id) {
       setState(() {
         _selectedRifle = selectedRifle;
@@ -142,15 +143,15 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           //   - event.x: lateral acceleration (left/right tilt)
           //   - event.z: vertical acceleration (forward/backward tilt)
           final double calculatedPitch = atan2(-event.x, event.z) * 180.0 / pi;
-          
+
           // Clamp values securely between -45.0 and 45.0 to filter mechanical tracking spikes
           final double clampedPitch = calculatedPitch.clamp(-45.0, 45.0);
-          
+
           // Map live sensor reading directly to barrel angle variable
           setState(() {
             _barrelAngle = clampedPitch;
           });
-          
+
           // Recalculate gyro values with live sensor data
           _updateGyroCalculation();
         },
@@ -158,22 +159,26 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           debugPrint('Gyroscope sensor error: $error');
         },
       );
-      
+
       setState(() {
         _isLiveGyroRadarActive = true;
       });
-      
-      debugPrint('Gyro radar leveler activated - hardware accelerometer streaming');
+
+      debugPrint(
+        'Gyro radar leveler activated - hardware accelerometer streaming',
+      );
     } else {
       // Cancel the subscription to eliminate battery drain in the field
       _gyroLevelerSubscription?.cancel();
       _gyroLevelerSubscription = null;
-      
+
       setState(() {
         _isLiveGyroRadarActive = false;
       });
-      
-      debugPrint('Gyro radar leveler deactivated - hardware accelerometer stream stopped');
+
+      debugPrint(
+        'Gyro radar leveler deactivated - hardware accelerometer stream stopped',
+      );
     }
   }
 
@@ -182,7 +187,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       targetDistanceMeters: _targetDistance,
     );
     final center = ScopeCalculator.calculateGroupCenter(scanData);
-    
+
     final correction = ScopeCalculator.calculateMoaTargetCorrection(
       deviationX_cm: center['x']!,
       deviationY_cm: center['y']!,
@@ -257,9 +262,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Tab Bar
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -280,7 +285,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 dividerColor: Colors.transparent,
                 labelColor: Colors.black,
                 unselectedLabelColor: const Color(0xFFC5A059),
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
                 tabs: const [
                   Tab(text: 'SCOPE CONFIG'),
                   Tab(text: '🔄 GYRO LEVELER'),
@@ -288,7 +296,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 ],
               ),
             ),
-            
+
             // Inventory Selectors with Reactive Streams
             Padding(
               padding: const EdgeInsets.all(20),
@@ -309,7 +317,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                               items: [],
                               onChanged: null,
                               isLoading: false,
-                              errorMessage: riflesSnapshot.error?.toString() ?? 'Unknown Error',
+                              errorMessage:
+                                  riflesSnapshot.error?.toString() ??
+                                  'Unknown Error',
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -323,9 +333,11 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           ],
                         );
                       }
-                      
+
                       // Handle loading and no data states
-                      if (!riflesSnapshot.hasData || riflesSnapshot.connectionState == ConnectionState.waiting) {
+                      if (!riflesSnapshot.hasData ||
+                          riflesSnapshot.connectionState ==
+                              ConnectionState.waiting) {
                         return _buildInventoryDropdown(
                           label: 'Select Weapon from Safe',
                           value: null,
@@ -334,23 +346,25 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           isLoading: true,
                         );
                       }
-                      
+
                       final rifles = riflesSnapshot.data ?? [];
-                      
+
                       // Filter out demo/seeded rifles - only show user's real registered firearms
-                      final userRifles = rifles.where((r) {
-                        final serial = r.serialNumber?.toUpperCase() ?? '';
-                        // Exclude demo rifles with TIKKA-, SAKO- prefixes
-                        if (serial.startsWith('TIKKA-') || serial.startsWith('SAKO-')) {
-                          return false;
-                        }
-                        // Exclude rifles with "Unknown" in the name
-                        if (r.name.toLowerCase().contains('unknown')) {
-                          return false;
-                        }
-                        return true;
-                      }).toList();
-                      
+                      final userRifles =
+                          rifles.where((r) {
+                            final serial = r.serialNumber?.toUpperCase() ?? '';
+                            // Exclude demo rifles with TIKKA-, SAKO- prefixes
+                            if (serial.startsWith('TIKKA-') ||
+                                serial.startsWith('SAKO-')) {
+                              return false;
+                            }
+                            // Exclude rifles with "Unknown" in the name
+                            if (r.name.toLowerCase().contains('unknown')) {
+                              return false;
+                            }
+                            return true;
+                          }).toList();
+
                       // Update selected rifle when stream data changes
                       if (userRifles.isNotEmpty) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -358,25 +372,31 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           _updateRifleFromSnapshots(rifles);
                         });
                       }
-                      
+
                       return _buildInventoryDropdown(
                         label: 'Select Weapon from Safe',
                         value: _selectedRifleId,
-                        items: userRifles.map((r) => DropdownMenuItem(
-                          value: r.id,
-                          child: Text('${r.name} (${r.caliber})'),
-                        )).toList(),
+                        items:
+                            userRifles
+                                .map(
+                                  (r) => DropdownMenuItem(
+                                    value: r.id,
+                                    child: Text('${r.name} (${r.caliber})'),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (id) {
                           if (!context.mounted) return;
                           _onRifleSelected(id);
                         },
                         isLoading: false,
-                        onSeedRequested: null, // Disabled - only show real user firearms
+                        onSeedRequested:
+                            null, // Disabled - only show real user firearms
                       );
                     },
                   ),
                   const SizedBox(height: 12),
-                  
+
                   // Ammunition Stream Dropdown - uses persistent _ammunitionStream reference
                   StreamBuilder<List<AmmoProfile>>(
                     stream: _ammunitionStream ?? Stream.value([]),
@@ -392,7 +412,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                               items: [],
                               onChanged: null,
                               isLoading: false,
-                              errorMessage: ammoSnapshot.error?.toString() ?? 'Unknown Error',
+                              errorMessage:
+                                  ammoSnapshot.error?.toString() ??
+                                  'Unknown Error',
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -406,9 +428,11 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           ],
                         );
                       }
-                      
+
                       // Handle loading and no data states
-                      if (!ammoSnapshot.hasData || ammoSnapshot.connectionState == ConnectionState.waiting) {
+                      if (!ammoSnapshot.hasData ||
+                          ammoSnapshot.connectionState ==
+                              ConnectionState.waiting) {
                         return _buildInventoryDropdown(
                           label: 'Select Loaded Ammunition',
                           value: null,
@@ -417,16 +441,23 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           isLoading: true,
                         );
                       }
-                      
+
                       final ammoList = ammoSnapshot.data ?? [];
-                      
+
                       return _buildInventoryDropdown(
                         label: 'Select Loaded Ammunition',
                         value: _selectedAmmoId,
-                        items: ammoList.map((a) => DropdownMenuItem(
-                          value: a.id,
-                          child: Text('${a.bulletWeightGrains}gr (${a.remainingStockCount} remaining)'),
-                        )).toList(),
+                        items:
+                            ammoList
+                                .map(
+                                  (a) => DropdownMenuItem(
+                                    value: a.id,
+                                    child: Text(
+                                      '${a.bulletWeightGrains}gr (${a.remainingStockCount} remaining)',
+                                    ),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (id) {
                           if (!context.mounted) return;
                           _onAmmoSelected(id);
@@ -438,7 +469,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 ],
               ),
             ),
-            
+
             // Tab Views
             Expanded(
               child: TabBarView(
@@ -450,7 +481,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 ],
               ),
             ),
-            
+
             // Footer Action Buttons
             _buildFooterButtons(),
           ],
@@ -487,46 +518,51 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             color: const Color(0xFF8B4513).withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: errorMessage != null 
-                  ? const Color(0xFFB22222).withValues(alpha: 0.5)
-                  : const Color(0xFFC5A059).withValues(alpha: 0.3),
+              color:
+                  errorMessage != null
+                      ? const Color(0xFFB22222).withValues(alpha: 0.5)
+                      : const Color(0xFFC5A059).withValues(alpha: 0.3),
             ),
           ),
-          child: isLoading
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFFC5A059),
+          child:
+              isLoading
+                  ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFC5A059),
+                        ),
                       ),
                     ),
-                  ),
-                )
-              : errorMessage != null
+                  )
+                  : errorMessage != null
                   ? Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        errorMessage,
-                        style: const TextStyle(color: Color(0xFFC5A059)),
-                      ),
-                    )
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      errorMessage,
+                      style: const TextStyle(color: Color(0xFFC5A059)),
+                    ),
+                  )
                   : items.isEmpty
-                      ? _buildSeedButton(onSeedRequested)
-                      : DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: value,
-                            isExpanded: true,
-                            dropdownColor: const Color(0xFF2A2A2A),
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                            hint: const Text('No items available', style: TextStyle(color: Colors.grey)),
-                            items: items,
-                            onChanged: onChanged,
-                          ),
-                        ),
+                  ? _buildSeedButton(onSeedRequested)
+                  : DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: value,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF2A2A2A),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      hint: const Text(
+                        'No items available',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      items: items,
+                      onChanged: onChanged,
+                    ),
+                  ),
         ),
       ],
     );
@@ -539,7 +575,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         child: Text('No data available', style: TextStyle(color: Colors.grey)),
       );
     }
-    
+
     return InkWell(
       onTap: onSeedRequested,
       borderRadius: BorderRadius.circular(6),
@@ -571,7 +607,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
   Future<void> _seedDefaultVaultHardware(BuildContext context) async {
     if (!context.mounted) return;
-    
+
     // Show loading indicator
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -580,7 +616,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         duration: Duration(seconds: 2),
       ),
     );
-    
+
     try {
       // Add default rifles
       final tikkaRifle = RifleProfile(
@@ -597,12 +633,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         scopeClickValue: 0.25,
         serialNumber: 'SAKO-2024-001',
       );
-      
+
       final tikkaId = await _inventoryBridge.addRifleToSafe(tikkaRifle);
       final sakoId = await _inventoryBridge.addRifleToSafe(sakoRifle);
-      
+
       if (!context.mounted) return;
-      
+
       // Add default ammunition for each rifle
       if (tikkaId != null) {
         final tikkaAmmo = AmmoProfile(
@@ -615,7 +651,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         );
         await _inventoryBridge.addAmmunition(tikkaAmmo);
       }
-      
+
       if (sakoId != null) {
         final sakoAmmo = AmmoProfile(
           id: '',
@@ -627,9 +663,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         );
         await _inventoryBridge.addAmmunition(sakoAmmo);
       }
-      
+
       if (!context.mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Default vault hardware seeded successfully!'),
@@ -651,8 +687,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildScopeConfigTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 
-            MediaQuery.of(context).padding.bottom + 16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom +
+            16,
         left: 20,
         right: 20,
       ),
@@ -678,12 +716,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 isExpanded: true,
                 dropdownColor: const Color(0xFF2A2A2A),
                 style: const TextStyle(color: Colors.white),
-                items: _reticleTypes.map((type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
+                items:
+                    _reticleTypes.map((type) {
+                      return DropdownMenuItem(value: type, child: Text(type));
+                    }).toList(),
                 onChanged: (value) {
                   if (!context.mounted) return;
                   setState(() => _selectedReticle = value!);
@@ -844,8 +880,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildGyroLevelerTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 
-            MediaQuery.of(context).padding.bottom + 16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom +
+            16,
         left: 20,
         right: 20,
       ),
@@ -859,10 +897,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: const Color(0xFF8B4513).withValues(alpha: 0.3),
-              border: Border.all(
-                color: const Color(0xFFC5A059),
-                width: 3,
-              ),
+              border: Border.all(color: const Color(0xFFC5A059), width: 3),
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFFC5A059).withValues(alpha: 0.3),
@@ -886,9 +921,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     width: 160,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: _barrelAngle.abs() < 1
-                          ? const Color(0xFFC5A059)
-                          : (_barrelAngle > 0 ? Colors.green : Colors.red),
+                      color:
+                          _barrelAngle.abs() < 1
+                              ? const Color(0xFFC5A059)
+                              : (_barrelAngle > 0 ? Colors.green : Colors.red),
                       borderRadius: BorderRadius.circular(4),
                       boxShadow: [
                         BoxShadow(
@@ -906,20 +942,21 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   height: 24,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _barrelAngle.abs() < 1
-                        ? const Color(0xFFC5A059)
-                        : Colors.grey,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2,
-                    ),
+                    color:
+                        _barrelAngle.abs() < 1
+                            ? const Color(0xFFC5A059)
+                            : Colors.grey,
+                    border: Border.all(color: Colors.white, width: 2),
                   ),
                 ),
                 // Angle text
                 Positioned(
                   top: 20,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(8),
@@ -944,14 +981,16 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: _isLiveGyroRadarActive 
-                  ? Colors.green.withValues(alpha: 0.2)
-                  : const Color(0xFF8B4513).withValues(alpha: 0.2),
+              color:
+                  _isLiveGyroRadarActive
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : const Color(0xFF8B4513).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _isLiveGyroRadarActive
-                    ? Colors.green
-                    : const Color(0xFFC5A059).withValues(alpha: 0.3),
+                color:
+                    _isLiveGyroRadarActive
+                        ? Colors.green
+                        : const Color(0xFFC5A059).withValues(alpha: 0.3),
                 width: 2,
               ),
             ),
@@ -961,8 +1000,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   title: Row(
                     children: [
                       Icon(
-                        _isLiveGyroRadarActive 
-                            ? Icons.sensors 
+                        _isLiveGyroRadarActive
+                            ? Icons.sensors
                             : Icons.sensors_off,
                         color: const Color(0xFFC5A059),
                         size: 24,
@@ -981,41 +1020,46 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                       ),
                     ],
                   ),
-                  subtitle: _isLiveGyroRadarActive
-                      ? const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Row(
-                            children: [
-                              Icon(Icons.warning_amber, 
-                                   color: Colors.amber, 
-                                   size: 16),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '⚠️ HARDWARE GYRO ACTIVE • PLACE FLAT ON BARREL CHASSIS',
-                                  style: TextStyle(
-                                    color: Colors.amber,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
+                  subtitle:
+                      _isLiveGyroRadarActive
+                          ? const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber,
+                                  color: Colors.amber,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '⚠️ HARDWARE GYRO ACTIVE • PLACE FLAT ON BARREL CHASSIS',
+                                    style: TextStyle(
+                                      color: Colors.amber,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
+                              ],
+                            ),
+                          )
+                          : const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Uses built-in accelerometer for real-time pitch detection',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
                               ),
-                            ],
-                          ),
-                        )
-                      : const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            'Uses built-in accelerometer for real-time pitch detection',
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 11,
                             ),
                           ),
-                        ),
                   value: _isLiveGyroRadarActive,
                   activeThumbColor: const Color(0xFFC5A059),
-                  activeTrackColor: const Color(0xFFC5A059).withValues(alpha: 0.5),
+                  activeTrackColor: const Color(
+                    0xFFC5A059,
+                  ).withValues(alpha: 0.5),
                   inactiveThumbColor: Colors.grey,
                   inactiveTrackColor: Colors.grey.withValues(alpha: 0.3),
                   onChanged: _toggleLiveGyroLeveler,
@@ -1108,12 +1152,21 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _buildCalcRow('True Horizontal', '${_gyroResult!.trueHorizontalDistance.toStringAsFixed(1)} m'),
+                  _buildCalcRow(
+                    'True Horizontal',
+                    '${_gyroResult!.trueHorizontalDistance.toStringAsFixed(1)} m',
+                  ),
                   _buildCalcRow('Direction', _gyroResult!.direction),
-                  _buildCalcRow('Click Adjustment', '${_gyroResult!.clickUnits.toStringAsFixed(1)} clicks'),
+                  _buildCalcRow(
+                    'Click Adjustment',
+                    '${_gyroResult!.clickUnits.toStringAsFixed(1)} clicks',
+                  ),
                   const Divider(color: Color(0xFFC5A059), height: 20),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF8B4513),
                       borderRadius: BorderRadius.circular(8),
@@ -1141,8 +1194,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildAiScannerTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 
-            MediaQuery.of(context).padding.bottom + 16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom +
+            16,
         left: 20,
         right: 20,
       ),
@@ -1156,10 +1211,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             decoration: BoxDecoration(
               color: Colors.black,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFC5A059),
-                width: 2,
-              ),
+              border: Border.all(color: const Color(0xFFC5A059), width: 2),
             ),
             child: Stack(
               children: [
@@ -1189,11 +1241,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   ),
                 ),
                 // Corner brackets
-                Positioned(
-                  top: 10,
-                  left: 10,
-                  child: _buildCornerBracket(),
-                ),
+                Positioned(top: 10, left: 10, child: _buildCornerBracket()),
                 Positioned(
                   top: 10,
                   right: 10,
@@ -1299,7 +1347,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                           setState(() => _scopeUnitType = v.first);
                         },
                         style: ButtonStyle(
-                          backgroundColor: WidgetStateProperty.resolveWith((states) {
+                          backgroundColor: WidgetStateProperty.resolveWith((
+                            states,
+                          ) {
                             if (states.contains(WidgetState.selected)) {
                               return const Color(0xFFC5A059);
                             }
@@ -1342,14 +1392,23 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   ),
                   const SizedBox(height: 12),
                   if (_groupCenter != null) ...[
-                    _buildCalcRow('Group Center X', '${_groupCenter!['x']!.toStringAsFixed(2)} cm'),
-                    _buildCalcRow('Group Center Y', '${_groupCenter!['y']!.toStringAsFixed(2)} cm'),
+                    _buildCalcRow(
+                      'Group Center X',
+                      '${_groupCenter!['x']!.toStringAsFixed(2)} cm',
+                    ),
+                    _buildCalcRow(
+                      'Group Center Y',
+                      '${_groupCenter!['y']!.toStringAsFixed(2)} cm',
+                    ),
                     _buildCalcRow('Shot Count', '${_scanData.length}'),
                   ],
                   const Divider(color: Color(0xFFC5A059), height: 20),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF8B4513),
                       borderRadius: BorderRadius.circular(8),
@@ -1375,7 +1434,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Color(0xFFC5A059)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
               onPressed: _runTargetScan,
               icon: const Icon(Icons.refresh, color: Color(0xFFC5A059)),
@@ -1407,8 +1469,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildFooterButtons() {
     return Container(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 
-            MediaQuery.of(context).padding.bottom + 16,
+        bottom:
+            MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom +
+            16,
         left: 20,
         right: 20,
         top: 12,
@@ -1433,10 +1497,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 if (!context.mounted) return;
                 Navigator.of(context).pop();
               },
-              child: const Text(
-                'CANCEL',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
             ),
           ),
           const SizedBox(width: 12),
@@ -1570,41 +1631,43 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 class _GyroCrosshairPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFC5A059).withValues(alpha: 0.5)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
+    final paint =
+        Paint()
+          ..color = const Color(0xFFC5A059).withValues(alpha: 0.5)
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke;
 
     final center = Offset(size.width / 2, size.height / 2);
-    
+
     // Horizontal line
     canvas.drawLine(
       Offset(20, center.dy),
       Offset(size.width - 20, center.dy),
       paint,
     );
-    
+
     // Vertical line
     canvas.drawLine(
       Offset(center.dx, 20),
       Offset(center.dx, size.height - 20),
       paint,
     );
-    
+
     // Inner circle
     canvas.drawCircle(center, 60, paint);
-    
+
     // Degree markers
-    final markerPaint = Paint()
-      ..color = const Color(0xFFC5A059)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    
+    final markerPaint =
+        Paint()
+          ..color = const Color(0xFFC5A059)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
+
     for (int i = -45; i <= 45; i += 15) {
       final angle = i * pi / 180.0;
       final innerRadius = 80.0;
       final outerRadius = 90.0;
-      
+
       final start = Offset(
         center.dx + innerRadius * sin(angle),
         center.dy - innerRadius * cos(angle),
@@ -1613,7 +1676,7 @@ class _GyroCrosshairPainter extends CustomPainter {
         center.dx + outerRadius * sin(angle),
         center.dy - outerRadius * cos(angle),
       );
-      
+
       canvas.drawLine(start, end, markerPaint);
     }
   }
@@ -1626,17 +1689,18 @@ class _GyroCrosshairPainter extends CustomPainter {
 class _ScannerGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFC5A059).withValues(alpha: 0.2)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
+    final paint =
+        Paint()
+          ..color = const Color(0xFFC5A059).withValues(alpha: 0.2)
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke;
 
     // Vertical lines
     for (int i = 1; i < 4; i++) {
       final x = size.width * i / 4;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    
+
     // Horizontal lines
     for (int i = 1; i < 4; i++) {
       final y = size.height * i / 4;
@@ -1662,41 +1726,37 @@ class _ShotGroupPainter extends CustomPainter {
     final scale = 10.0; // pixels per cm
 
     // Draw hit markers
-    final hitPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
+    final hitPaint =
+        Paint()
+          ..color = Colors.red
+          ..style = PaintingStyle.fill;
 
     for (final hit in hits) {
       final x = centerX + (hit['x'] ?? 0) * scale;
-      final y = centerY - (hit['y'] ?? 0) * scale; // Invert Y for screen coordinates
+      final y =
+          centerY - (hit['y'] ?? 0) * scale; // Invert Y for screen coordinates
       canvas.drawCircle(Offset(x, y), 4, hitPaint);
     }
 
     // Draw center marker
-    final centerPaint = Paint()
-      ..color = const Color(0xFFC5A059)
-      ..style = PaintingStyle.fill;
+    final centerPaint =
+        Paint()
+          ..color = const Color(0xFFC5A059)
+          ..style = PaintingStyle.fill;
 
     final cx = centerX + (center['x'] ?? 0) * scale;
     final cy = centerY - (center['y'] ?? 0) * scale;
     canvas.drawCircle(Offset(cx, cy), 6, centerPaint);
 
     // Draw crosshair at group center
-    final crosshairPaint = Paint()
-      ..color = const Color(0xFFC5A059)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    final crosshairPaint =
+        Paint()
+          ..color = const Color(0xFFC5A059)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
 
-    canvas.drawLine(
-      Offset(cx - 15, cy),
-      Offset(cx + 15, cy),
-      crosshairPaint,
-    );
-    canvas.drawLine(
-      Offset(cx, cy - 15),
-      Offset(cx, cy + 15),
-      crosshairPaint,
-    );
+    canvas.drawLine(Offset(cx - 15, cy), Offset(cx + 15, cy), crosshairPaint);
+    canvas.drawLine(Offset(cx, cy - 15), Offset(cx, cy + 15), crosshairPaint);
   }
 
   @override

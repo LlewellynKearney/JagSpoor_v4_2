@@ -89,7 +89,8 @@ class _BugReportModalState extends State<BugReportModal> {
         bottom: true,
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom +
+            bottom:
+                MediaQuery.of(context).viewInsets.bottom +
                 MediaQuery.of(context).padding.bottom +
                 16,
             left: 20,
@@ -124,7 +125,10 @@ class _BugReportModalState extends State<BugReportModal> {
                         ),
                       ),
                       IconButton(
-                        icon: Icon(Icons.close, color: textColor.withValues(alpha: 0.6)),
+                        icon: Icon(
+                          Icons.close,
+                          color: textColor.withValues(alpha: 0.6),
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -168,22 +172,29 @@ class _BugReportModalState extends State<BugReportModal> {
                       style: TextStyle(color: primaryColor),
                       icon: Icon(Icons.arrow_drop_down, color: primaryColor),
                       decoration: InputDecoration(
-                        prefixIcon: Icon(Icons.warning_amber_rounded, color: primaryColor),
+                        prefixIcon: Icon(
+                          Icons.warning_amber_rounded,
+                          color: primaryColor,
+                        ),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
-                      items: _severityLevels.map((level) {
-                        return DropdownMenuItem<String>(
-                          value: level,
-                          child: Text(
-                            level,
-                            style: TextStyle(
-                              color: _getSeverityColor(level, primaryColor),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                      items:
+                          _severityLevels.map((level) {
+                            return DropdownMenuItem<String>(
+                              value: level,
+                              child: Text(
+                                level,
+                                style: TextStyle(
+                                  color: _getSeverityColor(level, primaryColor),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          }).toList(),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() => _selectedSeverity = value);
@@ -225,29 +236,30 @@ class _BugReportModalState extends State<BugReportModal> {
                       ),
                     ),
                     onPressed: _isSubmitting ? null : _submitBugReport,
-                    child: _isSubmitting
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.send_rounded),
-                              SizedBox(width: 8),
-                              Text(
-                                'Submit Bug Report',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
+                    child:
+                        _isSubmitting
+                            ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.onPrimary,
                               ),
-                            ],
-                          ),
+                            )
+                            : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.send_rounded),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Submit Bug Report',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -287,28 +299,19 @@ class _BugReportModalState extends State<BugReportModal> {
       fillColor: theme.cardColor,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor.withValues(alpha: 0.3),
-        ),
+        borderSide: BorderSide(color: primaryColor.withValues(alpha: 0.3)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor.withValues(alpha: 0.3),
-        ),
+        borderSide: BorderSide(color: primaryColor.withValues(alpha: 0.3)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor,
-          width: 2,
-        ),
+        borderSide: BorderSide(color: primaryColor, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Colors.red,
-        ),
+        borderSide: const BorderSide(color: Colors.red),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );

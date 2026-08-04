@@ -16,17 +16,18 @@ class AnimalRepository {
         .orderBy('sortOrder')
         .snapshots()
         .map(
-          (snapshot) => snapshot.docs
-              .map((doc) {
-                try {
-                  return Animal.fromFirestore(doc);
-                } catch (e) {
-                  debugPrint('Error parsing animal ${doc.id}: $e');
-                  return null;
-                }
-              })
-              .whereType<Animal>()
-              .toList(),
+          (snapshot) =>
+              snapshot.docs
+                  .map((doc) {
+                    try {
+                      return Animal.fromFirestore(doc);
+                    } catch (e) {
+                      debugPrint('Error parsing animal ${doc.id}: $e');
+                      return null;
+                    }
+                  })
+                  .whereType<Animal>()
+                  .toList(),
         );
   }
 }

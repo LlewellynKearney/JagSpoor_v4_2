@@ -23,7 +23,8 @@ class CarcassLogManager {
       'fieldWeightKg': fieldWeight,
       'hangingWeightKg': hangingWeight,
       'coldStoragePosition': coldStoragePosition,
-      'status': 'Hanging', // Workflow states: Hanging -> Skinning -> Processing -> Dispatched
+      'status':
+          'Hanging', // Workflow states: Hanging -> Skinning -> Processing -> Dispatched
       'timestamp': FieldValue.serverTimestamp(),
     };
 

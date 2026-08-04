@@ -36,13 +36,14 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
       ),
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
-          stream: _currentUserId != null
-              ? FirebaseFirestore.instance
-                  .collection('firearms')
-                  .where('ownerId', isEqualTo: _currentUserId)
-                  .orderBy('createdAt', descending: true)
-                  .snapshots()
-              : const Stream.empty(),
+          stream:
+              _currentUserId != null
+                  ? FirebaseFirestore.instance
+                      .collection('firearms')
+                      .where('ownerId', isEqualTo: _currentUserId)
+                      .orderBy('createdAt', descending: true)
+                      .snapshots()
+                  : const Stream.empty(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(
@@ -70,7 +71,11 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.shield_outlined, size: 64, color: theme.subtitleColor),
+                      Icon(
+                        Icons.shield_outlined,
+                        size: 64,
+                        color: theme.subtitleColor,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'NO FIREARMS IN SAFE',
@@ -113,7 +118,10 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
                     ),
                   ),
                   child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     title: Text(
                       '$make $model',
                       style: TextStyle(
@@ -126,7 +134,11 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
                       'Caliber: $caliber',
                       style: TextStyle(color: theme.subtitleColor),
                     ),
-                    trailing: Icon(Icons.arrow_forward_ios_rounded, color: theme.accentColor, size: 18),
+                    trailing: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: theme.accentColor,
+                      size: 18,
+                    ),
                     onTap: () {
                       final firearmEntity = <String, String>{
                         'docId': doc.id,
@@ -135,10 +147,11 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AmmunitionTypeSelectionScreen(
-                            theme: theme,
-                            firearm: firearmEntity,
-                          ),
+                          builder:
+                              (context) => AmmunitionTypeSelectionScreen(
+                                theme: theme,
+                                firearm: firearmEntity,
+                              ),
                         ),
                       );
                     },

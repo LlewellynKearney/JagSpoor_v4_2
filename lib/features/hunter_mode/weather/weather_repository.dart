@@ -34,20 +34,25 @@ class WeatherRepository {
     required double latitude,
     required double longitude,
   }) async {
-    final uri = Uri.parse('$_baseUrl/v1/forecast').replace(queryParameters: {
-      'latitude': latitude.toStringAsFixed(6),
-      'longitude': longitude.toStringAsFixed(6),
-      'current_weather': 'true',
-      // Request useful hourly fields and request windspeed in km/h for clarity
-      'hourly': 'relativehumidity_2m,surface_pressure,windgusts_10m,winddirection_10m',
-      'windspeed_unit': 'kmh',
-      'timezone': 'auto',
-    });
+    final uri = Uri.parse('$_baseUrl/v1/forecast').replace(
+      queryParameters: {
+        'latitude': latitude.toStringAsFixed(6),
+        'longitude': longitude.toStringAsFixed(6),
+        'current_weather': 'true',
+        // Request useful hourly fields and request windspeed in km/h for clarity
+        'hourly':
+            'relativehumidity_2m,surface_pressure,windgusts_10m,winddirection_10m',
+        'windspeed_unit': 'kmh',
+        'timezone': 'auto',
+      },
+    );
 
     final response = await http.get(uri).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
       // Surface debug info for easier troubleshooting
-      throw Exception('Weather fetch failed with status ${response.statusCode}: ${response.body}');
+      throw Exception(
+        'Weather fetch failed with status ${response.statusCode}: ${response.body}',
+      );
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;

@@ -7,13 +7,15 @@ class BatterySaverManager {
   Future<void> toggleBatterySaver(bool active) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_batterySaverKey, active);
-    
+
     if (active) {
       print('🔋 ENERGY CONSERVATION STATE ACTIVE: Polling throttled.');
       // ⚡ System Hooks: Throttle Bluetooth beacon intervals from 1s to 15s
       // ⚡ System Hooks: Scale back fine location updates to low latency coarse modes
     } else {
-      print('⚡ PERFORMANCE MODE ENGAGED: Real-time telemetry monitoring active.');
+      print(
+        '⚡ PERFORMANCE MODE ENGAGED: Real-time telemetry monitoring active.',
+      );
     }
   }
 

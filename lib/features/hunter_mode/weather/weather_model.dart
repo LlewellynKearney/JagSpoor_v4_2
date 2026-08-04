@@ -22,17 +22,31 @@ class WeatherModel {
   });
 
   factory WeatherModel.fromJson(Map<String, dynamic> json) {
-    final currentWeather = Map<String, dynamic>.from(json['current_weather'] as Map<String, dynamic>);
-    final hourly = Map<String, dynamic>.from(json['hourly'] as Map<String, dynamic>);
+    final currentWeather = Map<String, dynamic>.from(
+      json['current_weather'] as Map<String, dynamic>,
+    );
+    final hourly = Map<String, dynamic>.from(
+      json['hourly'] as Map<String, dynamic>,
+    );
 
     final currentTime = currentWeather['time'] as String? ?? '';
     final hourlyTimes = List<String>.from(hourly['time'] as List<dynamic>);
-    final timeIndex = hourlyTimes.indexOf(currentTime).clamp(0, hourlyTimes.length - 1);
+    final timeIndex = hourlyTimes
+        .indexOf(currentTime)
+        .clamp(0, hourlyTimes.length - 1);
 
-    final humidity = _doubleFromDynamic(_valueAt(hourly['relativehumidity_2m'] as List<dynamic>?, timeIndex));
-    final pressure = _doubleFromDynamic(_valueAt(hourly['surface_pressure'] as List<dynamic>?, timeIndex));
-    final gusts = _doubleFromDynamic(_valueAt(hourly['windgusts_10m'] as List<dynamic>?, timeIndex));
-    final windDir = _doubleFromDynamic(_valueAt(hourly['winddirection_10m'] as List<dynamic>?, timeIndex));
+    final humidity = _doubleFromDynamic(
+      _valueAt(hourly['relativehumidity_2m'] as List<dynamic>?, timeIndex),
+    );
+    final pressure = _doubleFromDynamic(
+      _valueAt(hourly['surface_pressure'] as List<dynamic>?, timeIndex),
+    );
+    final gusts = _doubleFromDynamic(
+      _valueAt(hourly['windgusts_10m'] as List<dynamic>?, timeIndex),
+    );
+    final windDir = _doubleFromDynamic(
+      _valueAt(hourly['winddirection_10m'] as List<dynamic>?, timeIndex),
+    );
 
     return WeatherModel(
       latitude: _doubleFromDynamic(json['latitude']),
@@ -69,5 +83,6 @@ class WeatherModel {
     return result == 0 ? 12 : result;
   }
 
-  String get windClockFace => '${windDirectionToClock(windDirectionDegrees)} o\'clock';
+  String get windClockFace =>
+      '${windDirectionToClock(windDirectionDegrees)} o\'clock';
 }

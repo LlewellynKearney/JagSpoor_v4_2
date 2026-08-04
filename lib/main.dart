@@ -29,18 +29,24 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
     );
 
     // Network connectivity listener - auto-syncs offline queue when connection restored
-    Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) async {
+    Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) async {
       if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        debugPrint('📶 Network link restored. Flushing offline cache data queue...');
-        final result = await OfflineSyncQueue.instance.processQueueWithInternet();
+        debugPrint(
+          '📶 Network link restored. Flushing offline cache data queue...',
+        );
+        final result =
+            await OfflineSyncQueue.instance.processQueueWithInternet();
         if (result.successCount > 0) {
-          debugPrint('✅ Synced ${result.successCount} pending actions directly to Firestore!');
+          debugPrint(
+            '✅ Synced ${result.successCount} pending actions directly to Firestore!',
+          );
         }
       }
     });
@@ -129,29 +135,31 @@ class JagspoorApp extends StatelessWidget {
             '/splash': (context) => SplashScreen(theme: themeController),
             '/': (context) => AuthScreen(themedata: themeController),
             '/role_selection': (context) => const RoleSelectionScreen(),
-            '/hunter_dashboard': (context) =>
-                HunterDashboard(theme: themeController),
-            '/outfitter_dashboard': (context) =>
-                OutfitterDashboard(theme: themeController),
-            '/scan_license': (context) =>
-                LicenseScannerScreen(theme: themeController),
-            '/add_firearm_form': (context) =>
-                AddFirearmManualForm(theme: themeController),
-            '/trophy_detail': (context) => TrophyDetailScreen(
-              theme: themeController,
-              trophy:
-                  ModalRoute.of(context)?.settings.arguments
-                      as Map<String, dynamic>? ??
-                  {},
-            ),
+            '/hunter_dashboard':
+                (context) => HunterDashboard(theme: themeController),
+            '/outfitter_dashboard':
+                (context) => OutfitterDashboard(theme: themeController),
+            '/scan_license':
+                (context) => LicenseScannerScreen(theme: themeController),
+            '/add_firearm_form':
+                (context) => AddFirearmManualForm(theme: themeController),
+            '/trophy_detail':
+                (context) => TrophyDetailScreen(
+                  theme: themeController,
+                  trophy:
+                      ModalRoute.of(context)?.settings.arguments
+                          as Map<String, dynamic>? ??
+                      {},
+                ),
             '/add_trophy': (context) => AddTrophyScreen(theme: themeController),
-            '/edit_trophy': (context) => EditTrophyScreen(
-              theme: themeController,
-              trophy:
-                  ModalRoute.of(context)?.settings.arguments
-                      as Map<String, dynamic>? ??
-                  {},
-            ),
+            '/edit_trophy':
+                (context) => EditTrophyScreen(
+                  theme: themeController,
+                  trophy:
+                      ModalRoute.of(context)?.settings.arguments
+                          as Map<String, dynamic>? ??
+                      {},
+                ),
           },
         );
       },

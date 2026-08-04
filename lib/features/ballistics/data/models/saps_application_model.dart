@@ -21,7 +21,9 @@ class SapsApplication {
     required this.lastChecked,
   });
 
-  factory SapsApplication.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory SapsApplication.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final data = doc.data();
     if (data == null) {
       debugPrint('SapsApplication document ${doc.id} has no data');
@@ -44,21 +46,22 @@ class SapsApplication {
       hunterId: (json['hunterId'] as String?) ?? '',
       referenceNumber: (json['referenceNumber'] as String?) ?? '',
       idNumber: (json['idNumber'] as String?) ?? '',
-      applicationType: (json['applicationType'] as String?) ?? 'Competency Certificate',
+      applicationType:
+          (json['applicationType'] as String?) ?? 'Competency Certificate',
       currentStatus: (json['currentStatus'] as String?) ?? 'Pending',
       lastChecked: _dateTimeOrDefault(json['lastChecked']),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'hunterId': hunterId,
-        'referenceNumber': referenceNumber,
-        'idNumber': idNumber,
-        'applicationType': applicationType,
-        'currentStatus': currentStatus,
-        'lastChecked': lastChecked.toIso8601String(),
-      };
+    'id': id,
+    'hunterId': hunterId,
+    'referenceNumber': referenceNumber,
+    'idNumber': idNumber,
+    'applicationType': applicationType,
+    'currentStatus': currentStatus,
+    'lastChecked': lastChecked.toIso8601String(),
+  };
 
   Map<String, dynamic> toFirestore() => toJson();
 

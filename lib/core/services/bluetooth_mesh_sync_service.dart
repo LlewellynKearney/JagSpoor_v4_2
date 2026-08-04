@@ -85,8 +85,8 @@ class PendingRecord {
 }
 
 /// Callback type for successful peer data reception.
-typedef OnMeshDataReceived = void Function(
-    MeshSyncPayload payload, bool isNewInsert);
+typedef OnMeshDataReceived =
+    void Function(MeshSyncPayload payload, bool isNewInsert);
 
 /// Callback type for mesh broadcast events.
 typedef OnMeshBroadcast = void Function(List<MeshSyncPayload> payloads);
@@ -97,7 +97,8 @@ class BluetoothMeshSyncService {
   static BluetoothMeshSyncService? _instance;
 
   final LocalDatabaseService _databaseService;
-  final _broadcastController = StreamController<List<MeshSyncPayload>>.broadcast();
+  final _broadcastController =
+      StreamController<List<MeshSyncPayload>>.broadcast();
   final _ingestionController = StreamController<MeshSyncPayload>.broadcast();
   final _peerCountController = StreamController<int>.broadcast();
 
@@ -122,7 +123,7 @@ class BluetoothMeshSyncService {
   ];
 
   BluetoothMeshSyncService._internal({LocalDatabaseService? databaseService})
-      : _databaseService = databaseService ?? LocalDatabaseService.instance;
+    : _databaseService = databaseService ?? LocalDatabaseService.instance;
 
   /// Gets the singleton instance of the BluetoothMeshSyncService.
   static BluetoothMeshSyncService get instance {
@@ -159,7 +160,8 @@ class BluetoothMeshSyncService {
 
     _isInitialized = true;
     debugPrint(
-        'BluetoothMeshSyncService: Initialized with device ID $_deviceId');
+      'BluetoothMeshSyncService: Initialized with device ID $_deviceId',
+    );
   }
 
   /// Retrieves or creates a persistent device identifier.
@@ -207,7 +209,8 @@ class BluetoothMeshSyncService {
     // Immediate initial broadcast
     broadcastLocalDirtyRecords();
     debugPrint(
-        'BluetoothMeshSyncService: Discovery polling started (interval: ${intervalSeconds}s)');
+      'BluetoothMeshSyncService: Discovery polling started (interval: ${intervalSeconds}s)',
+    );
   }
 
   /// Stops the discovery polling loop.
@@ -253,10 +256,13 @@ class BluetoothMeshSyncService {
         _broadcastController.add(payloads);
         _onBroadcast?.call(payloads);
         debugPrint(
-            'BluetoothMeshSyncService: Broadcast ${payloads.length} dirty records');
+          'BluetoothMeshSyncService: Broadcast ${payloads.length} dirty records',
+        );
       }
     } catch (e) {
-      debugPrint('BluetoothMeshSyncService: Error broadcasting dirty records: $e');
+      debugPrint(
+        'BluetoothMeshSyncService: Error broadcasting dirty records: $e',
+      );
     }
 
     return payloads;
@@ -264,7 +270,9 @@ class BluetoothMeshSyncService {
 
   /// Retrieves pending (dirty) records from a specific table.
   Future<List<PendingRecord>> _getPendingRecordsFromTable(
-      Database db, String tableName) async {
+    Database db,
+    String tableName,
+  ) async {
     final List<PendingRecord> records = [];
 
     try {
@@ -278,7 +286,8 @@ class BluetoothMeshSyncService {
         final recordIdIndex = row.keys.toList().indexOf('id');
         final int recordId;
 
-        if (recordIdIndex >= 0 && row.values.elementAt(recordIdIndex) is String) {
+        if (recordIdIndex >= 0 &&
+            row.values.elementAt(recordIdIndex) is String) {
           // Convert string ID to int hash for compatibility
           recordId = row.values.elementAt(recordIdIndex).hashCode;
         } else {
@@ -300,12 +309,14 @@ class BluetoothMeshSyncService {
         if (updatedAtIndex >= 0) {
           final updatedAt = row.values.elementAt(updatedAtIndex);
           if (updatedAt != null) {
-            lastModified = DateTime.tryParse(updatedAt.toString()) ?? DateTime.now();
+            lastModified =
+                DateTime.tryParse(updatedAt.toString()) ?? DateTime.now();
           }
         } else if (createdAtIndex >= 0) {
           final createdAt = row.values.elementAt(createdAtIndex);
           if (createdAt != null) {
-            lastModified = DateTime.tryParse(createdAt.toString()) ?? DateTime.now();
+            lastModified =
+                DateTime.tryParse(createdAt.toString()) ?? DateTime.now();
           }
         }
 
@@ -313,16 +324,19 @@ class BluetoothMeshSyncService {
         final recordData = Map<String, dynamic>.from(row);
         recordData.remove('isDirty');
 
-        records.add(PendingRecord(
-          tableName: tableName,
-          recordId: recordId,
-          data: recordData,
-          lastModified: lastModified,
-        ));
+        records.add(
+          PendingRecord(
+            tableName: tableName,
+            recordId: recordId,
+            data: recordData,
+            lastModified: lastModified,
+          ),
+        );
       }
     } catch (e) {
       debugPrint(
-          'BluetoothMeshSyncService: Error querying table $tableName: $e');
+        'BluetoothMeshSyncService: Error querying table $tableName: $e',
+      );
     }
 
     return records;
@@ -332,7 +346,8 @@ class BluetoothMeshSyncService {
   /// In production, this would interface with actual BLE stack.
   void _simulateBleAdvertisementPush(MeshSyncPayload payload) {
     debugPrint(
-        'BluetoothMeshSyncService: [BLE ADVERT] Sending packet for ${payload.targetTable} record ${payload.recordId}');
+      'BluetoothMeshSyncService: [BLE ADVERT] Sending packet for ${payload.targetTable} record ${payload.recordId}',
+    );
   }
 
   /// Processes an incoming mesh payload from a peer device.
@@ -344,7 +359,8 @@ class BluetoothMeshSyncService {
       // Skip own broadcasts (loop prevention)
       if (payload.senderDeviceId == _deviceId) {
         debugPrint(
-            'BluetoothMeshSyncService: Skipping own broadcast from $_deviceId');
+          'BluetoothMeshSyncService: Skipping own broadcast from $_deviceId',
+        );
         return false;
       }
 
@@ -352,7 +368,8 @@ class BluetoothMeshSyncService {
       final signature = _generateRecordSignature(payload);
       if (_receivedRecordSignatures.contains(signature)) {
         debugPrint(
-            'BluetoothMeshSyncService: Duplicate record detected, ignoring');
+          'BluetoothMeshSyncService: Duplicate record detected, ignoring',
+        );
         return false;
       }
 
@@ -373,12 +390,14 @@ class BluetoothMeshSyncService {
       _incrementPeerCount();
 
       debugPrint(
-          'BluetoothMeshSyncService: Received payload for ${payload.targetTable} record ${payload.recordId}');
+        'BluetoothMeshSyncService: Received payload for ${payload.targetTable} record ${payload.recordId}',
+      );
 
       return true;
     } catch (e) {
       debugPrint(
-          'BluetoothMeshSyncService: Error processing incoming payload: $e');
+        'BluetoothMeshSyncService: Error processing incoming payload: $e',
+      );
       return false;
     }
   }
@@ -406,7 +425,8 @@ class BluetoothMeshSyncService {
 
       if (isNewInsert) {
         // Insert new record with isDirty = 1 (needs sync to cloud)
-        final recordData = jsonDecode(payload.payloadJsonString) as Map<String, dynamic>;
+        final recordData =
+            jsonDecode(payload.payloadJsonString) as Map<String, dynamic>;
         recordData['id'] = payload.recordId.toString();
         recordData['isDirty'] = 1;
 
@@ -417,16 +437,19 @@ class BluetoothMeshSyncService {
         );
 
         debugPrint(
-            'BluetoothMeshSyncService: Inserted new record ${payload.recordId} in $tableName');
+          'BluetoothMeshSyncService: Inserted new record ${payload.recordId} in $tableName',
+        );
       } else {
         // Check timestamp - only update if incoming is newer
         final existingRecord = existingRecords.first;
         DateTime existingTimestamp = DateTime.now();
 
-        final updatedAtIndex =
-            existingRecord.keys.toList().indexOf('updatedAt');
-        final createdAtIndex =
-            existingRecord.keys.toList().indexOf('createdAt');
+        final updatedAtIndex = existingRecord.keys.toList().indexOf(
+          'updatedAt',
+        );
+        final createdAtIndex = existingRecord.keys.toList().indexOf(
+          'createdAt',
+        );
 
         if (updatedAtIndex >= 0) {
           final updatedAt = existingRecord.values.elementAt(updatedAtIndex);
@@ -457,17 +480,20 @@ class BluetoothMeshSyncService {
           );
 
           debugPrint(
-              'BluetoothMeshSyncService: Updated record ${payload.recordId} in $tableName (newer data)');
+            'BluetoothMeshSyncService: Updated record ${payload.recordId} in $tableName (newer data)',
+          );
         } else {
           debugPrint(
-              'BluetoothMeshSyncService: Skipped record ${payload.recordId} (existing data is newer or equal)');
+            'BluetoothMeshSyncService: Skipped record ${payload.recordId} (existing data is newer or equal)',
+          );
         }
       }
 
       return isNewInsert;
     } catch (e) {
       debugPrint(
-          'BluetoothMeshSyncService: Error merging payload into local DB: $e');
+        'BluetoothMeshSyncService: Error merging payload into local DB: $e',
+      );
       return false;
     }
   }

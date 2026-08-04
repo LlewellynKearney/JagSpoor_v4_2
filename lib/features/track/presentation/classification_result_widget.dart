@@ -20,18 +20,19 @@ class ClassificationResultWidget extends StatefulWidget {
   });
 
   @override
-  State<ClassificationResultWidget> createState() => _ClassificationResultWidgetState();
+  State<ClassificationResultWidget> createState() =>
+      _ClassificationResultWidgetState();
 }
 
-class _ClassificationResultWidgetState extends State<ClassificationResultWidget> {
+class _ClassificationResultWidgetState
+    extends State<ClassificationResultWidget> {
   String? _selectedFirearmId;
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   Future<Animal?> _resolveAnimal() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('animals')
-          .get();
+      final snapshot =
+          await FirebaseFirestore.instance.collection('animals').get();
       for (final doc in snapshot.docs) {
         final animal = Animal.fromFirestore(doc);
         if (animal.name.toLowerCase() == widget.speciesName.toLowerCase()) {
@@ -73,8 +74,11 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
           Row(
             children: [
               Icon(
-                isLowConfidence ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
-                color: isLowConfidence ? Colors.orange : widget.theme.accentColor,
+                isLowConfidence
+                    ? Icons.warning_amber_rounded
+                    : Icons.check_circle_outline_rounded,
+                color:
+                    isLowConfidence ? Colors.orange : widget.theme.accentColor,
                 size: 32,
               ),
               const SizedBox(width: 12),
@@ -95,7 +99,10 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
                       'AI Confidence: $confidencePercent%',
                       style: TextStyle(
                         fontSize: 14,
-                        color: isLowConfidence ? Colors.orange : widget.theme.subtitleColor,
+                        color:
+                            isLowConfidence
+                                ? Colors.orange
+                                : widget.theme.subtitleColor,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -127,26 +134,40 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
           ),
           const SizedBox(height: 8),
           StreamBuilder<QuerySnapshot>(
-            stream: _currentUserId != null
-                ? FirebaseFirestore.instance
-                    .collection('firearms')
-                    .where('ownerId', isEqualTo: _currentUserId)
-                    .orderBy('createdAt', descending: true)
-                    .snapshots()
-                : const Stream.empty(),
+            stream:
+                _currentUserId != null
+                    ? FirebaseFirestore.instance
+                        .collection('firearms')
+                        .where('ownerId', isEqualTo: _currentUserId)
+                        .orderBy('createdAt', descending: true)
+                        .snapshots()
+                    : const Stream.empty(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return Text('Error loading firearms', style: TextStyle(color: widget.theme.subtitleColor));
+                return Text(
+                  'Error loading firearms',
+                  style: TextStyle(color: widget.theme.subtitleColor),
+                );
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)));
+                return const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
               }
 
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) {
                 return Text(
                   'No firearms found. Create one in the Firearm Safe first.',
-                  style: TextStyle(fontSize: 13, color: widget.theme.subtitleColor, fontStyle: FontStyle.italic),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: widget.theme.subtitleColor,
+                    fontStyle: FontStyle.italic,
+                  ),
                 );
               }
 
@@ -154,34 +175,51 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
                 initialValue: _selectedFirearmId,
                 dropdownColor: widget.theme.backgroundColor,
                 decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: widget.theme.accentColor.withValues(alpha: 0.5)),
+                    borderSide: BorderSide(
+                      color: widget.theme.accentColor.withValues(alpha: 0.5),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: widget.theme.accentColor.withValues(alpha: 0.3)),
+                    borderSide: BorderSide(
+                      color: widget.theme.accentColor.withValues(alpha: 0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(color: widget.theme.accentColor),
                   ),
                 ),
-                hint: Text('Select firearm used', style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14)),
+                hint: Text(
+                  'Select firearm used',
+                  style: TextStyle(
+                    color: widget.theme.subtitleColor,
+                    fontSize: 14,
+                  ),
+                ),
                 onChanged: (val) => setState(() => _selectedFirearmId = val),
-                items: docs.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final make = data['make'] ?? 'Unknown';
-                  final caliber = data['caliber'] ?? 'N/A';
-                  return DropdownMenuItem<String>(
-                    value: doc.id,
-                    child: Text(
-                      '$make ($caliber)',
-                      style: TextStyle(color: widget.theme.textColor, fontSize: 14),
-                    ),
-                  );
-                }).toList(),
+                items:
+                    docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final make = data['make'] ?? 'Unknown';
+                      final caliber = data['caliber'] ?? 'N/A';
+                      return DropdownMenuItem<String>(
+                        value: doc.id,
+                        child: Text(
+                          '$make ($caliber)',
+                          style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontSize: 14,
+                          ),
+                        ),
+                      );
+                    }).toList(),
               );
             },
           ),
@@ -191,7 +229,9 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (context) => const Center(child: CircularProgressIndicator()),
+                builder:
+                    (context) =>
+                        const Center(child: CircularProgressIndicator()),
               );
 
               final animal = await _resolveAnimal();
@@ -200,17 +240,21 @@ class _ClassificationResultWidgetState extends State<ClassificationResultWidget>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => AddTrophyScreen(
-                      theme: widget.theme,
-                      initialAnimal: animal,
-                      initialGpsCoordinates: widget.gpsCoordinates,
-                      initialFirearmId: _selectedFirearmId,
-                    ),
+                    builder:
+                        (context) => AddTrophyScreen(
+                          theme: widget.theme,
+                          initialAnimal: animal,
+                          initialGpsCoordinates: widget.gpsCoordinates,
+                          initialFirearmId: _selectedFirearmId,
+                        ),
                   ),
                 );
               }
             },
-            icon: Icon(Icons.emoji_events_rounded, color: widget.theme.backgroundColor),
+            icon: Icon(
+              Icons.emoji_events_rounded,
+              color: widget.theme.backgroundColor,
+            ),
             label: Text(
               'Log to Trophy Room',
               style: TextStyle(

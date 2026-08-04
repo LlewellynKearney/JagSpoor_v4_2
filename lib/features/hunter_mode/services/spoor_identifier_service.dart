@@ -31,7 +31,8 @@ class SpoorGeometricMetrics {
 /// Analyzes image tensor geometry using metric shape processing pass (print length, toe alignments, claw delta profiles)
 /// and outputs descriptive wildlife tracking strings.
 class SpoorIdentifierService {
-  static final SpoorIdentifierService _instance = SpoorIdentifierService._internal();
+  static final SpoorIdentifierService _instance =
+      SpoorIdentifierService._internal();
   static SpoorIdentifierService get instance => _instance;
   SpoorIdentifierService._internal();
 
@@ -102,7 +103,8 @@ class SpoorIdentifierService {
 
       if (decodedImage == null) {
         return {
-          'trackingResult': 'Identified Spoor: Unknown Track (Unreadable Image)',
+          'trackingResult':
+              'Identified Spoor: Unknown Track (Unreadable Image)',
           'confidence': 0.0,
           'success': false,
         };
@@ -117,9 +119,12 @@ class SpoorIdentifierService {
       final String species = classification['species'] as String;
       final String demographic = classification['demographic'] as String;
       final double confidence = classification['confidence'] as double;
-      final String descriptiveString = 'Identified Spoor: $species ($demographic)';
+      final String descriptiveString =
+          'Identified Spoor: $species ($demographic)';
 
-      debugPrint('✓ Spoor AI Analysis Pass Completed: $descriptiveString [Confidence: ${(confidence * 100).toStringAsFixed(1)}%]');
+      debugPrint(
+        '✓ Spoor AI Analysis Pass Completed: $descriptiveString [Confidence: ${(confidence * 100).toStringAsFixed(1)}%]',
+      );
       debugPrint('  Metrics: $metrics');
 
       return {
@@ -133,7 +138,8 @@ class SpoorIdentifierService {
     } catch (e) {
       debugPrint('✗ Spoor Identifier Service error: $e');
       return {
-        'trackingResult': 'Identified Spoor: Leopard (Male, Mature)', // Descriptive fallback
+        'trackingResult':
+            'Identified Spoor: Leopard (Male, Mature)', // Descriptive fallback
         'species': 'Leopard',
         'demographic': 'Male, Mature',
         'confidence': 0.88,
@@ -173,20 +179,27 @@ class SpoorIdentifierService {
     }
 
     final double rawWidthPixels = (maxX > minX ? (maxX - minX) : 50).toDouble();
-    final double rawHeightPixels = (maxY > minY ? (maxY - minY) : 60).toDouble();
+    final double rawHeightPixels =
+        (maxY > minY ? (maxY - minY) : 60).toDouble();
 
     // Scale pixel bounds to estimated mm dimensions (using standard focal scaling constant)
     final double printWidthMm = (rawWidthPixels * 0.45).clamp(30.0, 200.0);
     final double printLengthMm = (rawHeightPixels * 0.50).clamp(40.0, 220.0);
 
     // Compute toe alignment angle (degrees) derived from upper contour curvature
-    final double toeAlignmentAngle = (math.atan2(rawHeightPixels, rawWidthPixels) * 180.0 / math.pi) % 45.0;
+    final double toeAlignmentAngle =
+        (math.atan2(rawHeightPixels, rawWidthPixels) * 180.0 / math.pi) % 45.0;
 
     // Compute claw delta profile intensity (higher delta = distinct claw impression present)
-    final double clawDeltaProfile = ((totalR - totalB).abs() / (pixelCount > 0 ? pixelCount : 1)).clamp(0.0, 15.0);
+    final double clawDeltaProfile = ((totalR - totalB).abs() /
+            (pixelCount > 0 ? pixelCount : 1))
+        .clamp(0.0, 15.0);
 
-    final double aspectRatio = printLengthMm / (printWidthMm > 0 ? printWidthMm : 1.0);
-    final double perimeterComplexity = ((rawWidthPixels + rawHeightPixels) * 2.0) / (rawWidthPixels * rawHeightPixels + 1.0);
+    final double aspectRatio =
+        printLengthMm / (printWidthMm > 0 ? printWidthMm : 1.0);
+    final double perimeterComplexity =
+        ((rawWidthPixels + rawHeightPixels) * 2.0) /
+        (rawWidthPixels * rawHeightPixels + 1.0);
 
     return SpoorGeometricMetrics(
       printLengthMm: printLengthMm,
@@ -199,7 +212,9 @@ class SpoorIdentifierService {
   }
 
   /// Running model processor pass: Matches geometric metrics against species signatures
-  Map<String, dynamic> _matchGeometricMetricsToSpecies(SpoorGeometricMetrics metrics) {
+  Map<String, dynamic> _matchGeometricMetricsToSpecies(
+    SpoorGeometricMetrics metrics,
+  ) {
     double bestMatchScore = -1.0;
     Map<String, dynamic> bestSignature = _speciesSignatures.first;
 
@@ -210,11 +225,26 @@ class SpoorIdentifierService {
       final maxAngle = sig['maxToeAngle'] as double;
 
       // Score components
-      final lengthScore = 1.0 - ((metrics.printLengthMm - targetLength).abs() / targetLength).clamp(0.0, 1.0);
-      final widthScore = 1.0 - ((metrics.printWidthMm - targetWidth).abs() / targetWidth).clamp(0.0, 1.0);
-      final angleScore = (metrics.toeAlignmentAngle >= minAngle && metrics.toeAlignmentAngle <= maxAngle) ? 1.0 : 0.6;
+      final lengthScore =
+          1.0 -
+          ((metrics.printLengthMm - targetLength).abs() / targetLength).clamp(
+            0.0,
+            1.0,
+          );
+      final widthScore =
+          1.0 -
+          ((metrics.printWidthMm - targetWidth).abs() / targetWidth).clamp(
+            0.0,
+            1.0,
+          );
+      final angleScore =
+          (metrics.toeAlignmentAngle >= minAngle &&
+                  metrics.toeAlignmentAngle <= maxAngle)
+              ? 1.0
+              : 0.6;
 
-      final double totalScore = (lengthScore * 0.4) + (widthScore * 0.4) + (angleScore * 0.2);
+      final double totalScore =
+          (lengthScore * 0.4) + (widthScore * 0.4) + (angleScore * 0.2);
 
       if (totalScore > bestMatchScore) {
         bestMatchScore = totalScore;
@@ -222,7 +252,10 @@ class SpoorIdentifierService {
       }
     }
 
-    final double finalConfidence = (0.75 + (bestMatchScore * 0.23)).clamp(0.70, 0.98);
+    final double finalConfidence = (0.75 + (bestMatchScore * 0.23)).clamp(
+      0.70,
+      0.98,
+    );
 
     return {
       'species': bestSignature['species'],

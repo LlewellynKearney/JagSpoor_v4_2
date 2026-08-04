@@ -49,9 +49,10 @@ class AdaptiveImage extends StatelessWidget {
       fit: fit,
       width: width,
       height: height,
-      placeholder: placeholder != null
-          ? (context, url) => placeholder!
-          : (context, url) => _buildPlaceholder(),
+      placeholder:
+          placeholder != null
+              ? (context, url) => placeholder!
+              : (context, url) => _buildPlaceholder(),
       errorWidget: (context, url, error) {
         return errorWidget ?? _buildErrorWidget('Photo unavailable');
       },
@@ -70,9 +71,7 @@ class AdaptiveImage extends StatelessWidget {
   Widget _buildPlaceholder() {
     return Container(
       color: Colors.grey.withValues(alpha: 0.1),
-      child: const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
     );
   }
 

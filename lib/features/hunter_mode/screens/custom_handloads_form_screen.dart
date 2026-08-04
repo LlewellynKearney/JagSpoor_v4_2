@@ -14,7 +14,8 @@ class CustomHandloadsFormScreen extends StatefulWidget {
   });
 
   @override
-  State<CustomHandloadsFormScreen> createState() => _CustomHandloadsFormScreenState();
+  State<CustomHandloadsFormScreen> createState() =>
+      _CustomHandloadsFormScreenState();
 }
 
 class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
@@ -49,7 +50,8 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
 
     try {
       final roundTPL = double.tryParse(_roundTplController.text.trim()) ?? 0.0;
-      final muzzleVelocity = int.tryParse(_muzzleVelocityController.text.trim()) ?? 0;
+      final muzzleVelocity =
+          int.tryParse(_muzzleVelocityController.text.trim()) ?? 0;
 
       final data = {
         'bulletBrand': _selectedBulletBrand ?? 'Custom',
@@ -148,8 +150,10 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
                 style: TextStyle(color: theme.textColor),
                 decoration: _inputDecoration('Muzzle Velocity (fps)'),
                 validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Muzzle velocity is required';
-                  if (int.tryParse(val.trim()) == null) return 'Enter a valid number';
+                  if (val == null || val.trim().isEmpty)
+                    return 'Muzzle velocity is required';
+                  if (int.tryParse(val.trim()) == null)
+                    return 'Enter a valid number';
                   return null;
                 },
               ),
@@ -160,7 +164,8 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
                 style: TextStyle(color: theme.textColor),
                 decoration: _inputDecoration('Primer Specification'),
                 validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Primer spec is required';
+                  if (val == null || val.trim().isEmpty)
+                    return 'Primer spec is required';
                   return null;
                 },
               ),
@@ -169,9 +174,13 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
               // Dedicated TextFormField for Round TPL (Total Product Length / mm)
               TextFormField(
                 controller: _roundTplController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 style: TextStyle(color: theme.textColor),
-                decoration: _inputDecoration('Round TPL (Total Product Length / mm)'),
+                decoration: _inputDecoration(
+                  'Round TPL (Total Product Length / mm)',
+                ),
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) {
                     return 'Round TPL is required';
@@ -193,19 +202,23 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                child: _isSaving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : Text(
-                        'SAVE HANDLOAD SPECIFICATION',
-                        style: TextStyle(
-                          color: theme.backgroundColor,
-                          fontWeight: FontWeight.bold,
+                child:
+                    _isSaving
+                        ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : Text(
+                          'SAVE HANDLOAD SPECIFICATION',
+                          style: TextStyle(
+                            color: theme.backgroundColor,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
               ),
             ],
           ),

@@ -71,9 +71,10 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
     );
     _tagsController = TextEditingController();
 
-    _harvestDate = widget.trophy['harvestDate'] != null
-        ? DateTime.parse(widget.trophy['harvestDate'] as String)
-        : null;
+    _harvestDate =
+        widget.trophy['harvestDate'] != null
+            ? DateTime.parse(widget.trophy['harvestDate'] as String)
+            : null;
     _selectedFirearmId = widget.trophy['firearmId'];
     _selectedFirearmDisplay = widget.trophy['firearmUsed'];
     _gpsCoordinates = widget.trophy['coordinates'];
@@ -151,14 +152,13 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
         try {
-          final Position position =
-              await Geolocator.getCurrentPosition(
-                desiredAccuracy: LocationAccuracy.high,
-                timeLimit: const Duration(seconds: 30),
-              ).timeout(
-                const Duration(seconds: 30),
-                onTimeout: () => throw 'GPS timeout - check device settings',
-              );
+          final Position position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 30),
+          ).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw 'GPS timeout - check device settings',
+          );
 
           setState(() {
             _gpsCoordinates =
@@ -285,24 +285,27 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
         'harvestDate': _harvestDate?.toIso8601String().split('T').first ?? '',
         'location': _locationController.text,
         'coordinates': _gpsCoordinates ?? '',
-        'antlerSpread': _antlerSpreadController.text.isEmpty
-            ? null
-            : _antlerSpreadController.text,
-        'antlerLength': _antlerLengthController.text.isEmpty
-            ? null
-            : _antlerLengthController.text,
-        'antlerCircumference': _antlerCircumferenceController.text.isEmpty
-            ? null
-            : _antlerCircumferenceController.text,
-        'weight': _weightController.text.isEmpty
-            ? null
-            : _weightController.text,
+        'antlerSpread':
+            _antlerSpreadController.text.isEmpty
+                ? null
+                : _antlerSpreadController.text,
+        'antlerLength':
+            _antlerLengthController.text.isEmpty
+                ? null
+                : _antlerLengthController.text,
+        'antlerCircumference':
+            _antlerCircumferenceController.text.isEmpty
+                ? null
+                : _antlerCircumferenceController.text,
+        'weight':
+            _weightController.text.isEmpty ? null : _weightController.text,
         'firearmUsed': _selectedFirearmDisplay ?? '',
         'firearmId': _selectedFirearmId,
         'tags': _tags,
-        'photos': _selectedPhotos.isNotEmpty
-            ? _selectedPhotos.map((f) => f.path).toList()
-            : (widget.trophy['photos'] ?? []),
+        'photos':
+            _selectedPhotos.isNotEmpty
+                ? _selectedPhotos.map((f) => f.path).toList()
+                : (widget.trophy['photos'] ?? []),
       };
 
       Navigator.pop(context, updatedTrophy);
@@ -346,8 +349,11 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                       'e.g., Impala Buck, Kudu Bull',
                     ),
                     style: TextStyle(color: widget.theme.textColor),
-                    validator: (value) =>
-                        value?.isEmpty ?? true ? 'Species is required' : null,
+                    validator:
+                        (value) =>
+                            value?.isEmpty ?? true
+                                ? 'Species is required'
+                                : null,
                   ),
                   const SizedBox(height: 24),
 
@@ -380,13 +386,14 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                           Text(
                             _harvestDate != null
                                 ? DateFormat(
-                                    'MMM dd, yyyy',
-                                  ).format(_harvestDate!)
+                                  'MMM dd, yyyy',
+                                ).format(_harvestDate!)
                                 : 'Select date',
                             style: TextStyle(
-                              color: _harvestDate != null
-                                  ? widget.theme.textColor
-                                  : widget.theme.subtitleColor,
+                              color:
+                                  _harvestDate != null
+                                      ? widget.theme.textColor
+                                      : widget.theme.subtitleColor,
                             ),
                           ),
                         ],
@@ -414,31 +421,34 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      icon: _isLoadingGps
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  widget.theme.isDarkMode
-                                      ? Colors.black
-                                      : Colors.white,
+                      icon:
+                          _isLoadingGps
+                              ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
+                                  ),
                                 ),
+                              )
+                              : Icon(
+                                Icons.gps_fixed,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                               ),
-                            )
-                          : Icon(
-                              Icons.gps_fixed,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
-                            ),
                       label: Text(
                         _isLoadingGps ? 'Logging GPS...' : 'UPDATE GPS',
                         style: TextStyle(
-                          color: widget.theme.isDarkMode
-                              ? Colors.black
-                              : Colors.white,
+                          color:
+                              widget.theme.isDarkMode
+                                  ? Colors.black
+                                  : Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -520,9 +530,10 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                         child: IconButton(
                           icon: Icon(
                             Icons.add,
-                            color: widget.theme.isDarkMode
-                                ? Colors.black
-                                : Colors.white,
+                            color:
+                                widget.theme.isDarkMode
+                                    ? Colors.black
+                                    : Colors.white,
                           ),
                           onPressed: _addTag,
                         ),
@@ -534,48 +545,48 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _tags
-                          .map(
-                            (tag) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: widget.theme.accentColor.withValues(
-                                  alpha: 0.15,
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: widget.theme.accentColor.withValues(
-                                    alpha: 0.3,
+                      children:
+                          _tags
+                              .map(
+                                (tag) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
                                   ),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    tag,
-                                    style: TextStyle(
-                                      color: widget.theme.accentColor,
-                                      fontSize: 13,
+                                  decoration: BoxDecoration(
+                                    color: widget.theme.accentColor.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: widget.theme.accentColor
+                                          .withValues(alpha: 0.3),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  GestureDetector(
-                                    onTap: () => _removeTag(tag),
-                                    child: Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: widget.theme.accentColor,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        tag,
+                                        style: TextStyle(
+                                          color: widget.theme.accentColor,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () => _removeTag(tag),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: widget.theme.accentColor,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          )
-                          .toList(),
+                                ),
+                              )
+                              .toList(),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -658,16 +669,18 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                             ),
                             icon: Icon(
                               Icons.camera_alt,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
+                              color:
+                                  widget.theme.isDarkMode
+                                      ? Colors.black
+                                      : Colors.white,
                             ),
                             label: Text(
                               'TAKE PHOTO',
                               style: TextStyle(
-                                color: widget.theme.isDarkMode
-                                    ? Colors.black
-                                    : Colors.white,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -687,16 +700,18 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                             ),
                             icon: Icon(
                               Icons.image,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
+                              color:
+                                  widget.theme.isDarkMode
+                                      ? Colors.black
+                                      : Colors.white,
                             ),
                             label: Text(
                               'GALLERY',
                               style: TextStyle(
-                                color: widget.theme.isDarkMode
-                                    ? Colors.black
-                                    : Colors.white,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -720,16 +735,18 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                       ),
                       icon: Icon(
                         Icons.check,
-                        color: widget.theme.isDarkMode
-                            ? Colors.black
-                            : Colors.white,
+                        color:
+                            widget.theme.isDarkMode
+                                ? Colors.black
+                                : Colors.white,
                       ),
                       label: Text(
                         'SAVE CHANGES',
                         style: TextStyle(
-                          color: widget.theme.isDarkMode
-                              ? Colors.black
-                              : Colors.white,
+                          color:
+                              widget.theme.isDarkMode
+                                  ? Colors.black
+                                  : Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -761,13 +778,14 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
 
   Widget _buildFirearmStreamDropdown() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _currentUserId != null
-          ? FirebaseFirestore.instance
-                .collection('firearms')
-                .where('ownerId', isEqualTo: _currentUserId)
-                .orderBy('createdAt', descending: true)
-                .snapshots()
-          : const Stream.empty(),
+      stream:
+          _currentUserId != null
+              ? FirebaseFirestore.instance
+                  .collection('firearms')
+                  .where('ownerId', isEqualTo: _currentUserId)
+                  .orderBy('createdAt', descending: true)
+                  .snapshots()
+              : const Stream.empty(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Container(
@@ -809,13 +827,16 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
           );
         }
 
-        final firearms = snapshot.data?.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return <String, String>{
-            'docId': doc.id,
-            ...data.map((key, value) => MapEntry(key, value?.toString() ?? '')),
-          };
-        }).toList();
+        final firearms =
+            snapshot.data?.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return <String, String>{
+                'docId': doc.id,
+                ...data.map(
+                  (key, value) => MapEntry(key, value?.toString() ?? ''),
+                ),
+              };
+            }).toList();
 
         if (firearms == null || firearms.isEmpty) {
           return Container(
@@ -855,19 +876,20 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
               });
             }
           },
-          items: firearms.map((firearm) {
-            final docId = firearm['docId'] ?? '';
-            final make = firearm['make'] ?? 'Unknown';
-            final caliber = firearm['caliber'] ?? 'N/A';
+          items:
+              firearms.map((firearm) {
+                final docId = firearm['docId'] ?? '';
+                final make = firearm['make'] ?? 'Unknown';
+                final caliber = firearm['caliber'] ?? 'N/A';
 
-            return DropdownMenuItem<String>(
-              value: docId.isNotEmpty ? docId : make,
-              child: Text(
-                '$make ($caliber)',
-                style: TextStyle(color: widget.theme.textColor),
-              ),
-            );
-          }).toList(),
+                return DropdownMenuItem<String>(
+                  value: docId.isNotEmpty ? docId : make,
+                  child: Text(
+                    '$make ($caliber)',
+                    style: TextStyle(color: widget.theme.textColor),
+                  ),
+                );
+              }).toList(),
           decoration: _buildInputDecoration('Select a firearm'),
           dropdownColor: widget.theme.cardColor,
           style: TextStyle(color: widget.theme.textColor),

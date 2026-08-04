@@ -9,7 +9,7 @@ class SpoorAIService {
   static Interpreter? _interpreter;
   static List<String> _labels = [];
   static bool _isMockMode = false;
-  
+
   static const String _modelPath = 'assets/models/spoor_classifier.tflite';
   static const String _labelsPath = 'assets/models/labels.txt';
   static const int _modelInputSize = 224;
@@ -28,28 +28,49 @@ class SpoorAIService {
 
     try {
       final labelData = await rootBundle.loadString(_labelsPath);
-      _labels = labelData.split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      
+      _labels =
+          labelData
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
+
       try {
         _interpreter = await Interpreter.fromAsset(_modelPath);
         _isMockMode = false;
         debugPrint('✓ SpoorAI: Loaded real model. Labels: ${_labels.length}');
       } catch (e) {
-        debugPrint('⚠ SpoorAI failed to load model, falling back to mock mode: $e');
+        debugPrint(
+          '⚠ SpoorAI failed to load model, falling back to mock mode: $e',
+        );
         _isMockMode = true;
       }
     } catch (e) {
       debugPrint('✗ SpoorAI initialization failed: $e');
       _isMockMode = true;
       _labels = [
-        'Kudu', 'Impala', 'Springbok', 'Gemsbok', 'Wildebeest', 
-        'Blesbok', 'Eland', 'Roan Antelope', 'Sable Antelope', 'Bushbuck', 
-        'Duiker', 'Steenbok', 'Red Hartebeest', 'Blue Wildebeest', 
-        'Giraffe', 'Zebra', 'Warthog', 'Nyala', 'Hartebeest', 'Oribi',
-        'Jackal', 'Caracal'
+        'Kudu',
+        'Impala',
+        'Springbok',
+        'Gemsbok',
+        'Wildebeest',
+        'Blesbok',
+        'Eland',
+        'Roan Antelope',
+        'Sable Antelope',
+        'Bushbuck',
+        'Duiker',
+        'Steenbok',
+        'Red Hartebeest',
+        'Blue Wildebeest',
+        'Giraffe',
+        'Zebra',
+        'Warthog',
+        'Nyala',
+        'Hartebeest',
+        'Oribi',
+        'Jackal',
+        'Caracal',
       ];
     }
   }
@@ -63,11 +84,7 @@ class SpoorAIService {
       final imageBytes = await imageFile.readAsBytes();
       final decodedImage = img.decodeImage(imageBytes);
       if (decodedImage == null) {
-        return {
-          'species': 'Unknown',
-          'confidence': 0.0,
-          'success': false,
-        };
+        return {'species': 'Unknown', 'confidence': 0.0, 'success': false};
       }
 
       final resizedImage = img.copyResize(
@@ -79,13 +96,16 @@ class SpoorAIService {
       if (_isMockMode || _interpreter == null) {
         int hash = 0;
         for (int i = 0; i < 100; i++) {
-          final p = resizedImage.getPixelSafe(i % _modelInputSize, (i * 2) % _modelInputSize);
+          final p = resizedImage.getPixelSafe(
+            i % _modelInputSize,
+            (i * 2) % _modelInputSize,
+          );
           hash += p.r.toInt() + p.g.toInt() + p.b.toInt();
         }
         final speciesIndex = hash % _labels.length;
         final species = _labels[speciesIndex];
         final confidence = 0.55 + ((hash % 40) / 100.0);
-        
+
         return {
           'species': species,
           'confidence': confidence,
@@ -97,17 +117,10 @@ class SpoorAIService {
         1,
         (b) => List.generate(
           _modelInputSize,
-          (y) => List.generate(
-            _modelInputSize,
-            (x) {
-              final pixel = resizedImage.getPixelSafe(x, y);
-              return [
-                pixel.r / 255.0,
-                pixel.g / 255.0,
-                pixel.b / 255.0,
-              ];
-            },
-          ),
+          (y) => List.generate(_modelInputSize, (x) {
+            final pixel = resizedImage.getPixelSafe(x, y);
+            return [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
+          }),
         ),
       );
 
@@ -123,7 +136,8 @@ class SpoorAIService {
         }
       }
 
-      final predictedSpecies = maxIndex < _labels.length ? _labels[maxIndex] : 'Unknown';
+      final predictedSpecies =
+          maxIndex < _labels.length ? _labels[maxIndex] : 'Unknown';
       final success = maxConfidence >= _confidenceThreshold;
 
       return {
@@ -133,11 +147,7 @@ class SpoorAIService {
       };
     } catch (e) {
       debugPrint('✗ Prediction error: $e');
-      return {
-        'species': 'Unknown',
-        'confidence': 0.0,
-        'success': false,
-      };
+      return {'species': 'Unknown', 'confidence': 0.0, 'success': false};
     }
   }
 

@@ -94,16 +94,22 @@ class LocalDatabaseService {
         await db.execute("ALTER TABLE carcass_records ADD COLUMN status TEXT");
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE carcass_records ADD COLUMN slaughterFee REAL");
+        await db.execute(
+          "ALTER TABLE carcass_records ADD COLUMN slaughterFee REAL",
+        );
       } catch (_) {}
     }
     // Migrate from v2 to v3 - add includedAnimalsJson column
     if (oldVersion < 3) {
       try {
-        await db.execute("ALTER TABLE outfitter_packages ADD COLUMN includedAnimalsJson TEXT");
+        await db.execute(
+          "ALTER TABLE outfitter_packages ADD COLUMN includedAnimalsJson TEXT",
+        );
       } catch (_) {}
       try {
-        await db.execute("ALTER TABLE outfitter_packages ADD COLUMN basePrice REAL DEFAULT 0");
+        await db.execute(
+          "ALTER TABLE outfitter_packages ADD COLUMN basePrice REAL DEFAULT 0",
+        );
       } catch (_) {}
     }
   }

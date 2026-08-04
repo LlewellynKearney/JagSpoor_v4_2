@@ -23,14 +23,16 @@ class OutfitterPricelistVerificationScreen extends StatefulWidget {
   });
 
   @override
-  State<OutfitterPricelistVerificationScreen> createState() => _OutfitterPricelistVerificationScreenState();
+  State<OutfitterPricelistVerificationScreen> createState() =>
+      _OutfitterPricelistVerificationScreenState();
 }
 
-class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelistVerificationScreen> {
+class _OutfitterPricelistVerificationScreenState
+    extends State<OutfitterPricelistVerificationScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final _formKey = GlobalKey<FormState>();
-  
+
   late List<Map<String, dynamic>> _editableItems;
   bool _isSaving = false;
   bool _hasChanges = false;
@@ -39,7 +41,10 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
   void initState() {
     super.initState();
     // Create a deep copy of the items for editing
-    _editableItems = widget.extractedItems.map((item) => Map<String, dynamic>.from(item)).toList();
+    _editableItems =
+        widget.extractedItems
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
   }
 
   void _updateItem(int index, {String? name, double? basePrice}) {
@@ -52,7 +57,8 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
         // Recalculate display price with 5% platform fee
         final double displayPrice = basePrice * 1.05;
         _editableItems[index]['hunterDisplayPriceZAR'] = displayPrice;
-        _editableItems[index]['hunterPriceFormatted'] = 'R${displayPrice.toStringAsFixed(0)}';
+        _editableItems[index]['hunterPriceFormatted'] =
+            'R${displayPrice.toStringAsFixed(0)}';
         _editableItems[index]['commissionZAR'] = displayPrice - basePrice;
       }
       _hasChanges = true;
@@ -75,14 +81,15 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
 
       // Build processed items with calculated prices
       final List<Map<String, dynamic>> processedItems = [];
-      
+
       for (final item in _editableItems) {
         final speciesName = item['name'] as String;
-        final basePrice = (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
-        
+        final basePrice =
+            (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+
         // Calculate display price with 5% platform fee
         final double displayPrice = basePrice * 1.05;
-        
+
         processedItems.add({
           'name': speciesName,
           'outfitterBasePrice': basePrice,
@@ -111,7 +118,9 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
       await _firestore.collection('scanned_pricelists').add(pricelistData);
 
       if (mounted) {
-        _showSuccess('Price list saved successfully! ${processedItems.length} items uploaded.');
+        _showSuccess(
+          'Price list saved successfully! ${processedItems.length} items uploaded.',
+        );
         // Pop back to previous screen after short delay
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
@@ -132,19 +141,13 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('⚠️ $message'),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('✅ $message'),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text('✅ $message'), backgroundColor: Colors.green),
     );
   }
 
@@ -176,9 +179,10 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
               tooltip: 'Reset to original',
               onPressed: () {
                 setState(() {
-                  _editableItems = widget.extractedItems
-                      .map((item) => Map<String, dynamic>.from(item))
-                      .toList();
+                  _editableItems =
+                      widget.extractedItems
+                          .map((item) => Map<String, dynamic>.from(item))
+                          .toList();
                   _hasChanges = false;
                 });
               },
@@ -231,7 +235,12 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
                     index: index,
                     item: _editableItems[index],
                     theme: widget.theme,
-                    onUpdate: (name, basePrice) => _updateItem(index, name: name, basePrice: basePrice),
+                    onUpdate:
+                        (name, basePrice) => _updateItem(
+                          index,
+                          name: name,
+                          basePrice: basePrice,
+                        ),
                   );
                 },
               ),
@@ -264,16 +273,17 @@ class _OutfitterPricelistVerificationScreenState extends State<OutfitterPricelis
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_rounded),
+                  icon:
+                      _isSaving
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.save_rounded),
                   label: Text(
                     _isSaving ? 'SAVING...' : 'SAVE PRICE LIST',
                     style: const TextStyle(
@@ -315,9 +325,15 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.item['name'] as String? ?? '');
+    _nameController = TextEditingController(
+      text: widget.item['name'] as String? ?? '',
+    );
     _priceController = TextEditingController(
-      text: (widget.item['outfitterBasePrice'] as num?)?.toDouble().toStringAsFixed(0) ?? '0',
+      text:
+          (widget.item['outfitterBasePrice'] as num?)
+              ?.toDouble()
+              .toStringAsFixed(0) ??
+          '0',
     );
   }
 
@@ -339,7 +355,8 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
 
   @override
   Widget build(BuildContext context) {
-    final basePrice = (widget.item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+    final basePrice =
+        (widget.item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
     final displayPrice = basePrice * 1.05;
     final commission = displayPrice - basePrice;
 
@@ -377,10 +394,7 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
               const Spacer(),
               Text(
                 '5% Fee: R${commission.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color: Colors.amber.shade700,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: Colors.amber.shade700, fontSize: 11),
               ),
             ],
           ),
@@ -422,13 +436,17 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
-                            color: widget.theme.accentColor.withValues(alpha: 0.3),
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
-                            color: widget.theme.accentColor.withValues(alpha: 0.3),
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
@@ -474,9 +492,13 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
                     TextFormField(
                       controller: _priceController,
                       onChanged: _onPriceChanged,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d*\.?\d{0,2}'),
+                        ),
                       ],
                       style: TextStyle(
                         color: widget.theme.textColor,
@@ -497,13 +519,17 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
-                            color: widget.theme.accentColor.withValues(alpha: 0.3),
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
-                            color: widget.theme.accentColor.withValues(alpha: 0.3),
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(

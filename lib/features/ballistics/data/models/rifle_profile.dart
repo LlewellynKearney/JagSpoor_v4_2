@@ -19,15 +19,13 @@ class RifleProfile {
     this.ownerId = '',
   });
 
-  factory RifleProfile.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory RifleProfile.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final data = doc.data();
     if (data == null) {
       debugPrint('RifleProfile document ${doc.id} has no data');
-      return RifleProfile(
-        id: doc.id,
-        name: 'Unknown Rifle',
-        caliber: '',
-      );
+      return RifleProfile(id: doc.id, name: 'Unknown Rifle', caliber: '');
     }
     return RifleProfile.fromJson(data, id: doc.id);
   }
@@ -44,13 +42,13 @@ class RifleProfile {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'caliber': caliber,
-        'scopeClickValue': scopeClickValue,
-        'serialNumber': serialNumber,
-        'ownerId': ownerId,
-      };
+    'id': id,
+    'name': name,
+    'caliber': caliber,
+    'scopeClickValue': scopeClickValue,
+    'serialNumber': serialNumber,
+    'ownerId': ownerId,
+  };
 
   Map<String, dynamic> toFirestore() => toJson();
 
@@ -99,15 +97,13 @@ class AmmoProfile {
     this.remainingStockCount = 0,
   });
 
-  factory AmmoProfile.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory AmmoProfile.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final data = doc.data();
     if (data == null) {
       debugPrint('AmmoProfile document ${doc.id} has no data');
-      return AmmoProfile(
-        id: doc.id,
-        rifleId: '',
-        bulletWeightGrains: 0,
-      );
+      return AmmoProfile(id: doc.id, rifleId: '', bulletWeightGrains: 0);
     }
     return AmmoProfile.fromJson(data, id: doc.id);
   }
@@ -124,13 +120,13 @@ class AmmoProfile {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'rifleId': rifleId,
-        'bulletWeightGrains': bulletWeightGrains,
-        'velocityMs': velocityMs,
-        'ballisticCoefficient': ballisticCoefficient,
-        'remainingStockCount': remainingStockCount,
-      };
+    'id': id,
+    'rifleId': rifleId,
+    'bulletWeightGrains': bulletWeightGrains,
+    'velocityMs': velocityMs,
+    'ballisticCoefficient': ballisticCoefficient,
+    'remainingStockCount': remainingStockCount,
+  };
 
   Map<String, dynamic> toFirestore() => toJson();
 

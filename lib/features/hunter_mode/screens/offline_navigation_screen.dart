@@ -19,29 +19,31 @@ class OfflineNavigationScreen extends StatefulWidget {
   const OfflineNavigationScreen({super.key, required this.theme});
 
   @override
-  State<OfflineNavigationScreen> createState() => _OfflineNavigationScreenState();
+  State<OfflineNavigationScreen> createState() =>
+      _OfflineNavigationScreenState();
 }
 
 class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   final OfflineMapCache _offlineMapCache = OfflineMapCache();
   final MapController _mapController = MapController();
-  
+
   bool _isInitialized = false;
   bool _showOfflineWarning = false;
   bool _isMapReady = false;
-  
+
   // Default center (South Africa - Kruger National Park area)
   static const LatLng _defaultCenter = LatLng(-24.5, 31.5);
   double _currentZoom = 10.0;
   LatLng _currentCenter = _defaultCenter;
-  
+
   // Offline tile download settings
   final List<LatLng> _preDownloadedMarkers = [];
   bool _isDownloadingTiles = false;
 
   // Active waypoints on the map (with type metadata)
   final List<Map<String, dynamic>> _waypointsData = [];
-  List<Marker> get _activeWaypointsList => _buildMarkersForFilter(_selectedWaypointFilter);
+  List<Marker> get _activeWaypointsList =>
+      _buildMarkersForFilter(_selectedWaypointFilter);
 
   // Location tracking subscription
   StreamSubscription<Position>? _locationSubscription;
@@ -58,27 +60,53 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   bool _isSimulatingRangefinder = false;
 
   // Waypoint type options
-  static const List<String> _waypointTypes = ['Kill Site', 'Camp', 'Spoor Track', 'Water Source', 'Vehicle', 'Rangefinder Target', 'Other'];
-  
+  static const List<String> _waypointTypes = [
+    'Kill Site',
+    'Camp',
+    'Spoor Track',
+    'Water Source',
+    'Vehicle',
+    'Rangefinder Target',
+    'Other',
+  ];
+
   // Waypoint filter options for toolbar (includes Rangefinder Target)
-  static const List<String> _waypointFilterOptions = ['All', 'Kill Site', 'Blood Spoor', 'Water Hole', 'Camp', 'Rangefinder Target'];
+  static const List<String> _waypointFilterOptions = [
+    'All',
+    'Kill Site',
+    'Blood Spoor',
+    'Water Hole',
+    'Camp',
+    'Rangefinder Target',
+  ];
   String _selectedWaypointFilter = 'All';
 
   // Advanced Filter State
   bool _showAdvancedFilters = false;
-  
+
   // Time Range Filter (hours: 0=24h, 1=48h, 2=Unlimited)
   double _timeRangeFilter = 2.0;
-  static const List<String> _timeRangeLabels = ['24 Hours', '48 Hours', 'All Time'];
-  
+  static const List<String> _timeRangeLabels = [
+    '24 Hours',
+    '48 Hours',
+    'All Time',
+  ];
+
   // Radius Filter (km: 0=1km, 1=5km, 2=10km, 3=Unlimited)
   double _radiusFilter = 3.0;
-  static const List<String> _radiusLabels = ['1 km', '5 km', '10 km', 'Unlimited'];
-  
+  static const List<String> _radiusLabels = [
+    '1 km',
+    '5 km',
+    '10 km',
+    'Unlimited',
+  ];
+
   List<Marker> _buildMarkersForFilter(String filter) {
     // Get filtered waypoints based on advanced filters
-    List<Map<String, dynamic>> filteredWaypoints = _applyAdvancedFilters(_waypointsData);
-    
+    List<Map<String, dynamic>> filteredWaypoints = _applyAdvancedFilters(
+      _waypointsData,
+    );
+
     if (filter == 'All') {
       return filteredWaypoints.map((w) => _buildMarkerFromData(w)).toList();
     }
@@ -87,17 +115,19 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
         .map((w) => _buildMarkerFromData(w))
         .toList();
   }
-  
-  List<Map<String, dynamic>> _applyAdvancedFilters(List<Map<String, dynamic>> waypoints) {
+
+  List<Map<String, dynamic>> _applyAdvancedFilters(
+    List<Map<String, dynamic>> waypoints,
+  ) {
     return waypoints.where((waypoint) {
       // Skip if no position data
       if (!waypoint.containsKey('position') || waypoint['position'] == null) {
         return true; // Keep waypoints without position
       }
-      
+
       final position = waypoint['position'] as LatLng;
       final createdAtMillis = waypoint['createdAtMillis'] as int? ?? 0;
-      
+
       // Apply time filter
       int hoursFilter;
       if (_timeRangeFilter < 0.5) {
@@ -107,12 +137,13 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       } else {
         hoursFilter = 999999; // Unlimited
       }
-      
-      final passesTimeFilter = ChatAndFilterService.instance.isTimestampWithinHours(
-        documentTimestampMillis: createdAtMillis,
-        maxHoursFilter: hoursFilter,
-      );
-      
+
+      final passesTimeFilter = ChatAndFilterService.instance
+          .isTimestampWithinHours(
+            documentTimestampMillis: createdAtMillis,
+            maxHoursFilter: hoursFilter,
+          );
+
       // Apply radius filter
       double maxRadiusKm;
       if (_radiusFilter < 0.5) {
@@ -124,8 +155,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       } else {
         maxRadiusKm = double.infinity; // Unlimited
       }
-      
-      final passesRadiusFilter = maxRadiusKm == double.infinity ||
+
+      final passesRadiusFilter =
+          maxRadiusKm == double.infinity ||
           ChatAndFilterService.instance.isCoordinateWithinRadius(
             centerLat: _currentCenter.latitude,
             centerLon: _currentCenter.longitude,
@@ -133,11 +165,11 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             targetLon: position.longitude,
             maxRadiusKm: maxRadiusKm,
           );
-      
+
       return passesTimeFilter && passesRadiusFilter;
     }).toList();
   }
-  
+
   Marker _buildMarkerFromData(Map<String, dynamic> data) {
     final type = data['type'] as String;
     final color = _getWaypointColor(type);
@@ -152,21 +184,28 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             color: color.withAlpha(200),
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 4)],
+            boxShadow: [
+              BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 4),
+            ],
           ),
           child: Icon(_getWaypointIcon(type), color: Colors.white, size: 20),
         ),
       ),
     );
   }
-  
+
   Color _getWaypointColor(String type) {
     switch (type) {
-      case 'Kill Site': return Colors.red;
-      case 'Blood Spoor': return Colors.deepOrange;
-      case 'Water Hole': return Colors.blue;
-      case 'Camp': return Colors.green;
-      default: return Colors.grey;
+      case 'Kill Site':
+        return Colors.red;
+      case 'Blood Spoor':
+        return Colors.deepOrange;
+      case 'Water Hole':
+        return Colors.blue;
+      case 'Camp':
+        return Colors.green;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -186,7 +225,10 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           distanceFilter: 5, // Update every 5 meters
         ),
       ).listen((Position position) {
-        MapPathTracer.instance.appendCoordinate(position.latitude, position.longitude);
+        MapPathTracer.instance.appendCoordinate(
+          position.latitude,
+          position.longitude,
+        );
         if (mounted) {
           setState(() {
             _currentCenter = LatLng(position.latitude, position.longitude);
@@ -233,7 +275,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('📍 Path tracing started - recording trail breadcrumbs'),
+            content: Text(
+              '📍 Path tracing started - recording trail breadcrumbs',
+            ),
             duration: Duration(seconds: 2),
           ),
         );
@@ -268,15 +312,17 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       );
 
       // Simulate a random distance between 50-500 yards for testing
-      final simulatedDistance = 50.0 + (DateTime.now().millisecond % 450).toDouble();
+      final simulatedDistance =
+          50.0 + (DateTime.now().millisecond % 450).toDouble();
 
       // Project target coordinates using the tactical service
-      final projectedCoords = AdvancedTacticalService.instance.projectTargetCoordinates(
-        startLat: position.latitude,
-        startLon: position.longitude,
-        bearingDegrees: _currentHeading,
-        distanceYards: simulatedDistance,
-      );
+      final projectedCoords = AdvancedTacticalService.instance
+          .projectTargetCoordinates(
+            startLat: position.latitude,
+            startLon: position.longitude,
+            bearingDegrees: _currentHeading,
+            distanceYards: simulatedDistance,
+          );
 
       // Add as rangefinder target waypoint
       await _addRangefinderTarget(
@@ -341,22 +387,15 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     _waypointsData.add(waypointData as Map<String, dynamic>);
 
     // Sync to offline queue for later cloud sync
-    await OfflineSyncQueue.instance.enqueueAction(
-      'waypoints',
-      'create',
-      {
-        'documentId': waypointId,
-        'hunterId': userId,
-        'position': {
-          'lat': targetLat,
-          'lon': targetLon,
-        },
-        'type': 'Rangefinder Target',
-        'createdAtMillis': timestamp,
-        'distanceYards': distanceYards,
-        'bearingDegrees': bearingDegrees,
-      },
-    );
+    await OfflineSyncQueue.instance.enqueueAction('waypoints', 'create', {
+      'documentId': waypointId,
+      'hunterId': userId,
+      'position': {'lat': targetLat, 'lon': targetLon},
+      'type': 'Rangefinder Target',
+      'createdAtMillis': timestamp,
+      'distanceYards': distanceYards,
+      'bearingDegrees': bearingDegrees,
+    });
 
     setState(() {});
   }
@@ -532,7 +571,11 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                       labelText: 'Waypoint Name',
                       labelStyle: TextStyle(color: widget.theme.subtitleColor),
                       hintText: 'e.g. Large Kudu Spoor',
-                      hintStyle: TextStyle(color: widget.theme.subtitleColor.withValues(alpha: 0.5)),
+                      hintStyle: TextStyle(
+                        color: widget.theme.subtitleColor.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -544,9 +587,13 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                     ),
                     dropdownColor: widget.theme.cardColor,
                     style: TextStyle(color: widget.theme.textColor),
-                    items: _waypointTypes.map((type) {
-                      return DropdownMenuItem(value: type, child: Text(type));
-                    }).toList(),
+                    items:
+                        _waypointTypes.map((type) {
+                          return DropdownMenuItem(
+                            value: type,
+                            child: Text(type),
+                          );
+                        }).toList(),
                     onChanged: (value) {
                       if (value != null) {
                         setDialogState(() => selectedType = value);
@@ -566,7 +613,10 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: Text('Cancel', style: TextStyle(color: widget.theme.subtitleColor)),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: widget.theme.subtitleColor),
+                  ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -575,7 +625,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   onPressed: () async {
                     if (titleController.text.trim().isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please enter a waypoint name')),
+                        const SnackBar(
+                          content: Text('Please enter a waypoint name'),
+                        ),
                       );
                       return;
                     }
@@ -620,22 +672,20 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     } catch (e) {
       // Network link dropped - fall back to offline sync queue instantly
       try {
-        await OfflineSyncQueue.instance.enqueueAction(
-          'waypoints',
-          'CREATE',
-          {
-            'hunterId': FirebaseAuth.instance.currentUser?.uid,
-            'name': name,
-            'type': type,
-            'lat': position.latitude,
-            'lon': position.longitude,
-          },
-        );
+        await OfflineSyncQueue.instance.enqueueAction('waypoints', 'CREATE', {
+          'hunterId': FirebaseAuth.instance.currentUser?.uid,
+          'name': name,
+          'type': type,
+          'lat': position.latitude,
+          'lon': position.longitude,
+        });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('📱 Waypoint "$name" saved locally. Will sync when back in range.'),
+              content: Text(
+                '📱 Waypoint "$name" saved locally. Will sync when back in range.',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -668,27 +718,30 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
       _waypointsData.add(waypointData);
     });
   }
-  
+
   void _showWaypointDetails(Map<String, dynamic> data) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(data['name'] ?? 'Waypoint'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Type: ${data['type']}'),
-            Text('Position: ${(data['position'] as LatLng).latitude.toStringAsFixed(5)}, ${(data['position'] as LatLng).longitude.toStringAsFixed(5)}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(data['name'] ?? 'Waypoint'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Type: ${data['type']}'),
+                Text(
+                  'Position: ${(data['position'] as LatLng).latitude.toStringAsFixed(5)}, ${(data['position'] as LatLng).longitude.toStringAsFixed(5)}',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -721,19 +774,21 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
     }
 
     setState(() => _isDownloadingTiles = true);
-    
+
     // Simulate tile download for the visible area
     // In production, this would iterate through tile coordinates
     try {
       final bounds = _mapController.camera.visibleBounds;
       final center = bounds.center;
-      
+
       // Calculate tile range for current zoom
       final zoom = _currentZoom.toInt();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('📥 Downloading tiles for zoom level $zoom around ${center.latitude.toStringAsFixed(2)}, ${center.longitude.toStringAsFixed(2)}...'),
+          content: Text(
+            '📥 Downloading tiles for zoom level $zoom around ${center.latitude.toStringAsFixed(2)}, ${center.longitude.toStringAsFixed(2)}...',
+          ),
           backgroundColor: Colors.blue,
           duration: const Duration(seconds: 3),
         ),
@@ -741,10 +796,10 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
       // Add marker for downloaded area
       _preDownloadedMarkers.add(center);
-      
+
       // Simulate download time
       await Future.delayed(const Duration(seconds: 2));
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -804,29 +859,34 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
         children: [
           // Waypoint Filter Toolbar
           _buildWaypointFilterToolbar(theme),
-          
+
           // Status Bar
           _buildStatusBar(theme),
-          
+
           // Map View
           Expanded(
-            child: _isInitialized
-                ? _buildMapView(theme)
-                : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.accentColor)),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Initializing offline cache...',
-                          style: TextStyle(color: theme.textColor),
-                        ),
-                      ],
+            child:
+                _isInitialized
+                    ? _buildMapView(theme)
+                    : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              theme.accentColor,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Initializing offline cache...',
+                            style: TextStyle(color: theme.textColor),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
           ),
-          
+
           // Zoom Controls
           _buildZoomControls(theme),
         ],
@@ -845,7 +905,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           decoration: BoxDecoration(
             color: theme.cardColor,
             border: Border(
-              bottom: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
+              bottom: BorderSide(
+                color: theme.accentColor.withValues(alpha: 0.2),
+              ),
             ),
           ),
           child: Row(
@@ -855,52 +917,66 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: _waypointFilterOptions.map((filter) {
-                      final isSelected = _selectedWaypointFilter == filter;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(
-                            filter,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : theme.textColor,
-                              fontSize: 12,
+                    children:
+                        _waypointFilterOptions.map((filter) {
+                          final isSelected = _selectedWaypointFilter == filter;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(
+                                filter,
+                                style: TextStyle(
+                                  color:
+                                      isSelected
+                                          ? Colors.white
+                                          : theme.textColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                setState(() {
+                                  _selectedWaypointFilter = filter;
+                                });
+                              },
+                              backgroundColor: theme.backgroundColor,
+                              selectedColor: _getFilterChipColor(filter, theme),
+                              checkmarkColor: Colors.white,
+                              side: BorderSide(
+                                color:
+                                    isSelected
+                                        ? _getFilterChipColor(filter, theme)
+                                        : theme.accentColor.withValues(
+                                          alpha: 0.3,
+                                        ),
+                              ),
+                              avatar: Icon(
+                                _getFilterChipIcon(filter),
+                                size: 16,
+                                color:
+                                    isSelected
+                                        ? Colors.white
+                                        : theme.accentColor,
+                              ),
                             ),
-                          ),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedWaypointFilter = filter;
-                            });
-                          },
-                          backgroundColor: theme.backgroundColor,
-                          selectedColor: _getFilterChipColor(filter, theme),
-                          checkmarkColor: Colors.white,
-                          side: BorderSide(
-                            color: isSelected ? _getFilterChipColor(filter, theme) : theme.accentColor.withValues(alpha: 0.3),
-                          ),
-                          avatar: Icon(
-                            _getFilterChipIcon(filter),
-                            size: 16,
-                            color: isSelected ? Colors.white : theme.accentColor,
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                          );
+                        }).toList(),
                   ),
                 ),
               ),
               // Advanced Filter Toggle Button
               Container(
                 decoration: BoxDecoration(
-                  color: _showAdvancedFilters
-                      ? theme.accentColor.withValues(alpha: 0.2)
-                      : theme.backgroundColor,
+                  color:
+                      _showAdvancedFilters
+                          ? theme.accentColor.withValues(alpha: 0.2)
+                          : theme.backgroundColor,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: _showAdvancedFilters
-                        ? theme.accentColor
-                        : theme.accentColor.withValues(alpha: 0.3),
+                    color:
+                        _showAdvancedFilters
+                            ? theme.accentColor
+                            : theme.accentColor.withValues(alpha: 0.3),
                   ),
                 ),
                 child: InkWell(
@@ -911,24 +987,29 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   },
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.tune,
                           size: 18,
-                          color: _showAdvancedFilters
-                              ? theme.accentColor
-                              : theme.textColor,
+                          color:
+                              _showAdvancedFilters
+                                  ? theme.accentColor
+                                  : theme.textColor,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Filters',
                           style: TextStyle(
-                            color: _showAdvancedFilters
-                                ? theme.accentColor
-                                : theme.textColor,
+                            color:
+                                _showAdvancedFilters
+                                    ? theme.accentColor
+                                    : theme.textColor,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -941,13 +1022,13 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ],
           ),
         ),
-        
+
         // Advanced Filter Panel (Slider)
         if (_showAdvancedFilters) _buildAdvancedFilterPanel(theme),
       ],
     );
   }
-  
+
   Widget _buildAdvancedFilterPanel(ThemeController theme) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -963,11 +1044,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           // Time Range Slider
           Row(
             children: [
-              Icon(
-                Icons.access_time,
-                color: theme.accentColor,
-                size: 20,
-              ),
+              Icon(Icons.access_time, color: theme.accentColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Time Range:',
@@ -1010,27 +1087,21 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: _timeRangeLabels.map((label) {
-              return Text(
-                label,
-                style: TextStyle(
-                  color: theme.subtitleColor,
-                  fontSize: 10,
-                ),
-              );
-            }).toList(),
+            children:
+                _timeRangeLabels.map((label) {
+                  return Text(
+                    label,
+                    style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+                  );
+                }).toList(),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Radius Range Slider
           Row(
             children: [
-              Icon(
-                Icons.radar,
-                color: theme.accentColor,
-                size: 20,
-              ),
+              Icon(Icons.radar, color: theme.accentColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Distance:',
@@ -1073,38 +1144,46 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: _radiusLabels.map((label) {
-              return Text(
-                label,
-                style: TextStyle(
-                  color: theme.subtitleColor,
-                  fontSize: 10,
-                ),
-              );
-            }).toList(),
+            children:
+                _radiusLabels.map((label) {
+                  return Text(
+                    label,
+                    style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+                  );
+                }).toList(),
           ),
         ],
       ),
     );
   }
-  
+
   Color _getFilterChipColor(String filter, ThemeController theme) {
     switch (filter) {
-      case 'Kill Site': return Colors.red;
-      case 'Blood Spoor': return Colors.deepOrange;
-      case 'Water Hole': return Colors.blue;
-      case 'Camp': return Colors.green;
-      default: return theme.accentColor;
+      case 'Kill Site':
+        return Colors.red;
+      case 'Blood Spoor':
+        return Colors.deepOrange;
+      case 'Water Hole':
+        return Colors.blue;
+      case 'Camp':
+        return Colors.green;
+      default:
+        return theme.accentColor;
     }
   }
-  
+
   IconData _getFilterChipIcon(String filter) {
     switch (filter) {
-      case 'Kill Site': return Icons.whatshot;
-      case 'Blood Spoor': return Icons.bloodtype;
-      case 'Water Hole': return Icons.water_drop;
-      case 'Camp': return Icons.cabin;
-      default: return Icons.location_on;
+      case 'Kill Site':
+        return Icons.whatshot;
+      case 'Blood Spoor':
+        return Icons.bloodtype;
+      case 'Water Hole':
+        return Icons.water_drop;
+      case 'Camp':
+        return Icons.cabin;
+      default:
+        return Icons.location_on;
     }
   }
 
@@ -1126,19 +1205,13 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               _showOfflineWarning
                   ? '⚠️ Cache unavailable - using online tiles'
                   : '📦 Offline mode: Using cached tiles when available',
-              style: TextStyle(
-                color: theme.textColor,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: theme.textColor, fontSize: 12),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(
             'Zoom: ${_currentZoom.toInt()}',
-            style: TextStyle(
-              color: theme.subtitleColor,
-              fontSize: 11,
-            ),
+            style: TextStyle(color: theme.subtitleColor, fontSize: 11),
           ),
           const SizedBox(width: 8),
           if (_preDownloadedMarkers.isNotEmpty)
@@ -1173,7 +1246,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             minZoom: 3,
             maxZoom: 18,
             onMapReady: _onMapReady,
-            onLongPress: (tapPosition, point) => _showWaypointCreationDialog(context, point),
+            onLongPress:
+                (tapPosition, point) =>
+                    _showWaypointCreationDialog(context, point),
             onPositionChanged: (position, hasGesture) {
               if (hasGesture && mounted) {
                 setState(() {
@@ -1189,7 +1264,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               fallbackUrl: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
               maxZoom: 18,
             ),
-            
+
             // Trail path polyline layer - walnut HUD high-contrast path marker
             PolylineLayer(
               polylines: [
@@ -1206,37 +1281,39 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                 ),
               ],
             ),
-            
+
             // Display cached area markers
             MarkerLayer(
-              markers: _preDownloadedMarkers.map((latlng) {
-                return Marker(
-                  point: latlng,
-                  width: 24,
-                  height: 24,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: theme.accentColor.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: theme.accentColor, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.download_done,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                );
-              }).toList(),
+              markers:
+                  _preDownloadedMarkers.map((latlng) {
+                    return Marker(
+                      point: latlng,
+                      width: 24,
+                      height: 24,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: theme.accentColor.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: theme.accentColor,
+                            width: 2,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.download_done,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
-            
+
             // Active user waypoint markers
-            MarkerLayer(
-              markers: _activeWaypointsList,
-            ),
+            MarkerLayer(markers: _activeWaypointsList),
           ],
         ),
-        
+
         // Compass Overlay
         Positioned(
           top: 16,
@@ -1246,7 +1323,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             decoration: BoxDecoration(
               color: theme.cardColor.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.3),
+              ),
             ),
             child: Column(
               children: [
@@ -1264,7 +1343,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ),
           ),
         ),
-        
+
         // Center on My Location & GPS Track Button
         Positioned(
           top: 16,
@@ -1274,19 +1353,22 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _isGpsTrackingActive
-                    ? Colors.green.withValues(alpha: 0.9)
-                    : theme.cardColor.withValues(alpha: 0.9),
+                color:
+                    _isGpsTrackingActive
+                        ? Colors.green.withValues(alpha: 0.9)
+                        : theme.cardColor.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _isGpsTrackingActive ? Colors.green : theme.accentColor,
+                  color:
+                      _isGpsTrackingActive ? Colors.green : theme.accentColor,
                   width: _isGpsTrackingActive ? 2 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: _isGpsTrackingActive
-                        ? Colors.green.withValues(alpha: 0.4)
-                        : Colors.black.withValues(alpha: 0.2),
+                    color:
+                        _isGpsTrackingActive
+                            ? Colors.green.withValues(alpha: 0.4)
+                            : Colors.black.withValues(alpha: 0.2),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -1297,14 +1379,16 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                 children: [
                   Icon(
                     Icons.my_location,
-                    color: _isGpsTrackingActive ? Colors.white : theme.accentColor,
+                    color:
+                        _isGpsTrackingActive ? Colors.white : theme.accentColor,
                     size: 24,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     _isGpsTrackingActive ? 'TRACK' : 'GPS',
                     style: TextStyle(
-                      color: _isGpsTrackingActive ? Colors.white : theme.textColor,
+                      color:
+                          _isGpsTrackingActive ? Colors.white : theme.textColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 9,
                     ),
@@ -1314,66 +1398,77 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ),
           ),
         ),
-        
+
         // Bluetooth Rangefinder Sync Button
         Positioned(
           top: 16,
           right: 134,
           child: GestureDetector(
-            onTap: _isSimulatingRangefinder ? null : _simulateRangefinderTrigger,
+            onTap:
+                _isSimulatingRangefinder ? null : _simulateRangefinderTrigger,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _isRangefinderConnected
-                    ? Colors.blue.withValues(alpha: 0.9)
-                    : theme.cardColor.withValues(alpha: 0.9),
+                color:
+                    _isRangefinderConnected
+                        ? Colors.blue.withValues(alpha: 0.9)
+                        : theme.cardColor.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _isRangefinderConnected ? Colors.blue : theme.accentColor,
+                  color:
+                      _isRangefinderConnected ? Colors.blue : theme.accentColor,
                   width: _isRangefinderConnected ? 2 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: _isRangefinderConnected
-                        ? Colors.blue.withValues(alpha: 0.4)
-                        : Colors.black.withValues(alpha: 0.2),
+                    color:
+                        _isRangefinderConnected
+                            ? Colors.blue.withValues(alpha: 0.4)
+                            : Colors.black.withValues(alpha: 0.2),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
                 ],
               ),
-              child: _isSimulatingRangefinder
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: theme.accentColor,
-                      ),
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.bluetooth_searching,
-                          color: _isRangefinderConnected ? Colors.white : theme.accentColor,
-                          size: 24,
+              child:
+                  _isSimulatingRangefinder
+                      ? SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.accentColor,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'RF',
-                          style: TextStyle(
-                            color: _isRangefinderConnected ? Colors.white : theme.textColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 9,
+                      )
+                      : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.bluetooth_searching,
+                            color:
+                                _isRangefinderConnected
+                                    ? Colors.white
+                                    : theme.accentColor,
+                            size: 24,
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'RF',
+                            style: TextStyle(
+                              color:
+                                  _isRangefinderConnected
+                                      ? Colors.white
+                                      : theme.textColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ],
+                      ),
             ),
           ),
         ),
-        
+
         // Coordinates Display
         Positioned(
           bottom: 80,
@@ -1383,7 +1478,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             decoration: BoxDecoration(
               color: theme.cardColor.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.3),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1391,10 +1488,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               children: [
                 Text(
                   '📍 Center:',
-                  style: TextStyle(
-                    color: theme.subtitleColor,
-                    fontSize: 10,
-                  ),
+                  style: TextStyle(color: theme.subtitleColor, fontSize: 10),
                 ),
                 Text(
                   _isMapReady
@@ -1410,7 +1504,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ),
           ),
         ),
-        
+
         // Path Tracing Toggle FAB
         Positioned(
           bottom: 140,
@@ -1424,23 +1518,32 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   heroTag: 'clearPath',
                   backgroundColor: theme.cardColor,
                   onPressed: _clearRecordedPath,
-                  child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
+                  child: Icon(
+                    Icons.delete_outline,
+                    color: Colors.red.shade400,
+                    size: 20,
+                  ),
                 ),
               const SizedBox(height: 8),
               // Recording toggle FAB
               FloatingActionButton(
                 heroTag: 'pathTrace',
-                backgroundColor: MapPathTracer.instance.isTracking ? Colors.red : theme.accentColor,
+                backgroundColor:
+                    MapPathTracer.instance.isTracking
+                        ? Colors.red
+                        : theme.accentColor,
                 onPressed: _togglePathTracing,
                 child: Icon(
-                  MapPathTracer.instance.isTracking ? Icons.stop : Icons.fiber_manual_record,
+                  MapPathTracer.instance.isTracking
+                      ? Icons.stop
+                      : Icons.fiber_manual_record,
                   color: Colors.white,
                 ),
               ),
             ],
           ),
         ),
-        
+
         // Tracking indicator
         if (MapPathTracer.instance.isTracking)
           Positioned(
@@ -1455,7 +1558,11 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
+                  Icon(
+                    Icons.fiber_manual_record,
+                    color: Colors.white,
+                    size: 12,
+                  ),
                   SizedBox(width: 8),
                   Text(
                     'RECORDING',
@@ -1487,7 +1594,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             theme: theme,
           ),
           const SizedBox(width: 24),
-          
+
           // Zoom Level Indicator
           Container(
             width: 80,
@@ -1495,7 +1602,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             decoration: BoxDecoration(
               color: theme.backgroundColor,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.3),
+              ),
             ),
             child: Column(
               children: [
@@ -1519,13 +1628,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
             ),
           ),
           const SizedBox(width: 24),
-          
+
           // Zoom In Button
-          _buildZoomButton(
-            icon: Icons.add,
-            onPressed: _zoomIn,
-            theme: theme,
-          ),
+          _buildZoomButton(icon: Icons.add, onPressed: _zoomIn, theme: theme),
         ],
       ),
     );

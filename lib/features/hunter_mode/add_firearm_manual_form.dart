@@ -80,9 +80,23 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
   @override
   void dispose() {
     for (final c in [
-      _licenceType, _holderName, _idNumber, _make, _model, _caliber, _serial,
-      _licenceNumber, _licenceSection, _firearmType, _manufacturer, _issueDate,
-      _expiryDate, _barrelLength, _barrelLife, _twistRate, _actionType,
+      _licenceType,
+      _holderName,
+      _idNumber,
+      _make,
+      _model,
+      _caliber,
+      _serial,
+      _licenceNumber,
+      _licenceSection,
+      _firearmType,
+      _manufacturer,
+      _issueDate,
+      _expiryDate,
+      _barrelLength,
+      _barrelLife,
+      _twistRate,
+      _actionType,
     ]) {
       c.dispose();
     }
@@ -157,7 +171,8 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
       'firearmType': _firearmType.text.trim(),
       'manufacturer': _manufacturer.text.trim(),
       'issueDate': _issueDate.text.trim(),
-      'expiry': _expiryDate.text.trim().isEmpty ? 'N/A' : _expiryDate.text.trim(),
+      'expiry':
+          _expiryDate.text.trim().isEmpty ? 'N/A' : _expiryDate.text.trim(),
       'barrelLength': _barrelLength.text.trim(),
       'barrelLife': _barrelLife.text.trim(),
       'twistRate': _twistRate.text.trim(),
@@ -179,8 +194,10 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
-        title: Text(widget.initial != null ? 'EDIT FIREARM' : 'FIREARM REGISTRY',
-            style: TextStyle(color: theme.textColor)),
+        title: Text(
+          widget.initial != null ? 'EDIT FIREARM' : 'FIREARM REGISTRY',
+          style: TextStyle(color: theme.textColor),
+        ),
         backgroundColor: theme.backgroundColor,
         iconTheme: IconThemeData(color: theme.accentColor),
         actions: [
@@ -207,19 +224,34 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   if (v == null || v.isEmpty) return null;
-                  return _isValidRsaId(v) ? null : 'Invalid South African ID format';
+                  return _isValidRsaId(v)
+                      ? null
+                      : 'Invalid South African ID format';
                 },
               ),
               _section(theme, 'FIREARM DETAILS'),
-              _field(theme, _make, 'Make',
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? 'Please enter the make' : null),
+              _field(
+                theme,
+                _make,
+                'Make',
+                validator:
+                    (v) =>
+                        (v == null || v.isEmpty)
+                            ? 'Please enter the make'
+                            : null,
+              ),
               _field(theme, _model, 'Model'),
               _field(theme, _caliber, 'Caliber'),
-              _field(theme, _serial, 'Serial Number',
-                  validator: (v) => (v == null || v.isEmpty)
-                      ? 'Please enter the serial number'
-                      : null),
+              _field(
+                theme,
+                _serial,
+                'Serial Number',
+                validator:
+                    (v) =>
+                        (v == null || v.isEmpty)
+                            ? 'Please enter the serial number'
+                            : null,
+              ),
               _field(theme, _licenceNumber, 'License Number'),
               _field(theme, _licenceSection, 'License Section'),
               _field(theme, _firearmType, 'Firearm Type'),
@@ -237,12 +269,17 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
                   minimumSize: const Size(double.infinity, 50.0),
                   side: BorderSide(color: theme.accentColor, width: 1.5),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0)),
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
                 ),
                 icon: Icon(Icons.qr_code_scanner, color: theme.accentColor),
-                label: Text('SCAN LICENSE',
-                    style: TextStyle(
-                        color: theme.accentColor, fontWeight: FontWeight.bold)),
+                label: Text(
+                  'SCAN LICENSE',
+                  style: TextStyle(
+                    color: theme.accentColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 onPressed: _launchScanner,
               ),
               const SizedBox(height: 12.0),
@@ -251,13 +288,17 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
                   backgroundColor: theme.accentColor,
                   minimumSize: const Size(double.infinity, 50.0),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0)),
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
                 ),
                 onPressed: _saveFirearm,
-                child: Text('SAVE FIREARM',
-                    style: TextStyle(
-                        color: theme.isDarkMode ? Colors.black : Colors.white,
-                        fontWeight: FontWeight.bold)),
+                child: Text(
+                  'SAVE FIREARM',
+                  style: TextStyle(
+                    color: theme.isDarkMode ? Colors.black : Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -267,14 +308,17 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
   }
 
   Widget _section(ThemeController theme, String label) => Padding(
-        padding: const EdgeInsets.only(top: 8.0, bottom: 12.0),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: theme.subtitleColor,
-                letterSpacing: 1.5)),
-      );
+    padding: const EdgeInsets.only(top: 8.0, bottom: 12.0),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        color: theme.subtitleColor,
+        letterSpacing: 1.5,
+      ),
+    ),
+  );
 
   Widget _field(
     ThemeController theme,
@@ -294,8 +338,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
           labelStyle: TextStyle(color: theme.subtitleColor),
           fillColor: theme.cardColor,
           filled: true,
-          border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
         ),
         validator: validator,
       ),
@@ -303,7 +346,10 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
   }
 
   Widget _dateField(
-      ThemeController theme, TextEditingController controller, String label) {
+    ThemeController theme,
+    TextEditingController controller,
+    String label,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: TextFormField(
@@ -317,8 +363,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
           fillColor: theme.cardColor,
           filled: true,
           suffixIcon: Icon(Icons.calendar_today, color: theme.accentColor),
-          border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
         ),
       ),
     );

@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class OutfitterEnterpriseManager {
-  static final OutfitterEnterpriseManager _instance = OutfitterEnterpriseManager._internal();
+  static final OutfitterEnterpriseManager _instance =
+      OutfitterEnterpriseManager._internal();
   static OutfitterEnterpriseManager get instance => _instance;
 
   OutfitterEnterpriseManager._internal();
@@ -17,14 +18,14 @@ class OutfitterEnterpriseManager {
   // RECORD NEW FARM / CONCESSION LOCATION
   // ==========================================
   /// Creates a new farm/concession entry for the authenticated outfitter.
-  /// 
+  ///
   /// Parameters:
   /// - [name]: Farm or concession name (e.g., "Kgalagadi Game Farm")
   /// - [district]: District or region name
   /// - [province]: Province (e.g., "Northern Cape")
-  /// 
+  ///
   /// Returns: void (saves to Firestore 'farms' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> addFarm({
     required String name,
@@ -56,14 +57,14 @@ class OutfitterEnterpriseManager {
   // ASSIGN MANAGER TO FARM
   // ==========================================
   /// Assigns a manager to a specific farm/concession.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: Firestore document ID of the farm
   /// - [managerEmail]: Email address of the manager
   /// - [managerName]: Full name of the manager
-  /// 
+  ///
   /// Returns: void (saves to Firestore 'farm_managers' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> assignManager({
     required String farmId,
@@ -101,15 +102,15 @@ class OutfitterEnterpriseManager {
   // UPLOAD AVAILABLE TROPHY STOCK BY FARM
   // ==========================================
   /// Syncs trophy species availability and pricing for a specific farm.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: Firestore document ID of the farm
   /// - [species]: Animal species name (e.g., "African Lion", "Cape Buffalo")
   /// - [availableCount]: Number of available trophy permits/quota
   /// - [pricePerTrophyRands]: Price per trophy in South African Rand
-  /// 
+  ///
   /// Returns: void (saves to Firestore 'trophies' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> syncTrophyStock({
     required String farmId,
@@ -151,15 +152,15 @@ class OutfitterEnterpriseManager {
   // APPROVE / DECLINE BOOKING TRANSACTIONS
   // ==========================================
   /// Updates the status of a booking request (Approve or Decline).
-  /// 
+  ///
   /// Parameters:
   /// - [bookingId]: Firestore document ID of the booking
   /// - [newStatus]: New status ('Approved' or 'Declined')
-  /// 
+  ///
   /// Valid statuses: 'Pending Approval', 'Approved', 'Declined', 'Completed', 'Cancelled'
-  /// 
+  ///
   /// Returns: void (updates Firestore 'bookings' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or update fails
   Future<void> updateBookingStatus({
     required String bookingId,
@@ -183,12 +184,15 @@ class OutfitterEnterpriseManager {
     ];
 
     if (!validStatuses.contains(newStatus)) {
-      throw Exception('Invalid booking status: $newStatus. Valid options: ${validStatuses.join(", ")}');
+      throw Exception(
+        'Invalid booking status: $newStatus. Valid options: ${validStatuses.join(", ")}',
+      );
     }
 
     // Verify the booking belongs to this outfitter
-    final bookingDoc = await _firestore.collection('bookings').doc(bookingId).get();
-    
+    final bookingDoc =
+        await _firestore.collection('bookings').doc(bookingId).get();
+
     if (!bookingDoc.exists) {
       throw Exception('Booking not found');
     }

@@ -16,20 +16,22 @@ class LodgingUnit {
     this.status = 'vacant',
   });
 
-  factory LodgingUnit.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory LodgingUnit.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final data = doc.data();
     if (data == null) {
-      debugPrint('LodgingUnit document ${doc.id} has no data, returning default unit');
-      return LodgingUnit(
-        id: doc.id,
-        unitName: 'Unknown Unit',
-        maxCapacity: 1,
+      debugPrint(
+        'LodgingUnit document ${doc.id} has no data, returning default unit',
       );
+      return LodgingUnit(id: doc.id, unitName: 'Unknown Unit', maxCapacity: 1);
     }
     try {
       return LodgingUnit.fromJson(data, id: doc.id);
     } catch (e) {
-      debugPrint('Error parsing LodgingUnit ${doc.id}: $e, returning default unit');
+      debugPrint(
+        'Error parsing LodgingUnit ${doc.id}: $e, returning default unit',
+      );
       return LodgingUnit(
         id: doc.id,
         unitName: data['unitName'] as String? ?? 'Unknown Unit',

@@ -78,7 +78,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    
+
     // HUNTER MODE - Field & Tracking Tools
     final List<DashboardFeature> hunterFeatures = [
       DashboardFeature(
@@ -86,94 +86,104 @@ class _HunterDashboardState extends State<HunterDashboard> {
         icon: Icons.wb_sunny_rounded,
         title: 'Weather & Wind Tracker',
         description: 'Live wind direction and solunar cycles.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => WeatherTrackerScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => WeatherTrackerScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'spoor_tracker',
         icon: Icons.visibility_rounded,
         title: 'Track (Spoor) Identifier',
         description: 'Scan footprints with AI matching and GPS logging.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => SpoorDetectionHudScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SpoorDetectionHudScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'game_guide',
         icon: Icons.eco_rounded,
         title: 'SA Game Guide',
         description: 'Species profiles and photos — works offline.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AnimalListScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AnimalListScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'firearm_safe',
         icon: Icons.security_rounded,
         title: '🔒 Digital Firearm Safe',
         description: 'Manage rifle licenses and barrel twist profiles.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FirearmSafeScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FirearmSafeScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'ammunition',
         icon: Icons.grain_rounded,
         title: 'Ammunition Manager',
         description: 'Manage factory ammunition and custom loads.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AmmunitionScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AmmunitionScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'trophy_room',
         icon: Icons.menu_book_rounded,
         title: 'Digital Trophy Room',
         description: 'Log sightings and shot placements.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => TrophyRoomScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TrophyRoomScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'field_estimate',
         icon: Icons.remove_red_eye_rounded,
         title: 'Field Estimate Verification',
         description: 'Estimate horn length from visual ear-to-horn ratios.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FieldEstimateScreen(theme: theme),
-          ),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FieldEstimateScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'ballistic_calculator',
         icon: Icons.calculate_rounded,
         title: 'Ballistic Calculator',
         description: 'Quick bullet drop and velocity tracking.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const BallisticCalcScreen()),
-        ),
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const BallisticCalcScreen(),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'scope_settings',
@@ -192,17 +202,22 @@ class _HunterDashboardState extends State<HunterDashboard> {
         id: 'scope_calibration_hud',
         icon: Icons.gps_fixed,
         title: '🎯 Rifle Scope Ballistic HUD',
-        description: 'Advanced turret dial calibration with MOA/MRAD click calculator and rangefinder integration.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ScopeCalibrationScreen(theme: theme)),
-        ),
+        description:
+            'Advanced turret dial calibration with MOA/MRAD click calculator and rangefinder integration.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ScopeCalibrationScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'saps_tracker',
         icon: Icons.badge_rounded,
         title: '💳 SAPS Tracker & Competency',
-        description: 'Monitor firearm license and competency application statuses via daily automated scrapers.',
+        description:
+            'Monitor firearm license and competency application statuses via daily automated scrapers.',
         onTap: (context, theme) {
           Navigator.push(
             context,
@@ -214,47 +229,62 @@ class _HunterDashboardState extends State<HunterDashboard> {
         id: 'offgrid_mesh_sync',
         icon: Icons.radar_rounded,
         title: '📡 Off-Grid Mesh Sync',
-        description: 'P2P Bluetooth telemetry and team radar without cell service.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const MeshRadarScreen()),
-        ),
+        description:
+            'P2P Bluetooth telemetry and team radar without cell service.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const MeshRadarScreen()),
+            ),
       ),
       DashboardFeature(
         id: 'carcass_matrix',
         icon: Icons.inventory_2_rounded,
         title: '🥩 Slaughterhouse Carcass Matrix',
-        description: 'Track hanging game, cold storage positions, and field-to-hanging weight ratios.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => CarcassMatrixScreen(theme: theme)),
-        ),
+        description:
+            'Track hanging game, cold storage positions, and field-to-hanging weight ratios.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CarcassMatrixScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'offline_map',
         icon: Icons.map_rounded,
         title: '🗺️ Off-Grid Topographic Map',
-        description: 'OpenTopoMap contours cached for complete offline navigation in the field.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => OfflineNavigationScreen(theme: theme)),
-        ),
+        description:
+            'OpenTopoMap contours cached for complete offline navigation in the field.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OfflineNavigationScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'blood_trail_tracker',
         icon: Icons.bloodtype_rounded,
         title: '🩸 Blood Trail Tracking Radar',
-        description: 'Camera overlay with red-tone isolation to locate blood spoor and drop GPS waypoints.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => BloodTrackerScreen(theme: theme)),
-        ),
+        description:
+            'Camera overlay with red-tone isolation to locate blood spoor and drop GPS waypoints.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BloodTrackerScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'report_bug',
         icon: Icons.bug_report_rounded,
         title: '🪲 Report Bug',
-        description: 'Encountered a glitch in the bush? Log to cloud and alert support.',
+        description:
+            'Encountered a glitch in the bush? Log to cloud and alert support.',
         onTap: (context, theme) {
           showModalBottomSheet(
             context: context,
@@ -267,7 +297,8 @@ class _HunterDashboardState extends State<HunterDashboard> {
         id: 'suggest_feature',
         icon: Icons.lightbulb_outline_rounded,
         title: '💡 Suggest New Feature',
-        description: 'Have an idea for a tactical tracking tool? Inform our engineering team.',
+        description:
+            'Have an idea for a tactical tracking tool? Inform our engineering team.',
         onTap: (context, theme) {
           showModalBottomSheet(
             context: context,
@@ -284,39 +315,50 @@ class _HunterDashboardState extends State<HunterDashboard> {
         id: 'marketplace',
         icon: Icons.shopping_bag_rounded,
         title: '🎯 Package Marketplace',
-        description: 'Browse and book hunting packages from verified outfitters.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => HunterPackageMarketplaceScreen(theme: theme)),
-        ),
+        description:
+            'Browse and book hunting packages from verified outfitters.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (context) => HunterPackageMarketplaceScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'trophy_browser',
         icon: Icons.pets_rounded,
         title: '🦌 Trophy Registry & Booking',
-        description: 'View trophy species from outfitters and add to your booking log.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => HunterTrophyBrowserScreen(theme: theme)),
-        ),
+        description:
+            'View trophy species from outfitters and add to your booking log.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HunterTrophyBrowserScreen(theme: theme),
+              ),
+            ),
       ),
       DashboardFeature(
         id: 'custom_package_builder',
         icon: Icons.construction_rounded,
         title: '🦌 Custom Package Itinerary Builder',
-        description: 'Build custom hunting itineraries from scanned price lists.',
-        onTap: (context, theme) => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => HunterCustomPackageBuilderScreen(theme: theme)),
-        ),
+        description:
+            'Build custom hunting itineraries from scanned price lists.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (context) => HunterCustomPackageBuilderScreen(theme: theme),
+              ),
+            ),
       ),
     ];
 
     // Combine all features for sorting
-    final allFeatures = [
-      ...hunterFeatures,
-      ...marketplaceFeatures,
-    ];
+    final allFeatures = [...hunterFeatures, ...marketplaceFeatures];
 
     allFeatures.sort(_sortFeatures);
 
@@ -340,12 +382,13 @@ class _HunterDashboardState extends State<HunterDashboard> {
             actions: [
               IconButton(
                 icon: Icon(Icons.settings_rounded, color: theme.accentColor),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HunterProfileScreen(theme: theme),
-                  ),
-                ),
+                onPressed:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => HunterProfileScreen(theme: theme),
+                      ),
+                    ),
               ),
             ],
           ),

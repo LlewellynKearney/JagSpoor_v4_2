@@ -22,10 +22,14 @@ class ClientBooking {
     this.status = 'pending',
   });
 
-  factory ClientBooking.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory ClientBooking.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final data = doc.data();
     if (data == null) {
-      debugPrint('ClientBooking document ${doc.id} has no data, returning default booking');
+      debugPrint(
+        'ClientBooking document ${doc.id} has no data, returning default booking',
+      );
       return ClientBooking(
         id: doc.id,
         clientName: 'Unknown Client',
@@ -39,7 +43,9 @@ class ClientBooking {
     try {
       return ClientBooking.fromJson(data, id: doc.id);
     } catch (e) {
-      debugPrint('Error parsing ClientBooking ${doc.id}: $e, returning default booking');
+      debugPrint(
+        'Error parsing ClientBooking ${doc.id}: $e, returning default booking',
+      );
       return ClientBooking(
         id: doc.id,
         clientName: data['clientName'] as String? ?? 'Unknown Client',

@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class PackageBookingManager {
-  static final PackageBookingManager _instance = PackageBookingManager._internal();
+  static final PackageBookingManager _instance =
+      PackageBookingManager._internal();
   static PackageBookingManager get instance => _instance;
 
   PackageBookingManager._internal();
@@ -20,16 +21,16 @@ class PackageBookingManager {
   // OUTFITTER - PUBLISH PACKAGE
   // ==========================================
   /// Publishes a new hunting package to the marketplace.
-  /// 
+  ///
   /// Parameters:
   /// - [title]: Package title/name
   /// - [description]: Detailed description of the package
   /// - [basePriceRands]: Base price in South African Rand
   /// - [inclusions]: List of what's included (e.g., ["Transport", "Accommodation", "Meals"])
   /// - [farmId]: Optional farm/concession ID to bind the package to
-  /// 
+  ///
   /// Returns: void (saves to Firestore 'packages' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> publishPackage({
     required String title,
@@ -76,18 +77,18 @@ class PackageBookingManager {
   // HUNTER - BOOK PACKAGE WITH 5% COMMISSION
   // ==========================================
   /// Books a hunting package with automatic 5% platform commission calculation.
-  /// 
+  ///
   /// Parameters:
   /// - [packageId]: Firestore document ID of the package being booked
   /// - [outfitterId]: UID of the outfitter who owns the package
   /// - [basePriceRands]: Base price of the package in Rand
-  /// 
+  ///
   /// Commission Calculation:
   /// - Commission Fee = basePriceRands × 0.05 (5%)
   /// - Total Hunter Price = basePriceRands + commissionFee
-  /// 
+  ///
   /// Returns: void (saves to Firestore 'bookings' collection)
-  /// 
+  ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> bookPackage({
     required String packageId,
@@ -141,7 +142,7 @@ class PackageBookingManager {
   Map<String, double> calculateCommission(double basePriceRands) {
     final double commissionFee = basePriceRands * platformCommissionRate;
     final double totalPrice = basePriceRands + commissionFee;
-    
+
     return {
       'basePriceRands': basePriceRands,
       'commissionFee': commissionFee,
@@ -163,7 +164,7 @@ class PackageBookingManager {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated');
     }
-    
+
     return await _firestore
         .collection('packages')
         .where('outfitterId', isEqualTo: _currentUserId)
@@ -176,7 +177,7 @@ class PackageBookingManager {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated');
     }
-    
+
     return await _firestore
         .collection('bookings')
         .where('hunterId', isEqualTo: _currentUserId)
@@ -188,7 +189,7 @@ class PackageBookingManager {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated');
     }
-    
+
     return await _firestore
         .collection('bookings')
         .where('outfitterId', isEqualTo: _currentUserId)
@@ -248,11 +249,12 @@ class PackageBookingManager {
   }
 
   /// Fetch snapshot of factory ammunition matching selected firearm caliber.
-  Future<QuerySnapshot> fetchFactoryAmmunitionByCaliber(String firearmCaliber) async {
+  Future<QuerySnapshot> fetchFactoryAmmunitionByCaliber(
+    String firearmCaliber,
+  ) async {
     return await _firestore
         .collection('factory_ammunition')
         .where('caliber', isEqualTo: firearmCaliber)
         .get();
   }
 }
-

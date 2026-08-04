@@ -117,7 +117,8 @@ class ChatAndFilterService {
     final deltaLonRad = _degreesToRadians(lon2 - lon1);
 
     // Haversine formula
-    final a = math.sin(deltaLatRad / 2) * math.sin(deltaLatRad / 2) +
+    final a =
+        math.sin(deltaLatRad / 2) * math.sin(deltaLatRad / 2) +
         math.cos(lat1Rad) *
             math.cos(lat2Rad) *
             math.sin(deltaLonRad / 2) *
@@ -165,7 +166,8 @@ class ChatAndFilterService {
     }
 
     final currentTimeMillis = DateTime.now().millisecondsSinceEpoch;
-    final maxAgeMillis = maxHoursFilter * 3600000; // Convert hours to milliseconds
+    final maxAgeMillis =
+        maxHoursFilter * 3600000; // Convert hours to milliseconds
 
     final ageMillis = currentTimeMillis - documentTimestampMillis;
 

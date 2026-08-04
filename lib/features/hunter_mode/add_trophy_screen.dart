@@ -371,18 +371,20 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
         'harvestDate': _harvestDate?.toIso8601String().split('T').first ?? '',
         'location': _locationController.text,
         'coordinates': _gpsCoordinates ?? '',
-        'antlerSpread': _antlerSpreadController.text.isEmpty
-            ? null
-            : _antlerSpreadController.text,
-        'antlerLength': _antlerLengthController.text.isEmpty
-            ? null
-            : _antlerLengthController.text,
-        'antlerCircumference': _antlerCircumferenceController.text.isEmpty
-            ? null
-            : _antlerCircumferenceController.text,
-        'weight': _weightController.text.isEmpty
-            ? null
-            : _weightController.text,
+        'antlerSpread':
+            _antlerSpreadController.text.isEmpty
+                ? null
+                : _antlerSpreadController.text,
+        'antlerLength':
+            _antlerLengthController.text.isEmpty
+                ? null
+                : _antlerLengthController.text,
+        'antlerCircumference':
+            _antlerCircumferenceController.text.isEmpty
+                ? null
+                : _antlerCircumferenceController.text,
+        'weight':
+            _weightController.text.isEmpty ? null : _weightController.text,
         'firearmUsed': _selectedFirearmDisplay ?? '',
         'firearmId': _selectedFirearmId,
         'tags': _tags,
@@ -456,13 +458,14 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                           Text(
                             _harvestDate != null
                                 ? DateFormat(
-                                    'MMM dd, yyyy',
-                                  ).format(_harvestDate!)
+                                  'MMM dd, yyyy',
+                                ).format(_harvestDate!)
                                 : 'Select date',
                             style: TextStyle(
-                              color: _harvestDate != null
-                                  ? widget.theme.textColor
-                                  : widget.theme.subtitleColor,
+                              color:
+                                  _harvestDate != null
+                                      ? widget.theme.textColor
+                                      : widget.theme.subtitleColor,
                             ),
                           ),
                         ],
@@ -492,31 +495,34 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      icon: _isLoadingGps
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  widget.theme.isDarkMode
-                                      ? Colors.black
-                                      : Colors.white,
+                      icon:
+                          _isLoadingGps
+                              ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
+                                  ),
                                 ),
+                              )
+                              : Icon(
+                                Icons.gps_fixed,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                               ),
-                            )
-                          : Icon(
-                              Icons.gps_fixed,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
-                            ),
                       label: Text(
                         _isLoadingGps ? 'Logging GPS...' : 'GPS LOGGING',
                         style: TextStyle(
-                          color: widget.theme.isDarkMode
-                              ? Colors.black
-                              : Colors.white,
+                          color:
+                              widget.theme.isDarkMode
+                                  ? Colors.black
+                                  : Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -598,9 +604,10 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                         child: IconButton(
                           icon: Icon(
                             Icons.add,
-                            color: widget.theme.isDarkMode
-                                ? Colors.black
-                                : Colors.white,
+                            color:
+                                widget.theme.isDarkMode
+                                    ? Colors.black
+                                    : Colors.white,
                           ),
                           onPressed: _addTag,
                         ),
@@ -612,48 +619,48 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _tags
-                          .map(
-                            (tag) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: widget.theme.accentColor.withValues(
-                                  alpha: 0.15,
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: widget.theme.accentColor.withValues(
-                                    alpha: 0.3,
+                      children:
+                          _tags
+                              .map(
+                                (tag) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
                                   ),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    tag,
-                                    style: TextStyle(
-                                      color: widget.theme.accentColor,
-                                      fontSize: 13,
+                                  decoration: BoxDecoration(
+                                    color: widget.theme.accentColor.withValues(
+                                      alpha: 0.15,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: widget.theme.accentColor
+                                          .withValues(alpha: 0.3),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  GestureDetector(
-                                    onTap: () => _removeTag(tag),
-                                    child: Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: widget.theme.accentColor,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        tag,
+                                        style: TextStyle(
+                                          color: widget.theme.accentColor,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () => _removeTag(tag),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: widget.theme.accentColor,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          )
-                          .toList(),
+                                ),
+                              )
+                              .toList(),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -736,16 +743,18 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                             ),
                             icon: Icon(
                               Icons.camera_alt,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
+                              color:
+                                  widget.theme.isDarkMode
+                                      ? Colors.black
+                                      : Colors.white,
                             ),
                             label: Text(
                               'TAKE PHOTO',
                               style: TextStyle(
-                                color: widget.theme.isDarkMode
-                                    ? Colors.black
-                                    : Colors.white,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -765,16 +774,18 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                             ),
                             icon: Icon(
                               Icons.image,
-                              color: widget.theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
+                              color:
+                                  widget.theme.isDarkMode
+                                      ? Colors.black
+                                      : Colors.white,
                             ),
                             label: Text(
                               'GALLERY',
                               style: TextStyle(
-                                color: widget.theme.isDarkMode
-                                    ? Colors.black
-                                    : Colors.white,
+                                color:
+                                    widget.theme.isDarkMode
+                                        ? Colors.black
+                                        : Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -829,16 +840,18 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                       ),
                       icon: Icon(
                         Icons.check,
-                        color: widget.theme.isDarkMode
-                            ? Colors.black
-                            : Colors.white,
+                        color:
+                            widget.theme.isDarkMode
+                                ? Colors.black
+                                : Colors.white,
                       ),
                       label: Text(
                         'SAVE TROPHY',
                         style: TextStyle(
-                          color: widget.theme.isDarkMode
-                              ? Colors.black
-                              : Colors.white,
+                          color:
+                              widget.theme.isDarkMode
+                                  ? Colors.black
+                                  : Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -884,7 +897,9 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                   height: MediaQuery.of(context).size.height * 0.75,
                   decoration: BoxDecoration(
                     color: widget.theme.cardColor,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
                   ),
                   child: Column(
                     children: [
@@ -904,7 +919,10 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: Icon(Icons.close, color: widget.theme.textColor),
+                              icon: Icon(
+                                Icons.close,
+                                color: widget.theme.textColor,
+                              ),
                               onPressed: () => Navigator.pop(context),
                             ),
                           ],
@@ -912,22 +930,35 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                       ),
                       // Search bar
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         child: TextField(
                           controller: _speciesSearchController,
                           decoration: InputDecoration(
-                            hintText: 'Search species (English or Afrikaans)...',
-                            hintStyle: TextStyle(color: widget.theme.subtitleColor),
-                            prefixIcon: Icon(Icons.search, color: widget.theme.accentColor),
-                            suffixIcon: _speciesSearchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: Icon(Icons.clear, color: widget.theme.accentColor),
-                                    onPressed: () {
-                                      _speciesSearchController.clear();
-                                      setModalState(() {});
-                                    },
-                                  )
-                                : null,
+                            hintText:
+                                'Search species (English or Afrikaans)...',
+                            hintStyle: TextStyle(
+                              color: widget.theme.subtitleColor,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              color: widget.theme.accentColor,
+                            ),
+                            suffixIcon:
+                                _speciesSearchController.text.isNotEmpty
+                                    ? IconButton(
+                                      icon: Icon(
+                                        Icons.clear,
+                                        color: widget.theme.accentColor,
+                                      ),
+                                      onPressed: () {
+                                        _speciesSearchController.clear();
+                                        setModalState(() {});
+                                      },
+                                    )
+                                    : null,
                             filled: true,
                             fillColor: widget.theme.backgroundColor,
                             border: OutlineInputBorder(
@@ -936,7 +967,9 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(color: widget.theme.accentColor),
+                              borderSide: BorderSide(
+                                color: widget.theme.accentColor,
+                              ),
                             ),
                           ),
                           style: TextStyle(color: widget.theme.textColor),
@@ -955,25 +988,40 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                               return Center(
                                 child: Text(
                                   'Error loading species',
-                                  style: TextStyle(color: widget.theme.subtitleColor),
+                                  style: TextStyle(
+                                    color: widget.theme.subtitleColor,
+                                  ),
                                 ),
                               );
                             }
-                            if (snapshot.connectionState == ConnectionState.waiting) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
                               return Center(
                                 child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(widget.theme.accentColor),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    widget.theme.accentColor,
+                                  ),
                                 ),
                               );
                             }
 
                             final animals = snapshot.data ?? [];
-                            final searchString = _speciesSearchController.text.trim().toLowerCase();
-                            final filtered = animals.where((animal) {
-                              final nameMatch = animal.name.toLowerCase().contains(searchString);
-                              final afrikaansMatch = animal.afrikaansName?.toLowerCase().contains(searchString) ?? false;
-                              return nameMatch || afrikaansMatch;
-                            }).toList();
+                            final searchString =
+                                _speciesSearchController.text
+                                    .trim()
+                                    .toLowerCase();
+                            final filtered =
+                                animals.where((animal) {
+                                  final nameMatch = animal.name
+                                      .toLowerCase()
+                                      .contains(searchString);
+                                  final afrikaansMatch =
+                                      animal.afrikaansName
+                                          ?.toLowerCase()
+                                          .contains(searchString) ??
+                                      false;
+                                  return nameMatch || afrikaansMatch;
+                                }).toList();
 
                             if (filtered.isEmpty) {
                               return Center(
@@ -981,7 +1029,9 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                                   padding: const EdgeInsets.all(24.0),
                                   child: Text(
                                     'No matching species found',
-                                    style: TextStyle(color: widget.theme.subtitleColor),
+                                    style: TextStyle(
+                                      color: widget.theme.subtitleColor,
+                                    ),
                                   ),
                                 ),
                               );
@@ -989,21 +1039,29 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
 
                             return ListView.builder(
                               itemCount: filtered.length,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
                               itemBuilder: (context, index) {
                                 final animal = filtered[index];
-                                final isSelected = _selectedAnimal?.id == animal.id;
+                                final isSelected =
+                                    _selectedAnimal?.id == animal.id;
                                 return Card(
-                                  color: isSelected
-                                      ? widget.theme.accentColor.withValues(alpha: 0.15)
-                                      : widget.theme.cardColor,
+                                  color:
+                                      isSelected
+                                          ? widget.theme.accentColor.withValues(
+                                            alpha: 0.15,
+                                          )
+                                          : widget.theme.cardColor,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     side: BorderSide(
-                                      color: isSelected
-                                          ? widget.theme.accentColor
-                                          : Colors.transparent,
+                                      color:
+                                          isSelected
+                                              ? widget.theme.accentColor
+                                              : Colors.transparent,
                                       width: 1,
                                     ),
                                   ),
@@ -1012,21 +1070,30 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                                       animal.name,
                                       style: TextStyle(
                                         color: widget.theme.textColor,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                        fontWeight:
+                                            isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
                                       ),
                                     ),
-                                    subtitle: animal.afrikaansName != null
-                                        ? Text(
-                                            animal.afrikaansName!,
-                                            style: TextStyle(
-                                              color: widget.theme.subtitleColor,
-                                              fontSize: 13,
-                                            ),
-                                          )
-                                        : null,
-                                    trailing: isSelected
-                                        ? Icon(Icons.check_circle_rounded, color: widget.theme.accentColor)
-                                        : null,
+                                    subtitle:
+                                        animal.afrikaansName != null
+                                            ? Text(
+                                              animal.afrikaansName!,
+                                              style: TextStyle(
+                                                color:
+                                                    widget.theme.subtitleColor,
+                                                fontSize: 13,
+                                              ),
+                                            )
+                                            : null,
+                                    trailing:
+                                        isSelected
+                                            ? Icon(
+                                              Icons.check_circle_rounded,
+                                              color: widget.theme.accentColor,
+                                            )
+                                            : null,
                                     onTap: () {
                                       setState(() {
                                         _selectedAnimal = animal;
@@ -1055,7 +1122,8 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
   Widget _buildSpeciesDropdown() {
     return FormField<Animal>(
       initialValue: _selectedAnimal,
-      validator: (value) => _selectedAnimal == null ? 'Species is required' : null,
+      validator:
+          (value) => _selectedAnimal == null ? 'Species is required' : null,
       builder: (FormFieldState<Animal> state) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1067,14 +1135,22 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
               },
               borderRadius: BorderRadius.circular(8),
               child: InputDecorator(
-                decoration: _buildInputDecoration('Tap to select species...').copyWith(
+                decoration: _buildInputDecoration(
+                  'Tap to select species...',
+                ).copyWith(
                   errorText: state.errorText,
-                  suffixIcon: Icon(Icons.arrow_drop_down, color: widget.theme.accentColor),
+                  suffixIcon: Icon(
+                    Icons.arrow_drop_down,
+                    color: widget.theme.accentColor,
+                  ),
                 ),
                 child: Text(
                   _selectedAnimal?.name ?? 'Tap to select species...',
                   style: TextStyle(
-                    color: _selectedAnimal != null ? widget.theme.textColor : widget.theme.subtitleColor,
+                    color:
+                        _selectedAnimal != null
+                            ? widget.theme.textColor
+                            : widget.theme.subtitleColor,
                     fontSize: 16,
                   ),
                 ),
@@ -1088,13 +1164,14 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
 
   Widget _buildFirearmStreamDropdown() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _currentUserId != null
-          ? FirebaseFirestore.instance
-                .collection('firearms')
-                .where('ownerId', isEqualTo: _currentUserId)
-                .orderBy('createdAt', descending: true)
-                .snapshots()
-          : const Stream.empty(),
+      stream:
+          _currentUserId != null
+              ? FirebaseFirestore.instance
+                  .collection('firearms')
+                  .where('ownerId', isEqualTo: _currentUserId)
+                  .orderBy('createdAt', descending: true)
+                  .snapshots()
+              : const Stream.empty(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Container(
@@ -1136,21 +1213,28 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
           );
         }
 
-        final firearms = snapshot.data?.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return <String, String>{
-            'docId': doc.id,
-            ...data.map((key, value) => MapEntry(key, value?.toString() ?? '')),
-          };
-        }).toList();
+        final firearms =
+            snapshot.data?.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return <String, String>{
+                'docId': doc.id,
+                ...data.map(
+                  (key, value) => MapEntry(key, value?.toString() ?? ''),
+                ),
+              };
+            }).toList();
 
-        if (firearms != null && firearms.isNotEmpty && _selectedFirearmId != null && _selectedFirearmDisplay == null) {
+        if (firearms != null &&
+            firearms.isNotEmpty &&
+            _selectedFirearmId != null &&
+            _selectedFirearmDisplay == null) {
           final initialFirearm = firearms.firstWhere(
             (f) => (f['docId'] ?? '') == _selectedFirearmId,
             orElse: () => {},
           );
           if (initialFirearm.isNotEmpty) {
-            _selectedFirearmDisplay = '${initialFirearm['make']} (${initialFirearm['caliber']})';
+            _selectedFirearmDisplay =
+                '${initialFirearm['make']} (${initialFirearm['caliber']})';
           }
         }
 
@@ -1192,19 +1276,20 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
               });
             }
           },
-          items: firearms.map((firearm) {
-            final docId = firearm['docId'] ?? '';
-            final make = firearm['make'] ?? 'Unknown';
-            final caliber = firearm['caliber'] ?? 'N/A';
+          items:
+              firearms.map((firearm) {
+                final docId = firearm['docId'] ?? '';
+                final make = firearm['make'] ?? 'Unknown';
+                final caliber = firearm['caliber'] ?? 'N/A';
 
-            return DropdownMenuItem<String>(
-              value: docId.isNotEmpty ? docId : make,
-              child: Text(
-                '$make ($caliber)',
-                style: TextStyle(color: widget.theme.textColor),
-              ),
-            );
-          }).toList(),
+                return DropdownMenuItem<String>(
+                  value: docId.isNotEmpty ? docId : make,
+                  child: Text(
+                    '$make ($caliber)',
+                    style: TextStyle(color: widget.theme.textColor),
+                  ),
+                );
+              }).toList(),
           decoration: InputDecoration(
             hintText: 'Select a firearm',
             hintStyle: TextStyle(color: widget.theme.subtitleColor),

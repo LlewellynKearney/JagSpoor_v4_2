@@ -5,7 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// Central AI-driven price list processor and custom tracking service engine.
 /// Handles OCR-style text extraction from price list images and manages custom package bookings.
 class PricelistScannerService {
-  static final PricelistScannerService instance = PricelistScannerService._internal();
+  static final PricelistScannerService instance =
+      PricelistScannerService._internal();
   PricelistScannerService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -15,17 +16,17 @@ class PricelistScannerService {
   static const double platformCommissionRate = 0.05;
 
   /// Simulates high-fidelity text extraction from price list images.
-  /// 
+  ///
   /// In production, this would integrate with Google ML Kit, AWS Textract,
   /// or similar OCR services to extract text from the uploaded image.
-  /// 
+  ///
   /// For demo purposes, this simulates extraction of common trophy species
   /// and daily rates commonly found in South African hunting price lists.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: The farm/concession ID this price list belongs to
   /// - [imageFile]: The image file containing the price list (for future OCR integration)
-  /// 
+  ///
   /// Processing steps:
   /// 1. Simulate text extraction from image
   /// 2. Parse raw strings into structured data
@@ -40,11 +41,11 @@ class PricelistScannerService {
 
     // Process and clean extracted data
     final List<Map<String, dynamic>> processedItems = [];
-    
+
     for (final line in simulatedLines) {
       final speciesName = line['species'] as String;
       final basePrice = (line['basePrice'] as num).toDouble();
-      
+
       // Store base price (display price will be calculated on save)
       processedItems.add({
         'name': speciesName,
@@ -52,20 +53,22 @@ class PricelistScannerService {
       });
     }
 
-    print('✅ Pricelist extracted: ${processedItems.length} items ready for verification');
+    print(
+      '✅ Pricelist extracted: ${processedItems.length} items ready for verification',
+    );
     return processedItems;
   }
 
   /// Processes and uploads a price list image to Firestore.
-  /// 
+  ///
   /// This method is kept for backward compatibility.
   /// New code should use extractPricelistItems() followed by
   /// OutfitterPricelistVerificationScreen for proper workflow.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: The farm/concession ID this price list belongs to
   /// - [imageFile]: The image file containing the price list (for future OCR integration)
-  /// 
+  ///
   /// Processing steps:
   /// 1. Simulate text extraction from image
   /// 2. Parse raw strings into structured data
@@ -86,14 +89,14 @@ class PricelistScannerService {
 
     // Process and clean extracted data
     final List<Map<String, dynamic>> processedItems = [];
-    
+
     for (final line in simulatedLines) {
       final speciesName = line['species'] as String;
       final basePrice = (line['basePrice'] as num).toDouble();
-      
+
       // Calculate hunter display price with 5% platform fee
       final double hunterPrice = basePrice * (1 + platformCommissionRate);
-      
+
       processedItems.add({
         'name': speciesName,
         'outfitterBasePrice': basePrice,
@@ -111,7 +114,8 @@ class PricelistScannerService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'status': 'active',
-      'sourceImage': imageFile.path.split('/').last, // Store filename for reference
+      'sourceImage':
+          imageFile.path.split('/').last, // Store filename for reference
       'items': processedItems,
       'totalItems': processedItems.length,
       'processingVersion': '1.0.0',
@@ -119,13 +123,13 @@ class PricelistScannerService {
 
     // Upload to scanned_pricelists collection
     await _firestore.collection('scanned_pricelists').add(pricelistData);
-    
+
     print('✅ Pricelist processed and uploaded: ${processedItems.length} items');
   }
 
   /// Simulates OCR text extraction from a price list image.
   /// Returns a list of raw price entries that would be extracted from the image.
-  /// 
+  ///
   /// Production implementation would:
   /// 1. Upload image to cloud storage
   /// 2. Call OCR service (Google ML Kit, AWS Textract, etc.)
@@ -166,16 +170,16 @@ class PricelistScannerService {
   }
 
   /// Submits a custom-built package booking request.
-  /// 
+  ///
   /// This is used when hunters select items from scanned price lists
   /// to create a custom itinerary rather than booking a pre-defined package.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: The farm/concession where the hunt will take place
   /// - [outfitterId]: The UID of the outfitter who owns the farm
   /// - [selectedItems]: List of selected items with pricing from the price list
   /// - [combinedTotalZAR]: Total price including 5% platform fee
-  /// 
+  ///
   /// Saves to the 'bookings' collection with status 'Pending Approval'
   Future<void> submitCustomPackageBooking({
     required String farmId,
@@ -212,11 +216,16 @@ class PricelistScannerService {
       'farmId': farmId,
       'hunterId': currentUser.uid,
       'bookingType': 'custom_pricelist',
-      'selectedItemsList': selectedItems.map((item) => {
-        'name': item['name'] ?? 'Unknown',
-        'basePrice': item['outfitterBasePrice'] ?? 0.0,
-        'hunterPrice': item['hunterDisplayPriceZAR'] ?? 0.0,
-      }).toList(),
+      'selectedItemsList':
+          selectedItems
+              .map(
+                (item) => {
+                  'name': item['name'] ?? 'Unknown',
+                  'basePrice': item['outfitterBasePrice'] ?? 0.0,
+                  'hunterPrice': item['hunterDisplayPriceZAR'] ?? 0.0,
+                },
+              )
+              .toList(),
       'basePriceRands': basePrice,
       'platformCommissionRands': platformFee,
       'totalHunterPriceRands': combinedTotalZAR,
@@ -228,36 +237,45 @@ class PricelistScannerService {
 
     // Save to bookings collection
     await _firestore.collection('bookings').add(bookingData);
-    
-    print('✅ Custom package booking submitted: ${selectedItems.length} items, Total: R${combinedTotalZAR.toStringAsFixed(2)}');
+
+    print(
+      '✅ Custom package booking submitted: ${selectedItems.length} items, Total: R${combinedTotalZAR.toStringAsFixed(2)}',
+    );
   }
 
   /// Retrieves all scanned price lists for a specific farm.
-  /// 
+  ///
   /// Parameters:
   /// - [farmId]: The farm/concession to query
   /// - [activeOnly]: If true, only returns active price lists (default: true)
-  /// 
+  ///
   /// Returns a list of price list documents
-  Future<List<Map<String, dynamic>>> getPriceListsForFarm(String farmId, {bool activeOnly = true}) async {
-    Query query = _firestore.collection('scanned_pricelists').where('farmId', isEqualTo: farmId);
-    
+  Future<List<Map<String, dynamic>>> getPriceListsForFarm(
+    String farmId, {
+    bool activeOnly = true,
+  }) async {
+    Query query = _firestore
+        .collection('scanned_pricelists')
+        .where('farmId', isEqualTo: farmId);
+
     if (activeOnly) {
       query = query.where('status', isEqualTo: 'active');
     }
 
     final snapshot = await query.orderBy('createdAt', descending: true).get();
-    
+
     return snapshot.docs.map((doc) {
       final rawData = doc.data();
-      final data = Map<String, dynamic>.from(rawData is Map ? rawData : <String, dynamic>{});
+      final data = Map<String, dynamic>.from(
+        rawData is Map ? rawData : <String, dynamic>{},
+      );
       data['id'] = doc.id;
       return data;
     }).toList();
   }
 
   /// Retrieves all scanned price lists for the current outfitter.
-  /// 
+  ///
   /// Returns a list of price list documents created by the authenticated outfitter
   Future<List<Map<String, dynamic>>> getMyPriceLists() async {
     final currentUser = _auth.currentUser;
@@ -265,39 +283,42 @@ class PricelistScannerService {
       throw Exception('User must be authenticated');
     }
 
-    final snapshot = await _firestore
-        .collection('scanned_pricelists')
-        .where('outfitterId', isEqualTo: currentUser.uid)
-        .orderBy('createdAt', descending: true)
-        .get();
-    
+    final snapshot =
+        await _firestore
+            .collection('scanned_pricelists')
+            .where('outfitterId', isEqualTo: currentUser.uid)
+            .orderBy('createdAt', descending: true)
+            .get();
+
     return snapshot.docs.map((doc) {
       final rawData = doc.data();
-      final data = Map<String, dynamic>.from(rawData is Map ? rawData : <String, dynamic>{});
+      final data = Map<String, dynamic>.from(
+        rawData is Map ? rawData : <String, dynamic>{},
+      );
       data['id'] = doc.id;
       return data;
     }).toList();
   }
 
   /// Calculates the total for selected price list items including 5% platform fee.
-  /// 
+  ///
   /// Parameters:
   /// - [selectedItems]: List of selected items with base prices
-  /// 
+  ///
   /// Returns the total price including platform fee
   double calculateTotalWithFee(List<Map<String, dynamic>> selectedItems) {
     double baseTotal = 0;
-    
+
     for (final item in selectedItems) {
       final basePrice = (item['outfitterBasePrice'] ?? 0.0).toDouble();
       baseTotal += basePrice;
     }
-    
+
     return baseTotal * (1 + platformCommissionRate);
   }
 
   /// Deletes (archives) a scanned price list by setting status to 'deleted'.
-  /// 
+  ///
   /// Parameters:
   /// - [pricelistId]: The document ID of the price list to delete
   Future<void> deletePriceList(String pricelistId) async {
@@ -307,7 +328,11 @@ class PricelistScannerService {
     }
 
     // Verify ownership before deletion
-    final doc = await _firestore.collection('scanned_pricelists').doc(pricelistId).get();
+    final doc =
+        await _firestore
+            .collection('scanned_pricelists')
+            .doc(pricelistId)
+            .get();
     if (!doc.exists) {
       throw Exception('Price list not found');
     }

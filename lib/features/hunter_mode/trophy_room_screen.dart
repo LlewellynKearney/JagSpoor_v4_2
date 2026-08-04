@@ -72,10 +72,11 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
       final result = await Navigator.push<Map<String, dynamic>>(
         context,
         MaterialPageRoute(
-          builder: (context) => AddTrophyScreen(
-            theme: widget.theme,
-            firearms: widget.initialFirearms,
-          ),
+          builder:
+              (context) => AddTrophyScreen(
+                theme: widget.theme,
+                firearms: widget.initialFirearms,
+              ),
         ),
       );
 
@@ -119,14 +120,15 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => TrophyDetailScreen(
-            theme: widget.theme,
-            trophy: trophy,
-            firearms: widget.initialFirearms,
-            onEdit: () {
-              // Handle edit callback
-            },
-          ),
+          builder:
+              (context) => TrophyDetailScreen(
+                theme: widget.theme,
+                trophy: trophy,
+                firearms: widget.initialFirearms,
+                onEdit: () {
+                  // Handle edit callback
+                },
+              ),
         ),
       );
     } catch (e) {
@@ -160,13 +162,14 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
           ),
           body: SafeArea(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _currentUserId != null
-                  ? FirebaseFirestore.instance
-                        .collection('trophies')
-                        .where('ownerId', isEqualTo: _currentUserId)
-                        .orderBy('createdAt', descending: true)
-                        .snapshots()
-                  : const Stream.empty(),
+              stream:
+                  _currentUserId != null
+                      ? FirebaseFirestore.instance
+                          .collection('trophies')
+                          .where('ownerId', isEqualTo: _currentUserId)
+                          .orderBy('createdAt', descending: true)
+                          .snapshots()
+                      : const Stream.empty(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -185,10 +188,11 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
                   return _buildLoadingState();
                 }
 
-                final trophies = snapshot.data?.docs.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return <String, dynamic>{'docId': doc.id, ...data};
-                }).toList();
+                final trophies =
+                    snapshot.data?.docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return <String, dynamic>{'docId': doc.id, ...data};
+                    }).toList();
 
                 if (trophies == null || trophies.isEmpty) {
                   return _buildEmptyState();
@@ -201,9 +205,8 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
           floatingActionButton: FloatingActionButton.extended(
             onPressed: _openAddTrophyScreen,
             backgroundColor: widget.theme.accentColor,
-            foregroundColor: widget.theme.isDarkMode
-                ? Colors.black
-                : Colors.white,
+            foregroundColor:
+                widget.theme.isDarkMode ? Colors.black : Colors.white,
             icon: const Icon(Icons.add),
             label: const Text(
               'ADD TROPHY',
@@ -280,9 +283,8 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
     final species = trophy['species']?.toString() ?? 'Unknown Trophy';
     final location = trophy['location']?.toString() ?? 'Location unknown';
     final harvestDate = trophy['harvestDate']?.toString() ?? 'N/A';
-    final photos = (trophy['photos'] as List<dynamic>?)
-        ?.map((e) => e.toString())
-        .toList();
+    final photos =
+        (trophy['photos'] as List<dynamic>?)?.map((e) => e.toString()).toList();
     final firstPhoto = photos?.isNotEmpty == true ? photos!.first : null;
 
     return Card(
@@ -300,24 +302,38 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(16),
                 ),
-                child: firstPhoto != null
-                    ? AdaptiveImage(
-                        imagePath: firstPhoto,
-                        fit: BoxFit.cover,
-                        placeholder: Container(
-                          color: widget.theme.accentColor.withValues(
-                            alpha: 0.1,
-                          ),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                widget.theme.accentColor,
+                child:
+                    firstPhoto != null
+                        ? AdaptiveImage(
+                          imagePath: firstPhoto,
+                          fit: BoxFit.cover,
+                          placeholder: Container(
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.1,
+                            ),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  widget.theme.accentColor,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        errorWidget: Container(
+                          errorWidget: Container(
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.1,
+                            ),
+                            child: Icon(
+                              Icons.emoji_events_rounded,
+                              size: 48,
+                              color: widget.theme.accentColor.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
+                          ),
+                        )
+                        : Container(
                           color: widget.theme.accentColor.withValues(
                             alpha: 0.1,
                           ),
@@ -329,17 +345,6 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
                             ),
                           ),
                         ),
-                      )
-                    : Container(
-                        color: widget.theme.accentColor.withValues(alpha: 0.1),
-                        child: Icon(
-                          Icons.emoji_events_rounded,
-                          size: 48,
-                          color: widget.theme.accentColor.withValues(
-                            alpha: 0.5,
-                          ),
-                        ),
-                      ),
               ),
             ),
             Padding(

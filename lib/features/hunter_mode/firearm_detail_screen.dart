@@ -63,33 +63,40 @@ Future<int?> showAddRoundsDialog(BuildContext context, ThemeController theme) {
   final controller = TextEditingController();
   return showDialog<int>(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: theme.cardColor,
-      title: Text('Add Rounds Fired', style: TextStyle(color: theme.textColor)),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-        style: TextStyle(color: theme.textColor),
-        decoration: InputDecoration(
-          labelText: 'Rounds shot',
-          labelStyle: TextStyle(color: theme.subtitleColor),
+    builder:
+        (context) => AlertDialog(
+          backgroundColor: theme.cardColor,
+          title: Text(
+            'Add Rounds Fired',
+            style: TextStyle(color: theme.textColor),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            style: TextStyle(color: theme.textColor),
+            decoration: InputDecoration(
+              labelText: 'Rounds shot',
+              labelStyle: TextStyle(color: theme.subtitleColor),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'CANCEL',
+                style: TextStyle(color: theme.subtitleColor),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                final n = int.tryParse(controller.text.trim());
+                if (n != null && n > 0) Navigator.pop(context, n);
+              },
+              child: Text('ADD', style: TextStyle(color: theme.accentColor)),
+            ),
+          ],
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('CANCEL', style: TextStyle(color: theme.subtitleColor)),
-        ),
-        TextButton(
-          onPressed: () {
-            final n = int.tryParse(controller.text.trim());
-            if (n != null && n > 0) Navigator.pop(context, n);
-          },
-          child: Text('ADD', style: TextStyle(color: theme.accentColor)),
-        ),
-      ],
-    ),
   );
 }
 
@@ -182,8 +189,9 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            RoundsLogScreen(theme: widget.theme, firearm: _firearm),
+        builder:
+            (context) =>
+                RoundsLogScreen(theme: widget.theme, firearm: _firearm),
       ),
     );
   }
@@ -192,8 +200,9 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     final edited = await Navigator.push<Map<String, String>>(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            AddFirearmManualForm(theme: widget.theme, initial: _firearm),
+        builder:
+            (context) =>
+                AddFirearmManualForm(theme: widget.theme, initial: _firearm),
       ),
     );
     if (edited == null || !mounted) return;
@@ -212,24 +221,34 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     final theme = widget.theme;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: theme.cardColor,
-        title: Text('Remove Firearm', style: TextStyle(color: theme.textColor)),
-        content: Text(
-          'Remove ${_firearm['make']} (S/N ${_firearm['serial']}) from the safe? This is used when the firearm is sold.',
-          style: TextStyle(color: theme.subtitleColor),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('CANCEL', style: TextStyle(color: theme.subtitleColor)),
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: theme.cardColor,
+            title: Text(
+              'Remove Firearm',
+              style: TextStyle(color: theme.textColor),
+            ),
+            content: Text(
+              'Remove ${_firearm['make']} (S/N ${_firearm['serial']}) from the safe? This is used when the firearm is sold.',
+              style: TextStyle(color: theme.subtitleColor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'CANCEL',
+                  style: TextStyle(color: theme.subtitleColor),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'REMOVE',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('REMOVE', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
     if (confirmed == true && mounted) {
       widget.onDeleted();
@@ -241,15 +260,16 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FirearmMaintenanceScreen(
-          theme: widget.theme,
-          firearm: _firearm,
-          onLogAdded: (record) {
-            final log = parseLog(_firearm)..add(record);
-            setState(() => _firearm['maintenanceLog'] = encodeLog(log));
-            widget.onUpdated(_firearm);
-          },
-        ),
+        builder:
+            (context) => FirearmMaintenanceScreen(
+              theme: widget.theme,
+              firearm: _firearm,
+              onLogAdded: (record) {
+                final log = parseLog(_firearm)..add(record);
+                setState(() => _firearm['maintenanceLog'] = encodeLog(log));
+                widget.onUpdated(_firearm);
+              },
+            ),
       ),
     );
   }
@@ -603,100 +623,102 @@ class RoundsLogScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: entries.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.history_toggle_off_rounded,
-                          size: 56,
-                          color: theme.subtitleColor,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No rounds logged yet',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontWeight: FontWeight.bold,
+            child:
+                entries.isEmpty
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history_toggle_off_rounded,
+                            size: 56,
+                            color: theme.subtitleColor,
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Text(
-                            grandTotal > 0
-                                ? 'This firearm has a starting count of $grandTotal rounds. New entries logged from now on will appear here.'
-                                : 'Use "Log Rounds Fired" to record each range session.',
-                            textAlign: TextAlign.center,
+                          const SizedBox(height: 12),
+                          Text(
+                            'No rounds logged yet',
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              grandTotal > 0
+                                  ? 'This firearm has a starting count of $grandTotal rounds. New entries logged from now on will appear here.'
+                                  : 'Use "Log Rounds Fired" to record each range session.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: theme.subtitleColor,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: entries.length + 1,
+                      separatorBuilder:
+                          (context, index) => Divider(
+                            color: theme.subtitleColor.withValues(alpha: 0.15),
+                            height: 1,
+                          ),
+                      itemBuilder: (context, i) {
+                        if (i == entries.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Total logged',
+                                  style: TextStyle(
+                                    color: theme.subtitleColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '$loggedTotal rounds',
+                                  style: TextStyle(
+                                    color: theme.textColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        final e = entries[i];
+                        final dt = DateTime.tryParse(e.at);
+                        final date = dt != null ? fmtLogDate(dt) : e.at;
+                        final time = dt != null ? fmtLogTime(dt) : '';
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.adjust_rounded,
+                            color: theme.accentColor,
+                          ),
+                          title: Text(
+                            '+${e.qty} rounds',
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '$date  •  $time',
                             style: TextStyle(
                               color: theme.subtitleColor,
                               fontSize: 13,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: entries.length + 1,
-                    separatorBuilder: (context, index) => Divider(
-                      color: theme.subtitleColor.withValues(alpha: 0.15),
-                      height: 1,
-                    ),
-                    itemBuilder: (context, i) {
-                      if (i == entries.length) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Total logged',
-                                style: TextStyle(
-                                  color: theme.subtitleColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                '$loggedTotal rounds',
-                                style: TextStyle(
-                                  color: theme.textColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
                         );
-                      }
-                      final e = entries[i];
-                      final dt = DateTime.tryParse(e.at);
-                      final date = dt != null ? fmtLogDate(dt) : e.at;
-                      final time = dt != null ? fmtLogTime(dt) : '';
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.adjust_rounded,
-                          color: theme.accentColor,
-                        ),
-                        title: Text(
-                          '+${e.qty} rounds',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '$date  •  $time',
-                          style: TextStyle(
-                            color: theme.subtitleColor,
-                            fontSize: 13,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                      },
+                    ),
           ),
         ],
       ),
@@ -812,43 +834,47 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
   void _showImageSourceDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: widget.theme.cardColor,
-        title: Text(
-          'Add Photo',
-          style: TextStyle(color: widget.theme.textColor),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.camera_alt, color: widget.theme.accentColor),
-              title: Text(
-                'Camera',
-                style: TextStyle(color: widget.theme.textColor),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: widget.theme.cardColor,
+            title: Text(
+              'Add Photo',
+              style: TextStyle(color: widget.theme.textColor),
             ),
-            ListTile(
-              leading: Icon(
-                Icons.photo_library,
-                color: widget.theme.accentColor,
-              ),
-              title: Text(
-                'Gallery',
-                style: TextStyle(color: widget.theme.textColor),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(
+                    Icons.camera_alt,
+                    color: widget.theme.accentColor,
+                  ),
+                  title: Text(
+                    'Camera',
+                    style: TextStyle(color: widget.theme.textColor),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.photo_library,
+                    color: widget.theme.accentColor,
+                  ),
+                  title: Text(
+                    'Gallery',
+                    style: TextStyle(color: widget.theme.textColor),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -889,48 +915,51 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
                     color: widget.theme.accentColor.withValues(alpha: 0.2),
                   ),
                 ),
-                child: photoPath != null && photoPath.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: AdaptiveImage(
-                          imagePath: photoPath,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.photo_camera_rounded,
-                            size: 48,
-                            color: widget.theme.subtitleColor.withValues(
-                              alpha: 0.5,
-                            ),
+                child:
+                    photoPath != null && photoPath.isNotEmpty
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: AdaptiveImage(
+                            imagePath: photoPath,
+                            fit: BoxFit.cover,
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            displayName,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: widget.theme.textColor,
+                        )
+                        : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.photo_camera_rounded,
+                              size: 48,
+                              color: widget.theme.subtitleColor.withValues(
+                                alpha: 0.5,
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 4),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              'Tap to add photo',
+                            const SizedBox(height: 12),
+                            Text(
+                              displayName,
                               style: TextStyle(
-                                fontSize: 13,
-                                color: widget.theme.subtitleColor,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: widget.theme.textColor,
                               ),
                               textAlign: TextAlign.center,
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                              ),
+                              child: Text(
+                                'Tap to add photo',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: widget.theme.subtitleColor,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
               ),
             ),
           ],

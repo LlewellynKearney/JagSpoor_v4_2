@@ -19,15 +19,19 @@ class FirearmPdfGenerator {
             pw.TableRow(
               decoration: pw.BoxDecoration(
                 color: pdf.PdfColors.grey200,
-                border: pw.Border(
-                  bottom: pw.BorderSide(width: 2),
-                ),
+                border: pw.Border(bottom: pw.BorderSide(width: 2)),
               ),
               children: [
                 _buildHeaderCell('Firearm Make & Model', pw.TextAlign.left),
                 _buildHeaderCell('Serial Number', pw.TextAlign.left),
-                _buildHeaderCell('Validity Status / Expiry', pw.TextAlign.center),
-                _buildHeaderCell('Barrel Life (Rounds Remaining)', pw.TextAlign.center),
+                _buildHeaderCell(
+                  'Validity Status / Expiry',
+                  pw.TextAlign.center,
+                ),
+                _buildHeaderCell(
+                  'Barrel Life (Rounds Remaining)',
+                  pw.TextAlign.center,
+                ),
                 _buildHeaderCell('% Lifetime Used', pw.TextAlign.right),
               ],
             ),
@@ -41,15 +45,21 @@ class FirearmPdfGenerator {
             final barrelLife = int.tryParse(firearm['barrelLife'] ?? '') ?? 0;
             final roundCount = int.tryParse(firearm['roundCount'] ?? '') ?? 0;
             final remaining = barrelLife > 0 ? (barrelLife - roundCount) : 0;
-            final usedPct = barrelLife > 0
-                ? ((roundCount / barrelLife) * 100).clamp(0, 100).toStringAsFixed(1)
-                : 'N/A';
+            final usedPct =
+                barrelLife > 0
+                    ? ((roundCount / barrelLife) * 100)
+                        .clamp(0, 100)
+                        .toStringAsFixed(1)
+                    : 'N/A';
 
             rows.add(
               pw.TableRow(
                 decoration: pw.BoxDecoration(
                   border: pw.Border(
-                    bottom: pw.BorderSide(width: 0.5, color: pdf.PdfColors.grey400),
+                    bottom: pw.BorderSide(
+                      width: 0.5,
+                      color: pdf.PdfColors.grey400,
+                    ),
                   ),
                 ),
                 children: [
@@ -91,7 +101,10 @@ class FirearmPdfGenerator {
                 ),
                 pw.SizedBox(height: 20),
                 pw.Table(
-                  border: pw.TableBorder.all(width: 0.5, color: pdf.PdfColors.grey400),
+                  border: pw.TableBorder.all(
+                    width: 0.5,
+                    color: pdf.PdfColors.grey400,
+                  ),
                   columnWidths: {
                     0: const pw.FlexColumnWidth(2.5),
                     1: const pw.FlexColumnWidth(2.2),
@@ -99,7 +112,8 @@ class FirearmPdfGenerator {
                     3: const pw.FlexColumnWidth(2.0),
                     4: const pw.FlexColumnWidth(1.0),
                   },
-                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                  defaultVerticalAlignment:
+                      pw.TableCellVerticalAlignment.middle,
                   children: rows,
                 ),
                 pw.SizedBox(height: 30),
@@ -144,10 +158,7 @@ class FirearmPdfGenerator {
       padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       child: pw.Text(
         text,
-        style: pw.TextStyle(
-          fontSize: 9,
-          color: pdf.PdfColors.black,
-        ),
+        style: pw.TextStyle(fontSize: 9, color: pdf.PdfColors.black),
         textAlign: align,
       ),
     );

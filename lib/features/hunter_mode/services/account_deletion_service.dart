@@ -27,20 +27,22 @@ class AccountDeletionService {
     batch.delete(userDocRef);
 
     // Step 2: Delete all firearms owned by this user
-    final firearmsQuery = await _firestore
-        .collection('firearms')
-        .where('ownerId', isEqualTo: uid)
-        .get();
+    final firearmsQuery =
+        await _firestore
+            .collection('firearms')
+            .where('ownerId', isEqualTo: uid)
+            .get();
 
     for (final doc in firearmsQuery.docs) {
       batch.delete(doc.reference);
 
       // Also delete nested ammunition subcollection for each firearm
-      final ammunitionQuery = await _firestore
-          .collection('firearms')
-          .doc(doc.id)
-          .collection('ammunition')
-          .get();
+      final ammunitionQuery =
+          await _firestore
+              .collection('firearms')
+              .doc(doc.id)
+              .collection('ammunition')
+              .get();
 
       for (final ammoDoc in ammunitionQuery.docs) {
         batch.delete(ammoDoc.reference);
@@ -48,20 +50,22 @@ class AccountDeletionService {
     }
 
     // Step 3: Delete all carcass logs by this hunter
-    final carcassLogsQuery = await _firestore
-        .collection('carcass_logs')
-        .where('hunterId', isEqualTo: uid)
-        .get();
+    final carcassLogsQuery =
+        await _firestore
+            .collection('carcass_logs')
+            .where('hunterId', isEqualTo: uid)
+            .get();
 
     for (final doc in carcassLogsQuery.docs) {
       batch.delete(doc.reference);
     }
 
     // Step 4: Delete all waypoints by this hunter
-    final waypointsQuery = await _firestore
-        .collection('waypoints')
-        .where('hunterId', isEqualTo: uid)
-        .get();
+    final waypointsQuery =
+        await _firestore
+            .collection('waypoints')
+            .where('hunterId', isEqualTo: uid)
+            .get();
 
     for (final doc in waypointsQuery.docs) {
       batch.delete(doc.reference);
@@ -79,7 +83,7 @@ class AccountDeletionService {
   bool get requiresRecentLogin {
     final user = _auth.currentUser;
     if (user == null) return true;
-    
+
     // Check if the user was recently authenticated (within last 5 minutes)
     // This is a heuristic - Firebase doesn't expose exact last auth time
     return false; // The actual check happens when delete() is called

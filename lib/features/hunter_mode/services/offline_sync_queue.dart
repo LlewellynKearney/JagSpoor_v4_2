@@ -57,31 +57,26 @@ class OfflineSyncQueue {
 
   Future<List<Map<String, dynamic>>> getAllPendingActions() async {
     final db = await database;
-    return await db.query(
-      'sync_actions',
-      orderBy: 'timestamp ASC',
-    );
+    return await db.query('sync_actions', orderBy: 'timestamp ASC');
   }
 
   Future<int> getQueueSize() async {
     final db = await database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM sync_actions');
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM sync_actions',
+    );
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<void> deleteAction(int id) async {
     final db = await database;
-    await db.delete(
-      'sync_actions',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('sync_actions', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<SyncResult> processQueueWithInternet() async {
     final db = await database;
     final actions = await getAllPendingActions();
-    
+
     int successCount = 0;
     int failureCount = 0;
     List<String> errors = [];
@@ -91,31 +86,39 @@ class OfflineSyncQueue {
       final collection = action['collectionName'] as String;
       final operation = action['operation'] as String;
       final payloadJson = action['payloadJson'] as String;
-      
+
       try {
         final payload = jsonDecode(payloadJson) as Map<String, dynamic>;
-        
+
         switch (operation.toUpperCase()) {
           case 'CREATE':
-            await FirebaseFirestore.instance.collection(collection).add(payload);
+            await FirebaseFirestore.instance
+                .collection(collection)
+                .add(payload);
             break;
           case 'UPDATE':
             // For UPDATE, payload should contain docId in a special field
             final docId = payload.remove('_docId');
             if (docId != null) {
-              await FirebaseFirestore.instance.collection(collection).doc(docId).update(payload);
+              await FirebaseFirestore.instance
+                  .collection(collection)
+                  .doc(docId)
+                  .update(payload);
             }
             break;
           case 'DELETE':
             final docId = payload['_docId'] as String?;
             if (docId != null) {
-              await FirebaseFirestore.instance.collection(collection).doc(docId).delete();
+              await FirebaseFirestore.instance
+                  .collection(collection)
+                  .doc(docId)
+                  .delete();
             }
             break;
           default:
             throw Exception('Unknown operation: $operation');
         }
-        
+
         await deleteAction(id);
         successCount++;
       } catch (e) {

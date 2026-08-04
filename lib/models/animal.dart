@@ -209,9 +209,8 @@ class Animal {
     if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
     if (heroImageUrl != null) 'heroImageUrl': heroImageUrl,
     'galleryUrls': galleryUrls,
-    'provincialRegulations': provincialRegulations
-        .map((r) => r.toJson())
-        .toList(),
+    'provincialRegulations':
+        provincialRegulations.map((r) => r.toJson()).toList(),
     'searchKeywords': searchKeywords,
     'sortOrder': sortOrder,
     if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),

@@ -10,10 +10,12 @@ class OutfitterEnterprisePanelScreen extends StatefulWidget {
   const OutfitterEnterprisePanelScreen({super.key, required this.theme});
 
   @override
-  State<OutfitterEnterprisePanelScreen> createState() => _OutfitterEnterprisePanelScreenState();
+  State<OutfitterEnterprisePanelScreen> createState() =>
+      _OutfitterEnterprisePanelScreenState();
 }
 
-class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePanelScreen> {
+class _OutfitterEnterprisePanelScreenState
+    extends State<OutfitterEnterprisePanelScreen> {
   final _formKey = GlobalKey<FormState>();
   final _farmNameController = TextEditingController();
   final _districtController = TextEditingController();
@@ -63,10 +65,7 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Failed: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -89,7 +88,8 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
       return;
     }
 
-    if (_managerEmailController.text.trim().isEmpty || _managerNameController.text.trim().isEmpty) {
+    if (_managerEmailController.text.trim().isEmpty ||
+        _managerNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠️ Please fill in manager details'),
@@ -123,10 +123,7 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Failed: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -233,13 +230,17 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      icon: _isAddingFarm
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Icon(Icons.add_business_rounded),
+                      icon:
+                          _isAddingFarm
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Icon(Icons.add_business_rounded),
                       label: const Text(
                         'REGISTER FARM',
                         style: TextStyle(fontWeight: FontWeight.bold),
@@ -261,14 +262,18 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
               children: [
                 // Farm Dropdown
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('farms')
-                      .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                      .where('status', isEqualTo: 'active')
-                      .snapshots(),
+                  stream:
+                      FirebaseFirestore.instance
+                          .collection('farms')
+                          .where(
+                            'outfitterId',
+                            isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                          )
+                          .where('status', isEqualTo: 'active')
+                          .snapshots(),
                   builder: (context, snapshot) {
                     final farms = snapshot.data?.docs ?? [];
-                    
+
                     return DropdownButtonFormField<String>(
                       value: _selectedFarmId,
                       decoration: _inputDecoration(
@@ -278,13 +283,14 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
                       ),
                       dropdownColor: theme.cardColor,
                       style: TextStyle(color: theme.textColor),
-                      items: farms.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return DropdownMenuItem(
-                          value: doc.id,
-                          child: Text(data['name'] ?? 'Unknown'),
-                        );
-                      }).toList(),
+                      items:
+                          farms.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            return DropdownMenuItem(
+                              value: doc.id,
+                              child: Text(data['name'] ?? 'Unknown'),
+                            );
+                          }).toList(),
                       onChanged: (value) {
                         setState(() {
                           _selectedFarmId = value;
@@ -327,13 +333,17 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    icon: _isAssigningManager
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Icon(Icons.person_add_alt_1_rounded),
+                    icon:
+                        _isAssigningManager
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : const Icon(Icons.person_add_alt_1_rounded),
                     label: const Text(
                       'ASSIGN MANAGER',
                       style: TextStyle(fontWeight: FontWeight.bold),
@@ -351,11 +361,15 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
             icon: Icons.list_alt_rounded,
             theme: theme,
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('farms')
-                  .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('farms')
+                      .where(
+                        'outfitterId',
+                        isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                      )
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -391,79 +405,90 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
                 }
 
                 return Column(
-                  children: farms.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final farmStatus = data['status'] ?? 'active';
-                    
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.backgroundColor,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: farmStatus == 'active'
-                              ? Colors.green.withValues(alpha: 0.3)
-                              : Colors.red.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: theme.accentColor.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Icon(
-                              Icons.landscape_rounded,
-                              color: theme.accentColor,
-                              size: 20,
+                  children:
+                      farms.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final farmStatus = data['status'] ?? 'active';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: theme.backgroundColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color:
+                                  farmStatus == 'active'
+                                      ? Colors.green.withValues(alpha: 0.3)
+                                      : Colors.red.withValues(alpha: 0.3),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  data['name'] ?? 'Unknown Farm',
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: theme.accentColor.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Icon(
+                                  Icons.landscape_rounded,
+                                  color: theme.accentColor,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      data['name'] ?? 'Unknown Farm',
+                                      style: TextStyle(
+                                        color: theme.textColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${data['district'] ?? ""}, ${data['province'] ?? ""}',
+                                      style: TextStyle(
+                                        color: theme.subtitleColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      farmStatus == 'active'
+                                          ? Colors.green.withValues(alpha: 0.2)
+                                          : Colors.red.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  farmStatus.toUpperCase(),
                                   style: TextStyle(
-                                    color: theme.textColor,
+                                    color:
+                                        farmStatus == 'active'
+                                            ? Colors.green
+                                            : Colors.red,
+                                    fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                Text(
-                                  '${data['district'] ?? ""}, ${data['province'] ?? ""}',
-                                  style: TextStyle(
-                                    color: theme.subtitleColor,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: farmStatus == 'active'
-                                  ? Colors.green.withValues(alpha: 0.2)
-                                  : Colors.red.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              farmStatus.toUpperCase(),
-                              style: TextStyle(
-                                color: farmStatus == 'active' ? Colors.green : Colors.red,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                        );
+                      }).toList(),
                 );
               },
             ),
@@ -507,10 +532,7 @@ class _OutfitterEnterprisePanelScreenState extends State<OutfitterEnterprisePane
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: child,
-          ),
+          Padding(padding: const EdgeInsets.all(16), child: child),
         ],
       ),
     );

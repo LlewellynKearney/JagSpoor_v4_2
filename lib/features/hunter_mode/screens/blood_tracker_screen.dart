@@ -28,24 +28,25 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   bool _isDroppingPin = false;
   bool _showMapView = false;
   FlashMode _flashMode = FlashMode.off;
-  
+
   // GPS waypoint tracking
   final List<Map<String, dynamic>> _waypoints = [];
   double _totalDistance = 0;
 
   // Vital zone anatomy overlay state
   String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
-  String _currentStanceAngle = 'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
+  String _currentStanceAngle =
+      'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
   double _anatomyScale = 1.0;
   Offset _anatomyOffset = Offset.zero;
 
   // High-contrast Ironbow pseudo-thermal color filter matrix
   // Maps luminance deltas to hot reds/oranges while crushing greens and lifting cold shadows to deep blue
   final List<double> _thermalMatrix = <double>[
-    -1.0,  2.0,  2.0, 0.0, -50.0,  // R channel: aggressive luminance amplification
-     2.0, -1.0,  0.0, 0.0, -100.0,  // G channel: crushes foliage wavelengths
-     0.0,  0.0,  3.0, 0.0, 100.0,   // B channel: lifts cold shadows to blue/indigo
-     0.0,  0.0,  0.0, 1.0,   0.0,   // Alpha: transparency stability
+    -1.0, 2.0, 2.0, 0.0, -50.0, // R channel: aggressive luminance amplification
+    2.0, -1.0, 0.0, 0.0, -100.0, // G channel: crushes foliage wavelengths
+    0.0, 0.0, 3.0, 0.0, 100.0, // B channel: lifts cold shadows to blue/indigo
+    0.0, 0.0, 0.0, 1.0, 0.0, // Alpha: transparency stability
   ];
 
   @override
@@ -141,7 +142,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       _isNightVisionActive = !_isNightVisionActive;
     });
     _showToast(
-      _isNightVisionActive ? '🌙 Night Vision ON - Green phosphor mode' : '☀️ Day Vision ON - Normal mode',
+      _isNightVisionActive
+          ? '🌙 Night Vision ON - Green phosphor mode'
+          : '☀️ Day Vision ON - Normal mode',
       _isNightVisionActive ? Colors.green : Colors.red,
     );
   }
@@ -169,7 +172,12 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       if (_waypoints.isNotEmpty) {
         final lastLat = _waypoints.last['lat'] as double;
         final lastLon = _waypoints.last['lon'] as double;
-        distanceFromLast = _calculateDistance(lastLat, lastLon, position.latitude, position.longitude);
+        distanceFromLast = _calculateDistance(
+          lastLat,
+          lastLon,
+          position.latitude,
+          position.longitude,
+        );
         _totalDistance += distanceFromLast;
       }
 
@@ -181,24 +189,23 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         'number': _waypoints.length + 1,
         'distanceFromLast': distanceFromLast,
       };
-      
+
       _waypoints.add(waypoint);
 
       // Enqueue waypoint to OfflineSyncQueue
-      await OfflineSyncQueue.instance.enqueueAction(
-        'waypoints',
-        'CREATE',
-        {
-          'name': 'Blood Spoor',
-          'type': 'Blood Trail',
-          'lat': position.latitude,
-          'lon': position.longitude,
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
+      await OfflineSyncQueue.instance.enqueueAction('waypoints', 'CREATE', {
+        'name': 'Blood Spoor',
+        'type': 'Blood Trail',
+        'lat': position.latitude,
+        'lon': position.longitude,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
 
       // Also append to MapPathTracer for drawing the animal's escape route
-      MapPathTracer.instance.appendBloodDropNode(position.latitude, position.longitude);
+      MapPathTracer.instance.appendBloodDropNode(
+        position.latitude,
+        position.longitude,
+      );
 
       if (mounted) {
         setState(() {});
@@ -219,20 +226,30 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     }
   }
 
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const Distance distance = Distance();
-    return distance.as(LengthUnit.Meter, LatLng(lat1, lon1), LatLng(lat2, lon2));
+    return distance.as(
+      LengthUnit.Meter,
+      LatLng(lat1, lon1),
+      LatLng(lat2, lon2),
+    );
   }
 
   void _showMapFullScreen() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => _BloodTrailMapScreen(
-          waypoints: _waypoints,
-          totalDistance: _totalDistance,
-          theme: widget.theme,
-        ),
+        builder:
+            (context) => _BloodTrailMapScreen(
+              waypoints: _waypoints,
+              totalDistance: _totalDistance,
+              theme: widget.theme,
+            ),
       ),
     );
   }
@@ -249,12 +266,14 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     buffer.writeln('Total Distance: ${_totalDistance.toStringAsFixed(0)}m');
     buffer.writeln('Total Waypoints: ${_waypoints.length}');
     buffer.writeln('');
-    buffer.writeln('Waypoint,Latitude,Longitude,Distance from Last (m),Timestamp');
-    
+    buffer.writeln(
+      'Waypoint,Latitude,Longitude,Distance from Last (m),Timestamp',
+    );
+
     for (int i = 0; i < _waypoints.length; i++) {
       final wp = _waypoints[i];
       buffer.writeln(
-        '${wp['number']},${wp['lat']},${wp['lon']},${(wp['distanceFromLast'] as double).toStringAsFixed(1)},${wp['timestamp']}'
+        '${wp['number']},${wp['lat']},${wp['lon']},${(wp['distanceFromLast'] as double).toStringAsFixed(1)},${wp['timestamp']}',
       );
     }
 
@@ -264,44 +283,51 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   void _showGpsExportDialog(String gpsData) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('📍 GPS Export', style: TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${_waypoints.length} waypoints | ${_totalDistance.toStringAsFixed(0)}m total',
-                style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SelectableText(
-                  gpsData,
-                  style: const TextStyle(
-                    color: Colors.green,
-                    fontFamily: 'monospace',
-                    fontSize: 11,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: const Text(
+              '📍 GPS Export',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_waypoints.length} waypoints | ${_totalDistance.toStringAsFixed(0)}m total',
+                    style: const TextStyle(
+                      color: Colors.amber,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      gpsData,
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -377,7 +403,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
               child: GestureDetector(
                 onScaleUpdate: (ScaleUpdateDetails details) {
                   setState(() {
-                    _anatomyScale = (details.scale * _anatomyScale).clamp(0.5, 3.0);
+                    _anatomyScale = (details.scale * _anatomyScale).clamp(
+                      0.5,
+                      3.0,
+                    );
                     _anatomyOffset += details.focalPointDelta;
                   });
                 },
@@ -512,10 +541,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.7),
-              Colors.transparent,
-            ],
+            colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
           ),
         ),
         child: Row(
@@ -583,20 +609,23 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           _buildHudButton(
             icon: _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
             label: _isTorchOn ? 'ON' : 'OFF',
-            backgroundColor: _isTorchOn
-                ? Colors.amber.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.6),
+            backgroundColor:
+                _isTorchOn
+                    ? Colors.amber.withValues(alpha: 0.3)
+                    : Colors.black.withValues(alpha: 0.6),
             iconColor: _isTorchOn ? Colors.amber : Colors.white70,
             onTap: _toggleTorch,
           ),
 
           // Night Vision toggle button
           _buildHudButton(
-            icon: _isNightVisionActive ? Icons.nightlight_round : Icons.wb_sunny,
+            icon:
+                _isNightVisionActive ? Icons.nightlight_round : Icons.wb_sunny,
             label: _isNightVisionActive ? 'NV' : 'DAY',
-            backgroundColor: _isNightVisionActive
-                ? Colors.green.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.6),
+            backgroundColor:
+                _isNightVisionActive
+                    ? Colors.green.withValues(alpha: 0.3)
+                    : Colors.black.withValues(alpha: 0.6),
             iconColor: _isNightVisionActive ? Colors.green : Colors.white70,
             onTap: _toggleNightVision,
           ),
@@ -608,9 +637,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           _buildHudButton(
             icon: Icons.map,
             label: '${_waypoints.length} WP',
-            backgroundColor: _showMapView
-                ? Colors.blue.withValues(alpha: 0.5)
-                : Colors.black.withValues(alpha: 0.6),
+            backgroundColor:
+                _showMapView
+                    ? Colors.blue.withValues(alpha: 0.5)
+                    : Colors.black.withValues(alpha: 0.6),
             iconColor: _showMapView ? Colors.lightBlueAccent : Colors.white70,
             onTap: _showMapFullScreen,
           ),
@@ -618,11 +648,16 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           // Export GPS button
           _buildHudButton(
             icon: Icons.download,
-            label: _totalDistance > 0 ? '${_totalDistance.toStringAsFixed(0)}m' : 'GPS',
-            backgroundColor: _totalDistance > 0
-                ? Colors.green.withValues(alpha: 0.5)
-                : Colors.black.withValues(alpha: 0.6),
-            iconColor: _totalDistance > 0 ? Colors.lightGreenAccent : Colors.white70,
+            label:
+                _totalDistance > 0
+                    ? '${_totalDistance.toStringAsFixed(0)}m'
+                    : 'GPS',
+            backgroundColor:
+                _totalDistance > 0
+                    ? Colors.green.withValues(alpha: 0.5)
+                    : Colors.black.withValues(alpha: 0.6),
+            iconColor:
+                _totalDistance > 0 ? Colors.lightGreenAccent : Colors.white70,
             onTap: _exportGpsData,
           ),
         ],
@@ -686,10 +721,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFFF8C00),
-              Color(0xFFFF6B00),
-            ],
+            colors: [Color(0xFFFF8C00), Color(0xFFFF6B00)],
           ),
           shape: BoxShape.circle,
           border: Border.all(
@@ -709,37 +741,38 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
             ),
           ],
         ),
-        child: _isDroppingPin
-            ? const Center(
-                child: SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 3,
-                  ),
-                ),
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.bloodtype_rounded,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'PIN',
-                    style: TextStyle(
+        child:
+            _isDroppingPin
+                ? const Center(
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(
                       color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                      strokeWidth: 3,
                     ),
                   ),
-                ],
-              ),
+                )
+                : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.bloodtype_rounded,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'PIN',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
       ),
     );
   }
@@ -977,9 +1010,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.cyan.withValues(alpha: 0.3)
-              : Colors.transparent,
+          color:
+              isSelected
+                  ? Colors.cyan.withValues(alpha: 0.3)
+                  : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? Colors.cyan : Colors.white38,
@@ -989,10 +1023,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              icon,
-              style: const TextStyle(fontSize: 12),
-            ),
+            Text(icon, style: const TextStyle(fontSize: 12)),
             const SizedBox(width: 4),
             Text(
               label,
@@ -1024,9 +1055,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? activeColor.withValues(alpha: 0.3)
-              : Colors.transparent,
+          color:
+              isSelected
+                  ? activeColor.withValues(alpha: 0.3)
+                  : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected ? activeColor : inactiveColor,
@@ -1036,10 +1068,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              icon,
-              style: const TextStyle(fontSize: 14),
-            ),
+            Text(icon, style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 4),
             Text(
               label,
@@ -1100,12 +1129,13 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final center = widget.waypoints.isNotEmpty
-        ? LatLng(
-            widget.waypoints.first['lat'] as double,
-            widget.waypoints.first['lon'] as double,
-          )
-        : const LatLng(-25.7479, 25.4833); // Center of South Africa
+    final center =
+        widget.waypoints.isNotEmpty
+            ? LatLng(
+              widget.waypoints.first['lat'] as double,
+              widget.waypoints.first['lon'] as double,
+            )
+            : const LatLng(-25.7479, 25.4833); // Center of South Africa
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1133,8 +1163,16 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStatChip('📍', '${widget.waypoints.length}', 'Waypoints'),
-                _buildStatChip('📏', '${widget.totalDistance.toStringAsFixed(0)}m', 'Distance'),
-                _buildStatChip('🩸', '${widget.waypoints.length}', 'Blood Spots'),
+                _buildStatChip(
+                  '📏',
+                  '${widget.totalDistance.toStringAsFixed(0)}m',
+                  'Distance',
+                ),
+                _buildStatChip(
+                  '🩸',
+                  '${widget.waypoints.length}',
+                  'Blood Spots',
+                ),
               ],
             ),
           ),
@@ -1161,12 +1199,15 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
                   PolylineLayer(
                     polylines: [
                       Polyline(
-                        points: widget.waypoints
-                            .map((wp) => LatLng(
-                                  wp['lat'] as double,
-                                  wp['lon'] as double,
-                                ))
-                            .toList(),
+                        points:
+                            widget.waypoints
+                                .map(
+                                  (wp) => LatLng(
+                                    wp['lat'] as double,
+                                    wp['lon'] as double,
+                                  ),
+                                )
+                                .toList(),
                         strokeWidth: 4,
                         color: Colors.red,
                         borderColor: Colors.red[800]!,
@@ -1176,61 +1217,71 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
                   ),
                 // Waypoint markers
                 MarkerLayer(
-                  markers: widget.waypoints.map((wp) {
-                    final number = wp['number'] as int;
-                    final distance = wp['distanceFromLast'] as double;
-                    return Marker(
-                      point: LatLng(wp['lat'] as double, wp['lon'] as double),
-                      width: 50,
-                      height: 60,
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: number == 1 ? Colors.green : Colors.red,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  blurRadius: 4,
-                                ),
-                              ],
-                            ),
-                            child: Text(
-                              '$number',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
+                  markers:
+                      widget.waypoints.map((wp) {
+                        final number = wp['number'] as int;
+                        final distance = wp['distanceFromLast'] as double;
+                        return Marker(
+                          point: LatLng(
+                            wp['lat'] as double,
+                            wp['lon'] as double,
                           ),
-                          if (number > 1)
-                            Container(
-                              margin: const EdgeInsets.only(top: 2),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '+${distance.toStringAsFixed(0)}m',
-                                style: const TextStyle(
-                                  color: Colors.orange,
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.bold,
+                          width: 50,
+                          height: 60,
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color:
+                                      number == 1 ? Colors.green : Colors.red,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '$number',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                              if (number > 1)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '+${distance.toStringAsFixed(0)}m',
+                                    style: const TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                 ),
               ],
             ),
@@ -1260,16 +1311,26 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
                     ),
                     title: Text(
                       '${(wp['lat'] as double).toStringAsFixed(6)}, ${(wp['lon'] as double).toStringAsFixed(6)}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
                     ),
                     subtitle: Text(
                       index > 0
                           ? '+${(wp['distanceFromLast'] as double).toStringAsFixed(0)}m from last'
                           : 'Start point',
-                      style: const TextStyle(color: Colors.orange, fontSize: 11),
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontSize: 11,
+                      ),
                     ),
                     trailing: IconButton(
-                      icon: const Icon(Icons.near_me, color: Colors.orange, size: 18),
+                      icon: const Icon(
+                        Icons.near_me,
+                        color: Colors.orange,
+                        size: 18,
+                      ),
                       onPressed: () => _navigateToWaypoint(wp),
                     ),
                   );
@@ -1319,9 +1380,6 @@ class _BloodTrailMapScreenState extends State<_BloodTrailMapScreen> {
   }
 
   void _navigateToWaypoint(Map<String, dynamic> wp) {
-    _mapController.move(
-      LatLng(wp['lat'] as double, wp['lon'] as double),
-      18,
-    );
+    _mapController.move(LatLng(wp['lat'] as double, wp['lon'] as double), 18);
   }
 }

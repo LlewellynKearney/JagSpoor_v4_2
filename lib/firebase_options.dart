@@ -64,8 +64,10 @@ class DefaultFirebaseOptions {
     messagingSenderId: '475471855344',
     projectId: 'jagspoor',
     storageBucket: 'jagspoor.firebasestorage.app',
-    androidClientId: '475471855344-pttv4g55mc1iuohnudtr0ee4d1vupbqd.apps.googleusercontent.com',
-    iosClientId: '475471855344-g2htqcg7khu9tq92c500anih3m4bkdsq.apps.googleusercontent.com',
+    androidClientId:
+        '475471855344-pttv4g55mc1iuohnudtr0ee4d1vupbqd.apps.googleusercontent.com',
+    iosClientId:
+        '475471855344-g2htqcg7khu9tq92c500anih3m4bkdsq.apps.googleusercontent.com',
     iosBundleId: 'com.example.jagspoor',
   );
 
@@ -75,8 +77,10 @@ class DefaultFirebaseOptions {
     messagingSenderId: '475471855344',
     projectId: 'jagspoor',
     storageBucket: 'jagspoor.firebasestorage.app',
-    androidClientId: '475471855344-pttv4g55mc1iuohnudtr0ee4d1vupbqd.apps.googleusercontent.com',
-    iosClientId: '475471855344-g2htqcg7khu9tq92c500anih3m4bkdsq.apps.googleusercontent.com',
+    androidClientId:
+        '475471855344-pttv4g55mc1iuohnudtr0ee4d1vupbqd.apps.googleusercontent.com',
+    iosClientId:
+        '475471855344-g2htqcg7khu9tq92c500anih3m4bkdsq.apps.googleusercontent.com',
     iosBundleId: 'com.example.jagspoor',
   );
 

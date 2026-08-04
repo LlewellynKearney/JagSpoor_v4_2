@@ -98,10 +98,14 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         _confidenceWarning = null;
       });
 
-      final nativeResult = await SpoorIdentifierService.instance.classifySpoorTrack(capturedImage);
+      final nativeResult = await SpoorIdentifierService.instance
+          .classifySpoorTrack(capturedImage);
       final bool success = nativeResult['success'] as bool? ?? true;
-      final String trackingResult = nativeResult['trackingResult'] as String? ?? 'Identified Spoor: Leopard (Male, Mature)';
-      final double confidence = (nativeResult['confidence'] as num?)?.toDouble() ?? 0.88;
+      final String trackingResult =
+          nativeResult['trackingResult'] as String? ??
+          'Identified Spoor: Leopard (Male, Mature)';
+      final double confidence =
+          (nativeResult['confidence'] as num?)?.toDouble() ?? 0.88;
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -110,7 +114,8 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       setState(() {
         _isScanning = false;
         _showResults = true;
-        _matchedAnimal = '$trackingResult (${(confidence * 100).toStringAsFixed(1)}%)';
+        _matchedAnimal =
+            '$trackingResult (${(confidence * 100).toStringAsFixed(1)}%)';
         _scanTimestamp = DateTime.now().toIso8601String();
         _latitude = position.latitude;
         _longitude = position.longitude;
@@ -141,11 +146,12 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     }
   }
 
-  Future<void> _saveScanToFirestore(String animalName, Position position) async {
+  Future<void> _saveScanToFirestore(
+    String animalName,
+    Position position,
+  ) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('spoor_scans')
-          .add({
+      await FirebaseFirestore.instance.collection('spoor_scans').add({
         'timestamp': FieldValue.serverTimestamp(),
         'resolvedAnimalName': animalName,
         'latitude': position.latitude,
@@ -194,18 +200,22 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
             elevation: 0,
             actions: [
               IconButton(
-                icon: Icon(Icons.history_rounded, color: widget.theme.accentColor),
+                icon: Icon(
+                  Icons.history_rounded,
+                  color: widget.theme.accentColor,
+                ),
                 onPressed: () => _showScanHistory(context),
               ),
             ],
           ),
-          body: _isCameraInitialized
-              ? _buildCameraView()
-              : Center(
-                  child: CircularProgressIndicator(
-                    color: widget.theme.accentColor,
+          body:
+              _isCameraInitialized
+                  ? _buildCameraView()
+                  : Center(
+                    child: CircularProgressIndicator(
+                      color: widget.theme.accentColor,
+                    ),
                   ),
-                ),
         );
       },
     );
@@ -231,43 +241,50 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
             left: 0,
             right: 0,
             child: Center(
-              child: _isScanning
-                  ? Column(
-                      children: [
-                        CircularProgressIndicator(
-                          color: widget.theme.accentColor,
-                          strokeWidth: 3,
+              child:
+                  _isScanning
+                      ? Column(
+                        children: [
+                          CircularProgressIndicator(
+                            color: widget.theme.accentColor,
+                            strokeWidth: 3,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Running AI classification...',
+                            style: TextStyle(
+                              color: widget.theme.textColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      )
+                      : ElevatedButton.icon(
+                        onPressed: _isAIInitialized ? _scanSpoor : null,
+                        icon: Icon(
+                          Icons.camera_alt_rounded,
+                          color: widget.theme.backgroundColor,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Running AI classification...',
+                        label: Text(
+                          'Scan Spoor',
                           style: TextStyle(
-                            color: widget.theme.textColor,
-                            fontSize: 16,
+                            color: widget.theme.backgroundColor,
                             fontWeight: FontWeight.bold,
+                            fontSize: 16,
                           ),
                         ),
-                      ],
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: _isAIInitialized ? _scanSpoor : null,
-                      icon: Icon(Icons.camera_alt_rounded, color: widget.theme.backgroundColor),
-                      label: Text(
-                        'Scan Spoor',
-                        style: TextStyle(
-                          color: widget.theme.backgroundColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.theme.accentColor,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: widget.theme.accentColor,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                    ),
             ),
           ),
         if (_showResults) _buildResultsOverlay(),
@@ -279,9 +296,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     return Center(
       child: CustomPaint(
         size: const Size(300, 300),
-        painter: ReticlePainter(
-          color: widget.theme.accentColor,
-        ),
+        painter: ReticlePainter(color: widget.theme.accentColor),
       ),
     );
   }
@@ -297,7 +312,9 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isLowConfidence ? Icons.warning_rounded : Icons.check_circle_rounded,
+            isLowConfidence
+                ? Icons.warning_rounded
+                : Icons.check_circle_rounded,
             color: isLowConfidence ? Colors.orange : widget.theme.accentColor,
             size: 64,
           ),
@@ -392,10 +409,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         Expanded(
           child: Text(
             value ?? 'N/A',
-            style: TextStyle(
-              fontSize: 14,
-              color: widget.theme.textColor,
-            ),
+            style: TextStyle(fontSize: 14, color: widget.theme.textColor),
           ),
         ),
       ],
@@ -429,10 +443,11 @@ class ReticlePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    final paint =
+        Paint()
+          ..color = color
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
 
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 20;
@@ -527,11 +542,12 @@ class ScanHistoryScreen extends StatelessWidget {
             elevation: 0,
           ),
           body: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('spoor_scans')
-                .orderBy('timestamp', descending: true)
-                .limit(50)
-                .snapshots(),
+            stream:
+                FirebaseFirestore.instance
+                    .collection('spoor_scans')
+                    .orderBy('timestamp', descending: true)
+                    .limit(50)
+                    .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(
@@ -552,10 +568,7 @@ class ScanHistoryScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       Text(
                         'No scan history yet',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: theme.textColor,
-                        ),
+                        style: TextStyle(fontSize: 18, color: theme.textColor),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -578,7 +591,8 @@ class ScanHistoryScreen extends StatelessWidget {
                   final data = doc.data() as Map<String, dynamic>;
 
                   final timestamp = data['timestamp'] as Timestamp?;
-                  final animalName = data['resolvedAnimalName'] as String? ?? 'Unknown';
+                  final animalName =
+                      data['resolvedAnimalName'] as String? ?? 'Unknown';
                   final latitude = (data['latitude'] as num?)?.toDouble();
                   final longitude = (data['longitude'] as num?)?.toDouble();
 

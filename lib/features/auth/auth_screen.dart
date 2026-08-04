@@ -39,7 +39,9 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!_isLoginMode && !_hasAcceptedPrivacyPolicy) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Submission Blocked: You must read and accept the Privacy & POPIA Policy before creating an account.'),
+          content: Text(
+            'Submission Blocked: You must read and accept the Privacy & POPIA Policy before creating an account.',
+          ),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 4),
@@ -242,13 +244,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ? Icons.visibility
                                 : Icons.visibility_off,
                           ),
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
+                          onPressed:
+                              () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                         ),
                       ),
-                      validator: (val) =>
-                          val!.isEmpty ? 'Enter password' : null,
+                      validator:
+                          (val) => val!.isEmpty ? 'Enter password' : null,
                     ),
                     const SizedBox(height: 12.0),
                     CheckboxListTile(
@@ -259,8 +262,9 @@ class _AuthScreenState extends State<AuthScreen> {
                       value: _keepMeSignedIn,
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      onChanged: (val) =>
-                          setState(() => _keepMeSignedIn = val ?? false),
+                      onChanged:
+                          (val) =>
+                              setState(() => _keepMeSignedIn = val ?? false),
                     ),
                     // POPIA Compliance: Privacy Policy acceptance checkbox (registration only)
                     if (!_isLoginMode) ...[
@@ -268,12 +272,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       Container(
                         padding: const EdgeInsets.all(12.0),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surface.withValues(alpha: 0.3),
+                          color: theme.colorScheme.surface.withValues(
+                            alpha: 0.3,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _hasAcceptedPrivacyPolicy
-                                ? Colors.green.withValues(alpha: 0.5)
-                                : theme.colorScheme.primary.withValues(alpha: 0.3),
+                            color:
+                                _hasAcceptedPrivacyPolicy
+                                    ? Colors.green.withValues(alpha: 0.5)
+                                    : theme.colorScheme.primary.withValues(
+                                      alpha: 0.3,
+                                    ),
                           ),
                         ),
                         child: Row(
@@ -296,7 +305,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const PrivacyPolicyScreen(),
+                                        builder:
+                                            (context) =>
+                                                const PrivacyPolicyScreen(),
                                       ),
                                     );
                                   },
@@ -309,16 +320,22 @@ class _AuthScreenState extends State<AuthScreen> {
                                         height: 1.3,
                                       ),
                                       children: [
-                                        const TextSpan(text: 'I have read and accept the '),
+                                        const TextSpan(
+                                          text: 'I have read and accept the ',
+                                        ),
                                         TextSpan(
-                                          text: 'Compliant Privacy & POPIA Policy',
+                                          text:
+                                              'Compliant Privacy & POPIA Policy',
                                           style: TextStyle(
                                             color: theme.colorScheme.primary,
                                             fontWeight: FontWeight.bold,
-                                            decoration: TextDecoration.underline,
+                                            decoration:
+                                                TextDecoration.underline,
                                           ),
                                         ),
-                                        const TextSpan(text: ' (Required for registration)'),
+                                        const TextSpan(
+                                          text: ' (Required for registration)',
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -331,7 +348,10 @@ class _AuthScreenState extends State<AuthScreen> {
                       if (_hasAcceptedPrivacyPolicy)
                         Container(
                           margin: const EdgeInsets.only(top: 8.0),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.green.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
@@ -339,7 +359,11 @@ class _AuthScreenState extends State<AuthScreen> {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.check_circle, color: Colors.green, size: 14),
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 14,
+                              ),
                               SizedBox(width: 4),
                               Text(
                                 'Policy Accepted',
@@ -360,21 +384,24 @@ class _AuthScreenState extends State<AuthScreen> {
                         shape: const BeveledRectangleBorder(),
                       ),
                       onPressed: _isLoading ? null : _handleAuth,
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text(
-                              'AUTHENTICATE GATEWAY',
-                              style: TextStyle(fontFamily: 'Mono'),
-                            ),
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text(
+                                'AUTHENTICATE GATEWAY',
+                                style: TextStyle(fontFamily: 'Mono'),
+                              ),
                     ),
                     const SizedBox(height: 16.0),
                     TextButton(
-                      onPressed: () =>
-                          setState(() => _isLoginMode = !_isLoginMode),
+                      onPressed:
+                          () => setState(() => _isLoginMode = !_isLoginMode),
                       child: Text(
                         _isLoginMode
                             ? 'SWITCH TO REGISTRATION'

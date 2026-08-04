@@ -24,7 +24,10 @@ class BluetoothMeshSync {
         '$hunterName:$payloadStr',
         strategy,
         onConnectionInitiated: (id, info) {
-          Nearby().acceptConnection(id, onPayLoadRecieved: (endpointId, payload) {});
+          Nearby().acceptConnection(
+            id,
+            onPayLoadRecieved: (endpointId, payload) {},
+          );
         },
         onConnectionResult: (id, status) {},
         onDisconnected: (id) {},
@@ -36,7 +39,9 @@ class BluetoothMeshSync {
   }
 
   // Listen for neighboring hunters broadcasting coordinates
-  Future<void> startMeshDiscovery(Function(String name, Map<String, dynamic> data) onPeerFound) async {
+  Future<void> startMeshDiscovery(
+    Function(String name, Map<String, dynamic> data) onPeerFound,
+  ) async {
     try {
       await Nearby().startDiscovery(
         "JagSpoor_Hunter",

@@ -70,7 +70,9 @@ class SapsPdfGenerator {
               pw.SizedBox(height: 16),
 
               // Section C: Firearm Particulars
-              _buildSectionHeader('SECTION C: PARTICULARS OF CURRENT LICENCE & FIREARM'),
+              _buildSectionHeader(
+                'SECTION C: PARTICULARS OF CURRENT LICENCE & FIREARM',
+              ),
               pw.SizedBox(height: 8),
               _buildGridTable([
                 ['Original Licence Number:', licenceNo],
@@ -110,7 +112,9 @@ class SapsPdfGenerator {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              _buildSectionHeader('SECTION E: SAFE STORAGE DECLARATION (SABS 953-1 COMPLIANCE)'),
+              _buildSectionHeader(
+                'SECTION E: SAFE STORAGE DECLARATION (SABS 953-1 COMPLIANCE)',
+              ),
               pw.SizedBox(height: 8),
               pw.Container(
                 padding: const pw.EdgeInsets.all(10),
@@ -122,7 +126,10 @@ class SapsPdfGenerator {
                   children: [
                     pw.Text(
                       'Installed Safe Configuration:',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 11,
+                      ),
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(safeType, style: const pw.TextStyle(fontSize: 11)),
@@ -136,7 +143,9 @@ class SapsPdfGenerator {
               ),
               pw.SizedBox(height: 16),
 
-              _buildSectionHeader('SECTION F: WRITTEN MOTIVATION FOR LICENCE RENEWAL'),
+              _buildSectionHeader(
+                'SECTION F: WRITTEN MOTIVATION FOR LICENCE RENEWAL',
+              ),
               pw.SizedBox(height: 8),
               pw.Container(
                 width: double.infinity,
@@ -181,7 +190,9 @@ class SapsPdfGenerator {
               pw.SizedBox(height: 36),
 
               // Annexure A: Safe Declaration Signature Block
-              _buildSectionHeader('ANNEXURE A: SAFE & STORAGE COMPLIANCE DECLARATION'),
+              _buildSectionHeader(
+                'ANNEXURE A: SAFE & STORAGE COMPLIANCE DECLARATION',
+              ),
               pw.SizedBox(height: 8),
               pw.Text(
                 'I, the undersigned owner/licensee, confirm that the safe facility described above remains mounted and in full compliance with Regulation 86.',
@@ -197,8 +208,20 @@ class SapsPdfGenerator {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('JagSpoor SAPS 518(a) PDF Generator', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                  pw.Text('Page 4 of 4', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text(
+                    'JagSpoor SAPS 518(a) PDF Generator',
+                    style: const pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
+                  pw.Text(
+                    'Page 4 of 4',
+                    style: const pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -217,10 +240,7 @@ class SapsPdfGenerator {
       padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       child: pw.Text(
         title,
-        style: pw.TextStyle(
-          fontWeight: pw.FontWeight.bold,
-          fontSize: 11,
-        ),
+        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
       ),
     );
   }
@@ -228,23 +248,27 @@ class SapsPdfGenerator {
   static pw.Widget _buildGridTable(List<List<String>> rows) {
     return pw.Table(
       border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-      children: rows.map((r) {
-        return pw.TableRow(
-          children: [
-            pw.Padding(
-              padding: const pw.EdgeInsets.all(6),
-              child: pw.Text(
-                r[0],
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-              ),
-            ),
-            pw.Padding(
-              padding: const pw.EdgeInsets.all(6),
-              child: pw.Text(r[1], style: const pw.TextStyle(fontSize: 10)),
-            ),
-          ],
-        );
-      }).toList(),
+      children:
+          rows.map((r) {
+            return pw.TableRow(
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(6),
+                  child: pw.Text(
+                    r[0],
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(6),
+                  child: pw.Text(r[1], style: const pw.TextStyle(fontSize: 10)),
+                ),
+              ],
+            );
+          }).toList(),
     );
   }
 
@@ -276,9 +300,15 @@ class SapsPdfGenerator {
             children: [
               pw.Text(
                 label,
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                style: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
+                  fontSize: 10,
+                ),
               ),
-              pw.Text('Date: ____________________', style: const pw.TextStyle(fontSize: 9)),
+              pw.Text(
+                'Date: ____________________',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
             ],
           ),
         ],

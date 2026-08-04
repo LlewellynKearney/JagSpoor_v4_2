@@ -7,7 +7,9 @@ class PdfGenerator {
   ///
   /// Expects each firearm entry to contain at least: 'make', 'serial', 'barrelLife', 'roundCount', 'expiry'.
   /// Layout: Firearm Make (far left) | Serial Number | Validity | Barrel Life (Rounds Remaining) | % Used
-  static Future<void> generateAndShareFirearmsPdf(List<Map<String, String>> firearms) async {
+  static Future<void> generateAndShareFirearmsPdf(
+    List<Map<String, String>> firearms,
+  ) async {
     final doc = pw.Document();
 
     doc.addPage(
@@ -20,44 +22,72 @@ class PdfGenerator {
           rows.add(
             pw.TableRow(
               decoration: pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(width: 2),
-                ),
+                border: pw.Border(bottom: pw.BorderSide(width: 2)),
               ),
               children: [
                 pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
                   child: pw.Text(
                     'Firearm Make',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
                 pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
                   child: pw.Text(
                     'Serial Number',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
                 pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
                   child: pw.Text(
                     'Validity',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
                 pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
                   child: pw.Text(
                     'Barrel Life',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
                 pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const pw.EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
                   child: pw.Text(
                     '% Used',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],
@@ -72,37 +102,69 @@ class PdfGenerator {
             final barrelLife = int.tryParse(f['barrelLife'] ?? '') ?? 0;
             final roundCount = int.tryParse(f['roundCount'] ?? '') ?? 0;
             final remaining = barrelLife > 0 ? (barrelLife - roundCount) : 0;
-            final usedPct = barrelLife > 0 ? ((roundCount / barrelLife) * 100).clamp(0, 100).toStringAsFixed(1) : 'N/A';
+            final usedPct =
+                barrelLife > 0
+                    ? ((roundCount / barrelLife) * 100)
+                        .clamp(0, 100)
+                        .toStringAsFixed(1)
+                    : 'N/A';
 
             rows.add(
               pw.TableRow(
                 decoration: pw.BoxDecoration(
                   border: pw.Border(
-                    bottom: pw.BorderSide(width: 0.5, color: pdf.PdfColors.grey),
+                    bottom: pw.BorderSide(
+                      width: 0.5,
+                      color: pdf.PdfColors.grey,
+                    ),
                   ),
                 ),
                 children: [
                   pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: pw.Text(make, style: const pw.TextStyle(fontSize: 10)),
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
+                    child: pw.Text(
+                      make,
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
                   ),
                   pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: pw.Text(serial, style: const pw.TextStyle(fontSize: 10)),
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
+                    child: pw.Text(
+                      serial,
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
                   ),
                   pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: pw.Text(_formatValidity(expiry), style: const pw.TextStyle(fontSize: 10)),
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
+                    child: pw.Text(
+                      _formatValidity(expiry),
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
                   ),
                   pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
                     child: pw.Text(
                       barrelLife > 0 ? '$remaining rds' : 'Not set',
                       style: const pw.TextStyle(fontSize: 10),
                     ),
                   ),
                   pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
+                    ),
                     child: pw.Text(
                       barrelLife > 0 ? '$usedPct%' : 'N/A',
                       style: const pw.TextStyle(fontSize: 10),
@@ -121,7 +183,10 @@ class PdfGenerator {
                   padding: const pw.EdgeInsets.only(bottom: 16),
                   child: pw.Text(
                     'Digital Firearm Safe — Registry',
-                    style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
                 ),
                 pw.Table(
@@ -138,7 +203,10 @@ class PdfGenerator {
                 pw.SizedBox(height: 20),
                 pw.Text(
                   'Generated: ${DateTime.now().toIso8601String().split('T').first}',
-                  style: pw.TextStyle(fontSize: 9, color: pdf.PdfColors.grey700),
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    color: pdf.PdfColors.grey700,
+                  ),
                 ),
               ],
             ),
@@ -156,10 +224,11 @@ class PdfGenerator {
     try {
       final dt = DateTime.parse(expiry);
       final now = DateTime.now();
-      return dt.isBefore(now) ? 'Expired' : 'Valid until ${dt.toIso8601String().split('T').first}';
+      return dt.isBefore(now)
+          ? 'Expired'
+          : 'Valid until ${dt.toIso8601String().split('T').first}';
     } catch (_) {
       return expiry;
     }
   }
 }
-

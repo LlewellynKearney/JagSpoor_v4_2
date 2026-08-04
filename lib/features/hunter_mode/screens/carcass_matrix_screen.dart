@@ -29,7 +29,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
   String _selectedChillerPosition = 'Chiller A - Hook 1';
   bool _isSubmitting = false;
   bool _isLocationCapturing = false;
-  
+
   // Harvest location coordinates
   double? _capturedLatitude;
   double? _capturedLongitude;
@@ -70,7 +70,8 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       setState(() {
         _capturedLatitude = position.latitude;
         _capturedLongitude = position.longitude;
-        _locationStatusText = "Coordinates Locked: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}";
+        _locationStatusText =
+            "Coordinates Locked: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}";
         _isLocationCapturing = false;
       });
 
@@ -91,7 +92,8 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         setState(() {
           _capturedLatitude = lastPoint.latitude;
           _capturedLongitude = lastPoint.longitude;
-          _locationStatusText = "Fallback: ${lastPoint.latitude.toStringAsFixed(4)}, ${lastPoint.longitude.toStringAsFixed(4)} (from trail)";
+          _locationStatusText =
+              "Fallback: ${lastPoint.latitude.toStringAsFixed(4)}, ${lastPoint.longitude.toStringAsFixed(4)} (from trail)";
           _isLocationCapturing = false;
         });
         if (mounted) {
@@ -203,7 +205,8 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       if (_capturedLatitude != null && _capturedLongitude != null) {
         try {
           await FirebaseFirestore.instance.collection('waypoints').add({
-            'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+            'name':
+                'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
             'type': 'Kill Site',
             'lat': _capturedLatitude,
             'lon': _capturedLongitude,
@@ -211,25 +214,24 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
           });
         } catch (waypointError) {
           // Queue waypoint if network fails
-          await OfflineSyncQueue.instance.enqueueAction(
-            'waypoints',
-            'CREATE',
-            {
-              'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
-              'type': 'Kill Site',
-              'lat': _capturedLatitude,
-              'lon': _capturedLongitude,
-            },
-          );
+          await OfflineSyncQueue.instance.enqueueAction('waypoints', 'CREATE', {
+            'name':
+                'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+            'type': 'Kill Site',
+            'lat': _capturedLatitude,
+            'lon': _capturedLongitude,
+          });
         }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_capturedLatitude != null 
-                ? '✅ Carcass logged + Kill Site waypoint created'
-                : '✅ Carcass logged to $_selectedChillerPosition'),
+            content: Text(
+              _capturedLatitude != null
+                  ? '✅ Carcass logged + Kill Site waypoint created'
+                  : '✅ Carcass logged to $_selectedChillerPosition',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -249,39 +251,37 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       // Network link dropped - write to local SQLite storage instead
       try {
         // Queue Carcass Log
-        await OfflineSyncQueue.instance.enqueueAction(
-          'carcass_logs',
-          'CREATE',
-          {
-            'tagNumber': _tagNumberController.text.trim(),
-            'species': _selectedSpecies,
-            'fieldWeightKg': double.parse(_fieldWeightController.text.trim()),
-            'hangingWeightKg': double.parse(_hangingWeightController.text.trim()),
-            'coldStoragePosition': _selectedChillerPosition,
-            'status': 'Hanging',
-          },
-        );
+        await OfflineSyncQueue.instance
+            .enqueueAction('carcass_logs', 'CREATE', {
+              'tagNumber': _tagNumberController.text.trim(),
+              'species': _selectedSpecies,
+              'fieldWeightKg': double.parse(_fieldWeightController.text.trim()),
+              'hangingWeightKg': double.parse(
+                _hangingWeightController.text.trim(),
+              ),
+              'coldStoragePosition': _selectedChillerPosition,
+              'status': 'Hanging',
+            });
 
         // Queue Associated Map Pin Waypoint if coordinates captured
         if (_capturedLatitude != null && _capturedLongitude != null) {
-          await OfflineSyncQueue.instance.enqueueAction(
-            'waypoints',
-            'CREATE',
-            {
-              'name': 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
-              'type': 'Kill Site',
-              'lat': _capturedLatitude,
-              'lon': _capturedLongitude,
-            },
-          );
+          await OfflineSyncQueue.instance.enqueueAction('waypoints', 'CREATE', {
+            'name':
+                'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
+            'type': 'Kill Site',
+            'lat': _capturedLatitude,
+            'lon': _capturedLongitude,
+          });
         }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(_capturedLatitude != null
-                  ? '📱 Saved locally. Carcass + Kill Site queued for sync.'
-                  : '📱 Saved locally. Carcass queued for sync when back in range.'),
+              content: Text(
+                _capturedLatitude != null
+                    ? '📱 Saved locally. Carcass + Kill Site queued for sync.'
+                    : '📱 Saved locally. Carcass queued for sync when back in range.',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -396,8 +396,14 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
               TextFormField(
                 controller: _tagNumberController,
                 style: TextStyle(color: theme.textColor),
-                decoration: _inputDecoration('Tag Number (e.g., TAG-2024-001)', Icons.tag, theme),
-                validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                decoration: _inputDecoration(
+                  'Tag Number (e.g., TAG-2024-001)',
+                  Icons.tag,
+                  theme,
+                ),
+                validator:
+                    (val) =>
+                        val == null || val.trim().isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 12),
 
@@ -407,14 +413,18 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                 decoration: InputDecoration(
                   labelText: 'Species',
                   prefixIcon: Icon(Icons.pets, color: theme.accentColor),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 dropdownColor: theme.cardColor,
                 style: TextStyle(color: theme.textColor),
-                items: _speciesOptions
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                    .toList(),
-                onChanged: (val) => setState(() => _selectedSpecies = val ?? 'Impala'),
+                items:
+                    _speciesOptions
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
+                onChanged:
+                    (val) => setState(() => _selectedSpecies = val ?? 'Impala'),
               ),
               const SizedBox(height: 12),
 
@@ -424,12 +434,20 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: _fieldWeightController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       style: TextStyle(color: theme.textColor),
-                      decoration: _inputDecoration('Field Weight (kg)', Icons.scale, theme),
+                      decoration: _inputDecoration(
+                        'Field Weight (kg)',
+                        Icons.scale,
+                        theme,
+                      ),
                       validator: (val) {
-                        if (val == null || val.trim().isEmpty) return 'Required';
-                        if (double.tryParse(val.trim()) == null) return 'Invalid';
+                        if (val == null || val.trim().isEmpty)
+                          return 'Required';
+                        if (double.tryParse(val.trim()) == null)
+                          return 'Invalid';
                         return null;
                       },
                     ),
@@ -438,12 +456,20 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: _hangingWeightController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       style: TextStyle(color: theme.textColor),
-                      decoration: _inputDecoration('Hanging Weight (kg)', Icons.straighten, theme),
+                      decoration: _inputDecoration(
+                        'Hanging Weight (kg)',
+                        Icons.straighten,
+                        theme,
+                      ),
                       validator: (val) {
-                        if (val == null || val.trim().isEmpty) return 'Required';
-                        if (double.tryParse(val.trim()) == null) return 'Invalid';
+                        if (val == null || val.trim().isEmpty)
+                          return 'Required';
+                        if (double.tryParse(val.trim()) == null)
+                          return 'Invalid';
                         return null;
                       },
                     ),
@@ -459,14 +485,20 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                 decoration: BoxDecoration(
                   color: Colors.amber.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                  border: Border.all(
+                    color: Colors.amber.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.location_on, color: Colors.amber.shade700, size: 20),
+                        Icon(
+                          Icons.location_on,
+                          color: Colors.amber.shade700,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'HARVEST GPS LOCATION',
@@ -493,25 +525,41 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
-                          onPressed: _isLocationCapturing ? null : _pinHarvestLocation,
+                          onPressed:
+                              _isLocationCapturing ? null : _pinHarvestLocation,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.amber.shade700,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          icon: _isLocationCapturing
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.location_searching, size: 18),
+                          icon:
+                              _isLocationCapturing
+                                  ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Icon(
+                                    Icons.location_searching,
+                                    size: 18,
+                                  ),
                           label: Text(
-                            _capturedLatitude != null ? 'RE-PIN' : 'PIN LOCATION',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            _capturedLatitude != null
+                                ? 'RE-PIN'
+                                : 'PIN LOCATION',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ],
@@ -527,14 +575,30 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                 decoration: InputDecoration(
                   labelText: 'Cold Storage Position',
                   prefixIcon: Icon(Icons.kitchen, color: theme.accentColor),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 dropdownColor: theme.cardColor,
                 style: TextStyle(color: theme.textColor),
-                items: _chillerPositions
-                    .map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13))))
-                    .toList(),
-                onChanged: (val) => setState(() => _selectedChillerPosition = val ?? _chillerPositions.first),
+                items:
+                    _chillerPositions
+                        .map(
+                          (p) => DropdownMenuItem(
+                            value: p,
+                            child: Text(
+                              p,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                onChanged:
+                    (val) => setState(
+                      () =>
+                          _selectedChillerPosition =
+                              val ?? _chillerPositions.first,
+                    ),
               ),
               const SizedBox(height: 20),
 
@@ -545,17 +609,28 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.accentColor,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                        )
-                      : const Icon(Icons.save_rounded, color: Colors.black),
+                  icon:
+                      _isSubmitting
+                          ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
+                          )
+                          : const Icon(Icons.save_rounded, color: Colors.black),
                   label: Text(
                     _isSubmitting ? 'LOGGING...' : 'LOG CARCASS',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.black,
+                    ),
                   ),
                   onPressed: _isSubmitting ? null : _submitCarcassLog,
                 ),
@@ -567,7 +642,11 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon, ThemeController theme) {
+  InputDecoration _inputDecoration(
+    String label,
+    IconData icon,
+    ThemeController theme,
+  ) {
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(color: theme.subtitleColor),
@@ -599,7 +678,9 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
-            child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.accentColor)),
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(theme.accentColor),
+            ),
           );
         }
 
@@ -621,22 +702,34 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         if (docs.isEmpty) {
           return Card(
             color: theme.cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(32.0),
               child: Center(
                 child: Column(
                   children: [
-                    Icon(Icons.inventory_2_outlined, size: 48, color: theme.subtitleColor),
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      size: 48,
+                      color: theme.subtitleColor,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'No active chiller records',
-                      style: TextStyle(color: theme.subtitleColor, fontSize: 16),
+                      style: TextStyle(
+                        color: theme.subtitleColor,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Log your first carcass above',
-                      style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                      style: TextStyle(
+                        color: theme.subtitleColor,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -684,12 +777,13 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => MeatProcessingScreen(
-                theme: widget.theme,
-                prefillTagNumber: tagNumber,
-                prefillSpecies: species,
-                prefillHangingWeight: hangingWeight,
-              ),
+              builder:
+                  (context) => MeatProcessingScreen(
+                    theme: widget.theme,
+                    prefillTagNumber: tagNumber,
+                    prefillSpecies: species,
+                    prefillHangingWeight: hangingWeight,
+                  ),
             ),
           );
         },
@@ -701,7 +795,11 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.inventory_2_rounded, size: 18, color: theme.accentColor),
+                  Icon(
+                    Icons.inventory_2_rounded,
+                    size: 18,
+                    color: theme.accentColor,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -723,7 +821,11 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
               ),
               Text(
                 position,
-                style: TextStyle(color: theme.accentColor, fontSize: 11, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: theme.accentColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               Row(
@@ -732,15 +834,33 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Field', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
-                      Text('${fieldWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
+                      Text(
+                        'Field',
+                        style: TextStyle(
+                          color: theme.subtitleColor,
+                          fontSize: 9,
+                        ),
+                      ),
+                      Text(
+                        '${fieldWeight.toStringAsFixed(1)} kg',
+                        style: TextStyle(color: theme.textColor, fontSize: 11),
+                      ),
                     ],
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('Hanging', style: TextStyle(color: theme.subtitleColor, fontSize: 9)),
-                      Text('${hangingWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.textColor, fontSize: 11)),
+                      Text(
+                        'Hanging',
+                        style: TextStyle(
+                          color: theme.subtitleColor,
+                          fontSize: 9,
+                        ),
+                      ),
+                      Text(
+                        '${hangingWeight.toStringAsFixed(1)} kg',
+                        style: TextStyle(color: theme.textColor, fontSize: 11),
+                      ),
                     ],
                   ),
                 ],
@@ -766,12 +886,13 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => MeatProcessingScreen(
-                          theme: widget.theme,
-                          prefillTagNumber: tagNumber,
-                          prefillSpecies: species,
-                          prefillHangingWeight: hangingWeight,
-                        ),
+                        builder:
+                            (context) => MeatProcessingScreen(
+                              theme: widget.theme,
+                              prefillTagNumber: tagNumber,
+                              prefillSpecies: species,
+                              prefillHangingWeight: hangingWeight,
+                            ),
                       ),
                     );
                   },

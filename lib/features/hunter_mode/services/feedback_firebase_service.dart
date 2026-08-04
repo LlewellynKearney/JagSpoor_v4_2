@@ -82,10 +82,7 @@ class FeedbackFirebaseService {
     final Uri emailUri = Uri(
       scheme: 'mailto',
       path: _supportEmail,
-      queryParameters: {
-        'subject': subject,
-        'body': body,
-      },
+      queryParameters: {'subject': subject, 'body': body},
     );
 
     return launchUrl(emailUri, mode: LaunchMode.externalApplication);

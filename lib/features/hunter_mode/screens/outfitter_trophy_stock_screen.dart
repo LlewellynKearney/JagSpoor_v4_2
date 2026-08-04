@@ -12,10 +12,12 @@ class OutfitterTrophyStockScreen extends StatefulWidget {
   const OutfitterTrophyStockScreen({super.key, required this.theme});
 
   @override
-  State<OutfitterTrophyStockScreen> createState() => _OutfitterTrophyStockScreenState();
+  State<OutfitterTrophyStockScreen> createState() =>
+      _OutfitterTrophyStockScreenState();
 }
 
-class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen> {
+class _OutfitterTrophyStockScreenState
+    extends State<OutfitterTrophyStockScreen> {
   final _formKey = GlobalKey<FormState>();
   final _speciesController = TextEditingController();
   final _countController = TextEditingController();
@@ -62,10 +64,16 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
 
   Future<void> _loadFarmName() async {
     if (_selectedFarmId == null) return;
-    final farmDoc = await FirebaseFirestore.instance.collection('farms').doc(_selectedFarmId).get();
+    final farmDoc =
+        await FirebaseFirestore.instance
+            .collection('farms')
+            .doc(_selectedFarmId)
+            .get();
     if (farmDoc.exists && mounted) {
       setState(() {
-        _selectedFarmName = (farmDoc.data() as Map<String, dynamic>?)?['name'] ?? 'Unknown Farm';
+        _selectedFarmName =
+            (farmDoc.data() as Map<String, dynamic>?)?['name'] ??
+            'Unknown Farm';
       });
     }
   }
@@ -96,8 +104,13 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
     });
 
     try {
-      final count = int.tryParse(_countController.text.replaceAll(',', '')) ?? 0;
-      final price = double.tryParse(_priceController.text.replaceAll(',', '').replaceAll('R', '')) ?? 0;
+      final count =
+          int.tryParse(_countController.text.replaceAll(',', '')) ?? 0;
+      final price =
+          double.tryParse(
+            _priceController.text.replaceAll(',', '').replaceAll('R', ''),
+          ) ??
+          0;
 
       await OutfitterEnterpriseManager.instance.syncTrophyStock(
         farmId: _selectedFarmId!,
@@ -112,7 +125,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
         _priceController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Trophy stock synced for ${_selectedFarmName ?? "farm"}!'),
+            content: Text(
+              '✅ Trophy stock synced for ${_selectedFarmName ?? "farm"}!',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -120,10 +135,7 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Failed: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -180,7 +192,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                           color: widget.theme.backgroundColor,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: widget.theme.accentColor.withValues(alpha: 0.3),
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                         alignment: Alignment.center,
@@ -230,7 +244,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
             decoration: BoxDecoration(
               color: theme.cardColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.2),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,7 +255,11 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      Icon(Icons.sync_rounded, color: theme.accentColor, size: 24),
+                      Icon(
+                        Icons.sync_rounded,
+                        color: theme.accentColor,
+                        size: 24,
+                      ),
                       const SizedBox(width: 12),
                       Text(
                         'Sync Trophy Availability',
@@ -272,54 +292,91 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                         ),
                         const SizedBox(height: 8),
                         StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection('farms')
-                              .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                              .where('status', isEqualTo: 'active')
-                              .snapshots(),
+                          stream:
+                              FirebaseFirestore.instance
+                                  .collection('farms')
+                                  .where(
+                                    'outfitterId',
+                                    isEqualTo:
+                                        FirebaseAuth.instance.currentUser?.uid,
+                                  )
+                                  .where('status', isEqualTo: 'active')
+                                  .snapshots(),
                           builder: (context, snapshot) {
                             final farms = snapshot.data?.docs ?? [];
 
                             return DropdownButtonFormField<String>(
                               value: _selectedFarmId,
                               decoration: InputDecoration(
-                                hintText: _isManager 
-                                    ? 'Locked to assigned farm' 
-                                    : 'Choose a farm...',
-                                hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+                                hintText:
+                                    _isManager
+                                        ? 'Locked to assigned farm'
+                                        : 'Choose a farm...',
+                                hintStyle: TextStyle(
+                                  color: theme.subtitleColor.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
                                 filled: true,
-                                fillColor: _isManager 
-                                    ? theme.accentColor.withValues(alpha: 0.1) 
-                                    : theme.backgroundColor,
+                                fillColor:
+                                    _isManager
+                                        ? theme.accentColor.withValues(
+                                          alpha: 0.1,
+                                        )
+                                        : theme.backgroundColor,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                  borderSide: BorderSide(
+                                    color: theme.accentColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                  borderSide: BorderSide(
+                                    color: theme.accentColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
                                 ),
-                                prefixIcon: _isManager 
-                                    ? Icon(Icons.lock_rounded, color: theme.accentColor) 
-                                    : null,
+                                prefixIcon:
+                                    _isManager
+                                        ? Icon(
+                                          Icons.lock_rounded,
+                                          color: theme.accentColor,
+                                        )
+                                        : null,
                               ),
                               dropdownColor: theme.cardColor,
                               style: TextStyle(color: theme.textColor),
-                              items: farms.map((doc) {
-                                final data = doc.data() as Map<String, dynamic>;
-                                return DropdownMenuItem(
-                                  value: doc.id,
-                                  child: Text(data['name'] ?? 'Unknown'),
-                                );
-                              }).toList(),
-                              onChanged: _isManager ? null : (value) {
-                                if (value == null) return;
-                                final farm = farms.firstWhere((doc) => doc.id == value);
-                                setState(() {
-                                  _selectedFarmId = value;
-                                  _selectedFarmName = (farm.data() as Map<String, dynamic>)['name'];
-                                });
-                              },
+                              items:
+                                  farms.map((doc) {
+                                    final data =
+                                        doc.data() as Map<String, dynamic>;
+                                    return DropdownMenuItem(
+                                      value: doc.id,
+                                      child: Text(data['name'] ?? 'Unknown'),
+                                    );
+                                  }).toList(),
+                              onChanged:
+                                  _isManager
+                                      ? null
+                                      : (value) {
+                                        if (value == null) return;
+                                        final farm = farms.firstWhere(
+                                          (doc) => doc.id == value,
+                                        );
+                                        setState(() {
+                                          _selectedFarmId = value;
+                                          _selectedFarmName =
+                                              (farm.data()
+                                                  as Map<
+                                                    String,
+                                                    dynamic
+                                                  >)['name'];
+                                        });
+                                      },
                               validator: (value) {
                                 if (value == null) {
                                   return 'Please select a farm';
@@ -347,20 +404,29 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                           style: TextStyle(color: theme.textColor),
                           decoration: InputDecoration(
                             hintText: 'e.g., Kudu, Gemsbok, Impala',
-                            hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+                            hintStyle: TextStyle(
+                              color: theme.subtitleColor.withValues(alpha: 0.5),
+                            ),
                             filled: true,
                             fillColor: theme.backgroundColor,
                             suffixIcon: IconButton(
-                              icon: Icon(Icons.list_rounded, color: theme.accentColor),
+                              icon: Icon(
+                                Icons.list_rounded,
+                                color: theme.accentColor,
+                              ),
                               onPressed: _showSpeciesPicker,
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                              borderSide: BorderSide(
+                                color: theme.accentColor.withValues(alpha: 0.3),
+                              ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                              borderSide: BorderSide(
+                                color: theme.accentColor.withValues(alpha: 0.3),
+                              ),
                             ),
                           ),
                           validator: (value) {
@@ -393,23 +459,38 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                     controller: _countController,
                                     style: TextStyle(color: theme.textColor),
                                     keyboardType: TextInputType.number,
-                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
                                     decoration: InputDecoration(
                                       hintText: '0',
-                                      hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+                                      hintStyle: TextStyle(
+                                        color: theme.subtitleColor.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
                                       filled: true,
                                       fillColor: theme.backgroundColor,
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                        borderSide: BorderSide(
+                                          color: theme.accentColor.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                        borderSide: BorderSide(
+                                          color: theme.accentColor.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                     validator: (value) {
-                                      if (value == null || value.trim().isEmpty) {
+                                      if (value == null ||
+                                          value.trim().isEmpty) {
                                         return 'Required';
                                       }
                                       return null;
@@ -437,28 +518,48 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                   TextFormField(
                                     controller: _priceController,
                                     style: TextStyle(color: theme.textColor),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
                                     inputFormatters: [
-                                      FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[\d.,]'),
+                                      ),
                                     ],
                                     decoration: InputDecoration(
                                       hintText: '25000',
-                                      hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+                                      hintStyle: TextStyle(
+                                        color: theme.subtitleColor.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
                                       prefixText: 'R ',
-                                      prefixStyle: TextStyle(color: theme.textColor),
+                                      prefixStyle: TextStyle(
+                                        color: theme.textColor,
+                                      ),
                                       filled: true,
                                       fillColor: theme.backgroundColor,
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                        borderSide: BorderSide(
+                                          color: theme.accentColor.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+                                        borderSide: BorderSide(
+                                          color: theme.accentColor.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                     validator: (value) {
-                                      if (value == null || value.trim().isEmpty) {
+                                      if (value == null ||
+                                          value.trim().isEmpty) {
                                         return 'Required';
                                       }
                                       return null;
@@ -484,13 +585,17 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            icon: _isSyncing
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.cloud_sync_rounded),
+                            icon:
+                                _isSyncing
+                                    ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Icon(Icons.cloud_sync_rounded),
                             label: const Text(
                               'SYNC TROPHY STOCK',
                               style: TextStyle(fontWeight: FontWeight.bold),
@@ -511,7 +616,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
             decoration: BoxDecoration(
               color: theme.cardColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.2),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -520,7 +627,11 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      Icon(Icons.inventory_rounded, color: theme.accentColor, size: 24),
+                      Icon(
+                        Icons.inventory_rounded,
+                        color: theme.accentColor,
+                        size: 24,
+                      ),
                       const SizedBox(width: 12),
                       Text(
                         'Current Stock by Farm',
@@ -535,11 +646,15 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                 ),
                 const Divider(height: 1),
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('trophies')
-                      .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                      .orderBy('lastUpdated', descending: true)
-                      .snapshots(),
+                  stream:
+                      FirebaseFirestore.instance
+                          .collection('trophies')
+                          .where(
+                            'outfitterId',
+                            isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                          )
+                          .orderBy('lastUpdated', descending: true)
+                          .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Padding(
@@ -579,13 +694,15 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                       physics: const NeverScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
                       itemCount: trophies.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 12),
+                      separatorBuilder:
+                          (context, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final trophy = trophies[index];
                         final data = trophy.data() as Map<String, dynamic>;
                         final species = data['species'] ?? 'Unknown';
                         final count = data['availableCount'] ?? 0;
-                        final price = (data['pricePerTrophyRands'] ?? 0).toDouble();
+                        final price =
+                            (data['pricePerTrophyRands'] ?? 0).toDouble();
                         final farmId = data['farmId'] ?? '';
 
                         return Container(
@@ -594,9 +711,10 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                             color: theme.backgroundColor,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: count > 0
-                                  ? Colors.green.withValues(alpha: 0.3)
-                                  : Colors.red.withValues(alpha: 0.3),
+                              color:
+                                  count > 0
+                                      ? Colors.green.withValues(alpha: 0.3)
+                                      : Colors.red.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
@@ -604,7 +722,9 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: theme.accentColor.withValues(alpha: 0.2),
+                                  color: theme.accentColor.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Icon(
@@ -639,17 +759,28 @@ class _OutfitterTrophyStockScreenState extends State<OutfitterTrophyStockScreen>
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: count > 0
-                                          ? Colors.green.withValues(alpha: 0.2)
-                                          : Colors.red.withValues(alpha: 0.2),
+                                      color:
+                                          count > 0
+                                              ? Colors.green.withValues(
+                                                alpha: 0.2,
+                                              )
+                                              : Colors.red.withValues(
+                                                alpha: 0.2,
+                                              ),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       '$count available',
                                       style: TextStyle(
-                                        color: count > 0 ? Colors.green : Colors.red,
+                                        color:
+                                            count > 0
+                                                ? Colors.green
+                                                : Colors.red,
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
                                       ),

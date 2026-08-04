@@ -25,12 +25,14 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final metrics = _selectedSpecies == null
-        ? null
-        : getRolandWardMetricsForSpecies(_selectedSpecies!);
+    final metrics =
+        _selectedSpecies == null
+            ? null
+            : getRolandWardMetricsForSpecies(_selectedSpecies!);
     final earLength = metrics?.earLength;
     final minimumValue = _parseRolandWardMinimum(metrics?.rwMinimum);
-    final estimatedHornLength = earLength == null ? null : earLength * _multiplier;
+    final estimatedHornLength =
+        earLength == null ? null : earLength * _multiplier;
     final isComparable = estimatedHornLength != null && minimumValue != null;
     bool? meetsMinimum;
     final comparableHornLength = estimatedHornLength;
@@ -156,17 +158,15 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
                 filled: true,
                 fillColor: widget.theme.backgroundColor.withValues(alpha: 0.55),
               ),
-              items: _species
-                  .map(
-                    (species) => DropdownMenuItem<String>(
-                      value: species,
-                      child: Text(
-                        species,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
+              items:
+                  _species
+                      .map(
+                        (species) => DropdownMenuItem<String>(
+                          value: species,
+                          child: Text(species, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
               onChanged: (value) {
                 if (value != null) {
                   setState(() => _selectedSpecies = value);
@@ -259,16 +259,15 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
             const SizedBox(height: 8),
             Text(
               'Adjust the apparent horn-to-ear ratio captured through the optic.',
-              style: TextStyle(
-                fontSize: 13,
-                color: widget.theme.subtitleColor,
-              ),
+              style: TextStyle(fontSize: 13, color: widget.theme.subtitleColor),
             ),
             const SizedBox(height: 16),
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 activeTrackColor: widget.theme.accentColor,
-                inactiveTrackColor: widget.theme.accentColor.withValues(alpha: 0.2),
+                inactiveTrackColor: widget.theme.accentColor.withValues(
+                  alpha: 0.2,
+                ),
                 thumbColor: widget.theme.accentColor,
                 overlayColor: widget.theme.accentColor.withValues(alpha: 0.12),
               ),
@@ -286,7 +285,10 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('0.50x', style: TextStyle(color: widget.theme.subtitleColor)),
+                Text(
+                  '0.50x',
+                  style: TextStyle(color: widget.theme.subtitleColor),
+                ),
                 Text(
                   '${_multiplier.toStringAsFixed(2)}x',
                   style: TextStyle(
@@ -294,7 +296,10 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
                     color: widget.theme.textColor,
                   ),
                 ),
-                Text('5.00x', style: TextStyle(color: widget.theme.subtitleColor)),
+                Text(
+                  '5.00x',
+                  style: TextStyle(color: widget.theme.subtitleColor),
+                ),
               ],
             ),
           ],
@@ -385,10 +390,7 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
           Expanded(
             child: Text(
               title,
-              style: TextStyle(
-                fontSize: 13,
-                color: widget.theme.subtitleColor,
-              ),
+              style: TextStyle(fontSize: 13, color: widget.theme.subtitleColor),
             ),
           ),
           Text(

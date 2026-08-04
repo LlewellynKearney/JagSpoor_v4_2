@@ -7,7 +7,7 @@ import 'package:share_plus/share_plus.dart';
 class OutfitterInvoiceExporter {
   /// Generates a PDF billing invoice and shares it via the system share sheet.
   /// All amounts are in South African Rand (ZAR).
-  /// 
+  ///
   /// Parameters:
   /// - [bookingId]: Unique booking identifier
   /// - [packageName]: Name of the hunting package
@@ -66,7 +66,7 @@ class OutfitterInvoiceExporter {
                   ),
                 ),
                 pw.SizedBox(height: 16),
-                
+
                 // Status Badge
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.end,
@@ -79,7 +79,10 @@ class OutfitterInvoiceExporter {
                       decoration: pw.BoxDecoration(
                         color: PdfColors.green100,
                         borderRadius: pw.BorderRadius.circular(4),
-                        border: pw.Border.all(color: PdfColors.green800, width: 2),
+                        border: pw.Border.all(
+                          color: PdfColors.green800,
+                          width: 2,
+                        ),
                       ),
                       child: pw.Text(
                         '✅ APPROVED',
@@ -95,7 +98,7 @@ class OutfitterInvoiceExporter {
                 pw.SizedBox(height: 16),
                 pw.Divider(thickness: 2),
                 pw.SizedBox(height: 16),
-                
+
                 // Document Info
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -137,7 +140,7 @@ class OutfitterInvoiceExporter {
                   ],
                 ),
                 pw.SizedBox(height: 24),
-                
+
                 // Client Details Section
                 pw.Container(
                   padding: const pw.EdgeInsets.all(12),
@@ -164,7 +167,7 @@ class OutfitterInvoiceExporter {
                   ),
                 ),
                 pw.SizedBox(height: 24),
-                
+
                 // Billing Summary
                 pw.Text(
                   'BILLING SUMMARY (ZAR)',
@@ -174,7 +177,7 @@ class OutfitterInvoiceExporter {
                   ),
                 ),
                 pw.SizedBox(height: 12),
-                
+
                 // Line Items
                 pw.Container(
                   padding: const pw.EdgeInsets.all(16),
@@ -206,7 +209,7 @@ class OutfitterInvoiceExporter {
                   ),
                 ),
                 pw.SizedBox(height: 16),
-                
+
                 // Total Amount Due
                 pw.Container(
                   width: double.infinity,
@@ -248,7 +251,7 @@ class OutfitterInvoiceExporter {
                   ),
                 ),
                 pw.Spacer(),
-                
+
                 // Footer
                 pw.Divider(),
                 pw.SizedBox(height: 8),
@@ -280,14 +283,20 @@ class OutfitterInvoiceExporter {
     );
 
     final Directory outputDir = await getApplicationDocumentsDirectory();
-    final String sanitizedBookingId = bookingId.replaceAll(RegExp(r'[^\w\-]'), '_');
-    final File invoiceFile = File("${outputDir.path}/JagSpoor_Slaughterhouse_Manifest_$sanitizedBookingId.pdf");
+    final String sanitizedBookingId = bookingId.replaceAll(
+      RegExp(r'[^\w\-]'),
+      '_',
+    );
+    final File invoiceFile = File(
+      "${outputDir.path}/JagSpoor_Slaughterhouse_Manifest_$sanitizedBookingId.pdf",
+    );
     await invoiceFile.writeAsBytes(await pdf.save());
 
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(invoiceFile.path)],
-        text: 'JagSpoor Slaughterhouse Manifest - Booking Confirmation: $bookingId',
+        text:
+            'JagSpoor Slaughterhouse Manifest - Booking Confirmation: $bookingId',
         subject: 'JagSpoor Slaughterhouse Manifest: $bookingId',
       ),
     );
@@ -295,10 +304,12 @@ class OutfitterInvoiceExporter {
 
   /// Format amount as ZAR currency
   String _formatZAR(double amount) {
-    return amount.toStringAsFixed(2).replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]},',
-    );
+    return amount
+        .toStringAsFixed(2)
+        .replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]},',
+        );
   }
 
   /// Builds a detail row for client info
@@ -320,10 +331,7 @@ class OutfitterInvoiceExporter {
             ),
           ),
           pw.Expanded(
-            child: pw.Text(
-              value,
-              style: const pw.TextStyle(fontSize: 11),
-            ),
+            child: pw.Text(value, style: const pw.TextStyle(fontSize: 11)),
           ),
         ],
       ),
@@ -331,7 +339,12 @@ class OutfitterInvoiceExporter {
   }
 
   /// Builds a line item row for billing
-  pw.Widget _buildLineItemRow(String label, String value, {bool isFee = false, bool isBold = false}) {
+  pw.Widget _buildLineItemRow(
+    String label,
+    String value, {
+    bool isFee = false,
+    bool isBold = false,
+  }) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [

@@ -24,15 +24,21 @@ class ThemeController extends ChangeNotifier {
   Color get backgroundColor {
     if (_isDarkMode) {
       switch (_currentConcept) {
-        case HuntingConcept.thermalGlow: return const Color(0xFF432F16); // Embered Clay
-        case HuntingConcept.walnutLuxury: return const Color(0xFF1A1412); // Deep Espresso
-        case HuntingConcept.neonShock: return const Color(0xFF2C3124); // Shadowed Olive
+        case HuntingConcept.thermalGlow:
+          return const Color(0xFF432F16); // Embered Clay
+        case HuntingConcept.walnutLuxury:
+          return const Color(0xFF1A1412); // Deep Espresso
+        case HuntingConcept.neonShock:
+          return const Color(0xFF2C3124); // Shadowed Olive
       }
     } else {
       switch (_currentConcept) {
-        case HuntingConcept.thermalGlow: return const Color(0xFFFFF1E6); // Warm Sand
-        case HuntingConcept.walnutLuxury: return const Color(0xFFFDF8F5); // Warm Parchment
-        case HuntingConcept.neonShock: return const Color(0xFFE7E3CD); // Soft Khaki
+        case HuntingConcept.thermalGlow:
+          return const Color(0xFFFFF1E6); // Warm Sand
+        case HuntingConcept.walnutLuxury:
+          return const Color(0xFFFDF8F5); // Warm Parchment
+        case HuntingConcept.neonShock:
+          return const Color(0xFFE7E3CD); // Soft Khaki
       }
     }
   }
@@ -41,15 +47,21 @@ class ThemeController extends ChangeNotifier {
   Color get accentColor {
     if (_isDarkMode) {
       switch (_currentConcept) {
-        case HuntingConcept.thermalGlow: return const Color(0xFFFF7A18); // Kalahari Orange
-        case HuntingConcept.walnutLuxury: return const Color(0xFFD4AF37); // Brushed Gold
-        case HuntingConcept.neonShock: return const Color(0xFF8C9A6B); // Sage Olive
+        case HuntingConcept.thermalGlow:
+          return const Color(0xFFFF7A18); // Kalahari Orange
+        case HuntingConcept.walnutLuxury:
+          return const Color(0xFFD4AF37); // Brushed Gold
+        case HuntingConcept.neonShock:
+          return const Color(0xFF8C9A6B); // Sage Olive
       }
     } else {
       switch (_currentConcept) {
-        case HuntingConcept.thermalGlow: return const Color(0xFFCC6600); // Burnt Amber
-        case HuntingConcept.walnutLuxury: return const Color(0xFF8B4513); // Saddle Brown
-        case HuntingConcept.neonShock: return const Color(0xFF718355); // Bushveld Sage
+        case HuntingConcept.thermalGlow:
+          return const Color(0xFFCC6600); // Burnt Amber
+        case HuntingConcept.walnutLuxury:
+          return const Color(0xFF8B4513); // Saddle Brown
+        case HuntingConcept.neonShock:
+          return const Color(0xFF718355); // Bushveld Sage
       }
     }
   }
@@ -60,9 +72,9 @@ class ThemeController extends ChangeNotifier {
 
   // --- TACTILE CARD SURFACE ---
   Color get cardColor {
-    return _isDarkMode 
-      ? backgroundColor.withAlpha(150) 
-      : Colors.white.withAlpha(230);
+    return _isDarkMode
+        ? backgroundColor.withAlpha(150)
+        : Colors.white.withAlpha(230);
   }
 
   // --- MATERIAL THEME OVERRIDE ---
@@ -89,7 +101,11 @@ class ThemeController extends ChangeNotifier {
         backgroundColor: backgroundColor,
         foregroundColor: textColor,
         iconTheme: IconThemeData(color: accentColor),
-        titleTextStyle: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 20),
+        titleTextStyle: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
         elevation: 0,
       ),
       cardColor: cardColor,
@@ -99,10 +115,15 @@ class ThemeController extends ChangeNotifier {
           foregroundColor: backgroundColor,
         ),
       ),
-      textTheme: Typography.material2021().black.apply(bodyColor: textColor, displayColor: textColor),
+      textTheme: Typography.material2021().black.apply(
+        bodyColor: textColor,
+        displayColor: textColor,
+      ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) => accentColor),
-        trackColor: WidgetStateProperty.resolveWith((states) => accentColor.withValues(alpha: 0.4)),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => accentColor.withValues(alpha: 0.4),
+        ),
       ),
     );
   }

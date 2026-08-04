@@ -43,13 +43,17 @@ class TrajectoryPoint {
 
 class BallisticPhysicsEngine {
   static double calculateTrueBallisticRange(
-      double lineOfSightRange, double angleDegrees) {
+    double lineOfSightRange,
+    double angleDegrees,
+  ) {
     if (lineOfSightRange <= 0) return 0.0;
     return lineOfSightRange * math.cos(angleDegrees * math.pi / 180.0);
   }
 
   static double calculateAirDensityRatio(
-      double altitudeMeters, double tempCelsius) {
+    double altitudeMeters,
+    double tempCelsius,
+  ) {
     final double altitudeFactor = 1.0 - ((altitudeMeters / 300.0) * 0.03);
     final double tempFactor = 1.0 - (((tempCelsius - 15.0) / 5.0) * 0.01);
     return math.max(0.5, math.min(1.5, altitudeFactor * tempFactor));
@@ -58,7 +62,9 @@ class BallisticPhysicsEngine {
   /// Calculates ballistic coefficient adjustment based on bullet weight.
   /// Heavier bullets maintain velocity better and have higher effective BC.
   static double calculateBulletWeightAdjustment(
-      double bulletWeightGrains, double baseBc) {
+    double bulletWeightGrains,
+    double baseBc,
+  ) {
     // Heavier bullets (higher grain weight) generally retain momentum better
     // This is a simplified model - real BC depends on bullet shape
     const double referenceWeight = 150.0; // Reference weight in grains
@@ -70,7 +76,9 @@ class BallisticPhysicsEngine {
   /// Calculates ballistic coefficient adjustment based on muzzle velocity.
   /// Affects the drag model at different velocity ranges.
   static double calculateMuzzleVelocityAdjustment(
-      double muzzleVelocityMs, double baseBc) {
+    double muzzleVelocityMs,
+    double baseBc,
+  ) {
     // Velocity affects drag - higher velocity means more drag initially
     // but also more energy delivery downrange
     const double referenceVelocity = 800.0; // m/s
@@ -91,20 +99,31 @@ class BallisticPhysicsEngine {
   }) {
     if (muzzleVelocityMs <= 0 || ballisticCoefficient <= 0) {
       return List.generate(
-          21,
-          (i) => TrajectoryPoint(
-              rangeMeters: i * 50.0, dropCm: 0, windageCm: 0, velocityMs: 0));
+        21,
+        (i) => TrajectoryPoint(
+          rangeMeters: i * 50.0,
+          dropCm: 0,
+          windageCm: 0,
+          velocityMs: 0,
+        ),
+      );
     }
 
     // Apply physics adjustments for bullet weight and muzzle velocity
     final double weightAdjustedBc = calculateBulletWeightAdjustment(
-        bulletWeightGrains, ballisticCoefficient);
-    final double velocityAdjustedBc =
-        calculateMuzzleVelocityAdjustment(muzzleVelocityMs, weightAdjustedBc);
+      bulletWeightGrains,
+      ballisticCoefficient,
+    );
+    final double velocityAdjustedBc = calculateMuzzleVelocityAdjustment(
+      muzzleVelocityMs,
+      weightAdjustedBc,
+    );
 
     final List<TrajectoryPoint> grid = [];
-    final double densityRatio =
-        calculateAirDensityRatio(altitudeMeters, temperatureCelsius);
+    final double densityRatio = calculateAirDensityRatio(
+      altitudeMeters,
+      temperatureCelsius,
+    );
     final double adjustedBc = velocityAdjustedBc / densityRatio;
     final double gravity =
         9.80665 * math.cos(pitchAngleDegrees * math.pi / 180.0);
@@ -112,11 +131,14 @@ class BallisticPhysicsEngine {
     for (int stepRange = 0; stepRange <= 1000; stepRange += 50) {
       final double x = stepRange.toDouble();
       if (x == 0) {
-        grid.add(TrajectoryPoint(
+        grid.add(
+          TrajectoryPoint(
             rangeMeters: 0,
             dropCm: 0,
             windageCm: 0,
-            velocityMs: muzzleVelocityMs));
+            velocityMs: muzzleVelocityMs,
+          ),
+        );
         continue;
       }
 
@@ -129,14 +151,15 @@ class BallisticPhysicsEngine {
       final double timeOfFlight = x / averageVelocity;
 
       double rawDropCm = 0.5 * gravity * math.pow(timeOfFlight, 2) * 100.0;
-      final double zeroTime = zeroDistanceMeters /
+      final double zeroTime =
+          zeroDistanceMeters /
           ((muzzleVelocityMs +
                   muzzleVelocityMs *
                       math.exp(-zeroDistanceMeters / ballisticDecayFactor)) /
               2.0);
       final double zeroDropCompensationAtX =
           (0.5 * gravity * math.pow(zeroTime, 2) * 100.0) *
-              (x / zeroDistanceMeters);
+          (x / zeroDistanceMeters);
 
       double dropCorrectionCm = zeroDropCompensationAtX - rawDropCm;
       double windageDriftCm = crossWindMps * timeOfFlight * 10.0;
@@ -148,12 +171,14 @@ class BallisticPhysicsEngine {
         windageDriftCm = 0.0;
       }
 
-      grid.add(TrajectoryPoint(
-        rangeMeters: x,
-        dropCm: double.parse(dropCorrectionCm.toStringAsFixed(2)),
-        windageCm: double.parse(windageDriftCm.toStringAsFixed(2)),
-        velocityMs: double.parse(velocityAtX.toStringAsFixed(1)),
-      ));
+      grid.add(
+        TrajectoryPoint(
+          rangeMeters: x,
+          dropCm: double.parse(dropCorrectionCm.toStringAsFixed(2)),
+          windageCm: double.parse(windageDriftCm.toStringAsFixed(2)),
+          velocityMs: double.parse(velocityAtX.toStringAsFixed(1)),
+        ),
+      );
     }
     return grid;
   }
@@ -194,7 +219,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       'caliber': '.308',
       'velocityMs': 800.0,
       'bulletWeightGrains': 175.0,
-      'ballisticCoefficient': 0.496
+      'ballisticCoefficient': 0.496,
     },
     {
       'id': '65_cm',
@@ -202,7 +227,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       'caliber': '6.5mm',
       'velocityMs': 835.0,
       'bulletWeightGrains': 140.0,
-      'ballisticCoefficient': 0.512
+      'ballisticCoefficient': 0.512,
     },
     {
       'id': '243_win',
@@ -210,7 +235,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       'caliber': '.243',
       'velocityMs': 900.0,
       'bulletWeightGrains': 100.0,
-      'ballisticCoefficient': 0.395
+      'ballisticCoefficient': 0.395,
     },
     {
       'id': '270_win',
@@ -218,7 +243,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       'caliber': '.270',
       'velocityMs': 850.0,
       'bulletWeightGrains': 150.0,
-      'ballisticCoefficient': 0.447
+      'ballisticCoefficient': 0.447,
     },
   ];
 
@@ -228,10 +253,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     _tabController = TabController(length: 1, vsync: this);
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    _firearmsStream = FirebaseFirestore.instance
-        .collection('firearms')
-        .where('ownerId', isEqualTo: currentUid)
-        .snapshots();
+    _firearmsStream =
+        FirebaseFirestore.instance
+            .collection('firearms')
+            .where('ownerId', isEqualTo: currentUid)
+            .snapshots();
 
     _factoryAmmoStream =
         FirebaseFirestore.instance.collection('factory_ammunition').snapshots();
@@ -266,19 +292,20 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       backgroundColor: JagspoorTheme.tacticalDark,
       appBar: AppBar(
         backgroundColor: JagspoorTheme.walnutLuxury,
-        title: const Text('HUD BALLISTIC DATA SYSTEM',
-            style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5)),
+        title: const Text(
+          'HUD BALLISTIC DATA SYSTEM',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+          ),
+        ),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: JagspoorTheme.thermalGlow,
           labelColor: JagspoorTheme.thermalGlow,
           unselectedLabelColor: Colors.white,
-          tabs: const [
-            Tab(icon: Icon(Icons.tune), text: 'Cartridge Data'),
-          ],
+          tabs: const [Tab(icon: Icon(Icons.tune), text: 'Cartridge Data')],
         ),
       ),
       body: SafeArea(
@@ -287,11 +314,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('🏹 TACTICAL PROFILE DATA MATRIX',
-                  style: TextStyle(
-                      color: JagspoorTheme.thermalGlow,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14)),
+              Text(
+                '🏹 TACTICAL PROFILE DATA MATRIX',
+                style: TextStyle(
+                  color: JagspoorTheme.thermalGlow,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
               const SizedBox(height: 10),
 
               StreamBuilder<QuerySnapshot>(
@@ -302,71 +332,94 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       snapshot.data!.docs.isEmpty) {
                     return _buildHardwareDropdownContainer(
                       label: 'Select Firearm Vault Location',
-                      child: Text('OFFLINE SAFE MODULE ACTIVE',
-                          style: TextStyle(
-                              color: JagspoorTheme.thermalGlow, fontSize: 14)),
+                      child: Text(
+                        'OFFLINE SAFE MODULE ACTIVE',
+                        style: TextStyle(
+                          color: JagspoorTheme.thermalGlow,
+                          fontSize: 14,
+                        ),
+                      ),
                     );
                   }
 
                   final docs = snapshot.data!.docs;
-                  
+
                   // Filter out demo/seeded rifles - only show user's real registered firearms
-                  final userDocs = docs.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final serial = (data['serialNumber']?.toString().toUpperCase() ?? '');
-                    final name = (data['name']?.toString().toLowerCase() ?? '');
-                    // Exclude demo rifles with TIKKA-, SAKO- prefixes
-                    if (serial.startsWith('TIKKA-') || serial.startsWith('SAKO-')) {
-                      return false;
-                    }
-                    // Exclude rifles with "Unknown" in the name
-                    if (name.contains('unknown')) {
-                      return false;
-                    }
-                    return true;
-                  }).toList();
-                  
+                  final userDocs =
+                      docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final serial =
+                            (data['serialNumber']?.toString().toUpperCase() ??
+                                '');
+                        final name =
+                            (data['name']?.toString().toLowerCase() ?? '');
+                        // Exclude demo rifles with TIKKA-, SAKO- prefixes
+                        if (serial.startsWith('TIKKA-') ||
+                            serial.startsWith('SAKO-')) {
+                          return false;
+                        }
+                        // Exclude rifles with "Unknown" in the name
+                        if (name.contains('unknown')) {
+                          return false;
+                        }
+                        return true;
+                      }).toList();
+
                   // Show empty state if no real firearms
                   if (userDocs.isEmpty) {
                     return _buildHardwareDropdownContainer(
                       label: 'Select Firearm Vault Location',
-                      child: Text('NO REGISTERED FIREARMS',
-                          style: TextStyle(
-                              color: JagspoorTheme.thermalGlow, fontSize: 14)),
+                      child: Text(
+                        'NO REGISTERED FIREARMS',
+                        style: TextStyle(
+                          color: JagspoorTheme.thermalGlow,
+                          fontSize: 14,
+                        ),
+                      ),
                     );
                   }
-                  
+
                   return _buildHardwareDropdownContainer(
                     label: 'Select Firearm Vault Location',
-                                          child: DropdownButtonHideUnderline(
+                    child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        hint: Text('CHOOSE FIREARM',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                        hint: Text(
+                          'CHOOSE FIREARM',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                         dropdownColor: JagspoorTheme.hudCardBackground,
                         value: _selectedFirearmId,
-                        items: userDocs.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final String make = (data['make'] ??
-                                  data['brand'] ??
-                                  data['manufacturer'] ??
-                                  'Unknown')
-                              .toString();
-                          final String model = (data['model'] ??
-                                  data['modelName'] ??
-                                  data['name'] ??
-                                  'Firearm')
-                              .toString();
-                          final String caliber =
-                              (data['caliber'] ?? 'N/A').toString();
-                          return DropdownMenuItem<String>(
-                            value: doc.id,
-                            child: Text(
-                              '$make $model • [$caliber]',
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                            ),
-                          );
-                        }).toList(),
+                        items:
+                            userDocs.map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final String make =
+                                  (data['make'] ??
+                                          data['brand'] ??
+                                          data['manufacturer'] ??
+                                          'Unknown')
+                                      .toString();
+                              final String model =
+                                  (data['model'] ??
+                                          data['modelName'] ??
+                                          data['name'] ??
+                                          'Firearm')
+                                      .toString();
+                              final String caliber =
+                                  (data['caliber'] ?? 'N/A').toString();
+                              return DropdownMenuItem<String>(
+                                value: doc.id,
+                                child: Text(
+                                  '$make $model • [$caliber]',
+                                  style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                         onChanged: (id) {
                           if (id == null) return;
                           final doc = userDocs.firstWhere((d) => d.id == id);
@@ -392,31 +445,48 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('RANGE',
-                            style:
-                                TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12)),
-                        Text('${_targetRangeMeters.toInt()} m',
-                            style: TextStyle(
-                                color: JagspoorTheme.thermalGlow,
-                                fontWeight: FontWeight.bold)),
+                        Text(
+                          'RANGE',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          '${_targetRangeMeters.toInt()} m',
+                          style: TextStyle(
+                            color: JagspoorTheme.thermalGlow,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         activeTrackColor: Theme.of(context).colorScheme.primary,
-                        inactiveTrackColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.24),
+                        inactiveTrackColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.24),
                         thumbColor: Theme.of(context).colorScheme.secondary,
-                        overlayColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
-                        valueIndicatorColor: Theme.of(context).colorScheme.primary,
-                        activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
-                        inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+                        overlayColor: Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.12),
+                        valueIndicatorColor:
+                            Theme.of(context).colorScheme.primary,
+                        activeTickMarkColor: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.4),
+                        inactiveTickMarkColor: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.12),
                       ),
                       child: Slider(
                         value: _targetRangeMeters,
                         min: 50,
                         max: 1000,
                         divisions: 19,
-                        onChanged: (v) => setState(() => _targetRangeMeters = v),
+                        onChanged:
+                            (v) => setState(() => _targetRangeMeters = v),
                       ),
                     ),
                   ],
@@ -429,25 +499,37 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 label: 'Environmental Parameters',
                 child: Column(
                   children: [
-                    _buildParameterRow('Wind Speed (m/s)', _crossWindMps, 0, 20,
-                        (v) => setState(() => _crossWindMps = v)),
-                    const SizedBox(height: 8),
-                    _buildParameterRow('Altitude (m)', _altitudeMeters, 0, 5000,
-                        (v) => setState(() => _altitudeMeters = v)),
+                    _buildParameterRow(
+                      'Wind Speed (m/s)',
+                      _crossWindMps,
+                      0,
+                      20,
+                      (v) => setState(() => _crossWindMps = v),
+                    ),
                     const SizedBox(height: 8),
                     _buildParameterRow(
-                        'Temperature (°C)',
-                        _temperatureCelsius,
-                        -40,
-                        60,
-                        (v) => setState(() => _temperatureCelsius = v)),
+                      'Altitude (m)',
+                      _altitudeMeters,
+                      0,
+                      5000,
+                      (v) => setState(() => _altitudeMeters = v),
+                    ),
                     const SizedBox(height: 8),
                     _buildParameterRow(
-                        'Zero Distance (m)',
-                        _zeroDistanceMeters,
-                        50,
-                        1000,
-                        (v) => setState(() => _zeroDistanceMeters = v)),
+                      'Temperature (°C)',
+                      _temperatureCelsius,
+                      -40,
+                      60,
+                      (v) => setState(() => _temperatureCelsius = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildParameterRow(
+                      'Zero Distance (m)',
+                      _zeroDistanceMeters,
+                      50,
+                      1000,
+                      (v) => setState(() => _zeroDistanceMeters = v),
+                    ),
                   ],
                 ),
               ),
@@ -460,18 +542,20 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 child: Column(
                   children: [
                     _buildParameterRow(
-                        'Muzzle Velocity (fps)',
-                        _muzzleVelocityFps,
-                        1300,
-                        4000,
-                        (v) => setState(() => _muzzleVelocityFps = v)),
+                      'Muzzle Velocity (fps)',
+                      _muzzleVelocityFps,
+                      1300,
+                      4000,
+                      (v) => setState(() => _muzzleVelocityFps = v),
+                    ),
                     const SizedBox(height: 8),
                     _buildParameterRow(
-                        'Bullet Weight (Grains)',
-                        _bulletWeightGrains,
-                        30,
-                        300,
-                        (v) => setState(() => _bulletWeightGrains = v)),
+                      'Bullet Weight (Grains)',
+                      _bulletWeightGrains,
+                      30,
+                      300,
+                      (v) => setState(() => _bulletWeightGrains = v),
+                    ),
                   ],
                 ),
               ),
@@ -479,11 +563,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               const SizedBox(height: 24),
 
               if (_selectedFirearmData != null) ...[
-                Text('📊 TRAJECTORY COMPUTATION GRID',
-                    style: TextStyle(
-                        color: JagspoorTheme.thermalGlow,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14)),
+                Text(
+                  '📊 TRAJECTORY COMPUTATION GRID',
+                  style: TextStyle(
+                    color: JagspoorTheme.thermalGlow,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 StreamBuilder<QuerySnapshot>(
                   stream: _factoryAmmoStream,
@@ -491,11 +578,16 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     List<Map<String, dynamic>> ammoCatalog =
                         _fallbackAmmunitionCatalog;
                     if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                      ammoCatalog = snapshot.data!.docs
-                          .map((doc) => doc.data() as Map<String, dynamic>)
-                          .where((a) => _evaluateCaliberMatch(
-                              _selectedFirearmData!['caliber'], a['caliber']))
-                          .toList();
+                      ammoCatalog =
+                          snapshot.data!.docs
+                              .map((doc) => doc.data() as Map<String, dynamic>)
+                              .where(
+                                (a) => _evaluateCaliberMatch(
+                                  _selectedFirearmData!['caliber'],
+                                  a['caliber'],
+                                ),
+                              )
+                              .toList();
                       if (ammoCatalog.isEmpty) {
                         ammoCatalog = _fallbackAmmunitionCatalog;
                       }
@@ -528,10 +620,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     // Convert fps to m/s for internal physics calculations
     final double internalMuzzleVelocityMs = muzzleVelocityFps * 0.3048;
 
-    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
-            _selectedAmmunitionData?['bc'] ??
-            0.45)
-        .toDouble();
+    final double bc =
+        (_selectedAmmunitionData?['ballisticCoefficient'] ??
+                _selectedAmmunitionData?['bc'] ??
+                0.45)
+            .toDouble();
 
     final trajectoryGrid = BallisticPhysicsEngine.generateTrajectoryGrid(
       muzzleVelocityMs: internalMuzzleVelocityMs,
@@ -626,11 +719,22 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('• ', style: TextStyle(color: Color(0xFF1A2421), fontSize: 12, fontWeight: FontWeight.bold)),
+        const Text(
+          '• ',
+          style: TextStyle(
+            color: Color(0xFF1A2421),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         Expanded(
           child: Text(
             '$label ',
-            style: const TextStyle(color: Color(0xFF1A2421), fontSize: 12, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              color: Color(0xFF1A2421),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
         Text(
@@ -645,8 +749,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     );
   }
 
-  Widget _buildHardwareDropdownContainer(
-      {required String label, required Widget child}) {
+  Widget _buildHardwareDropdownContainer({
+    required String label,
+    required Widget child,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -658,9 +764,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface, fontSize: 12, letterSpacing: 1.2)),
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 12,
+              letterSpacing: 1.2,
+            ),
+          ),
           const SizedBox(height: 8),
           child,
         ],
@@ -668,26 +779,44 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     );
   }
 
-  Widget _buildParameterRow(String label, double value, double min, double max,
-      ValueChanged<double> onChanged) {
+  Widget _buildParameterRow(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) {
     return Row(
       children: [
         Expanded(
           flex: 2,
-          child: Text(label,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12)),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 12,
+            ),
+          ),
         ),
         Expanded(
           flex: 3,
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: Theme.of(context).colorScheme.primary,
-              inactiveTrackColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.24),
+              inactiveTrackColor: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.24),
               thumbColor: Theme.of(context).colorScheme.secondary,
-              overlayColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
+              overlayColor: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.12),
               valueIndicatorColor: Theme.of(context).colorScheme.primary,
-              activeTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
-              inactiveTickMarkColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+              activeTickMarkColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.4),
+              inactiveTickMarkColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.12),
             ),
             child: Slider(
               value: value.clamp(min, max),
@@ -703,7 +832,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           child: Text(
             value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1),
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
+              color: Theme.of(context).colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
             textAlign: TextAlign.right,
           ),
         ),
@@ -712,10 +843,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   }
 
   Widget _buildTrajectoryChart(List<Map<String, dynamic>> ammoCatalog) {
-    final double bc = (_selectedAmmunitionData?['ballisticCoefficient'] ??
-            _selectedAmmunitionData?['bc'] ??
-            0.45)
-        .toDouble();
+    final double bc =
+        (_selectedAmmunitionData?['ballisticCoefficient'] ??
+                _selectedAmmunitionData?['bc'] ??
+                0.45)
+            .toDouble();
 
     // Use the slider fps value, converting to m/s for internal physics
     final double internalMuzzleVelocityMs = _muzzleVelocityFps * 0.3048;
@@ -738,9 +870,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     final windageSpots =
         trajectoryGrid.map((p) => FlSpot(p.rangeMeters, p.windageCm)).toList();
 
-    final maxY = [...dropSpots, ...windageSpots]
-        .map((s) => s.y.abs())
-        .fold<double>(0, (a, b) => math.max(a, b));
+    final maxY = [
+      ...dropSpots,
+      ...windageSpots,
+    ].map((s) => s.y.abs()).fold<double>(0, (a, b) => math.max(a, b));
 
     return Container(
       height: 350,
@@ -756,12 +889,18 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('DROP & WINDAGE vs RANGE',
-                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+              const Text(
+                'DROP & WINDAGE vs RANGE',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
               if (ammoCatalog.isNotEmpty)
-                Text(ammoCatalog.first['name'] ?? '',
-                    style: TextStyle(
-                        color: JagspoorTheme.thermalGlow, fontSize: 11)),
+                Text(
+                  ammoCatalog.first['name'] ?? '',
+                  style: TextStyle(
+                    color: JagspoorTheme.thermalGlow,
+                    fontSize: 11,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -773,53 +912,60 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   drawVerticalLine: true,
                   horizontalInterval: (maxY / 4).clamp(1, double.infinity),
                   verticalInterval: 100,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: JagspoorTheme.walnutLuxury.withAlpha(51),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: JagspoorTheme.walnutLuxury.withAlpha(51),
-                    strokeWidth: 1,
-                  ),
+                  getDrawingHorizontalLine:
+                      (value) => FlLine(
+                        color: JagspoorTheme.walnutLuxury.withAlpha(51),
+                        strokeWidth: 1,
+                      ),
+                  getDrawingVerticalLine:
+                      (value) => FlLine(
+                        color: JagspoorTheme.walnutLuxury.withAlpha(51),
+                        strokeWidth: 1,
+                      ),
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 45,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toStringAsFixed(0),
-                        style: const TextStyle(
-                          color: Color(0xFF1A2421),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
+                      getTitlesWidget:
+                          (value, meta) => Text(
+                            value.toStringAsFixed(0),
+                            style: const TextStyle(
+                              color: Color(0xFF1A2421),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 30,
-                      getTitlesWidget: (value, meta) => Text(
-                        '${value.toInt()}m',
-                        style: const TextStyle(
-                          color: Color(0xFF1A2421),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
+                      getTitlesWidget:
+                          (value, meta) => Text(
+                            '${value.toInt()}m',
+                            style: const TextStyle(
+                              color: Color(0xFF1A2421),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
                     ),
                   ),
                   rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                   topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 borderData: FlBorderData(
                   show: true,
                   border: Border.all(
-                      color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+                    color: JagspoorTheme.walnutLuxury.withAlpha(128),
+                  ),
                 ),
                 // Target Range Indicator Line (v17.1)
                 extraLinesData: ExtraLinesData(
@@ -837,8 +983,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
-                        labelResolver: (line) =>
-                            'TARGET: ${_targetRangeMeters.toStringAsFixed(0)}m',
+                        labelResolver:
+                            (line) =>
+                                'TARGET: ${_targetRangeMeters.toStringAsFixed(0)}m',
                       ),
                     ),
                   ],
@@ -871,19 +1018,24 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 ],
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
-                    getTooltipColor: (touchedSpot) =>
-                        JagspoorTheme.hudCardBackground,
-                    getTooltipItems: (spots) => spots.map((spot) {
-                      final label = spot.barIndex == 0 ? 'Drop' : 'Wind';
-                      return LineTooltipItem(
-                        '$label: ${spot.y.toStringAsFixed(2)} cm',
-                        TextStyle(
-                            color: spot.barIndex == 0
-                                ? JagspoorTheme.thermalGlow
-                                : Colors.blueAccent,
-                            fontSize: 12),
-                      );
-                    }).toList(),
+                    getTooltipColor:
+                        (touchedSpot) => JagspoorTheme.hudCardBackground,
+                    getTooltipItems:
+                        (spots) =>
+                            spots.map((spot) {
+                              final label =
+                                  spot.barIndex == 0 ? 'Drop' : 'Wind';
+                              return LineTooltipItem(
+                                '$label: ${spot.y.toStringAsFixed(2)} cm',
+                                TextStyle(
+                                  color:
+                                      spot.barIndex == 0
+                                          ? JagspoorTheme.thermalGlow
+                                          : Colors.blueAccent,
+                                  fontSize: 12,
+                                ),
+                              );
+                            }).toList(),
                   ),
                 ),
               ),
@@ -918,12 +1070,18 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           children: [
             Icon(Icons.shield, color: JagspoorTheme.walnutLuxury, size: 64),
             const SizedBox(height: 16),
-            Text('SELECT FIREARM TO ACTIVATE',
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 14, letterSpacing: 1.2)),
-            Text('TRAJECTORY COMPUTATION ENGINE',
-                style:
-                    TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 12)),
+            Text(
+              'SELECT FIREARM TO ACTIVATE',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                letterSpacing: 1.2,
+              ),
+            ),
+            Text(
+              'TRAJECTORY COMPUTATION ENGINE',
+              style: TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 12),
+            ),
           ],
         ),
       ),
@@ -934,17 +1092,22 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     return Row(
       children: [
         Container(
-            width: 16,
-            height: 3,
-            decoration: BoxDecoration(
-                color: color, borderRadius: BorderRadius.circular(2))),
+          width: 16,
+          height: 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
         const SizedBox(width: 6),
-        Text(label,
-            style: const TextStyle(
-              color: Color(0xFF1A2421),
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            )),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF1A2421),
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ],
     );
   }

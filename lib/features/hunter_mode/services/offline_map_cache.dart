@@ -13,13 +13,18 @@ class OfflineMapCache {
     final Directory directory = await getApplicationDocumentsDirectory();
     final String cachePath = '${directory.path}/map_tiles_cache';
 
-    _cacheStore = MemCacheStore(); // Falling back to lightning-fast memory store if disk arrays lock up
+    _cacheStore =
+        MemCacheStore(); // Falling back to lightning-fast memory store if disk arrays lock up
 
     cacheOptions = CacheOptions(
       store: _cacheStore,
-      policy: CachePolicy.refreshForceCache, // Grab local storage if cell networks drop out completely
+      policy:
+          CachePolicy
+              .refreshForceCache, // Grab local storage if cell networks drop out completely
       hitCacheOnErrorExcept: [500, 502, 503, 504],
-      maxStale: const Duration(days: 30), // Maintain map segments for up to 30 days offline
+      maxStale: const Duration(
+        days: 30,
+      ), // Maintain map segments for up to 30 days offline
       priority: CachePriority.high,
     );
 

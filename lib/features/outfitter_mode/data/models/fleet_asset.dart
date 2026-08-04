@@ -21,7 +21,9 @@ class FleetAsset {
   factory FleetAsset.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     if (data == null) {
-      debugPrint('FleetAsset document ${doc.id} has no data, returning default asset');
+      debugPrint(
+        'FleetAsset document ${doc.id} has no data, returning default asset',
+      );
       return FleetAsset(
         id: doc.id,
         vehicleName: 'Unknown Vehicle',
@@ -31,7 +33,9 @@ class FleetAsset {
     try {
       return FleetAsset.fromJson(data, id: doc.id);
     } catch (e) {
-      debugPrint('Error parsing FleetAsset ${doc.id}: $e, returning default asset');
+      debugPrint(
+        'Error parsing FleetAsset ${doc.id}: $e, returning default asset',
+      );
       return FleetAsset(
         id: doc.id,
         vehicleName: data['vehicleName'] as String? ?? 'Unknown Vehicle',

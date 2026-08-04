@@ -13,10 +13,12 @@ class OutfitterBookingDashboardScreen extends StatefulWidget {
   const OutfitterBookingDashboardScreen({super.key, required this.theme});
 
   @override
-  State<OutfitterBookingDashboardScreen> createState() => _OutfitterBookingDashboardScreenState();
+  State<OutfitterBookingDashboardScreen> createState() =>
+      _OutfitterBookingDashboardScreenState();
 }
 
-class _OutfitterBookingDashboardScreenState extends State<OutfitterBookingDashboardScreen> {
+class _OutfitterBookingDashboardScreenState
+    extends State<OutfitterBookingDashboardScreen> {
   late Query _bookingQuery;
 
   @override
@@ -47,7 +49,7 @@ class _OutfitterBookingDashboardScreenState extends State<OutfitterBookingDashbo
       backgroundColor: widget.theme.backgroundColor,
       appBar: AppBar(
         title: Text(
-          UserRoleResolver.instance.isManager 
+          UserRoleResolver.instance.isManager
               ? '💳 Farm Booking Requests'
               : '💳 Booking Requests',
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -173,17 +175,15 @@ class _BookingCardState extends State<_BookingCard> {
                   ? '✅ Booking approved!'
                   : '❌ Booking declined',
             ),
-            backgroundColor: newStatus == 'Approved' ? Colors.green : Colors.red,
+            backgroundColor:
+                newStatus == 'Approved' ? Colors.green : Colors.red,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -201,11 +201,13 @@ class _BookingCardState extends State<_BookingCard> {
     });
 
     try {
-      final packageName = widget.data['packageName'] as String? ?? 'Hunting Package';
+      final packageName =
+          widget.data['packageName'] as String? ?? 'Hunting Package';
       final farmName = widget.data['farmName'] as String? ?? 'Outfitter Farm';
       final hunterName = widget.data['hunterName'] as String? ?? 'Hunter';
       final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
-      final commission = (widget.data['platformCommissionRands'] ?? 0).toDouble();
+      final commission =
+          (widget.data['platformCommissionRands'] ?? 0).toDouble();
       final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
 
       await OutfitterInvoiceExporter().generateAndShareInvoice(
@@ -262,8 +264,9 @@ class _BookingCardState extends State<_BookingCard> {
   }
 
   Widget _buildCustomItemsSection() {
-    final selectedItems = widget.data['selectedItemsList'] as List<dynamic>? ?? [];
-    
+    final selectedItems =
+        widget.data['selectedItemsList'] as List<dynamic>? ?? [];
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -359,7 +362,9 @@ class _BookingCardState extends State<_BookingCard> {
                         color: widget.theme.backgroundColor,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: widget.theme.accentColor.withValues(alpha: 0.15),
+                          color: widget.theme.accentColor.withValues(
+                            alpha: 0.15,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -369,7 +374,9 @@ class _BookingCardState extends State<_BookingCard> {
                             height: 24,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: widget.theme.accentColor.withValues(alpha: 0.2),
+                              color: widget.theme.accentColor.withValues(
+                                alpha: 0.2,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -464,7 +471,10 @@ class _BookingCardState extends State<_BookingCard> {
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(status).withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(4),
@@ -510,7 +520,11 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     Expanded(
                       child: Text(
-                        packageId.substring(0, packageId.length > 8 ? 8 : packageId.length) + '...',
+                        packageId.substring(
+                              0,
+                              packageId.length > 8 ? 8 : packageId.length,
+                            ) +
+                            '...',
                         style: TextStyle(
                           color: widget.theme.textColor,
                           fontSize: 13,
@@ -537,7 +551,11 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     Expanded(
                       child: Text(
-                        hunterId.substring(0, hunterId.length > 8 ? 8 : hunterId.length) + '...',
+                        hunterId.substring(
+                              0,
+                              hunterId.length > 8 ? 8 : hunterId.length,
+                            ) +
+                            '...',
                         style: TextStyle(
                           color: widget.theme.textColor,
                           fontSize: 13,
@@ -563,26 +581,31 @@ class _BookingCardState extends State<_BookingCard> {
             decoration: BoxDecoration(
               color: widget.theme.backgroundColor,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: widget.theme.accentColor.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: widget.theme.accentColor.withValues(alpha: 0.2),
+              ),
             ),
             child: Column(
               children: [
                 _FinancialRow(
                   label: 'Base Package Rate',
-                  value: 'R ${basePrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                  value:
+                      'R ${basePrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
                 ),
                 const Divider(height: 16),
                 _FinancialRow(
                   label: '5% Platform Admin Fee',
-                  value: 'R ${commission.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                  value:
+                      'R ${commission.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
                   isFee: true,
                 ),
                 const Divider(height: 16),
                 _FinancialRow(
                   label: 'Total Cost',
-                  value: 'R ${totalPrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                  value:
+                      'R ${totalPrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
                   isTotal: true,
                 ),
@@ -594,87 +617,106 @@ class _BookingCardState extends State<_BookingCard> {
           // Action Buttons
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: status == 'Pending Approval'
-                ? Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isProcessing ? null : () => _updateStatus('Declined'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+            child:
+                status == 'Pending Approval'
+                    ? Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed:
+                                _isProcessing
+                                    ? null
+                                    : () => _updateStatus('Declined'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            icon:
+                                _isProcessing
+                                    ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.red,
+                                      ),
+                                    )
+                                    : const Icon(Icons.close_rounded),
+                            label: const Text(
+                              'DECLINE',
+                              style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
-                          icon: _isProcessing
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                                )
-                              : const Icon(Icons.close_rounded),
-                          label: const Text(
-                            'DECLINE',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton.icon(
-                          onPressed: _isProcessing ? null : () => _updateStatus('Approved'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed:
+                                _isProcessing
+                                    ? null
+                                    : () => _updateStatus('Approved'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            icon:
+                                _isProcessing
+                                    ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                    : const Icon(Icons.check_circle_rounded),
+                            label: const Text(
+                              'APPROVE',
+                              style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
-                          icon: _isProcessing
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.check_circle_rounded),
-                          label: const Text(
-                            'APPROVE',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
                         ),
-                      ),
-                    ],
-                  )
-                : status == 'Approved'
+                      ],
+                    )
+                    : status == 'Approved'
                     ? SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isExporting ? null : _exportInvoice,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1565C0),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          icon: _isExporting
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.picture_as_pdf_rounded),
-                          label: const Text(
-                            'EXPORT INVOICE',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isExporting ? null : _exportInvoice,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1565C0),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                      )
+                        icon:
+                            _isExporting
+                                ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Icon(Icons.picture_as_pdf_rounded),
+                        label: const Text(
+                          'EXPORT INVOICE',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    )
                     : const SizedBox.shrink(),
           ),
 
@@ -759,16 +801,20 @@ class _BookingCardState extends State<_BookingCard> {
                   SizedBox(
                     height: 200,
                     child: StreamBuilder(
-                      stream: FirebaseFirestore.instance
-                          .collection('bookings')
-                          .doc(widget.bookingId)
-                          .collection('chats')
-                          .orderBy('timestamp', descending: false)
-                          .snapshots(),
+                      stream:
+                          FirebaseFirestore.instance
+                              .collection('bookings')
+                              .doc(widget.bookingId)
+                              .collection('chats')
+                              .orderBy('timestamp', descending: false)
+                              .snapshots(),
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
                           return const Center(
-                            child: CircularProgressIndicator(color: Colors.green),
+                            child: CircularProgressIndicator(
+                              color: Colors.green,
+                            ),
                           );
                         }
 
@@ -799,11 +845,14 @@ class _BookingCardState extends State<_BookingCard> {
                           itemBuilder: (context, index) {
                             final msg = messages[index].data();
                             final senderId = msg['senderId'] as String? ?? '';
-                            final isMe = senderId == FirebaseAuth.instance.currentUser?.uid;
+                            final isMe =
+                                senderId ==
+                                FirebaseAuth.instance.currentUser?.uid;
 
                             return _ChatBubble(
                               text: msg['text'] as String? ?? '',
-                              senderName: msg['senderName'] as String? ?? 'Unknown',
+                              senderName:
+                                  msg['senderName'] as String? ?? 'Unknown',
                               isMe: isMe,
                               theme: widget.theme,
                             );
@@ -824,7 +873,9 @@ class _BookingCardState extends State<_BookingCard> {
                           style: TextStyle(color: widget.theme.textColor),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
-                            hintStyle: TextStyle(color: widget.theme.subtitleColor),
+                            hintStyle: TextStyle(
+                              color: widget.theme.subtitleColor,
+                            ),
                             filled: true,
                             fillColor: widget.theme.backgroundColor,
                             contentPadding: const EdgeInsets.symmetric(
@@ -845,7 +896,10 @@ class _BookingCardState extends State<_BookingCard> {
                           shape: BoxShape.circle,
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.send_rounded, color: Colors.white),
+                          icon: const Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                          ),
                           onPressed: _sendChatMessage,
                         ),
                       ),
@@ -917,9 +971,8 @@ class _ChatBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.7,
         ),
         decoration: BoxDecoration(
-          color: isMe
-              ? theme.accentColor.withValues(alpha: 0.2)
-              : theme.cardColor,
+          color:
+              isMe ? theme.accentColor.withValues(alpha: 0.2) : theme.cardColor,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
@@ -927,9 +980,10 @@ class _ChatBubble extends StatelessWidget {
             bottomRight: Radius.circular(isMe ? 4 : 16),
           ),
           border: Border.all(
-            color: isMe
-                ? theme.accentColor.withValues(alpha: 0.3)
-                : theme.accentColor.withValues(alpha: 0.1),
+            color:
+                isMe
+                    ? theme.accentColor.withValues(alpha: 0.3)
+                    : theme.accentColor.withValues(alpha: 0.1),
           ),
         ),
         child: Column(
@@ -946,13 +1000,7 @@ class _ChatBubble extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 2),
-            Text(
-              text,
-              style: TextStyle(
-                color: theme.textColor,
-                fontSize: 14,
-              ),
-            ),
+            Text(text, style: TextStyle(color: theme.textColor, fontSize: 14)),
           ],
         ),
       ),
@@ -991,9 +1039,10 @@ class _FinancialRow extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: isFee
-                ? Colors.amber.shade700
-                : isTotal
+            color:
+                isFee
+                    ? Colors.amber.shade700
+                    : isTotal
                     ? Colors.green
                     : theme.textColor,
             fontSize: isTotal ? 18 : 14,

@@ -28,7 +28,14 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   bool _isMajorSolunarWindow = false;
 
   // Track previous pressure readings for delta calculation (simulated)
-  final List<double> _pressureHistory = [1013.25, 1013.0, 1012.5, 1012.0, 1011.5, 1011.0];
+  final List<double> _pressureHistory = [
+    1013.25,
+    1013.0,
+    1012.5,
+    1012.0,
+    1011.5,
+    1011.0,
+  ];
   static const int _pressureHistorySize = 6;
 
   @override
@@ -38,16 +45,16 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     _loadQueueSize();
     _updateMoonPhase();
     _simulatePressureUpdates();
-    
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    
+
     _pulseAnimation = Tween<double>(begin: 1.0, end: 0.6).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    
+
     _pulseController.repeat(reverse: true);
   }
 
@@ -60,7 +67,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
         setState(() => _isOnline = false);
       },
     );
-    
+
     // Check initial connectivity
     Connectivity().checkConnectivity().then(_updateConnectionStatus);
   }
@@ -73,11 +80,11 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
         timer.cancel();
         return;
       }
-      
+
       // Simulate small pressure fluctuations
       final fluctuation = (DateTime.now().second % 10 - 5) * 0.1;
       final newPressure = _barometricPressureHpa + fluctuation;
-      
+
       _updatePressure(newPressure);
     });
   }
@@ -104,33 +111,39 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     // Simulate moon phase (in production, this would come from actual lunar calculations)
     // Simulate solunar windows (in production, this would be calculated based on location/time)
     final hour = DateTime.now().hour;
-    _isMajorSolunarWindow = (hour >= 5 && hour <= 7) || (hour >= 17 && hour <= 19);
+    _isMajorSolunarWindow =
+        (hour >= 5 && hour <= 7) || (hour >= 17 && hour <= 19);
 
-    _movementProbability = AdvancedTacticalService.instance.calculateMovementProbability(
-      barometricPressureHpa: _barometricPressureHpa,
-      pressureDeltaLast3Hours: _pressureDeltaLast3Hours,
-      moonPhasePercent: _moonPhasePercent,
-      isMajorSolunarWindow: _isMajorSolunarWindow,
-    );
+    _movementProbability = AdvancedTacticalService.instance
+        .calculateMovementProbability(
+          barometricPressureHpa: _barometricPressureHpa,
+          pressureDeltaLast3Hours: _pressureDeltaLast3Hours,
+          moonPhasePercent: _moonPhasePercent,
+          isMajorSolunarWindow: _isMajorSolunarWindow,
+        );
   }
 
   void _updateMoonPhase() {
     // Calculate approximate moon phase based on current date
     // Using a simplified calculation (0% = new moon, 50% = full moon, 100% = new moon)
     final now = DateTime.now();
-    final daysSinceNewMoon = now.difference(DateTime(2000, 1, 6)).inDays % 29.53;
-    _moonPhasePercent = ((daysSinceNewMoon / 29.53) * 100).round().clamp(0, 100);
+    final daysSinceNewMoon =
+        now.difference(DateTime(2000, 1, 6)).inDays % 29.53;
+    _moonPhasePercent = ((daysSinceNewMoon / 29.53) * 100).round().clamp(
+      0,
+      100,
+    );
   }
 
   void _updateConnectionStatus(List<ConnectivityResult> results) {
-    final isConnected = results.isNotEmpty && 
-        !results.contains(ConnectivityResult.none);
-    
+    final isConnected =
+        results.isNotEmpty && !results.contains(ConnectivityResult.none);
+
     setState(() {
       _isOnline = isConnected;
       _isPulsing = !isConnected;
     });
-    
+
     _loadQueueSize();
   }
 
@@ -154,11 +167,8 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
       mainAxisSize: MainAxisSize.min,
       children: [
         // Connection Status Bar
-        if (_isOnline)
-          _buildOnlineBar()
-        else
-          _buildOfflineBar(),
-        
+        if (_isOnline) _buildOnlineBar() else _buildOfflineBar(),
+
         // AI Game Movement Activity Forecaster Row
         _buildGameMovementForecaster(),
       ],
@@ -257,11 +267,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.blur_on,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+                    const Icon(Icons.blur_on, color: Colors.white, size: 18),
                     const SizedBox(width: 10),
                     const Text(
                       'CELL DISCONNECTED - P2P BLUETOOTH MESH ACTIVE',
@@ -278,7 +284,10 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(12),
@@ -303,7 +312,10 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                       if (_pendingQueueCount > 0) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.red.shade700,
                             borderRadius: BorderRadius.circular(8),
@@ -365,7 +377,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     String activityLabel;
     Color activityColor;
     String activityIcon;
-    
+
     if (_movementProbability >= 80) {
       activityLabel = 'PEAK MOVEMENT WINDOW';
       activityColor = Colors.green;
@@ -426,12 +438,9 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           Row(
             children: [
               // Deer icon
-              Text(
-                activityIcon,
-                style: const TextStyle(fontSize: 18),
-              ),
+              Text(activityIcon, style: const TextStyle(fontSize: 18)),
               const SizedBox(width: 8),
-              
+
               // Main forecast text
               Expanded(
                 child: Text(
@@ -484,33 +493,25 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
             child: Row(
               children: [
                 // Pressure info
-                Icon(
-                  Icons.speed,
-                  color: Color(0xFF2E3D2F),
-                  size: 12,
-                ),
+                Icon(Icons.speed, color: Color(0xFF2E3D2F), size: 12),
                 const SizedBox(width: 4),
                 Text(
                   '${_barometricPressureHpa.toStringAsFixed(1)} hPa',
-                  style: TextStyle(
-                    color: Color(0xFF2E3D2F),
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
                 ),
                 const SizedBox(width: 8),
                 // Weather condition
                 Icon(
-                  _pressureDeltaLast3Hours < 0 ? Icons.arrow_downward : Icons.arrow_upward,
+                  _pressureDeltaLast3Hours < 0
+                      ? Icons.arrow_downward
+                      : Icons.arrow_upward,
                   color: Color(0xFF2E3D2F),
                   size: 12,
                 ),
                 const SizedBox(width: 2),
                 Text(
                   weatherCondition,
-                  style: TextStyle(
-                    color: Color(0xFF2E3D2F),
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
                 ),
                 const SizedBox(width: 8),
                 // Moon phase indicator
@@ -522,16 +523,16 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                 const SizedBox(width: 4),
                 Text(
                   'Moon $_moonPhasePercent%',
-                  style: TextStyle(
-                    color: Color(0xFF2E3D2F),
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
                 ),
                 // Solunar indicator
                 if (_isMajorSolunarWindow) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.amber.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(4),

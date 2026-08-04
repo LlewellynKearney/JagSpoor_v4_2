@@ -31,19 +31,29 @@ class RoleSelectionScreen extends StatelessWidget {
               // Fixed: Passing theme directly into constructor signature
               RoleCard(
                 title: 'HUNTER MODE',
-                description: 'Tactical field utilities, digital safe, ballistic processing, and logs.',
+                description:
+                    'Tactical field utilities, digital safe, ballistic processing, and logs.',
                 icon: Icons.gps_fixed_sharp,
                 themeData: theme,
-                onTap: () => Navigator.pushReplacementNamed(context, '/hunter_dashboard'),
+                onTap:
+                    () => Navigator.pushReplacementNamed(
+                      context,
+                      '/hunter_dashboard',
+                    ),
               ),
               const SizedBox(height: 20.0),
               // Fixed: Correct parameter label alignment
               RoleCard(
                 title: 'OUTFITTER MODE',
-                description: 'Game farm management ops, client tracking, lodging, and fleets.',
+                description:
+                    'Game farm management ops, client tracking, lodging, and fleets.',
                 icon: Icons.business_center_sharp,
                 themeData: theme,
-                onTap: () => Navigator.pushReplacementNamed(context, '/outfitter_dashboard'),
+                onTap:
+                    () => Navigator.pushReplacementNamed(
+                      context,
+                      '/outfitter_dashboard',
+                    ),
               ),
             ],
           ),
@@ -79,7 +89,10 @@ class RoleCard extends StatelessWidget {
         padding: const EdgeInsets.all(20.0),
         decoration: BoxDecoration(
           // ignore: deprecated_member_use
-          border: Border.all(color: themeData.colorScheme.primary.withOpacity(0.4), width: 1.5),
+          border: Border.all(
+            color: themeData.colorScheme.primary.withOpacity(0.4),
+            width: 1.5,
+          ),
           // ignore: deprecated_member_use
           color: themeData.colorScheme.surface.withOpacity(0.5),
           borderRadius: BorderRadius.circular(8.0),

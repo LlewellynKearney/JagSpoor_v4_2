@@ -10,12 +10,15 @@ class HunterCustomPackageBuilderScreen extends StatefulWidget {
   const HunterCustomPackageBuilderScreen({super.key, required this.theme});
 
   @override
-  State<HunterCustomPackageBuilderScreen> createState() => _HunterCustomPackageBuilderScreenState();
+  State<HunterCustomPackageBuilderScreen> createState() =>
+      _HunterCustomPackageBuilderScreenState();
 }
 
-class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBuilderScreen> {
-  final PricelistScannerService _pricelistService = PricelistScannerService.instance;
-  
+class _HunterCustomPackageBuilderScreenState
+    extends State<HunterCustomPackageBuilderScreen> {
+  final PricelistScannerService _pricelistService =
+      PricelistScannerService.instance;
+
   final Set<String> _selectedItemIds = {};
   final List<Map<String, dynamic>> _allItems = [];
   double _runningTotal = 0;
@@ -31,19 +34,21 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
   }
 
   Future<void> _loadPricelists() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('scanned_pricelists')
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .get();
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection('scanned_pricelists')
+            .where('status', isEqualTo: 'active')
+            .orderBy('createdAt', descending: true)
+            .get();
 
     if (mounted) {
       setState(() {
-        _availablePricelists = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
+        _availablePricelists =
+            snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            }).toList();
 
         // Auto-select first pricelist if available
         if (_availablePricelists.isNotEmpty && _selectedPricelistId == null) {
@@ -65,10 +70,7 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
       final items = pricelist['items'] as List<dynamic>? ?? [];
       for (var i = 0; i < items.length; i++) {
         final item = items[i] as Map<String, dynamic>;
-        _allItems.add({
-          ...item,
-          'itemId': '${pricelist['id']}_$i',
-        });
+        _allItems.add({...item, 'itemId': '${pricelist['id']}_$i'});
       }
     });
   }
@@ -107,14 +109,17 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
     }
 
     // Get selected items with full details
-    final selectedItems = _allItems
-        .where((item) => _selectedItemIds.contains(item['itemId']))
-        .map((item) => {
-              'name': item['name'] ?? 'Unknown',
-              'outfitterBasePrice': item['outfitterBasePrice'] ?? 0.0,
-              'hunterDisplayPriceZAR': item['hunterDisplayPriceZAR'] ?? 0.0,
-            })
-        .toList();
+    final selectedItems =
+        _allItems
+            .where((item) => _selectedItemIds.contains(item['itemId']))
+            .map(
+              (item) => {
+                'name': item['name'] ?? 'Unknown',
+                'outfitterBasePrice': item['outfitterBasePrice'] ?? 0.0,
+                'hunterDisplayPriceZAR': item['hunterDisplayPriceZAR'] ?? 0.0,
+              },
+            )
+            .toList();
 
     setState(() => _isSubmitting = true);
 
@@ -143,19 +148,13 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('⚠️ $message'),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('✅ $message'),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text('✅ $message'), backgroundColor: Colors.green),
     );
   }
 
@@ -176,12 +175,10 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
         children: [
           // Price List Selector
           if (_availablePricelists.isNotEmpty) _buildPricelistSelector(),
-          
+
           // Items List
-          Expanded(
-            child: _buildItemsList(),
-          ),
-          
+          Expanded(child: _buildItemsList()),
+
           // Bottom HUD Sticker Bar
           _buildBottomBar(),
         ],
@@ -195,10 +192,10 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
       decoration: BoxDecoration(
         color: widget.theme.cardColor,
         border: Border(
-        bottom: BorderSide(
-          color: widget.theme.accentColor.withValues(alpha: 0.2),
+          bottom: BorderSide(
+            color: widget.theme.accentColor.withValues(alpha: 0.2),
+          ),
         ),
-      ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,21 +217,31 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
               fillColor: widget.theme.backgroundColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: widget.theme.accentColor.withValues(alpha: 0.3)),
+                borderSide: BorderSide(
+                  color: widget.theme.accentColor.withValues(alpha: 0.3),
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
             dropdownColor: widget.theme.cardColor,
             style: TextStyle(color: widget.theme.textColor, fontSize: 14),
-            items: _availablePricelists.map((pricelist) {
-              return DropdownMenuItem(
-                value: pricelist['id'] as String,
-                child: Text('${pricelist['farmId'] ?? 'Farm'} - ${pricelist['totalItems'] ?? 0} items'),
-              );
-            }).toList(),
+            items:
+                _availablePricelists.map((pricelist) {
+                  return DropdownMenuItem(
+                    value: pricelist['id'] as String,
+                    child: Text(
+                      '${pricelist['farmId'] ?? 'Farm'} - ${pricelist['totalItems'] ?? 0} items',
+                    ),
+                  );
+                }).toList(),
             onChanged: (value) {
               if (value == null) return;
-              final pricelist = _availablePricelists.firstWhere((p) => p['id'] == value);
+              final pricelist = _availablePricelists.firstWhere(
+                (p) => p['id'] == value,
+              );
               _selectPricelist(pricelist);
             },
           ),
@@ -266,10 +273,7 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
             const SizedBox(height: 8),
             Text(
               'Outfitters will upload price lists soon',
-              style: TextStyle(
-                color: widget.theme.subtitleColor,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14),
             ),
           ],
         ),
@@ -283,7 +287,8 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
         final item = _allItems[index];
         final itemId = item['itemId'] as String;
         final name = item['name'] as String? ?? 'Unknown';
-        final price = (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ?? 0.0;
+        final price =
+            (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ?? 0.0;
         final isSelected = _isSelected(itemId);
 
         return Card(
@@ -293,9 +298,10 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: isSelected 
-                  ? widget.theme.accentColor 
-                  : widget.theme.textColor.withValues(alpha: 0.1),
+              color:
+                  isSelected
+                      ? widget.theme.accentColor
+                      : widget.theme.textColor.withValues(alpha: 0.1),
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -315,7 +321,7 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  
+
                   // Item Name
                   Expanded(
                     child: Text(
@@ -323,24 +329,32 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
                       style: TextStyle(
                         color: widget.theme.textColor,
                         fontSize: 15,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
                   ),
-                  
+
                   // Price
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: isSelected 
-                          ? widget.theme.accentColor.withValues(alpha: 0.15)
-                          : widget.theme.backgroundColor,
+                      color:
+                          isSelected
+                              ? widget.theme.accentColor.withValues(alpha: 0.15)
+                              : widget.theme.backgroundColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       'R ${price.toStringAsFixed(0)}',
                       style: TextStyle(
-                        color: isSelected ? widget.theme.accentColor : widget.theme.textColor,
+                        color:
+                            isSelected
+                                ? widget.theme.accentColor
+                                : widget.theme.textColor,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       ),
@@ -414,38 +428,44 @@ class _HunterCustomPackageBuilderScreenState extends State<HunterCustomPackageBu
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // Submit Button
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: _selectedItemIds.isEmpty || _isSubmitting ? null : _submitBooking,
+                onPressed:
+                    _selectedItemIds.isEmpty || _isSubmitting
+                        ? null
+                        : _submitBooking,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: widget.theme.accentColor,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: widget.theme.accentColor.withValues(alpha: 0.3),
+                  disabledBackgroundColor: widget.theme.accentColor.withValues(
+                    alpha: 0.3,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 0,
                 ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
+                child:
+                    _isSubmitting
+                        ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                        : const Text(
+                          'Submit Custom Itinerary Booking',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      )
-                    : const Text(
-                        'Submit Custom Itinerary Booking',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
               ),
             ),
           ],

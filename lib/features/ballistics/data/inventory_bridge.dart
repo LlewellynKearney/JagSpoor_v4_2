@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'models/rifle_profile.dart';
 
-/// Service layer that mimics data extraction hooks from a 
+/// Service layer that mimics data extraction hooks from a
 /// Digital Firearm Safe and Ammunition Manager.
 /// Provides functions to dynamically feed user dropdown menus.
 class InventoryBridge {
@@ -12,8 +12,8 @@ class InventoryBridge {
   final FirebaseAuth _auth;
 
   InventoryBridge({FirebaseFirestore? firestore, FirebaseAuth? auth})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = auth ?? FirebaseAuth.instance;
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
@@ -73,20 +73,20 @@ class InventoryBridge {
         return [];
       }
 
-      final snapshot = await _firestore
-          .collection('firearms')
-          .where('ownerId', isEqualTo: _currentUserId)
-          .orderBy('name')
-          .get();
+      final snapshot =
+          await _firestore
+              .collection('firearms')
+              .where('ownerId', isEqualTo: _currentUserId)
+              .orderBy('name')
+              .get();
 
       if (snapshot.docs.isEmpty) {
         debugPrint('InventoryBridge: No firearms found for user');
         return [];
       }
 
-      final rifles = snapshot.docs
-          .map((doc) => RifleProfile.fromFirestore(doc))
-          .toList();
+      final rifles =
+          snapshot.docs.map((doc) => RifleProfile.fromFirestore(doc)).toList();
 
       debugPrint('InventoryBridge: Fetched ${rifles.length} firearms for user');
       return rifles;
@@ -109,35 +109,44 @@ class InventoryBridge {
       }
 
       // Fetch ammunition from the rifle's sub-collection
-      final ammoSnapshot = await _firestore
-          .collection('firearms')
-          .doc(rifleId)
-          .collection('ammunition')
-          .where('remainingStockCount', isGreaterThan: 0)
-          .orderBy('bulletWeightGrains')
-          .get();
+      final ammoSnapshot =
+          await _firestore
+              .collection('firearms')
+              .doc(rifleId)
+              .collection('ammunition')
+              .where('remainingStockCount', isGreaterThan: 0)
+              .orderBy('bulletWeightGrains')
+              .get();
 
       if (ammoSnapshot.docs.isEmpty) {
         debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
         return _getFallbackLocalAmmunition();
       }
 
-      final ammoList = ammoSnapshot.docs.map((doc) {
-        final data = doc.data();
-        return AmmoProfile(
-          id: doc.id,
-          rifleId: rifleId,
-          bulletWeightGrains: (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
-          velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
-          ballisticCoefficient: (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
-          remainingStockCount: (data['remainingStockCount'] as num?)?.toInt() ?? 0,
-        );
-      }).toList();
+      final ammoList =
+          ammoSnapshot.docs.map((doc) {
+            final data = doc.data();
+            return AmmoProfile(
+              id: doc.id,
+              rifleId: rifleId,
+              bulletWeightGrains:
+                  (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
+              velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
+              ballisticCoefficient:
+                  (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
+              remainingStockCount:
+                  (data['remainingStockCount'] as num?)?.toInt() ?? 0,
+            );
+          }).toList();
 
-      debugPrint('InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId');
+      debugPrint(
+        'InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId',
+      );
       return ammoList;
     } on PlatformException catch (pe) {
-      debugPrint('InventoryBridge: Platform exception fetching ammunition: $pe');
+      debugPrint(
+        'InventoryBridge: Platform exception fetching ammunition: $pe',
+      );
       return _getFallbackLocalAmmunition();
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching ammunition: $e');
@@ -149,7 +158,9 @@ class InventoryBridge {
   Future<String?> addRifleToSafe(RifleProfile rifle) async {
     try {
       if (_currentUserId == null) {
-        debugPrint('InventoryBridge: Cannot add rifle - user not authenticated');
+        debugPrint(
+          'InventoryBridge: Cannot add rifle - user not authenticated',
+        );
         return null;
       }
 
@@ -172,11 +183,12 @@ class InventoryBridge {
         return null;
       }
 
-      final docRef = _firestore
-          .collection('firearms')
-          .doc(ammo.rifleId)
-          .collection('ammunition')
-          .doc();
+      final docRef =
+          _firestore
+              .collection('firearms')
+              .doc(ammo.rifleId)
+              .collection('ammunition')
+              .doc();
       final newAmmo = ammo.copyWith(id: docRef.id);
       await docRef.set(newAmmo.toFirestore());
       debugPrint('InventoryBridge: Added ammunition to rifle ${ammo.rifleId}');
@@ -208,7 +220,7 @@ class InventoryBridge {
           return <RifleProfile>[];
         });
   }
-  
+
   /// Stream of ammunition for a specific rifle from the sub-collection.
   /// Uses Firestore snapshots for real-time updates instead of polling.
   /// Returns fallback local ammunition on platform exceptions.
@@ -226,27 +238,37 @@ class InventoryBridge {
         .snapshots()
         .map((snapshot) {
           if (snapshot.docs.isEmpty) {
-            debugPrint('InventoryBridge: No ammunition found for rifle $rifleId');
+            debugPrint(
+              'InventoryBridge: No ammunition found for rifle $rifleId',
+            );
             return _getFallbackLocalAmmunition();
           }
 
-          final ammoList = snapshot.docs.map((doc) {
-            final data = doc.data();
-            return AmmoProfile(
-              id: doc.id,
-              rifleId: rifleId,
-              bulletWeightGrains: (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
-              velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
-              ballisticCoefficient: (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
-              remainingStockCount: (data['remainingStockCount'] as num?)?.toInt() ?? 0,
-            );
-          }).toList();
+          final ammoList =
+              snapshot.docs.map((doc) {
+                final data = doc.data();
+                return AmmoProfile(
+                  id: doc.id,
+                  rifleId: rifleId,
+                  bulletWeightGrains:
+                      (data['bulletWeightGrains'] as num?)?.toInt() ?? 0,
+                  velocityMs: (data['velocityMs'] as num?)?.toDouble() ?? 0.0,
+                  ballisticCoefficient:
+                      (data['ballisticCoefficient'] as num?)?.toDouble() ?? 0.0,
+                  remainingStockCount:
+                      (data['remainingStockCount'] as num?)?.toInt() ?? 0,
+                );
+              }).toList();
 
-          debugPrint('InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId');
+          debugPrint(
+            'InventoryBridge: Fetched ${ammoList.length} ammunition for rifle $rifleId',
+          );
           return ammoList;
         })
         .handleError((error) {
-          debugPrint('InventoryBridge: Stream error watching ammunition: $error');
+          debugPrint(
+            'InventoryBridge: Stream error watching ammunition: $error',
+          );
           return _getFallbackLocalAmmunition();
         });
   }

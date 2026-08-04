@@ -11,10 +11,12 @@ class OutfitterPackageCreatorScreen extends StatefulWidget {
   const OutfitterPackageCreatorScreen({super.key, required this.theme});
 
   @override
-  State<OutfitterPackageCreatorScreen> createState() => _OutfitterPackageCreatorScreenState();
+  State<OutfitterPackageCreatorScreen> createState() =>
+      _OutfitterPackageCreatorScreenState();
 }
 
-class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorScreen> {
+class _OutfitterPackageCreatorScreenState
+    extends State<OutfitterPackageCreatorScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -78,7 +80,8 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
     });
 
     try {
-      final priceText = _priceController.text.replaceAll(',', '').replaceAll('R', '').trim();
+      final priceText =
+          _priceController.text.replaceAll(',', '').replaceAll('R', '').trim();
       final basePrice = double.tryParse(priceText) ?? 0.0;
 
       await PackageBookingManager.instance.publishPackage(
@@ -140,14 +143,18 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
             _buildSectionLabel('BIND TO FARM *', theme),
             const SizedBox(height: 8),
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('farms')
-                  .where('outfitterId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                  .where('status', isEqualTo: 'active')
-                  .snapshots(),
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('farms')
+                      .where(
+                        'outfitterId',
+                        isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                      )
+                      .where('status', isEqualTo: 'active')
+                      .snapshots(),
               builder: (context, snapshot) {
                 final farms = snapshot.data?.docs ?? [];
-                
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Container(
                     padding: const EdgeInsets.all(16),
@@ -167,11 +174,16 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                     decoration: BoxDecoration(
                       color: Colors.orange.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -192,13 +204,14 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                   ),
                   dropdownColor: theme.cardColor,
                   style: TextStyle(color: theme.textColor),
-                  items: farms.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return DropdownMenuItem(
-                      value: doc.id,
-                      child: Text(data['name'] ?? 'Unknown'),
-                    );
-                  }).toList(),
+                  items:
+                      farms.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return DropdownMenuItem(
+                          value: doc.id,
+                          child: Text(data['name'] ?? 'Unknown'),
+                        );
+                      }).toList(),
                   onChanged: (value) {
                     setState(() {
                       _selectedFarmId = value;
@@ -236,7 +249,8 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
               style: TextStyle(color: theme.textColor),
               maxLines: 4,
               decoration: _inputDecoration(
-                hint: 'Describe the hunting experience, terrain, trophy expectations...',
+                hint:
+                    'Describe the hunting experience, terrain, trophy expectations...',
                 theme: theme,
               ),
               validator: (value) {
@@ -254,7 +268,9 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
             TextFormField(
               controller: _priceController,
               style: TextStyle(color: theme.textColor),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
               ],
@@ -267,7 +283,9 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter a price';
                 }
-                final price = double.tryParse(value.replaceAll(',', '').replaceAll('R', ''));
+                final price = double.tryParse(
+                  value.replaceAll(',', '').replaceAll('R', ''),
+                );
                 if (price == null || price <= 0) {
                   return 'Please enter a valid price';
                 }
@@ -298,7 +316,10 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.accentColor,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                   ),
                   child: const Text('ADD'),
                 ),
@@ -311,17 +332,20 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _inclusions.map((inclusion) {
-                  return Chip(
-                    label: Text(
-                      inclusion,
-                      style: TextStyle(color: theme.textColor),
-                    ),
-                    backgroundColor: theme.accentColor.withValues(alpha: 0.2),
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                    onDeleted: () => _removeInclusion(inclusion),
-                  );
-                }).toList(),
+                children:
+                    _inclusions.map((inclusion) {
+                      return Chip(
+                        label: Text(
+                          inclusion,
+                          style: TextStyle(color: theme.textColor),
+                        ),
+                        backgroundColor: theme.accentColor.withValues(
+                          alpha: 0.2,
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 18),
+                        onDeleted: () => _removeInclusion(inclusion),
+                      );
+                    }).toList(),
               ),
             ] else
               Container(
@@ -329,7 +353,9 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                 decoration: BoxDecoration(
                   color: theme.cardColor,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: theme.accentColor.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Text(
                   'No inclusions added yet',
@@ -353,29 +379,30 @@ class _OutfitterPackageCreatorScreenState extends State<OutfitterPackageCreatorS
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.publish_rounded),
-                          SizedBox(width: 8),
-                          Text(
-                            'PUBLISH PACKAGE',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
                           ),
-                        ],
-                      ),
+                        )
+                        : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.publish_rounded),
+                            SizedBox(width: 8),
+                            Text(
+                              'PUBLISH PACKAGE',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
               ),
             ),
             const SizedBox(height: 16),

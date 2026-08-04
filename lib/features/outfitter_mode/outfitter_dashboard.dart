@@ -55,152 +55,200 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         return Scaffold(
           backgroundColor: widget.theme.backgroundColor,
           appBar: _buildAppBar(context, widget.theme, conceptLabel),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Container(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(-0.8, -0.6),
-                      radius: 1.2,
-                      colors: [
-                        widget.theme.accentColor.withAlpha(60),
-                        Colors.transparent,
-                      ],
+          body:
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Container(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: const Alignment(-0.8, -0.6),
+                        radius: 1.2,
+                        colors: [
+                          widget.theme.accentColor.withAlpha(60),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0,
+                        vertical: 12.0,
+                      ),
+                      child: ListView(
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _buildStatusBanner(widget.theme),
+                          const SizedBox(height: 16),
+                          Text(
+                            _isManager
+                                ? 'FARM MANAGEMENT HUD (MANAGER ACCESS)'
+                                : 'OUTFITTER OPERATIONS',
+                            style: TextStyle(
+                              color: widget.theme.textColor.withAlpha(180),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2.0,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Manage Farms & Managers - HIDDEN for managers
+                          if (!_isManager) ...[
+                            _buildFeatureCard(
+                              icon: Icons.landscape_rounded,
+                              title: 'Manage Farms & Managers',
+                              description:
+                                  'Register farms, concessions, and assign managers to your properties.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => OutfitterEnterprisePanelScreen(
+                                          theme: widget.theme,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Trophy Stock Inventory
+                          _buildFeatureCard(
+                            icon: Icons.pets_rounded,
+                            title: 'Trophy Stock Inventory',
+                            description:
+                                _isManager
+                                    ? 'Manage trophy availability for your assigned farm.'
+                                    : 'Load trophy species availability and pricing per farm location.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => OutfitterTrophyStockScreen(
+                                        theme: widget.theme,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Publish Hunting Package - Hidden for managers
+                          if (!_isManager) ...[
+                            _buildFeatureCard(
+                              icon: Icons.storefront_rounded,
+                              title: 'Publish Hunting Package',
+                              description:
+                                  'Create and list hunting packages with pricing and inclusions.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => OutfitterPackageCreatorScreen(
+                                          theme: widget.theme,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+
+                            // AI Scan Paper Price List - Hidden for managers
+                            _buildFeatureCard(
+                              icon: Icons.document_scanner_rounded,
+                              title: 'AI Scan Paper Price List',
+                              description:
+                                  'Upload or photograph paper price lists for AI text extraction and digitization.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => OutfitterPricelistScannerScreen(
+                                          theme: widget.theme,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Incoming Booking Requests
+                          _buildFeatureCard(
+                            icon: Icons.assignment_rounded,
+                            title: 'Incoming Booking Requests',
+                            description:
+                                'Review and approve/decline hunter booking transactions.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => OutfitterBookingDashboardScreen(
+                                        theme: widget.theme,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Financial Revenue Summary - HIDDEN for managers
+                          if (!_isManager) ...[
+                            _buildFeatureCard(
+                              icon: Icons.bar_chart_rounded,
+                              title: 'Financial Revenue Summary',
+                              description:
+                                  'View gross earnings, platform fees, and net disbursed revenue.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => OutfitterRevenueScreen(
+                                          theme: widget.theme,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Issue Game Transport Permit
+                          _buildFeatureCard(
+                            icon: Icons.description_rounded,
+                            title: 'Issue Game Transport Permit',
+                            description:
+                                'Generate statutory SA game transport certificates.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => OutfitterTransportPermitScreen(
+                                        theme: widget.theme,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-                    child: ListView(
-                      physics: const BouncingScrollPhysics(),
-                      children: [
-                        _buildStatusBanner(widget.theme),
-                        const SizedBox(height: 16),
-                        Text(
-                          _isManager ? 'FARM MANAGEMENT HUD (MANAGER ACCESS)' : 'OUTFITTER OPERATIONS',
-                          style: TextStyle(
-                            color: widget.theme.textColor.withAlpha(180),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        
-                        // Manage Farms & Managers - HIDDEN for managers
-                        if (!_isManager) ...[
-                          _buildFeatureCard(
-                            icon: Icons.landscape_rounded,
-                            title: 'Manage Farms & Managers',
-                            description: 'Register farms, concessions, and assign managers to your properties.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => OutfitterEnterprisePanelScreen(theme: widget.theme)),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // Trophy Stock Inventory
-                        _buildFeatureCard(
-                          icon: Icons.pets_rounded,
-                          title: 'Trophy Stock Inventory',
-                          description: _isManager 
-                              ? 'Manage trophy availability for your assigned farm.'
-                              : 'Load trophy species availability and pricing per farm location.',
-                          theme: widget.theme,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => OutfitterTrophyStockScreen(theme: widget.theme)),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Publish Hunting Package - Hidden for managers
-                        if (!_isManager) ...[
-                          _buildFeatureCard(
-                            icon: Icons.storefront_rounded,
-                            title: 'Publish Hunting Package',
-                            description: 'Create and list hunting packages with pricing and inclusions.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => OutfitterPackageCreatorScreen(theme: widget.theme)),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          
-                          // AI Scan Paper Price List - Hidden for managers
-                          _buildFeatureCard(
-                            icon: Icons.document_scanner_rounded,
-                            title: 'AI Scan Paper Price List',
-                            description: 'Upload or photograph paper price lists for AI text extraction and digitization.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => OutfitterPricelistScannerScreen(theme: widget.theme)),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // Incoming Booking Requests
-                        _buildFeatureCard(
-                          icon: Icons.assignment_rounded,
-                          title: 'Incoming Booking Requests',
-                          description: 'Review and approve/decline hunter booking transactions.',
-                          theme: widget.theme,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => OutfitterBookingDashboardScreen(theme: widget.theme)),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Financial Revenue Summary - HIDDEN for managers
-                        if (!_isManager) ...[
-                          _buildFeatureCard(
-                            icon: Icons.bar_chart_rounded,
-                            title: 'Financial Revenue Summary',
-                            description: 'View gross earnings, platform fees, and net disbursed revenue.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => OutfitterRevenueScreen(theme: widget.theme)),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // Issue Game Transport Permit
-                        _buildFeatureCard(
-                          icon: Icons.description_rounded,
-                          title: 'Issue Game Transport Permit',
-                          description: 'Generate statutory SA game transport certificates.',
-                          theme: widget.theme,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => OutfitterTransportPermitScreen(theme: widget.theme)),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
         );
       },
     );
@@ -217,7 +265,11 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     }
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, ThemeController theme, String label) {
+  PreferredSizeWidget _buildAppBar(
+    BuildContext context,
+    ThemeController theme,
+    String label,
+  ) {
     return AppBar(
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,10 +343,14 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
           ),
           const SizedBox(height: 10),
           Text(
-            _isManager 
+            _isManager
                 ? 'Farm Manager access active. Restricted to ${_assignedFarmId ?? 'N/A'}.'
                 : 'Outfitter Control Center loaded. Dashboard sync active.',
-            style: TextStyle(color: theme.textColor.withAlpha(160), fontSize: 13, height: 1.4),
+            style: TextStyle(
+              color: theme.textColor.withAlpha(160),
+              fontSize: 13,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -359,7 +415,11 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, color: theme.textColor.withAlpha(60), size: 14),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: theme.textColor.withAlpha(60),
+                size: 14,
+              ),
             ],
           ),
         ),
@@ -374,34 +434,38 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _isManager ? 'FARM MANAGER SETTINGS' : 'OUTFITTER SETTINGS',
-              style: TextStyle(
-                color: theme.textColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                letterSpacing: 1.5,
-              ),
+      builder:
+          (context) => Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _isManager ? 'FARM MANAGER SETTINGS' : 'OUTFITTER SETTINGS',
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ListTile(
+                  leading: Icon(Icons.dark_mode, color: theme.accentColor),
+                  title: Text(
+                    'Dark Mode',
+                    style: TextStyle(color: theme.textColor),
+                  ),
+                  trailing: Switch(
+                    value: theme.isDarkMode,
+                    onChanged: (_) => theme.toggleThemeMode(),
+                    activeTrackColor: theme.accentColor,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
-            const SizedBox(height: 24),
-            ListTile(
-              leading: Icon(Icons.dark_mode, color: theme.accentColor),
-              title: Text('Dark Mode', style: TextStyle(color: theme.textColor)),
-              trailing: Switch(
-                value: theme.isDarkMode,
-                onChanged: (_) => theme.toggleThemeMode(),
-                activeTrackColor: theme.accentColor,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
+          ),
     );
   }
 }

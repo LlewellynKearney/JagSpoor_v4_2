@@ -43,22 +43,23 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FirearmMaintenanceScreen(
-          theme: widget.theme,
-          firearm: firearm,
-          onLogAdded: (record) async {
-            final docId = firearm['docId'];
-            if (docId != null) {
-              final log = parseLog(firearm)..add(record);
-              final updatedFirearm = <String, String>{...firearm};
-              updatedFirearm['maintenanceLog'] = encodeLog(log);
-              await FirebaseFirestore.instance
-                  .collection('firearms')
-                  .doc(docId)
-                  .update(updatedFirearm);
-            }
-          },
-        ),
+        builder:
+            (context) => FirearmMaintenanceScreen(
+              theme: widget.theme,
+              firearm: firearm,
+              onLogAdded: (record) async {
+                final docId = firearm['docId'];
+                if (docId != null) {
+                  final log = parseLog(firearm)..add(record);
+                  final updatedFirearm = <String, String>{...firearm};
+                  updatedFirearm['maintenanceLog'] = encodeLog(log);
+                  await FirebaseFirestore.instance
+                      .collection('firearms')
+                      .doc(docId)
+                      .update(updatedFirearm);
+                }
+              },
+            ),
       ),
     );
   }
@@ -87,21 +88,23 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
             tooltip: 'Export PDF',
             onPressed: () async {
               final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final snapshot = await FirebaseFirestore.instance
-                  .collection('firearms')
-                  .where('ownerId', isEqualTo: _currentUserId)
-                  .orderBy('createdAt', descending: true)
-                  .get();
+              final snapshot =
+                  await FirebaseFirestore.instance
+                      .collection('firearms')
+                      .where('ownerId', isEqualTo: _currentUserId)
+                      .orderBy('createdAt', descending: true)
+                      .get();
               if (!mounted) return;
-              final firearms = snapshot.docs.map((doc) {
-                final data = doc.data();
-                return <String, String>{
-                  'docId': doc.id,
-                  ...data.map(
-                    (key, value) => MapEntry(key, value?.toString() ?? ''),
-                  ),
-                };
-              }).toList();
+              final firearms =
+                  snapshot.docs.map((doc) {
+                    final data = doc.data();
+                    return <String, String>{
+                      'docId': doc.id,
+                      ...data.map(
+                        (key, value) => MapEntry(key, value?.toString() ?? ''),
+                      ),
+                    };
+                  }).toList();
               if (firearms.isEmpty) {
                 scaffoldMessenger.showSnackBar(
                   SnackBar(
@@ -139,13 +142,14 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
               const SizedBox(height: 12),
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
-                  stream: _currentUserId != null
-                      ? FirebaseFirestore.instance
-                            .collection('firearms')
-                            .where('ownerId', isEqualTo: _currentUserId)
-                            .orderBy('createdAt', descending: true)
-                            .snapshots()
-                      : const Stream.empty(),
+                  stream:
+                      _currentUserId != null
+                          ? FirebaseFirestore.instance
+                              .collection('firearms')
+                              .where('ownerId', isEqualTo: _currentUserId)
+                              .orderBy('createdAt', descending: true)
+                              .snapshots()
+                          : const Stream.empty(),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Center(
@@ -170,16 +174,17 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                       );
                     }
 
-                    final firearms = snapshot.data?.docs.map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return <String, String>{
-                        'docId': doc.id,
-                        ...data.map(
-                          (key, value) =>
-                              MapEntry(key, value?.toString() ?? ''),
-                        ),
-                      };
-                    }).toList();
+                    final firearms =
+                        snapshot.data?.docs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return <String, String>{
+                            'docId': doc.id,
+                            ...data.map(
+                              (key, value) =>
+                                  MapEntry(key, value?.toString() ?? ''),
+                            ),
+                          };
+                        }).toList();
 
                     if (firearms == null || firearms.isEmpty) {
                       return _buildEmptyState(theme);
@@ -211,17 +216,17 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                           ),
                           icon: Icon(
                             Icons.qr_code_scanner_rounded,
-                            color: theme.isDarkMode
-                                ? Colors.black
-                                : Colors.white,
+                            color:
+                                theme.isDarkMode ? Colors.black : Colors.white,
                           ),
                           label: Text(
                             'SCAN LICENSE',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: theme.isDarkMode
-                                  ? Colors.black
-                                  : Colors.white,
+                              color:
+                                  theme.isDarkMode
+                                      ? Colors.black
+                                      : Colors.white,
                             ),
                           ),
                           onPressed: () async {
@@ -229,10 +234,11 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                                 await Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => AddFirearmManualForm(
-                                      theme: theme,
-                                      autoScan: true,
-                                    ),
+                                    builder:
+                                        (context) => AddFirearmManualForm(
+                                          theme: theme,
+                                          autoScan: true,
+                                        ),
                                   ),
                                 );
 
@@ -283,8 +289,9 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                                 await Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        AddFirearmManualForm(theme: theme),
+                                    builder:
+                                        (context) =>
+                                            AddFirearmManualForm(theme: theme),
                                   ),
                                 );
 
@@ -343,33 +350,35 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FirearmDetailScreen(
-              theme: theme,
-              firearm: firearm,
-              onUpdated: (updated) async {
-                final docId = firearm['docId'];
-                if (docId != null) {
-                  await FirebaseFirestore.instance
-                      .collection('firearms')
-                      .doc(docId)
-                      .update(updated);
-                }
-              },
-              onDeleted: () async {
-                final docId = firearm['docId'];
-                if (docId != null) {
-                  await FirebaseFirestore.instance
-                      .collection('firearms')
-                      .doc(docId)
-                      .delete();
-                }
-              },
+        onTap:
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (context) => FirearmDetailScreen(
+                      theme: theme,
+                      firearm: firearm,
+                      onUpdated: (updated) async {
+                        final docId = firearm['docId'];
+                        if (docId != null) {
+                          await FirebaseFirestore.instance
+                              .collection('firearms')
+                              .doc(docId)
+                              .update(updated);
+                        }
+                      },
+                      onDeleted: () async {
+                        final docId = firearm['docId'];
+                        if (docId != null) {
+                          await FirebaseFirestore.instance
+                              .collection('firearms')
+                              .doc(docId)
+                              .delete();
+                        }
+                      },
+                    ),
+              ),
             ),
-          ),
-        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
           child: Column(
@@ -404,9 +413,10 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                   IconButton(
                     icon: Icon(
                       Icons.build_rounded,
-                      color: isMaintenanceDue(firearm)
-                          ? Colors.red
-                          : theme.subtitleColor,
+                      color:
+                          isMaintenanceDue(firearm)
+                              ? Colors.red
+                              : theme.subtitleColor,
                     ),
                     tooltip: 'Maintenance',
                     visualDensity: VisualDensity.compact,
@@ -445,7 +455,10 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange.shade800,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         visualDensity: VisualDensity.compact,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
@@ -454,16 +467,20 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                       icon: const Icon(Icons.autorenew_rounded, size: 14),
                       label: const Text(
                         'Renew License',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
                       ),
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => FirearmRenewalScreen(
-                              theme: theme,
-                              firearm: firearm,
-                            ),
+                            builder:
+                                (context) => FirearmRenewalScreen(
+                                  theme: theme,
+                                  firearm: firearm,
+                                ),
                           ),
                         );
                       },

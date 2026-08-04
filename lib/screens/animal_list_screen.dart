@@ -62,9 +62,10 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
         return category
             .split('_')
             .map(
-              (part) => part.isEmpty
-                  ? part
-                  : '${part[0].toUpperCase()}${part.substring(1)}',
+              (part) =>
+                  part.isEmpty
+                      ? part
+                      : '${part[0].toUpperCase()}${part.substring(1)}',
             )
             .join(' ');
     }
@@ -132,15 +133,16 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                         Icons.search_rounded,
                         color: theme.accentColor,
                       ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: Icon(
-                                Icons.clear_rounded,
-                                color: theme.subtitleColor,
-                              ),
-                              onPressed: _searchController.clear,
-                            )
-                          : null,
+                      suffixIcon:
+                          _searchQuery.isNotEmpty
+                              ? IconButton(
+                                icon: Icon(
+                                  Icons.clear_rounded,
+                                  color: theme.subtitleColor,
+                                ),
+                                onPressed: _searchController.clear,
+                              )
+                              : null,
                       filled: true,
                       fillColor: theme.cardColor,
                       contentPadding: const EdgeInsets.symmetric(
@@ -192,11 +194,13 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                       }
 
                       final animals = snapshot.data ?? [];
-                      final filtered = animals
-                          .where(
-                            (animal) => _matchesSearch(animal, _searchQuery),
-                          )
-                          .toList();
+                      final filtered =
+                          animals
+                              .where(
+                                (animal) =>
+                                    _matchesSearch(animal, _searchQuery),
+                              )
+                              .toList();
 
                       if (animals.isEmpty) {
                         return Center(
@@ -232,7 +236,8 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                           16 + MediaQuery.of(context).padding.bottom,
                         ),
                         itemCount: filtered.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 12),
+                        separatorBuilder:
+                            (context, index) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final animal = filtered[index];
                           return _AnimalListCard(
@@ -245,10 +250,11 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => AnimalDetailScreen(
-                                    theme: theme,
-                                    animal: animal,
-                                  ),
+                                  builder:
+                                      (context) => AnimalDetailScreen(
+                                        theme: theme,
+                                        animal: animal,
+                                      ),
                                 ),
                               );
                             },
@@ -286,7 +292,8 @@ class _AnimalListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rwLabel = animal.rwMinimum?.trim() ??
+    final rwLabel =
+        animal.rwMinimum?.trim() ??
         animal.rolandWardMinimum?.trim() ??
         animal.trophyMinimumRW?.trim();
     final hasAsset = assetPath != null && assetPath!.isNotEmpty;
@@ -308,26 +315,27 @@ class _AnimalListCard extends StatelessWidget {
                 child: SizedBox(
                   width: 72,
                   height: 72,
-                  child: hasAsset
-                      ? Image.asset(
-                          assetPath!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              ColoredBox(
-                                color: theme.backgroundColor,
-                                child: Icon(
-                                  Icons.image_not_supported_outlined,
-                                  color: theme.subtitleColor,
+                  child:
+                      hasAsset
+                          ? Image.asset(
+                            assetPath!,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (context, error, stackTrace) => ColoredBox(
+                                  color: theme.backgroundColor,
+                                  child: Icon(
+                                    Icons.image_not_supported_outlined,
+                                    color: theme.subtitleColor,
+                                  ),
                                 ),
-                              ),
-                        )
-                      : ColoredBox(
-                          color: theme.backgroundColor,
-                          child: Icon(
-                            Icons.image_not_supported_outlined,
-                            color: theme.subtitleColor,
+                          )
+                          : ColoredBox(
+                            color: theme.backgroundColor,
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              color: theme.subtitleColor,
+                            ),
                           ),
-                        ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -376,9 +384,10 @@ class _AnimalListCard extends StatelessWidget {
                         _InfoChip(
                           theme: theme,
                           icon: Icons.emoji_events_rounded,
-                          label: rwLabel != null && rwLabel.isNotEmpty
-                              ? 'RW Min: $rwLabel'
-                              : 'RW Min: —',
+                          label:
+                              rwLabel != null && rwLabel.isNotEmpty
+                                  ? 'RW Min: $rwLabel'
+                                  : 'RW Min: —',
                         ),
                       ],
                     ),

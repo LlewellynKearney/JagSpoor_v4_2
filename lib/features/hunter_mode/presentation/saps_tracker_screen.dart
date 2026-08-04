@@ -83,10 +83,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade700,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
     );
   }
 
@@ -175,17 +172,22 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                           ),
                           prefixIcon: const Icon(Icons.category_outlined),
                         ),
-                        items: SapsApplication.applicationTypes
-                            .map((typeString) => DropdownMenuItem(
-                                  value: typeString,
-                                  child: Text(
-                                    typeString,
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                    style: TextStyle(color: theme.colorScheme.onSurface),
+                        items:
+                            SapsApplication.applicationTypes
+                                .map(
+                                  (typeString) => DropdownMenuItem(
+                                    value: typeString,
+                                    child: Text(
+                                      typeString,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurface,
+                                      ),
+                                    ),
                                   ),
-                                ))
-                            .toList(),
+                                )
+                                .toList(),
                         onChanged: (value) {
                           if (value != null) {
                             setState(() => _selectedApplicationType = value);
@@ -206,19 +208,22 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+                          child:
+                              _isLoading
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Text(
+                                    'Register Application for Tracking',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                )
-                              : const Text(
-                                  'Register Application for Tracking',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
                         ),
                       ),
                     ],
@@ -246,79 +251,85 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
             const SizedBox(height: 8),
             // StreamBuilder for active applications
             Expanded(
-              child: _currentUserId == null
-                  ? Center(
-                      child: Text(
-                        'Please log in to view tracked applications',
-                        style: TextStyle(color: theme.hintColor),
-                      ),
-                    )
-                  : StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('license_applications')
-                          .where('hunterId', isEqualTo: _currentUserId)
-                          .orderBy('lastChecked', descending: true)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error loading applications: ${snapshot.error}',
-                              style: TextStyle(color: theme.colorScheme.error),
-                            ),
-                          );
-                        }
-
-                        final docs = snapshot.data?.docs ?? [];
-                        if (docs.isEmpty) {
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.inbox_outlined,
-                                  size: 64,
-                                  color: theme.hintColor,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No applications tracked yet',
-                                  style: TextStyle(color: theme.hintColor),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Register your first application above',
-                                  style: TextStyle(
-                                    color: theme.hintColor,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
-                            final app = SapsApplication.fromFirestore(
-                                docs[index] as DocumentSnapshot<Map<String, dynamic>>);
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _ApplicationCard(application: app),
+              child:
+                  _currentUserId == null
+                      ? Center(
+                        child: Text(
+                          'Please log in to view tracked applications',
+                          style: TextStyle(color: theme.hintColor),
+                        ),
+                      )
+                      : StreamBuilder<QuerySnapshot>(
+                        stream:
+                            FirebaseFirestore.instance
+                                .collection('license_applications')
+                                .where('hunterId', isEqualTo: _currentUserId)
+                                .orderBy('lastChecked', descending: true)
+                                .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
                             );
-                          },
-                        );
-                      },
-                    ),
+                          }
+
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                'Error loading applications: ${snapshot.error}',
+                                style: TextStyle(
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final docs = snapshot.data?.docs ?? [];
+                          if (docs.isEmpty) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.inbox_outlined,
+                                    size: 64,
+                                    color: theme.hintColor,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No applications tracked yet',
+                                    style: TextStyle(color: theme.hintColor),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Register your first application above',
+                                    style: TextStyle(
+                                      color: theme.hintColor,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final app = SapsApplication.fromFirestore(
+                                docs[index]
+                                    as DocumentSnapshot<Map<String, dynamic>>,
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _ApplicationCard(application: app),
+                              );
+                            },
+                          );
+                        },
+                      ),
             ),
           ],
         ),
@@ -363,8 +374,10 @@ class _ApplicationCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
@@ -383,10 +396,7 @@ class _ApplicationCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Ref: ${application.referenceNumber}',
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.hintColor,
-              ),
+              style: TextStyle(fontSize: 12, color: theme.hintColor),
             ),
             const SizedBox(height: 12),
             // Stage Progress Tracker Bar
@@ -397,10 +407,7 @@ class _ApplicationCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Last checked: ${_formatDate(application.lastChecked)}',
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.hintColor,
-              ),
+              style: TextStyle(fontSize: 11, color: theme.hintColor),
             ),
           ],
         ),
@@ -418,10 +425,7 @@ class _StageProgressBar extends StatelessWidget {
   final int currentStage;
   final List<String> stages;
 
-  const _StageProgressBar({
-    required this.currentStage,
-    required this.stages,
-  });
+  const _StageProgressBar({required this.currentStage, required this.stages});
 
   @override
   Widget build(BuildContext context) {
@@ -436,9 +440,10 @@ class _StageProgressBar extends StatelessWidget {
           return Expanded(
             child: Container(
               height: 3,
-              color: isCompleted
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.primary.withValues(alpha: 0.3),
+              color:
+                  isCompleted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.primary.withValues(alpha: 0.3),
             ),
           );
         } else {
@@ -450,13 +455,11 @@ class _StageProgressBar extends StatelessWidget {
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isCompleted
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.primary.withValues(alpha: 0.3),
-              border: Border.all(
-                color: theme.colorScheme.primary,
-                width: 2,
-              ),
+              color:
+                  isCompleted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.primary.withValues(alpha: 0.3),
+              border: Border.all(color: theme.colorScheme.primary, width: 2),
             ),
             child: Center(
               child: Text(
@@ -464,9 +467,10 @@ class _StageProgressBar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: isCompleted
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.primary,
+                  color:
+                      isCompleted
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.primary,
                 ),
               ),
             ),

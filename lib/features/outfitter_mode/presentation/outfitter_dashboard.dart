@@ -66,7 +66,10 @@ class OutfitterDashboard extends StatelessWidget {
             ],
           ),
           body: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 12.0,
+            ),
             child: ListView(
               physics: const BouncingScrollPhysics(),
               children: [
@@ -82,17 +85,20 @@ class OutfitterDashboard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Price Catalog & Invoicing
                 _buildFeatureCard(
                   icon: Icons.receipt_long_rounded,
                   title: 'Price Catalog & Invoicing',
-                  description: 'Manage animal rates and generate client invoices',
+                  description:
+                      'Manage animal rates and generate client invoices',
                   theme: theme,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ManualInvoiceScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ManualInvoiceScreen(),
+                      ),
                     );
                   },
                 ),
@@ -107,7 +113,9 @@ class OutfitterDashboard extends StatelessWidget {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const SlaghuisMatrixScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const SlaghuisMatrixScreen(),
+                      ),
                     );
                   },
                 ),
@@ -134,7 +142,11 @@ class OutfitterDashboard extends StatelessWidget {
           Expanded(
             child: Text(
               'OUTFITTER CONTROL CENTER ACTIVE',
-              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w700, fontSize: 14),
+              style: TextStyle(
+                color: theme.textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
             ),
           ),
         ],
@@ -169,12 +181,29 @@ class OutfitterDashboard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text(description, style: TextStyle(color: theme.textColor.withAlpha(180), fontSize: 13)),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: theme.textColor.withAlpha(180),
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, color: theme.accentColor.withAlpha(100), size: 14),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: theme.accentColor.withAlpha(100),
+                size: 14,
+              ),
             ],
           ),
         ),

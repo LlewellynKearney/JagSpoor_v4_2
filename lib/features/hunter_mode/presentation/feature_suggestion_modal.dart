@@ -88,7 +88,8 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         bottom: true,
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom +
+            bottom:
+                MediaQuery.of(context).viewInsets.bottom +
                 MediaQuery.of(context).padding.bottom +
                 16,
             left: 20,
@@ -123,7 +124,10 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
                         ),
                       ),
                       IconButton(
-                        icon: Icon(Icons.close, color: textColor.withValues(alpha: 0.6)),
+                        icon: Icon(
+                          Icons.close,
+                          color: textColor.withValues(alpha: 0.6),
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -172,14 +176,18 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
                   const SizedBox(height: 20),
 
                   // Expected Benefits Field
-                  _buildSectionLabel('Expected Benefit to Hunting Teams', primaryColor),
+                  _buildSectionLabel(
+                    'Expected Benefit to Hunting Teams',
+                    primaryColor,
+                  ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _benefitsController,
                     style: TextStyle(color: textColor),
                     maxLines: 3,
                     decoration: _buildInputDecoration(
-                      hintText: 'Explain how this feature would benefit hunting teams...',
+                      hintText:
+                          'Explain how this feature would benefit hunting teams...',
                       prefixIcon: Icons.trending_up,
                       theme: theme,
                     ),
@@ -203,29 +211,30 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
                       ),
                     ),
                     onPressed: _isSubmitting ? null : _submitFeatureSuggestion,
-                    child: _isSubmitting
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.send_rounded),
-                              SizedBox(width: 8),
-                              Text(
-                                'Submit Feature Suggestion',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
+                    child:
+                        _isSubmitting
+                            ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.onPrimary,
                               ),
-                            ],
-                          ),
+                            )
+                            : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.send_rounded),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Submit Feature Suggestion',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -265,28 +274,19 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
       fillColor: theme.cardColor,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor.withValues(alpha: 0.3),
-        ),
+        borderSide: BorderSide(color: primaryColor.withValues(alpha: 0.3)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor.withValues(alpha: 0.3),
-        ),
+        borderSide: BorderSide(color: primaryColor.withValues(alpha: 0.3)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(
-          color: primaryColor,
-          width: 2,
-        ),
+        borderSide: BorderSide(color: primaryColor, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Colors.red,
-        ),
+        borderSide: const BorderSide(color: Colors.red),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );

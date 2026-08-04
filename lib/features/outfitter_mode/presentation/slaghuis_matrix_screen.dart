@@ -13,9 +13,9 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
   final LocalDatabaseService _dbService = LocalDatabaseService();
   final _formKey = GlobalKey<FormState>();
   final _weightController = TextEditingController();
-  
+
   String _selectedSpecies = 'Impala';
-  
+
   static const Color accentGold = Color(0xFFC5A059);
   static const Color deepWalnut = Color(0xFF3E2723);
 
@@ -34,8 +34,14 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('SLAGHUIS MATRIX', 
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, color: Colors.white)),
+        title: const Text(
+          'SLAGHUIS MATRIX',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+            color: Colors.white,
+          ),
+        ),
         backgroundColor: deepWalnut,
         elevation: 0,
       ),
@@ -44,14 +50,23 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(
-              child: Text('COLDROOM EMPTY', style: TextStyle(color: Colors.grey, letterSpacing: 2)),
+              child: Text(
+                'COLDROOM EMPTY',
+                style: TextStyle(color: Colors.grey, letterSpacing: 2),
+              ),
             );
           }
 
-          final records = snapshot.data!.map((m) => CarcassRecord.fromMap(m)).toList();
+          final records =
+              snapshot.data!.map((m) => CarcassRecord.fromMap(m)).toList();
 
           return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 80, left: 12, right: 12, top: 12),
+            padding: const EdgeInsets.only(
+              bottom: 80,
+              left: 12,
+              right: 12,
+              top: 12,
+            ),
             itemCount: records.length,
             itemBuilder: (context, index) {
               final record = records[index];
@@ -59,15 +74,35 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                 color: const Color(0xFF1A1A1A),
                 margin: const EdgeInsets.only(bottom: 12),
                 shape: RoundedRectangleBorder(
-                  side: BorderSide(color: record.isDirty == 1 ? Colors.orange : accentGold.withValues(alpha: 0.3)),
+                  side: BorderSide(
+                    color:
+                        record.isDirty == 1
+                            ? Colors.orange
+                            : accentGold.withValues(alpha: 0.3),
+                  ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.all(16),
-                  title: Text(record.species.toUpperCase(), 
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                  subtitle: Text('WEIGHT: ${record.carcassWeight}kg', style: const TextStyle(color: Colors.grey)),
-                  trailing: Text('${record.coldroomDays} DAYS', style: const TextStyle(color: accentGold, fontWeight: FontWeight.bold)),
+                  title: Text(
+                    record.species.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'WEIGHT: ${record.carcassWeight}kg',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  trailing: Text(
+                    '${record.coldroomDays} DAYS',
+                    style: const TextStyle(
+                      color: accentGold,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               );
             },
@@ -77,7 +112,10 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: accentGold,
         onPressed: () => _showAddCarcassModal(context),
-        label: const Text('NEW ENTRY', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        label: const Text(
+          'NEW ENTRY',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
         icon: const Icon(Icons.add, color: Colors.black),
       ),
     );
@@ -87,99 +125,148 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
     // Reset form state for new entry
     _weightController.clear();
     _selectedSpecies = 'Impala';
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          top: false,
-          bottom: true,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + MediaQuery.of(sheetContext).padding.bottom + 16,
-              left: 20,
-              right: 20,
-              top: 20,
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('LOG NEW CARCASS', 
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 20),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedSpecies,
-                    dropdownColor: Colors.black,
-                    style: const TextStyle(color: Colors.white),
-                    items: ['Impala', 'Kudu', 'Warthog', 'Blue Wildebeest', 'Eland']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                    onChanged: (v) {
-                      setSheetState(() => _selectedSpecies = v ?? 'Impala');
-                      setState(() => _selectedSpecies = v ?? 'Impala');
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Species',
-                      labelStyle: TextStyle(color: Colors.grey),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
+      builder:
+          (sheetContext) => StatefulBuilder(
+            builder:
+                (context, setSheetState) => SafeArea(
+                  top: false,
+                  bottom: true,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom:
+                          MediaQuery.of(sheetContext).viewInsets.bottom +
+                          MediaQuery.of(sheetContext).padding.bottom +
+                          16,
+                      left: 20,
+                      right: 20,
+                      top: 20,
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'LOG NEW CARCASS',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          DropdownButtonFormField<String>(
+                            initialValue: _selectedSpecies,
+                            dropdownColor: Colors.black,
+                            style: const TextStyle(color: Colors.white),
+                            items:
+                                [
+                                      'Impala',
+                                      'Kudu',
+                                      'Warthog',
+                                      'Blue Wildebeest',
+                                      'Eland',
+                                    ]
+                                    .map(
+                                      (s) => DropdownMenuItem(
+                                        value: s,
+                                        child: Text(s),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged: (v) {
+                              setSheetState(
+                                () => _selectedSpecies = v ?? 'Impala',
+                              );
+                              setState(() => _selectedSpecies = v ?? 'Impala');
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Species',
+                              labelStyle: TextStyle(color: Colors.grey),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: accentGold),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextFormField(
+                            controller: _weightController,
+                            style: const TextStyle(color: Colors.white),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Carcass Weight (kg)',
+                              labelStyle: TextStyle(color: Colors.grey),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: accentGold),
+                              ),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty)
+                                return 'Weight is required';
+                              if (double.tryParse(v) == null)
+                                return 'Enter a valid number';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 30),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accentGold,
+                              minimumSize: const Size(double.infinity, 50),
+                            ),
+                            onPressed: () async {
+                              if (_formKey.currentState!.validate()) {
+                                final weight =
+                                    double.tryParse(_weightController.text) ??
+                                    0.0;
+                                final record = CarcassRecord(
+                                  id:
+                                      DateTime.now().millisecondsSinceEpoch
+                                          .toString(),
+                                  hunterId: 'CURRENT_SESSION_ID',
+                                  species: _selectedSpecies,
+                                  carcassWeight: weight,
+                                  slaughterFee: 150.0,
+                                  coldroomDays: 0,
+                                  status: 'In Coldroom',
+                                  isDirty: 1,
+                                );
+
+                                await _dbService.database.then(
+                                  (db) => db.insert(
+                                    'carcass_records',
+                                    record.toMap(),
+                                  ),
+                                );
+
+                                // Close sheet and refresh UI
+                                if (!mounted) return;
+                                Navigator.of(sheetContext).pop();
+                                await _refreshData();
+                              }
+                            },
+                            child: const Text(
+                              'ADD TO COLDROOM',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _weightController,
-                    style: const TextStyle(color: Colors.white),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Carcass Weight (kg)',
-                      labelStyle: TextStyle(color: Colors.grey),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accentGold)),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Weight is required';
-                      if (double.tryParse(v) == null) return 'Enter a valid number';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 30),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accentGold,
-                      minimumSize: const Size(double.infinity, 50)
-                    ),
-                    onPressed: () async {
-                      if (_formKey.currentState!.validate()) {
-                        final weight = double.tryParse(_weightController.text) ?? 0.0;
-                        final record = CarcassRecord(
-                          id: DateTime.now().millisecondsSinceEpoch.toString(),
-                          hunterId: 'CURRENT_SESSION_ID',
-                          species: _selectedSpecies,
-                          carcassWeight: weight,
-                          slaughterFee: 150.0,
-                          coldroomDays: 0,
-                          status: 'In Coldroom',
-                          isDirty: 1,
-                        );
-                        
-                        await _dbService.database.then((db) => db.insert('carcass_records', record.toMap()));
-                        
-                        // Close sheet and refresh UI
-                        if (!mounted) return;
-                        Navigator.of(sheetContext).pop();
-                        await _refreshData();
-                      }
-                    },
-                    child: const Text('ADD TO COLDROOM', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
+                ),
           ),
-        ),
-      ),
     );
   }
 }

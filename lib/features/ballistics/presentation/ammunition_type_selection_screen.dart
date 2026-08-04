@@ -62,7 +62,7 @@ class _AmmunitionTypeSelectionScreenState
   Stream<QuerySnapshot> _buildFactoryAmmoStream() {
     final caliber = widget.firearm['caliber'] ?? '';
     final caliberVariations = CaliberNormalizer.getVariants(caliber);
-    
+
     // Use whereIn with all normalized variations for robust matching
     return FirebaseFirestore.instance
         .collection('factory_ammunition')
@@ -245,8 +245,8 @@ class _AmmunitionTypeSelectionScreenState
             '',
       );
       _selectedDescription = data['description']?.toString();
-      _muzzleVelocityController.text = (data['muzzleVelocity'] ?? '')
-          .toString();
+      _muzzleVelocityController.text =
+          (data['muzzleVelocity'] ?? '').toString();
     });
   }
 
@@ -268,8 +268,8 @@ class _AmmunitionTypeSelectionScreenState
           data['propellantType']?.toString() ??
           data['typename']?.toString() ??
           data['typeName']?.toString();
-      _muzzleVelocityController.text = (data['muzzleVelocity'] ?? '')
-          .toString();
+      _muzzleVelocityController.text =
+          (data['muzzleVelocity'] ?? '').toString();
       _primerController.text = data['primer']?.toString() ?? '';
     });
   }
@@ -281,39 +281,40 @@ class _AmmunitionTypeSelectionScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: widget.theme.backgroundColor,
-        title: Text(
-          'DELETE VARIATION',
-          style: TextStyle(
-            color: widget.theme.textColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          'Are you sure you want to remove this ammunition variation?',
-          style: TextStyle(color: widget.theme.textColor),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'CANCEL',
-              style: TextStyle(color: widget.theme.subtitleColor),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'DELETE',
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: widget.theme.backgroundColor,
+            title: Text(
+              'DELETE VARIATION',
               style: TextStyle(
-                color: Colors.redAccent,
+                color: widget.theme.textColor,
                 fontWeight: FontWeight.bold,
               ),
             ),
+            content: Text(
+              'Are you sure you want to remove this ammunition variation?',
+              style: TextStyle(color: widget.theme.textColor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'CANCEL',
+                  style: TextStyle(color: widget.theme.subtitleColor),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'DELETE',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -350,10 +351,10 @@ class _AmmunitionTypeSelectionScreenState
           _editingDocId != null
               ? 'EDIT LOAD CONFIG'
               : (_showFactoryForm
-                    ? 'FACTORY LOAD SETUP'
-                    : (_showCustomForm
-                          ? 'CUSTOM LOAD SETUP'
-                          : 'SELECT LOAD TYPE')),
+                  ? 'FACTORY LOAD SETUP'
+                  : (_showCustomForm
+                      ? 'CUSTOM LOAD SETUP'
+                      : 'SELECT LOAD TYPE')),
           style: TextStyle(
             color: theme.textColor,
             fontWeight: FontWeight.bold,
@@ -469,26 +470,29 @@ class _AmmunitionTypeSelectionScreenState
 
                       final allAmmo = snapshot.data?.docs ?? [];
                       final caliber = widget.firearm['caliber'] ?? '';
-                      final filteredAmmo = allAmmo.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final ammoCal = data['caliber']?.toString() ?? '';
-                        return isCaliberMatch(caliber, ammoCal);
-                      }).toList();
+                      final filteredAmmo =
+                          allAmmo.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final ammoCal = data['caliber']?.toString() ?? '';
+                            return isCaliberMatch(caliber, ammoCal);
+                          }).toList();
 
                       if (filteredAmmo.isEmpty) {
                         return _buildEmptyAmmoWarning();
                       }
 
-                      final brands = filteredAmmo
-                          .map(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand']
-                                    ?.toString() ??
-                                '',
-                          )
-                          .where((b) => b.isNotEmpty)
-                          .toSet()
-                          .toList();
+                      final brands =
+                          filteredAmmo
+                              .map(
+                                (doc) =>
+                                    (doc.data()
+                                            as Map<String, dynamic>)['brand']
+                                        ?.toString() ??
+                                    '',
+                              )
+                              .where((b) => b.isNotEmpty)
+                              .toSet()
+                              .toList();
 
                       if (brands.length == 1 && _selectedBrand == null) {
                         final firstBrand = brands.first;
@@ -499,22 +503,26 @@ class _AmmunitionTypeSelectionScreenState
                         });
                       }
 
-                      final grains = filteredAmmo
-                          .where(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand'] ==
-                                _selectedBrand,
-                          )
-                          .map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final grainVal =
-                                data['bulletgrain'] ?? data['bulletGrain'];
-                            return int.tryParse(grainVal?.toString() ?? '') ??
-                                0;
-                          })
-                          .where((g) => g > 0)
-                          .toSet()
-                          .toList();
+                      final grains =
+                          filteredAmmo
+                              .where(
+                                (doc) =>
+                                    (doc.data()
+                                        as Map<String, dynamic>)['brand'] ==
+                                    _selectedBrand,
+                              )
+                              .map((doc) {
+                                final data = doc.data() as Map<String, dynamic>;
+                                final grainVal =
+                                    data['bulletgrain'] ?? data['bulletGrain'];
+                                return int.tryParse(
+                                      grainVal?.toString() ?? '',
+                                    ) ??
+                                    0;
+                              })
+                              .where((g) => g > 0)
+                              .toSet()
+                              .toList();
 
                       if (grains.length == 1 && _selectedGrain == null) {
                         final firstGrain = grains.first;
@@ -525,26 +533,31 @@ class _AmmunitionTypeSelectionScreenState
                         });
                       }
 
-                      final descriptions = filteredAmmo
-                          .where((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final grainVal =
-                                data['bulletgrain'] ?? data['bulletGrain'];
-                            final grainInt =
-                                int.tryParse(grainVal?.toString() ?? '') ?? 0;
-                            return data['brand'] == _selectedBrand &&
-                                grainInt == _selectedGrain;
-                          })
-                          .map(
-                            (doc) =>
-                                (doc.data()
-                                        as Map<String, dynamic>)['description']
-                                    ?.toString() ??
-                                '',
-                          )
-                          .where((d) => d.isNotEmpty)
-                          .toSet()
-                          .toList();
+                      final descriptions =
+                          filteredAmmo
+                              .where((doc) {
+                                final data = doc.data() as Map<String, dynamic>;
+                                final grainVal =
+                                    data['bulletgrain'] ?? data['bulletGrain'];
+                                final grainInt =
+                                    int.tryParse(grainVal?.toString() ?? '') ??
+                                    0;
+                                return data['brand'] == _selectedBrand &&
+                                    grainInt == _selectedGrain;
+                              })
+                              .map(
+                                (doc) =>
+                                    (doc.data()
+                                            as Map<
+                                              String,
+                                              dynamic
+                                            >)['description']
+                                        ?.toString() ??
+                                    '',
+                              )
+                              .where((d) => d.isNotEmpty)
+                              .toSet()
+                              .toList();
 
                       if (descriptions.length == 1 &&
                           _selectedDescription == null) {
@@ -560,7 +573,10 @@ class _AmmunitionTypeSelectionScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           DropdownButtonFormField<String>(
-                            initialValue: brands.contains(_selectedBrand) ? _selectedBrand : null,
+                            initialValue:
+                                brands.contains(_selectedBrand)
+                                    ? _selectedBrand
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Brand'),
                             onChanged: (val) {
@@ -570,15 +586,16 @@ class _AmmunitionTypeSelectionScreenState
                                 _selectedDescription = null;
                               });
                             },
-                            items: brands.map((b) {
-                              return DropdownMenuItem<String>(
-                                value: b,
-                                child: Text(
-                                  b,
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            items:
+                                brands.map((b) {
+                                  return DropdownMenuItem<String>(
+                                    value: b,
+                                    child: Text(
+                                      b,
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
@@ -600,47 +617,59 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<int>(
-                            initialValue: grains.contains(_selectedGrain) ? _selectedGrain : null,
+                            initialValue:
+                                grains.contains(_selectedGrain)
+                                    ? _selectedGrain
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Bullet Grain'),
-                            onChanged: _selectedBrand == null
-                                ? null
-                                : (val) {
-                                    setState(() {
-                                      _selectedGrain = val;
-                                      _selectedDescription = null;
-                                    });
-                                  },
-                            items: grains.map((g) {
-                              return DropdownMenuItem<int>(
-                                value: g,
-                                child: Text(
-                                  '$g gr',
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            onChanged:
+                                _selectedBrand == null
+                                    ? null
+                                    : (val) {
+                                      setState(() {
+                                        _selectedGrain = val;
+                                        _selectedDescription = null;
+                                      });
+                                    },
+                            items:
+                                grains.map((g) {
+                                  return DropdownMenuItem<int>(
+                                    value: g,
+                                    child: Text(
+                                      '$g gr',
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue: descriptions.contains(_selectedDescription) ? _selectedDescription : null,
+                            initialValue:
+                                descriptions.contains(_selectedDescription)
+                                    ? _selectedDescription
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Description'),
-                            onChanged: _selectedGrain == null
-                                ? null
-                                : (val) {
-                                    setState(() => _selectedDescription = val);
-                                  },
-                            items: descriptions.map((d) {
-                              return DropdownMenuItem<String>(
-                                value: d,
-                                child: Text(
-                                  d,
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            onChanged:
+                                _selectedGrain == null
+                                    ? null
+                                    : (val) {
+                                      setState(
+                                        () => _selectedDescription = val,
+                                      );
+                                    },
+                            items:
+                                descriptions.map((d) {
+                                  return DropdownMenuItem<String>(
+                                    value: d,
+                                    child: Text(
+                                      d,
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
@@ -648,14 +677,15 @@ class _AmmunitionTypeSelectionScreenState
                             controller: _muzzleVelocityController,
                             keyboardType: TextInputType.number,
                             style: TextStyle(color: theme.textColor),
-                            decoration: _inputDecoration('Muzzle Velocity')
-                                .copyWith(
-                                  suffixText: 'fps',
-                                  suffixStyle: TextStyle(
-                                    color: theme.accentColor,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                            decoration: _inputDecoration(
+                              'Muzzle Velocity',
+                            ).copyWith(
+                              suffixText: 'fps',
+                              suffixStyle: TextStyle(
+                                color: theme.accentColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
                                 return 'Muzzle velocity is required';
@@ -730,106 +760,130 @@ class _AmmunitionTypeSelectionScreenState
 
                       // Filter bullets by caliber using semantic matching
                       final caliber = widget.firearm['caliber'] ?? '';
-                      final filteredBullets = bulletsDocs.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final bulletCal = data['caliber']?.toString() ?? '';
-                        return isCaliberMatch(caliber, bulletCal);
-                      }).toList();
+                      final filteredBullets =
+                          bulletsDocs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final bulletCal = data['caliber']?.toString() ?? '';
+                            return isCaliberMatch(caliber, bulletCal);
+                          }).toList();
 
                       // Compute bullet brands
-                      final bulletBrands = filteredBullets
-                          .map(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand']
-                                    ?.toString() ??
-                                '',
-                          )
-                          .where((b) => b.isNotEmpty)
-                          .toSet()
-                          .toList();
+                      final bulletBrands =
+                          filteredBullets
+                              .map(
+                                (doc) =>
+                                    (doc.data()
+                                            as Map<String, dynamic>)['brand']
+                                        ?.toString() ??
+                                    '',
+                              )
+                              .where((b) => b.isNotEmpty)
+                              .toSet()
+                              .toList();
 
                       if (bulletBrands.length == 1 &&
                           _selectedBulletBrand == null) {
                         final firstBulletBrand = bulletBrands.first;
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted && _selectedBulletBrand == null) {
-                            setState(() => _selectedBulletBrand = firstBulletBrand);
+                            setState(
+                              () => _selectedBulletBrand = firstBulletBrand,
+                            );
                           }
                         });
                       }
 
                       // Compute bullet weights based on brand
-                      final bulletWeights = filteredBullets
-                          .where(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand'] ==
-                                _selectedBulletBrand,
-                          )
-                          .map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final weightVal =
-                                data['weightgr'] ?? data['weightGr'];
-                            return int.tryParse(weightVal?.toString() ?? '') ??
-                                0;
-                          })
-                          .where((w) => w > 0)
-                          .toSet()
-                          .toList();
+                      final bulletWeights =
+                          filteredBullets
+                              .where(
+                                (doc) =>
+                                    (doc.data()
+                                        as Map<String, dynamic>)['brand'] ==
+                                    _selectedBulletBrand,
+                              )
+                              .map((doc) {
+                                final data = doc.data() as Map<String, dynamic>;
+                                final weightVal =
+                                    data['weightgr'] ?? data['weightGr'];
+                                return int.tryParse(
+                                      weightVal?.toString() ?? '',
+                                    ) ??
+                                    0;
+                              })
+                              .where((w) => w > 0)
+                              .toSet()
+                              .toList();
 
                       if (bulletWeights.length == 1 &&
                           _selectedBulletWeight == null) {
                         final firstBulletWeight = bulletWeights.first;
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted && _selectedBulletWeight == null) {
-                            setState(() => _selectedBulletWeight = firstBulletWeight);
+                            setState(
+                              () => _selectedBulletWeight = firstBulletWeight,
+                            );
                           }
                         });
                       }
 
                       // Compute propellant brands
-                      final propellantBrands = propellantsDocs
-                          .map(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand']
-                                    ?.toString() ??
-                                '',
-                          )
-                          .where((b) => b.isNotEmpty)
-                          .toSet()
-                          .toList();
+                      final propellantBrands =
+                          propellantsDocs
+                              .map(
+                                (doc) =>
+                                    (doc.data()
+                                            as Map<String, dynamic>)['brand']
+                                        ?.toString() ??
+                                    '',
+                              )
+                              .where((b) => b.isNotEmpty)
+                              .toSet()
+                              .toList();
 
                       if (propellantBrands.length == 1 &&
                           _selectedPropellantBrand == null) {
                         final firstPropellantBrand = propellantBrands.first;
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted && _selectedPropellantBrand == null) {
-                            setState(() => _selectedPropellantBrand = firstPropellantBrand);
+                            setState(
+                              () =>
+                                  _selectedPropellantBrand =
+                                      firstPropellantBrand,
+                            );
                           }
                         });
                       }
 
                       // Compute propellant type names based on brand
-                      final propellantTypes = propellantsDocs
-                          .where(
-                            (doc) =>
-                                (doc.data() as Map<String, dynamic>)['brand'] ==
-                                _selectedPropellantBrand,
-                          )
-                          .map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            return (data['typename'] ?? data['typeName'] ?? '')
-                                .toString();
-                          })
-                          .where((t) => t.isNotEmpty)
-                          .toSet()
-                          .toList();
+                      final propellantTypes =
+                          propellantsDocs
+                              .where(
+                                (doc) =>
+                                    (doc.data()
+                                        as Map<String, dynamic>)['brand'] ==
+                                    _selectedPropellantBrand,
+                              )
+                              .map((doc) {
+                                final data = doc.data() as Map<String, dynamic>;
+                                return (data['typename'] ??
+                                        data['typeName'] ??
+                                        '')
+                                    .toString();
+                              })
+                              .where((t) => t.isNotEmpty)
+                              .toSet()
+                              .toList();
 
                       if (propellantTypes.length == 1 &&
                           _selectedPropellantType == null) {
                         final firstPropellantType = propellantTypes.first;
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted && _selectedPropellantType == null) {
-                            setState(() => _selectedPropellantType = firstPropellantType);
+                            setState(
+                              () =>
+                                  _selectedPropellantType = firstPropellantType,
+                            );
                           }
                         });
                       }
@@ -838,7 +892,10 @@ class _AmmunitionTypeSelectionScreenState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           DropdownButtonFormField<String>(
-                            initialValue: bulletBrands.contains(_selectedBulletBrand) ? _selectedBulletBrand : null,
+                            initialValue:
+                                bulletBrands.contains(_selectedBulletBrand)
+                                    ? _selectedBulletBrand
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Bullet Brand'),
                             onChanged: (val) {
@@ -847,15 +904,16 @@ class _AmmunitionTypeSelectionScreenState
                                 _selectedBulletWeight = null;
                               });
                             },
-                            items: bulletBrands.map((b) {
-                              return DropdownMenuItem<String>(
-                                value: b,
-                                child: Text(
-                                  b,
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            items:
+                                bulletBrands.map((b) {
+                                  return DropdownMenuItem<String>(
+                                    value: b,
+                                    child: Text(
+                                      b,
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
@@ -877,28 +935,40 @@ class _AmmunitionTypeSelectionScreenState
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<int>(
-                            initialValue: bulletWeights.contains(_selectedBulletWeight) ? _selectedBulletWeight : null,
+                            initialValue:
+                                bulletWeights.contains(_selectedBulletWeight)
+                                    ? _selectedBulletWeight
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Bullet Weight'),
-                            onChanged: _selectedBulletBrand == null
-                                ? null
-                                : (val) {
-                                    setState(() => _selectedBulletWeight = val);
-                                  },
-                            items: bulletWeights.map((w) {
-                              return DropdownMenuItem<int>(
-                                value: w,
-                                child: Text(
-                                  '$w gr',
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            onChanged:
+                                _selectedBulletBrand == null
+                                    ? null
+                                    : (val) {
+                                      setState(
+                                        () => _selectedBulletWeight = val,
+                                      );
+                                    },
+                            items:
+                                bulletWeights.map((w) {
+                                  return DropdownMenuItem<int>(
+                                    value: w,
+                                    child: Text(
+                                      '$w gr',
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue: propellantBrands.contains(_selectedPropellantBrand) ? _selectedPropellantBrand : null,
+                            initialValue:
+                                propellantBrands.contains(
+                                      _selectedPropellantBrand,
+                                    )
+                                    ? _selectedPropellantBrand
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration('Propellant Brand'),
                             onChanged: (val) {
@@ -907,40 +977,48 @@ class _AmmunitionTypeSelectionScreenState
                                 _selectedPropellantType = null;
                               });
                             },
-                            items: propellantBrands.map((pb) {
-                              return DropdownMenuItem<String>(
-                                value: pb,
-                                child: Text(
-                                  pb,
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            items:
+                                propellantBrands.map((pb) {
+                                  return DropdownMenuItem<String>(
+                                    value: pb,
+                                    child: Text(
+                                      pb,
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
                           DropdownButtonFormField<String>(
-                            initialValue: propellantTypes.contains(_selectedPropellantType) ? _selectedPropellantType : null,
+                            initialValue:
+                                propellantTypes.contains(
+                                      _selectedPropellantType,
+                                    )
+                                    ? _selectedPropellantType
+                                    : null,
                             dropdownColor: theme.backgroundColor,
                             decoration: _inputDecoration(
                               'Propellant Powder/Type',
                             ),
-                            onChanged: _selectedPropellantBrand == null
-                                ? null
-                                : (val) {
-                                    setState(
-                                      () => _selectedPropellantType = val,
-                                    );
-                                  },
-                            items: propellantTypes.map((pt) {
-                              return DropdownMenuItem<String>(
-                                value: pt,
-                                child: Text(
-                                  pt,
-                                  style: TextStyle(color: theme.textColor),
-                                ),
-                              );
-                            }).toList(),
+                            onChanged:
+                                _selectedPropellantBrand == null
+                                    ? null
+                                    : (val) {
+                                      setState(
+                                        () => _selectedPropellantType = val,
+                                      );
+                                    },
+                            items:
+                                propellantTypes.map((pt) {
+                                  return DropdownMenuItem<String>(
+                                    value: pt,
+                                    child: Text(
+                                      pt,
+                                      style: TextStyle(color: theme.textColor),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 16),
 
@@ -948,14 +1026,15 @@ class _AmmunitionTypeSelectionScreenState
                             controller: _muzzleVelocityController,
                             keyboardType: TextInputType.number,
                             style: TextStyle(color: theme.textColor),
-                            decoration: _inputDecoration('Muzzle Velocity')
-                                .copyWith(
-                                  suffixText: 'fps',
-                                  suffixStyle: TextStyle(
-                                    color: theme.accentColor,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                            decoration: _inputDecoration(
+                              'Muzzle Velocity',
+                            ).copyWith(
+                              suffixText: 'fps',
+                              suffixStyle: TextStyle(
+                                color: theme.accentColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             validator: (val) {
                               if (val == null || val.trim().isEmpty) {
                                 return 'Muzzle velocity is required';
@@ -1162,11 +1241,12 @@ class _AmmunitionTypeSelectionScreenState
     if (userId == null || firearmId == null) return const SizedBox.shrink();
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('firearms')
-          .doc(firearmId)
-          .collection('ammunition')
-          .snapshots(),
+      stream:
+          FirebaseFirestore.instance
+              .collection('firearms')
+              .doc(firearmId)
+              .collection('ammunition')
+              .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('Ammo Stream Error: ${snapshot.error}');

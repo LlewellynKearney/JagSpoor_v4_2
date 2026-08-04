@@ -3,7 +3,8 @@ import 'dart:math' as math;
 /// Central Bluetooth Rangefinder Core and AI Solunar Predictor service.
 /// Provides forward GPS projection calculations and offline game movement forecasting.
 class AdvancedTacticalService {
-  static final AdvancedTacticalService instance = AdvancedTacticalService._internal();
+  static final AdvancedTacticalService instance =
+      AdvancedTacticalService._internal();
   AdvancedTacticalService._internal();
 
   // Earth's radius in meters for spherical calculations
@@ -62,7 +63,8 @@ class AdvancedTacticalService {
     );
 
     // Calculate projected longitude using spherical projection formula
-    final lon2 = lon1 +
+    final lon2 =
+        lon1 +
         math.atan2(
           math.sin(bearingRadians) * math.sin(angularDistance) * math.cos(lat1),
           math.cos(angularDistance) - math.sin(lat1) * math.sin(lat2),
@@ -75,10 +77,7 @@ class AdvancedTacticalService {
     // Normalize longitude to -180 to 180 range
     final normalizedLon = ((projectedLon + 540) % 360) - 180;
 
-    return {
-      'lat': projectedLat,
-      'lon': normalizedLon,
-    };
+    return {'lat': projectedLat, 'lon': normalizedLon};
   }
 
   /// Alternative projection using Haversine-based calculation for longer distances.
@@ -106,7 +105,8 @@ class AdvancedTacticalService {
           math.cos(lat1) * math.sin(angularDist) * math.cos(bearingRad),
     );
 
-    final newLon = lon1 +
+    final newLon =
+        lon1 +
         math.atan2(
           math.sin(bearingRad) * math.sin(angularDist) * math.cos(lat1),
           math.cos(angularDist) - math.sin(lat1) * math.sin(newLat),

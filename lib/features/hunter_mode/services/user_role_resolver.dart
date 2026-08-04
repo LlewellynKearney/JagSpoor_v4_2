@@ -13,15 +13,23 @@ class UserRoleResolver {
   /// Evaluates login parameters to restrict views dynamically
   Future<void> resolveCurrentUserRole(String uid) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('farm_managers').doc(uid).get();
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('farm_managers')
+              .doc(uid)
+              .get();
       if (doc.exists && doc.data() != null) {
         _isManagerRole = true;
         _assignedFarmId = doc.data()!['farmId'] as String?;
-        print('🔒 ROLE BOUND: Authenticated user is an active Farm Manager locked to Farm ID: $_assignedFarmId');
+        print(
+          '🔒 ROLE BOUND: Authenticated user is an active Farm Manager locked to Farm ID: $_assignedFarmId',
+        );
       } else {
         _isManagerRole = false;
         _assignedFarmId = null;
-        print('👑 ROLE BOUND: Authenticated user is a master corporate Outfitter.');
+        print(
+          '👑 ROLE BOUND: Authenticated user is a master corporate Outfitter.',
+        );
       }
     } catch (e) {
       _isManagerRole = false;

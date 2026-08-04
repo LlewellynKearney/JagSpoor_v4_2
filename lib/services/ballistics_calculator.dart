@@ -35,10 +35,13 @@ List<Point> calcTrajectory({
 }) {
   // Input validation with safe defaults - return minimal trajectory on invalid input
   final validatedBc = (bc.isNaN || bc.isInfinite || bc <= 0) ? 0.4 : bc;
-  final validatedMv = (mv.isNaN || mv.isInfinite || mv < 500 || mv > 4000) ? 2700.0 : mv;
-  final validatedZero = (zero.isNaN || zero.isInfinite || zero < 25 || zero > 300) ? 100.0 : zero;
+  final validatedMv =
+      (mv.isNaN || mv.isInfinite || mv < 500 || mv > 4000) ? 2700.0 : mv;
+  final validatedZero =
+      (zero.isNaN || zero.isInfinite || zero < 25 || zero > 300) ? 100.0 : zero;
   final validatedWind = (windMph.isNaN || windMph.isInfinite) ? 0.0 : windMph;
-  final validatedAngle = (angleDeg.isNaN || angleDeg.isInfinite) ? 0.0 : angleDeg;
+  final validatedAngle =
+      (angleDeg.isNaN || angleDeg.isInfinite) ? 0.0 : angleDeg;
 
   const double gravity = 32.174; // ft/s²
   const double airDensity = 0.075; // lb/ft³ at sea level
@@ -119,10 +122,11 @@ List<Point> calcTrajectory({
   }
 
   // Apply zero correction (shift all points so zero distance has 0 drop)
-  final int zeroIndex = trajectory.indexWhere((p) => p.distance == validatedZero);
-  final Point zeroPoint = zeroIndex >= 0
-      ? trajectory[zeroIndex]
-      : trajectory[0];
+  final int zeroIndex = trajectory.indexWhere(
+    (p) => p.distance == validatedZero,
+  );
+  final Point zeroPoint =
+      zeroIndex >= 0 ? trajectory[zeroIndex] : trajectory[0];
   final double zeroDrop = zeroPoint.drop;
 
   return trajectory
@@ -180,8 +184,11 @@ String getPointData({
   required double distance,
 }) {
   // Validate distance input
-  final validatedDistance = (distance.isNaN || distance.isInfinite || distance < 0) ? 100.0 : distance;
-  
+  final validatedDistance =
+      (distance.isNaN || distance.isInfinite || distance < 0)
+          ? 100.0
+          : distance;
+
   final trajectory = calcTrajectory(
     bc: bc,
     mv: mv,

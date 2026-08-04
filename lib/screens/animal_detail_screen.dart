@@ -137,20 +137,22 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                           animal.rwMinimum?.trim() ??
                           animal.rolandWardMinimum?.trim() ??
                           animal.trophyMinimumRW?.trim();
-                      final measurementType = (() {
-                        final m = animal.rwMeasurementMethod?.toLowerCase();
-                        if (m != null && m.contains('horn')) return 'Horn';
-                        if (m != null && m.contains('tusk')) return 'Tusk';
-                        if (m != null &&
-                            (m.contains('point') || m.contains('skull'))) {
-                          return 'Points';
-                        }
-                        final d = animal.rwHornDescription?.toLowerCase();
-                        if (d != null && d.contains('horn')) return 'Horn';
-                        if (d != null && d.contains('tusk')) return 'Tusk';
-                        if (d != null && d.contains('point')) return 'Points';
-                        return null;
-                      })();
+                      final measurementType =
+                          (() {
+                            final m = animal.rwMeasurementMethod?.toLowerCase();
+                            if (m != null && m.contains('horn')) return 'Horn';
+                            if (m != null && m.contains('tusk')) return 'Tusk';
+                            if (m != null &&
+                                (m.contains('point') || m.contains('skull'))) {
+                              return 'Points';
+                            }
+                            final d = animal.rwHornDescription?.toLowerCase();
+                            if (d != null && d.contains('horn')) return 'Horn';
+                            if (d != null && d.contains('tusk')) return 'Tusk';
+                            if (d != null && d.contains('point'))
+                              return 'Points';
+                            return null;
+                          })();
 
                       return Card(
                         color: theme.cardColor,
@@ -470,28 +472,29 @@ class _ImageGallery extends StatelessWidget {
                 return Image.asset(
                   images[index],
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => ColoredBox(
-                    color: theme.cardColor,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.image_not_supported_outlined,
-                          size: 40,
-                          color: theme.subtitleColor,
+                  errorBuilder:
+                      (context, error, stackTrace) => ColoredBox(
+                        color: theme.cardColor,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 40,
+                              color: theme.subtitleColor,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Image not available',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: theme.subtitleColor,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Image not available',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: theme.subtitleColor,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
                 );
               },
             ),
@@ -510,9 +513,10 @@ class _ImageGallery extends StatelessWidget {
                 height: currentPage == index ? 10 : 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: currentPage == index
-                      ? theme.accentColor
-                      : theme.subtitleColor.withValues(alpha: 0.4),
+                  color:
+                      currentPage == index
+                          ? theme.accentColor
+                          : theme.subtitleColor.withValues(alpha: 0.4),
                 ),
               ),
             ),
@@ -789,11 +793,12 @@ class _FirearmCompatibilitySection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('firearms')
-                  .where('ownerId', isEqualTo: user.uid)
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('firearms')
+                      .where('ownerId', isEqualTo: user.uid)
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Text(
@@ -887,9 +892,8 @@ class _FirearmCompatibilitySection extends StatelessWidget {
                             Checkbox(
                               value: isMatch,
                               onChanged: null,
-                              activeColor: isDowngrade
-                                  ? Colors.orange
-                                  : Colors.green,
+                              activeColor:
+                                  isDowngrade ? Colors.orange : Colors.green,
                             ),
                             Expanded(
                               child: Column(

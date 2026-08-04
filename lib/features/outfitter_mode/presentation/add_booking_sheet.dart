@@ -91,9 +91,10 @@ class _AddBookingSheetState extends State<AddBookingSheet> {
       context: context,
       firstDate: firstDate,
       lastDate: lastDate,
-      initialDateRange: _arrivalDate != null && _departureDate != null
-          ? DateTimeRange(start: _arrivalDate!, end: _departureDate!)
-          : null,
+      initialDateRange:
+          _arrivalDate != null && _departureDate != null
+              ? DateTimeRange(start: _arrivalDate!, end: _departureDate!)
+              : null,
       builder: (context, child) {
         final theme = ThemeController();
         return Theme(
@@ -276,9 +277,10 @@ class _AddBookingSheetState extends State<AddBookingSheet> {
                                           ? '${DateFormat('MMM dd, yyyy').format(_arrivalDate!)} - ${DateFormat('MMM dd, yyyy').format(_departureDate!)}'
                                           : 'Select Arrival & Departure Dates',
                                       style: TextStyle(
-                                        color: _arrivalDate != null
-                                            ? theme.textColor
-                                            : theme.subtitleColor,
+                                        color:
+                                            _arrivalDate != null
+                                                ? theme.textColor
+                                                : theme.subtitleColor,
                                       ),
                                     ),
                                   ),
@@ -431,26 +433,27 @@ class _AddBookingSheetState extends State<AddBookingSheet> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: _isLoading
-                                  ? SizedBox(
-                                      height: 24,
-                                      width: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              theme.backgroundColor,
-                                            ),
+                              child:
+                                  _isLoading
+                                      ? SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                theme.backgroundColor,
+                                              ),
+                                        ),
+                                      )
+                                      : const Text(
+                                        'CREATE BOOKING',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.5,
+                                        ),
                                       ),
-                                    )
-                                  : const Text(
-                                      'CREATE BOOKING',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.5,
-                                      ),
-                                    ),
                             ),
                           ),
                           const SizedBox(height: 16),

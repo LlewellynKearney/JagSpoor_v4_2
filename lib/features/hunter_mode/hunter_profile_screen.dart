@@ -107,10 +107,11 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       }
 
       // Load from Firestore
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -164,24 +165,25 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     // Show bottom sheet to choose between camera and gallery
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take Photo'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('Take Photo'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Choose from Gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
 
     if (source == null) return;
@@ -420,21 +422,24 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
                           ElevatedButton(
-                            onPressed: () => widget.theme.setConcept(
-                              HuntingConcept.thermalGlow,
-                            ),
+                            onPressed:
+                                () => widget.theme.setConcept(
+                                  HuntingConcept.thermalGlow,
+                                ),
                             child: const Text('Thermal'),
                           ),
                           ElevatedButton(
-                            onPressed: () => widget.theme.setConcept(
-                              HuntingConcept.walnutLuxury,
-                            ),
+                            onPressed:
+                                () => widget.theme.setConcept(
+                                  HuntingConcept.walnutLuxury,
+                                ),
                             child: const Text('Walnut'),
                           ),
                           ElevatedButton(
-                            onPressed: () => widget.theme.setConcept(
-                              HuntingConcept.neonShock,
-                            ),
+                            onPressed:
+                                () => widget.theme.setConcept(
+                                  HuntingConcept.neonShock,
+                                ),
                             child: const Text('Neon'),
                           ),
                         ],
@@ -460,32 +465,36 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                 width: 2,
                               ),
                             ),
-                            child: _isUploading
-                                ? Center(
-                                    child: CircularProgressIndicator(
-                                      color: widget.theme.accentColor,
+                            child:
+                                _isUploading
+                                    ? Center(
+                                      child: CircularProgressIndicator(
+                                        color: widget.theme.accentColor,
+                                      ),
+                                    )
+                                    : _profileImageUrl != null
+                                    ? ClipOval(
+                                      child: Image.network(
+                                        _profileImageUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (
+                                          context,
+                                          error,
+                                          stackTrace,
+                                        ) {
+                                          return Icon(
+                                            Icons.person,
+                                            size: 60,
+                                            color: widget.theme.subtitleColor,
+                                          );
+                                        },
+                                      ),
+                                    )
+                                    : Icon(
+                                      Icons.add_a_photo,
+                                      size: 40,
+                                      color: widget.theme.subtitleColor,
                                     ),
-                                  )
-                                : _profileImageUrl != null
-                                ? ClipOval(
-                                    child: Image.network(
-                                      _profileImageUrl!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                            return Icon(
-                                              Icons.person,
-                                              size: 60,
-                                              color: widget.theme.subtitleColor,
-                                            );
-                                          },
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.add_a_photo,
-                                    size: 40,
-                                    color: widget.theme.subtitleColor,
-                                  ),
                           ),
                           if (!_isUploading)
                             Positioned(
@@ -592,19 +601,19 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _isFetchingLocation
-                          ? null
-                          : _fetchCurrentLocation,
-                      icon: _isFetchingLocation
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: widget.theme.backgroundColor,
-                              ),
-                            )
-                          : const Icon(Icons.my_location),
+                      onPressed:
+                          _isFetchingLocation ? null : _fetchCurrentLocation,
+                      icon:
+                          _isFetchingLocation
+                              ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: widget.theme.backgroundColor,
+                                ),
+                              )
+                              : const Icon(Icons.my_location),
                       label: Text(
                         _isFetchingLocation
                             ? 'Fetching...'
@@ -674,14 +683,18 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _isBatterySaverEnabled
-                          ? Colors.orange.withValues(alpha: 0.1)
-                          : widget.theme.cardColor,
+                      color:
+                          _isBatterySaverEnabled
+                              ? Colors.orange.withValues(alpha: 0.1)
+                              : widget.theme.cardColor,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _isBatterySaverEnabled
-                            ? Colors.orange
-                            : widget.theme.accentColor.withValues(alpha: 0.3),
+                        color:
+                            _isBatterySaverEnabled
+                                ? Colors.orange
+                                : widget.theme.accentColor.withValues(
+                                  alpha: 0.3,
+                                ),
                       ),
                     ),
                     child: Row(
@@ -690,9 +703,10 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           _isBatterySaverEnabled
                               ? Icons.battery_saver
                               : Icons.battery_full,
-                          color: _isBatterySaverEnabled
-                              ? Colors.orange
-                              : widget.theme.accentColor,
+                          color:
+                              _isBatterySaverEnabled
+                                  ? Colors.orange
+                                  : widget.theme.accentColor,
                           size: 28,
                         ),
                         const SizedBox(width: 12),
@@ -714,9 +728,10 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                     ? '⚡ Performance mode active'
                                     : '🔋 Energy conservation active',
                                 style: TextStyle(
-                                  color: _isBatterySaverEnabled
-                                      ? Colors.orange
-                                      : widget.theme.subtitleColor,
+                                  color:
+                                      _isBatterySaverEnabled
+                                          ? Colors.orange
+                                          : widget.theme.subtitleColor,
                                   fontSize: 11,
                                 ),
                               ),
@@ -727,7 +742,9 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           value: _isBatterySaverEnabled,
                           onChanged: _toggleBatterySaver,
                           activeThumbColor: Colors.orange,
-                          activeTrackColor: Colors.orange.withValues(alpha: 0.5),
+                          activeTrackColor: Colors.orange.withValues(
+                            alpha: 0.5,
+                          ),
                         ),
                       ],
                     ),
@@ -739,8 +756,8 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       style: TextStyle(color: widget.theme.textColor),
                     ),
                     value: _hasFirstAid,
-                    onChanged: (val) =>
-                        setState(() => _hasFirstAid = val ?? false),
+                    onChanged:
+                        (val) => setState(() => _hasFirstAid = val ?? false),
                     activeColor: widget.theme.accentColor,
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -756,24 +773,25 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                         foregroundColor: widget.theme.backgroundColor,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : const Text(
+                                'SAVE PROFILE',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
                                 ),
                               ),
-                            )
-                          : const Text(
-                              'SAVE PROFILE',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -905,96 +923,103 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: widget.theme.cardColor,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Colors.red.withValues(alpha: 0.5),
-            width: 2,
-          ),
-        ),
-        title: Row(
-          children: [
-            const Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.red,
-              size: 28,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Delete Account',
-              style: TextStyle(
-                color: widget.theme.textColor,
-                fontWeight: FontWeight.bold,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: widget.theme.cardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: Colors.red.withValues(alpha: 0.5),
+                width: 2,
               ),
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This action is IRREVERSIBLE and will permanently wipe ALL records from the system including:',
-              style: TextStyle(
-                color: widget.theme.textColor,
-                fontWeight: FontWeight.w500,
-              ),
+            title: Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.red,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _buildBulletPoint('Your profile and contact information'),
-            _buildBulletPoint('All firearms and ammunition data'),
-            _buildBulletPoint('Carcass logs and waypoints'),
-            _buildBulletPoint('Processing orders and hunt records'),
-            _buildBulletPoint('Your authentication credential'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.red, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'You will be immediately logged out and cannot recover your account.',
-                      style: TextStyle(
-                        color: Colors.red.shade700,
-                        fontSize: 12,
-                      ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This action is IRREVERSIBLE and will permanently wipe ALL records from the system including:',
+                  style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildBulletPoint('Your profile and contact information'),
+                _buildBulletPoint('All firearms and ammunition data'),
+                _buildBulletPoint('Carcass logs and waypoints'),
+                _buildBulletPoint('Processing orders and hunt records'),
+                _buildBulletPoint('Your authentication credential'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.3),
                     ),
                   ),
-                ],
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'You will be immediately logged out and cannot recover your account.',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(
+                  'CANCEL',
+                  style: TextStyle(color: widget.theme.subtitleColor),
+                ),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'CANCEL',
-              style: TextStyle(color: widget.theme.subtitleColor),
-            ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text(
+                  'DELETE FOREVER',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text(
-              'DELETE FOREVER',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -1008,17 +1033,11 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '• ',
-            style: TextStyle(color: Colors.red, fontSize: 14),
-          ),
+          const Text('• ', style: TextStyle(color: Colors.red, fontSize: 14)),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                color: widget.theme.subtitleColor,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 13),
             ),
           ),
         ],

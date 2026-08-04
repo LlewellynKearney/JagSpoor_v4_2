@@ -8,8 +8,8 @@ class PrivacyPolicyScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<ThemeController>() ?? 
-        ThemeController();
+    final theme =
+        Theme.of(context).extension<ThemeController>() ?? ThemeController();
 
     return Scaffold(
       backgroundColor: theme.backgroundColor,
@@ -234,10 +234,7 @@ For questions regarding this policy, contact: privacy@jagspoor.co.za
             const SizedBox(height: 8),
             Text(
               'Privacy & POPIA Compliance Policy',
-              style: TextStyle(
-                fontSize: 14,
-                color: theme.subtitleColor,
-              ),
+              style: TextStyle(fontSize: 14, color: theme.subtitleColor),
             ),
             const SizedBox(height: 16),
             Container(
@@ -347,10 +344,7 @@ For questions regarding this policy, contact: privacy@jagspoor.co.za
             Text(
               'Contact our Data Protection Officer:\nprivacy@jagspoor.co.za',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: theme.subtitleColor,
-              ),
+              style: TextStyle(fontSize: 13, color: theme.subtitleColor),
             ),
           ],
         ),

@@ -10,7 +10,8 @@ class SpoorDetectionHudScreen extends StatefulWidget {
   const SpoorDetectionHudScreen({super.key, required this.theme});
 
   @override
-  State<SpoorDetectionHudScreen> createState() => _SpoorDetectionHudScreenState();
+  State<SpoorDetectionHudScreen> createState() =>
+      _SpoorDetectionHudScreenState();
 }
 
 class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
@@ -19,7 +20,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
   bool _isCameraInitialized = false;
   bool _isScanning = false;
   bool _isAIInitialized = false;
-  
+
   String? _latitude;
   String? _longitude;
   Map<String, dynamic>? _predictionResult;
@@ -94,7 +95,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
     try {
       final image = await _cameraController!.takePicture();
       final result = await _spoorAIService.predictSpoor(image);
-      
+
       if (mounted) {
         setState(() {
           _isScanning = false;
@@ -190,20 +191,31 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                   children: [
                     // Top Bar
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                            icon: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              color: Colors.white,
+                            ),
                             onPressed: () => Navigator.pop(context),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.6),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: scanColor.withValues(alpha: 0.5)),
+                              border: Border.all(
+                                color: scanColor.withValues(alpha: 0.5),
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -212,7 +224,10 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                   width: 8,
                                   height: 8,
                                   decoration: BoxDecoration(
-                                    color: _isAIInitialized ? Colors.green : Colors.orange,
+                                    color:
+                                        _isAIInitialized
+                                            ? Colors.green
+                                            : Colors.orange,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
@@ -232,7 +247,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                       ),
                     ),
                     const Spacer(),
-                    
+
                     // Main Hud scrollable area for overlays
                     Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -243,12 +258,17 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                           children: [
                             if (_predictionResult != null) ...[
                               ClassificationResultWidget(
-                                speciesName: _predictionResult!['species'] ?? 'Unknown',
-                                confidence: (_predictionResult!['confidence'] as num?)?.toDouble() ?? 0.0,
+                                speciesName:
+                                    _predictionResult!['species'] ?? 'Unknown',
+                                confidence:
+                                    (_predictionResult!['confidence'] as num?)
+                                        ?.toDouble() ??
+                                    0.0,
                                 theme: widget.theme,
-                                gpsCoordinates: _latitude != null && _longitude != null 
-                                    ? '$_latitude, $_longitude' 
-                                    : null,
+                                gpsCoordinates:
+                                    _latitude != null && _longitude != null
+                                        ? '$_latitude, $_longitude'
+                                        : null,
                               ),
                               const SizedBox(height: 16),
                               ElevatedButton(
@@ -258,14 +278,19 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.black87,
                                   side: BorderSide(color: scanColor),
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                 ),
                                 child: Text(
                                   'RESET SCANNER',
-                                  style: TextStyle(color: scanColor, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    color: scanColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ] else ...[
@@ -275,16 +300,29 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                 decoration: BoxDecoration(
                                   color: Colors.black.withValues(alpha: 0.7),
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: scanColor.withValues(alpha: 0.3)),
+                                  border: Border.all(
+                                    color: scanColor.withValues(alpha: 0.3),
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _buildTacticalRow('LATITUDE', _latitude ?? 'ACQUIRING GPS...'),
+                                    _buildTacticalRow(
+                                      'LATITUDE',
+                                      _latitude ?? 'ACQUIRING GPS...',
+                                    ),
                                     const SizedBox(height: 8),
-                                    _buildTacticalRow('LONGITUDE', _longitude ?? 'ACQUIRING GPS...'),
+                                    _buildTacticalRow(
+                                      'LONGITUDE',
+                                      _longitude ?? 'ACQUIRING GPS...',
+                                    ),
                                     const SizedBox(height: 8),
-                                    _buildTacticalRow('SYS ENGINE', _isAIInitialized ? 'TFLITE OPTIMIZED' : 'INITIALIZING...'),
+                                    _buildTacticalRow(
+                                      'SYS ENGINE',
+                                      _isAIInitialized
+                                          ? 'TFLITE OPTIMIZED'
+                                          : 'INITIALIZING...',
+                                    ),
                                   ],
                                 ),
                               ),
@@ -298,7 +336,10 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                     height: 80,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 4),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 4,
+                                      ),
                                       color: scanColor.withValues(alpha: 0.4),
                                     ),
                                     child: Center(
@@ -388,10 +429,11 @@ class HudReticlePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    final paint =
+        Paint()
+          ..color = color
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
 
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
@@ -401,20 +443,60 @@ class HudReticlePainter extends CustomPainter {
     canvas.drawLine(Offset(0, 0), Offset(bracketLength, 0), paint);
     canvas.drawLine(Offset(0, 0), Offset(0, bracketLength), paint);
 
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width - bracketLength, 0), paint);
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width, bracketLength), paint);
+    canvas.drawLine(
+      Offset(size.width, 0),
+      Offset(size.width - bracketLength, 0),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width, 0),
+      Offset(size.width, bracketLength),
+      paint,
+    );
 
-    canvas.drawLine(Offset(0, size.height), Offset(bracketLength, size.height), paint);
-    canvas.drawLine(Offset(0, size.height), Offset(0, size.height - bracketLength), paint);
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(bracketLength, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(0, size.height - bracketLength),
+      paint,
+    );
 
-    canvas.drawLine(Offset(size.width, size.height), Offset(size.width - bracketLength, size.height), paint);
-    canvas.drawLine(Offset(size.width, size.height), Offset(size.width, size.height - bracketLength), paint);
+    canvas.drawLine(
+      Offset(size.width, size.height),
+      Offset(size.width - bracketLength, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width, size.height),
+      Offset(size.width, size.height - bracketLength),
+      paint,
+    );
 
     // Crosshairs
-    canvas.drawLine(Offset(center.dx - 15, center.dy), Offset(center.dx - 5, center.dy), paint);
-    canvas.drawLine(Offset(center.dx + 5, center.dy), Offset(center.dx + 15, center.dy), paint);
-    canvas.drawLine(Offset(center.dx, center.dy - 15), Offset(center.dx, center.dy - 5), paint);
-    canvas.drawLine(Offset(center.dx, center.dy + 5), Offset(center.dx, center.dy + 15), paint);
+    canvas.drawLine(
+      Offset(center.dx - 15, center.dy),
+      Offset(center.dx - 5, center.dy),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(center.dx + 5, center.dy),
+      Offset(center.dx + 15, center.dy),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy - 15),
+      Offset(center.dx, center.dy - 5),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy + 5),
+      Offset(center.dx, center.dy + 15),
+      paint,
+    );
 
     // Inner circle
     canvas.drawCircle(center, radius * 0.4, paint);

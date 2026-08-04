@@ -89,7 +89,8 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
       _selectedSpecies = widget.prefillSpecies!;
     }
     if (widget.prefillHangingWeight != null) {
-      _hangingWeightController.text = widget.prefillHangingWeight!.toStringAsFixed(1);
+      _hangingWeightController.text = widget.prefillHangingWeight!
+          .toStringAsFixed(1);
     }
   }
 
@@ -247,9 +248,13 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 prefixIcon: Icon(Icons.tag, color: theme.accentColor),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 12),
 
@@ -263,15 +268,22 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 prefixIcon: Icon(Icons.person, color: theme.accentColor),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+              validator:
+                  (val) =>
+                      val == null || val.trim().isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 12),
 
             // Species Dropdown
             DropdownButtonFormField<String>(
-              value: _speciesOptions.contains(_selectedSpecies) ? _selectedSpecies : _speciesOptions.first,
+              value:
+                  _speciesOptions.contains(_selectedSpecies)
+                      ? _selectedSpecies
+                      : _speciesOptions.first,
               style: TextStyle(color: theme.textColor),
               dropdownColor: theme.cardColor,
               decoration: InputDecoration(
@@ -280,12 +292,18 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 prefixIcon: Icon(Icons.pets, color: theme.accentColor),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              items: _speciesOptions
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedSpecies = val ?? _selectedSpecies),
+              items:
+                  _speciesOptions
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+              onChanged:
+                  (val) => setState(
+                    () => _selectedSpecies = val ?? _selectedSpecies,
+                  ),
             ),
             const SizedBox(height: 12),
 
@@ -293,18 +311,23 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
             TextFormField(
               controller: _hangingWeightController,
               style: TextStyle(color: theme.textColor),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Cold Hanging Weight (kg)',
                 labelStyle: TextStyle(color: theme.subtitleColor),
                 prefixIcon: Icon(Icons.scale, color: theme.accentColor),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               validator: (val) {
                 if (val == null || val.trim().isEmpty) return 'Required';
-                if (double.tryParse(val.trim()) == null) return 'Enter a valid number';
+                if (double.tryParse(val.trim()) == null)
+                  return 'Enter a valid number';
                 return null;
               },
             ),
@@ -350,26 +373,31 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _portionOptions.map((portion) {
-                final isSelected = _selectedPortions.contains(portion);
-                return FilterChip(
-                  label: Text(
-                    portion,
-                    style: TextStyle(
-                      color: isSelected ? Colors.black : theme.textColor,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  selected: isSelected,
-                  selectedColor: theme.accentColor,
-                  checkmarkColor: Colors.black,
-                  backgroundColor: theme.backgroundColor,
-                  side: BorderSide(
-                    color: isSelected ? theme.accentColor : theme.subtitleColor.withValues(alpha: 0.3),
-                  ),
-                  onSelected: (_) => _togglePortion(portion),
-                );
-              }).toList(),
+              children:
+                  _portionOptions.map((portion) {
+                    final isSelected = _selectedPortions.contains(portion);
+                    return FilterChip(
+                      label: Text(
+                        portion,
+                        style: TextStyle(
+                          color: isSelected ? Colors.black : theme.textColor,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      selected: isSelected,
+                      selectedColor: theme.accentColor,
+                      checkmarkColor: Colors.black,
+                      backgroundColor: theme.backgroundColor,
+                      side: BorderSide(
+                        color:
+                            isSelected
+                                ? theme.accentColor
+                                : theme.subtitleColor.withValues(alpha: 0.3),
+                      ),
+                      onSelected: (_) => _togglePortion(portion),
+                    );
+                  }).toList(),
             ),
             if (_selectedPortions.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -381,7 +409,11 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: theme.accentColor, size: 20),
+                    Icon(
+                      Icons.check_circle,
+                      color: theme.accentColor,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -428,7 +460,10 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _spiceProfiles.contains(_selectedSpiceProfile) ? _selectedSpiceProfile : _spiceProfiles.first,
+              value:
+                  _spiceProfiles.contains(_selectedSpiceProfile)
+                      ? _selectedSpiceProfile
+                      : _spiceProfiles.first,
               style: TextStyle(color: theme.textColor),
               dropdownColor: theme.cardColor,
               decoration: InputDecoration(
@@ -437,12 +472,23 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 prefixIcon: Icon(Icons.menu_book, color: theme.accentColor),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              items: _spiceProfiles
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13))))
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedSpiceProfile = val ?? _selectedSpiceProfile),
+              items:
+                  _spiceProfiles
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(s, style: const TextStyle(fontSize: 13)),
+                        ),
+                      )
+                      .toList(),
+              onChanged:
+                  (val) => setState(
+                    () => _selectedSpiceProfile = val ?? _selectedSpiceProfile,
+                  ),
             ),
             const SizedBox(height: 12),
             Container(
@@ -450,16 +496,25 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
               decoration: BoxDecoration(
                 color: theme.backgroundColor,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: theme.accentColor.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: theme.subtitleColor, size: 20),
+                  Icon(
+                    Icons.info_outline,
+                    color: theme.subtitleColor,
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Traditional biltong spice: Coriander, black pepper, vinegar, salt',
-                      style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                      style: TextStyle(
+                        color: theme.subtitleColor,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
@@ -506,11 +561,16 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
               decoration: InputDecoration(
                 labelText: 'Additional Notes',
                 labelStyle: TextStyle(color: theme.subtitleColor),
-                hintText: 'e.g., Keep skins for taxidermy, wrap backstraps separate, etc.',
-                hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+                hintText:
+                    'e.g., Keep skins for taxidermy, wrap backstraps separate, etc.',
+                hintStyle: TextStyle(
+                  color: theme.subtitleColor.withValues(alpha: 0.5),
+                ),
                 filled: true,
                 fillColor: theme.backgroundColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -532,15 +592,21 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
           ),
           elevation: 4,
         ),
-        icon: _isGenerating
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-              )
-            : const Icon(Icons.picture_as_pdf_rounded, size: 28),
+        icon:
+            _isGenerating
+                ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.black,
+                  ),
+                )
+                : const Icon(Icons.picture_as_pdf_rounded, size: 28),
         label: Text(
-          _isGenerating ? 'GENERATING...' : '📋 COMPILE & SHARE SLAUGHTERHOUSE ORDER',
+          _isGenerating
+              ? 'GENERATING...'
+              : '📋 COMPILE & SHARE SLAUGHTERHOUSE ORDER',
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 14,

@@ -6,7 +6,10 @@ import 'package:path/path.dart';
 
 Future<String> uploadHunterImage(File file, String hunterId) async {
   final dir = await getTemporaryDirectory();
-  final targetPath = join(dir.path, "${DateTime.now().millisecondsSinceEpoch}.jpg");
+  final targetPath = join(
+    dir.path,
+    "${DateTime.now().millisecondsSinceEpoch}.jpg",
+  );
 
   final compressedFile = await FlutterImageCompress.compressAndGetFile(
     file.path,
@@ -19,9 +22,10 @@ Future<String> uploadHunterImage(File file, String hunterId) async {
 
   if (compressedFile == null) throw Exception("Compression failed");
 
-  final fileName = "hunters/$hunterId/${DateTime.now().millisecondsSinceEpoch}.jpg";
+  final fileName =
+      "hunters/$hunterId/${DateTime.now().millisecondsSinceEpoch}.jpg";
   final ref = FirebaseStorage.instance.ref().child(fileName);
-  
+
   final uploadTask = await ref.putFile(File(compressedFile.path));
   return await uploadTask.ref.getDownloadURL();
 }
