@@ -914,7 +914,6 @@ class _HunterBookingCard extends StatefulWidget {
 
 class _HunterBookingCardState extends State<_HunterBookingCard> {
   bool _isChatExpanded = false;
-  DateTime? _lastViewedChatTime;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
 
@@ -942,89 +941,32 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     super.dispose();
   }
 
-  /// Toggles the chat drawer open/closed. Expanding marks all currently
-  /// visible messages as read by advancing [_lastViewedChatTime] to now,
-  /// so only genuinely new messages re-trigger the unread indicator.
+  /// Toggles the chat drawer open/closed.
   void _toggleChatDrawer() {
     setState(() {
       _isChatExpanded = !_isChatExpanded;
-      if (_isChatExpanded) {
-        _lastViewedChatTime = DateTime.now();
-      }
     });
   }
 
-  /// Real-time unread-message envelope indicator for the card header.
+  /// Unread-message envelope indicator for the card header.
   ///
-  /// Listens to the booking's `chats` subcollection and counts messages from
-  /// other users whose timestamp is newer than the last time the hunter opened
-  /// the thread (or all of them if the thread has never been opened). The
-  /// `Icons.mail_outline` icon turns orange with a count badge while unread
-  /// messages exist, and falls back to a muted grey when caught up. Tapping it
-  /// opens the chat drawer.
+  /// Driven by the booking's `hunterHasUnread` flag (written by the chat
+  /// flow when the outfitter sends a message the hunter hasn't seen). When
+  /// the flag is true the `Icons.mail` icon is highlighted in orange;
+  /// otherwise it stays muted grey. Tapping it opens the chat drawer.
   Widget _buildUnreadMailIndicator() {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('bookings')
-          .doc(widget.bookingId)
-          .collection('chats')
-          .snapshots(),
-      builder: (context, snapshot) {
-        var unreadCount = 0;
-        if (snapshot.hasData) {
-          for (final doc in snapshot.data!.docs) {
-            final msg = doc.data();
-            final senderId = msg['senderId'] as String? ?? '';
-            if (senderId == currentUid) continue; // own messages are read
-            final msgTime = (msg['timestamp'] as Timestamp?)?.toDate();
-            if (msgTime == null) continue;
-            if (_lastViewedChatTime == null ||
-                msgTime.isAfter(_lastViewedChatTime!)) {
-              unreadCount++;
-            }
-          }
-        }
-        final hasUnread = unreadCount > 0;
-        final iconColor =
-            hasUnread ? Colors.orange : widget.theme.subtitleColor;
-        return InkWell(
-          onTap: _toggleChatDrawer,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(Icons.mail_outline, color: iconColor, size: 22),
-                if (hasUnread)
-                  Positioned(
-                    right: -4,
-                    top: -4,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: Colors.orange,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints:
-                          const BoxConstraints(minWidth: 16, minHeight: 16),
-                      child: Text(
-                        unreadCount > 9 ? '9+' : '$unreadCount',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+    final hasUnread = (widget.data['hunterHasUnread'] as bool?) ?? false;
+    return InkWell(
+      onTap: () => _toggleChatDrawer(),
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Icon(
+          Icons.mail,
+          color: hasUnread ? Colors.orange : Colors.grey,
+          size: 24,
+        ),
+      ),
     );
   }
 

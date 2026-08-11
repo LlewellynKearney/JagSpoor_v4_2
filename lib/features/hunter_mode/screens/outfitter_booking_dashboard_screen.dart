@@ -430,13 +430,11 @@ class _BookingCardState extends State<_BookingCard> {
   ///
   /// Driven by the booking's `outfitterHasUnread` flag (written by the chat
   /// flow when a hunter sends a message the outfitter hasn't seen). When the
-  /// flag is true the `Icons.mail_outline` icon is highlighted in the active
-  /// accent color with a small dot badge; otherwise it stays muted grey.
+  /// flag is true the `Icons.mail` icon is highlighted in orange; otherwise
+  /// it stays muted grey. Identical layout to the hunter booking card.
   /// Tapping it opens the chat drawer.
   Widget _buildUnreadMailIndicator() {
     final hasUnread = (widget.data['outfitterHasUnread'] as bool?) ?? false;
-    final iconColor =
-        hasUnread ? widget.theme.accentColor : widget.theme.subtitleColor;
     return InkWell(
       onTap: () => setState(() {
         _isChatExpanded = !_isChatExpanded;
@@ -444,28 +442,10 @@ class _BookingCardState extends State<_BookingCard> {
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(Icons.mail_outline, color: iconColor, size: 24),
-            if (hasUnread)
-              Positioned(
-                right: -2,
-                top: -2,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: widget.theme.accentColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: widget.theme.cardColor,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+        child: Icon(
+          Icons.mail,
+          color: hasUnread ? Colors.orange : Colors.grey,
+          size: 24,
         ),
       ),
     );
