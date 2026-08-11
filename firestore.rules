@@ -94,19 +94,49 @@ service cloud.firestore {
     // No other user (signed-in or not) may read or write another user's
     // records. Admins retain full access for support/oversight.
 
-    // Firearms inventory (ownerId).
+    // Firearms inventory (ownerId). Owner-scoped reads/writes; the nested
+    // ammunition subcollection inherits owner scoping from the parent firearm.
     match /firearms/{firearmId} {
       allow read, write: if ownerOrAdmin('ownerId');
+
+      // Ammunition variations scoped to this firearm. Readable/writable by the
+      // firearm owner (for load-type selection / ballistics). The rule checks
+      // the parent firearm's ownerId so existing ammo docs (which historically
+      // were not stamped with their own ownerId) remain accessible, while new
+      // docs may also carry an `ownerId` for a direct check.
+      match /ammunition/{ammoId} {
+        allow read, write: if isSignedIn() && (
+          get(/databases/$(database)/documents/firearms/$(firearmId)).data.ownerId == request.auth.uid
+          || request.resource.data.ownerId == request.auth.uid
+          || isAdmin()
+        );
+      }
     }
 
-    // Trophies (hunterId).
+    // Trophies — dual-purpose collection:
+    //  • Hunter personal trophies (Digital Trophy Room) — stamped `ownerId`.
+    //  • Outfitter trophy stock (marketplace listings) — stamped `outfitterId`
+    //    with `availableCount` for browse availability.
+    // Read is open to any signed-in user so the Trophy Registry & Booking
+    // marketplace can display outfitter trophy stock to hunters. Writes are
+    // restricted to the owning hunter/outfitter or an admin. Owner fields
+    // accepted: ownerId (personal), outfitterId (stock), hunterId/userId
+    // (legacy aliases).
     match /trophies/{trophyId} {
-      allow read, write: if ownerOrAdmin('hunterId');
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin()
+        || isOwnerOf('ownerId')
+        || isOwnerOf('outfitterId')
+        || isOwnerOf('hunterId')
+        || isOwnerOf('userId');
     }
 
-    // Ammunition inventory (ownerId).
+    // Ammunition inventory (ownerId). Top-level collection is readable by any
+    // signed-in user (catalog/load-type selection); writes owner-scoped. Most
+    // ammunition is stored as a subcollection of firearms (see below).
     match /ammunition/{docId} {
-      allow read, write: if ownerOrAdmin('ownerId');
+      allow read: if isSignedIn();
+      allow write: if ownerOrAdmin('ownerId');
     }
 
     // License applications (hunterId).

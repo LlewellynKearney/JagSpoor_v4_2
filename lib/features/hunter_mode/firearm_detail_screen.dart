@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
 import '../../utils/image_helper.dart';
@@ -153,7 +152,7 @@ class FirearmDetailScreen extends StatefulWidget {
   final Map<String, String> firearm;
 
   /// Called whenever the firearm changes (rounds logged, edited, maintenance).
-  final void Function(Map<String, String> updated) onUpdated;
+  final Future<void> Function(Map<String, String> updated) onUpdated;
 
   /// Called when the firearm is removed (e.g. the hunter sold it).
   final VoidCallback onDeleted;
@@ -769,7 +768,7 @@ class _DetailRow extends StatelessWidget {
 class _FirearmPhotoCard extends StatefulWidget {
   final ThemeController theme;
   final Map<String, String> firearm;
-  final void Function(Map<String, String> updated) onUpdated;
+  final Future<void> Function(Map<String, String> updated) onUpdated;
 
   const _FirearmPhotoCard({
     required this.theme,
@@ -785,37 +784,49 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      // Pick + compress through the centralized ImageService.
-      final File? compressed = await ImageService.pickAndCompressImage(
-        source: source,
+      // Resolve the firearm's owner + Firestore doc id so the uploaded photo
+      // lives at a stable, owner-scoped Storage path. The HTTPS download URL
+      // is persisted to `photoPath` so the photo survives app reinstalls and
+      // is visible on other devices (a local file path would break).
+      final String? uid =
+          widget.firearm['ownerId']?.isNotEmpty == true
+              ? widget.firearm['ownerId']
+              : FirebaseAuth.instance.currentUser?.uid;
+      final String? docId = widget.firearm['docId'];
+      if (uid == null || docId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to save photo: missing firearm identity'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final String storagePath =
+          'firearm_photos/$uid/${docId}_$timestamp.jpg';
+
+      final String? downloadUrl = await ImageService.pickCompressAndUpload(
+        source,
+        storagePath,
       );
 
-      if (compressed == null) return;
+      if (downloadUrl == null) return; // user cancelled
 
-      // Get application documents directory
-      final Directory appDir = await getApplicationDocumentsDirectory();
-      final String firearmDir = '${appDir.path}/firearm_photos';
-      await Directory(firearmDir).create(recursive: true);
-
-      // Generate unique filename
-      final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-      final String fileName = 'firearm_${timestamp}.jpg';
-      final String savedPath = '$firearmDir/$fileName';
-
-      // Save the compressed file locally
-      await compressed.copy(savedPath);
-
-      // Update firearm data
+      // Update firearm data with the Storage download URL (HTTPS).
       final updated = Map<String, String>.from(widget.firearm);
-      updated['photoPath'] = savedPath;
-      widget.onUpdated(updated);
+      updated['photoPath'] = downloadUrl;
+      await widget.onUpdated(updated);
 
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Photo saved successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: widget.theme.accentColor,
           ),
         );
       }
@@ -885,6 +896,38 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
     final displayName = model.isNotEmpty ? '$make $model' : make;
     final photoPath = widget.firearm['photoPath'];
 
+    // Branded placeholder shown when no photo is set OR when a stored local
+    // file path no longer exists (e.g. app reinstalled / different device).
+    final Widget placeholder = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.photo_camera_rounded,
+          size: 48,
+          color: widget.theme.subtitleColor.withValues(alpha: 0.5),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          displayName,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: widget.theme.textColor,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            'Tap to add photo',
+            style: TextStyle(fontSize: 13, color: widget.theme.subtitleColor),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    );
+
     return Card(
       color: widget.theme.cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -919,47 +962,16 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
                     photoPath != null && photoPath.isNotEmpty
                         ? ClipRRect(
                           borderRadius: BorderRadius.circular(8),
+                          // AdaptiveImage gracefully falls back to
+                          // [placeholder] for stale local paths / remote
+                          // errors, so the card never shows "File not found".
                           child: AdaptiveImage(
                             imagePath: photoPath,
                             fit: BoxFit.cover,
+                            errorWidget: placeholder,
                           ),
                         )
-                        : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.photo_camera_rounded,
-                              size: 48,
-                              color: widget.theme.subtitleColor.withValues(
-                                alpha: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              displayName,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: widget.theme.textColor,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 4),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 32,
-                              ),
-                              child: Text(
-                                'Tap to add photo',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: widget.theme.subtitleColor,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
+                        : placeholder,
               ),
             ),
           ],

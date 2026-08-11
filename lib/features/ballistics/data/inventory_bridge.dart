@@ -187,7 +187,7 @@ class InventoryBridge {
               .doc(ammo.rifleId)
               .collection('ammunition')
               .doc();
-      final newAmmo = ammo.copyWith(id: docRef.id);
+      final newAmmo = ammo.copyWith(id: docRef.id, ownerId: _currentUserId);
       await docRef.set(newAmmo.toFirestore());
       debugPrint('InventoryBridge: Added ammunition to rifle ${ammo.rifleId}');
       return docRef.id;

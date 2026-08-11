@@ -87,6 +87,7 @@ class AmmoProfile {
   final double velocityMs;
   final double ballisticCoefficient;
   final int remainingStockCount;
+  final String ownerId;
 
   const AmmoProfile({
     required this.id,
@@ -95,6 +96,7 @@ class AmmoProfile {
     this.velocityMs = 0.0,
     this.ballisticCoefficient = 0.0,
     this.remainingStockCount = 0,
+    this.ownerId = '',
   });
 
   factory AmmoProfile.fromFirestore(
@@ -116,6 +118,7 @@ class AmmoProfile {
       velocityMs: _doubleOrDefault(json['velocityMs']),
       ballisticCoefficient: _doubleOrDefault(json['ballisticCoefficient']),
       remainingStockCount: _intOrDefault(json['remainingStockCount']),
+      ownerId: json['ownerId'] as String? ?? '',
     );
   }
 
@@ -126,6 +129,7 @@ class AmmoProfile {
     'velocityMs': velocityMs,
     'ballisticCoefficient': ballisticCoefficient,
     'remainingStockCount': remainingStockCount,
+    'ownerId': ownerId,
   };
 
   Map<String, dynamic> toFirestore() => toJson();
@@ -152,6 +156,7 @@ class AmmoProfile {
     double? velocityMs,
     double? ballisticCoefficient,
     int? remainingStockCount,
+    String? ownerId,
   }) {
     return AmmoProfile(
       id: id ?? this.id,
@@ -160,6 +165,7 @@ class AmmoProfile {
       velocityMs: velocityMs ?? this.velocityMs,
       ballisticCoefficient: ballisticCoefficient ?? this.ballisticCoefficient,
       remainingStockCount: remainingStockCount ?? this.remainingStockCount,
+      ownerId: ownerId ?? this.ownerId,
     );
   }
 

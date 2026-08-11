@@ -116,6 +116,7 @@ class _AmmunitionTypeSelectionScreenState
         'muzzleVelocity':
             int.tryParse(_muzzleVelocityController.text.trim()) ?? 0,
         'type': 'factory',
+        'ownerId': userId,
       };
 
       if (_editingDocId != null) {
@@ -183,6 +184,7 @@ class _AmmunitionTypeSelectionScreenState
         'primer': _primerController.text.trim(),
         'roundTPL': double.tryParse(_roundTplController.text.trim()) ?? 0.0,
         'type': 'custom',
+        'ownerId': userId,
       };
 
       if (_editingDocId != null) {

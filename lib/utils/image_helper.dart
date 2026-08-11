@@ -24,6 +24,11 @@ class AdaptiveImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Empty/blank path → neutral placeholder (no scary "File not found" text).
+    if (imagePath.trim().isEmpty) {
+      return errorWidget ?? placeholder ?? _buildNeutralPlaceholder();
+    }
+
     // Check if the path is a local file path
     if (_isLocalPath(imagePath)) {
       final file = File(imagePath);
@@ -35,11 +40,14 @@ class AdaptiveImage extends StatelessWidget {
           height: height,
           errorBuilder: (context, error, stackTrace) {
             return errorWidget ??
-                _buildErrorWidget('Local file error: ${error.toString()}');
+                placeholder ??
+                _buildNeutralPlaceholder();
           },
         );
       } else {
-        return errorWidget ?? _buildErrorWidget('File not found');
+        // Local file no longer present (e.g. app reinstalled / new device).
+        // Fall back to a neutral placeholder rather than "File not found".
+        return errorWidget ?? placeholder ?? _buildNeutralPlaceholder();
       }
     }
 
@@ -54,7 +62,9 @@ class AdaptiveImage extends StatelessWidget {
               ? (context, url) => placeholder!
               : (context, url) => _buildPlaceholder(),
       errorWidget: (context, url, error) {
-        return errorWidget ?? _buildErrorWidget('Photo unavailable');
+        return errorWidget ??
+            placeholder ??
+            _buildNeutralPlaceholder();
       },
     );
   }
@@ -75,21 +85,18 @@ class AdaptiveImage extends StatelessWidget {
     );
   }
 
-  Widget _buildErrorWidget(String message) {
+  /// Neutral placeholder shown when no usable image is available (missing
+  /// local file, blank path, or remote error). Intentionally does NOT print
+  /// alarming "File not found" text so callers can layer their own branded
+  /// placeholder via [errorWidget]/[placeholder] when desired.
+  Widget _buildNeutralPlaceholder() {
     return Container(
       color: Colors.grey.withValues(alpha: 0.1),
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.broken_image, size: 48, color: Colors.grey),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ],
+        child: Icon(
+          Icons.image_outlined,
+          size: 48,
+          color: Colors.grey.withValues(alpha: 0.5),
         ),
       ),
     );

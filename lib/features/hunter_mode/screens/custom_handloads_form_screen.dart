@@ -63,6 +63,7 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
         'primer': _primerController.text.trim(),
         'roundTPL': roundTPL,
         'type': 'custom',
+        'ownerId': userId,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
