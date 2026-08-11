@@ -11,8 +11,8 @@ import '../services/chat_and_filter_service.dart';
 // PayFast's published sandbox test credentials (NOT production secrets).
 // Replace merchant_id/merchant_key/host with live values before launch.
 const String _kPayfastSandboxHost = 'https://sandbox.payfast.co.za';
-const String _kPayfastSandboxMerchantId = '10000101';
-const String _kPayfastSandboxMerchantKey = '46f82cd474811f46f298a3e2bf6a3fdd';
+const String _kPayfastSandboxMerchantId = '10000100';
+const String _kPayfastSandboxMerchantKey = '46f0cd694581a';
 // Instant Transaction Notification endpoint — deployed payfastITNHandler
 // Cloud Function. Update region/host after deploy.
 const String _kPayfastNotifyUrl =
