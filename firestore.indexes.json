@@ -39,6 +39,22 @@
         { "fieldPath": "ownerId", "order": "ASCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outfitterId", "order": "ASCENDING" },
+        { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hunterId", "order": "ASCENDING" },
+        { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

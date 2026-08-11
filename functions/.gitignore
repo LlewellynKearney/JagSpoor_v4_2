@@ -1,0 +1,20 @@
+## Compiled output
+lib/
+*.js
+!*.config.js
+*.js.map
+*.d.ts
+
+## Dependencies
+node_modules/
+
+## Runtime / secrets
+.env
+.env.local
+*.local
+serviceAccount.json
+serviceAccount*.json
+
+## Logs
+*.log
+npm-debug.log*
