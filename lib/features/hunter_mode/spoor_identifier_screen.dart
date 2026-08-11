@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../track/data/services/spoor_ai_service.dart';
 import 'services/spoor_identifier_service.dart';
@@ -152,6 +153,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
   ) async {
     try {
       await FirebaseFirestore.instance.collection('spoor_scans').add({
+        'userId': FirebaseAuth.instance.currentUser?.uid,
         'timestamp': FieldValue.serverTimestamp(),
         'resolvedAnimalName': animalName,
         'latitude': position.latitude,

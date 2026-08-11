@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/carcass_log_manager.dart';
@@ -205,6 +206,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       if (_capturedLatitude != null && _capturedLongitude != null) {
         try {
           await FirebaseFirestore.instance.collection('waypoints').add({
+            'hunterId': FirebaseAuth.instance.currentUser?.uid,
             'name':
                 'Harvest: ${_tagNumberController.text.trim()} (${_selectedSpecies})',
             'type': 'Kill Site',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/image_service.dart';
 import '../../utils/image_helper.dart';
 import 'add_firearm_manual_form.dart';
 import 'firearm_maintenance_screen.dart';
@@ -781,16 +782,15 @@ class _FirearmPhotoCard extends StatefulWidget {
 }
 
 class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
-  final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final XFile? image = await _picker.pickImage(
+      // Pick + compress through the centralized ImageService.
+      final File? compressed = await ImageService.pickAndCompressImage(
         source: source,
-        imageQuality: 85,
       );
 
-      if (image == null) return;
+      if (compressed == null) return;
 
       // Get application documents directory
       final Directory appDir = await getApplicationDocumentsDirectory();
@@ -799,11 +799,11 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
 
       // Generate unique filename
       final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-      final String fileName = 'firearm_${timestamp}_${image.name}';
+      final String fileName = 'firearm_${timestamp}.jpg';
       final String savedPath = '$firearmDir/$fileName';
 
-      // Save file locally
-      await image.saveTo(savedPath);
+      // Save the compressed file locally
+      await compressed.copy(savedPath);
 
       // Update firearm data
       final updated = Map<String, String>.from(widget.firearm);

@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/image_service.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
 
@@ -188,31 +187,21 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
 
     if (source == null) return;
 
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: source,
-      maxWidth: 800,
-      maxHeight: 800,
-      imageQuality: 85,
-    );
-
-    if (pickedFile == null) return;
-
     setState(() => _isUploading = true);
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('users')
-          .child(user.uid)
-          .child('profile.jpg');
+      final downloadUrl = await ImageService.pickCompressAndUpload(
+        source,
+        'users/${user.uid}/profile.jpg',
+      );
 
-      final uploadTask = storageRef.putFile(File(pickedFile.path));
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+      if (downloadUrl == null) {
+        setState(() => _isUploading = false);
+        return;
+      }
 
       setState(() {
         _profileImageUrl = downloadUrl;

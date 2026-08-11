@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/image_service.dart';
 
 class EditTrophyScreen extends StatefulWidget {
   final ThemeController theme;
@@ -25,7 +26,6 @@ class EditTrophyScreen extends StatefulWidget {
 
 class _EditTrophyScreenState extends State<EditTrophyScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ImagePicker _imagePicker = ImagePicker();
 
   late TextEditingController _speciesController;
   late TextEditingController _locationController;
@@ -211,11 +211,11 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
     }
 
     try {
-      final XFile? photo = await _imagePicker.pickImage(
+      final File? compressed = await ImageService.pickAndCompressImage(
         source: ImageSource.camera,
       );
-      if (photo != null) {
-        setState(() => _selectedPhotos.add(File(photo.path)));
+      if (compressed != null) {
+        setState(() => _selectedPhotos.add(compressed));
       }
     } catch (e) {
       if (mounted) {
@@ -241,11 +241,11 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
     }
 
     try {
-      final XFile? photo = await _imagePicker.pickImage(
+      final File? compressed = await ImageService.pickAndCompressImage(
         source: ImageSource.gallery,
       );
-      if (photo != null) {
-        setState(() => _selectedPhotos.add(File(photo.path)));
+      if (compressed != null) {
+        setState(() => _selectedPhotos.add(compressed));
       }
     } catch (e) {
       if (mounted) {

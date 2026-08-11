@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/image_service.dart';
 import '../../repositories/animal_repository.dart';
 import '../../models/animal.dart';
 
@@ -33,7 +34,6 @@ class AddTrophyScreen extends StatefulWidget {
 
 class _AddTrophyScreenState extends State<AddTrophyScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ImagePicker _imagePicker = ImagePicker();
   final AnimalRepository _animalRepository = AnimalRepository();
 
   // Form field controllers
@@ -295,11 +295,11 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
     }
 
     try {
-      final XFile? photo = await _imagePicker.pickImage(
+      final File? compressed = await ImageService.pickAndCompressImage(
         source: ImageSource.camera,
       );
-      if (photo != null) {
-        setState(() => _selectedPhotos.add(File(photo.path)));
+      if (compressed != null) {
+        setState(() => _selectedPhotos.add(compressed));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -333,11 +333,11 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
     }
 
     try {
-      final XFile? photo = await _imagePicker.pickImage(
+      final File? compressed = await ImageService.pickAndCompressImage(
         source: ImageSource.gallery,
       );
-      if (photo != null) {
-        setState(() => _selectedPhotos.add(File(photo.path)));
+      if (compressed != null) {
+        setState(() => _selectedPhotos.add(compressed));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

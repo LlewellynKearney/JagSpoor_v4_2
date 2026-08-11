@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/image_service.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../services/user_role_resolver.dart';
 import 'outfitter_pricelist_verification_screen.dart';
@@ -21,7 +22,6 @@ class OutfitterPricelistScannerScreen extends StatefulWidget {
 
 class _OutfitterPricelistScannerScreenState
     extends State<OutfitterPricelistScannerScreen> {
-  final ImagePicker _imagePicker = ImagePicker();
   final PricelistScannerService _pricelistService =
       PricelistScannerService.instance;
 
@@ -85,13 +85,12 @@ class _OutfitterPricelistScannerScreenState
     }
 
     try {
-      final XFile? image = await _imagePicker.pickImage(
+      final File? image = await ImageService.pickAndCompressImage(
         source: ImageSource.camera,
-        imageQuality: 90,
       );
 
       if (image != null) {
-        await _processImage(File(image.path));
+        await _processImage(image);
       }
     } catch (e) {
       _showError('Failed to capture image: $e');
