@@ -240,9 +240,10 @@ class _HunterPackageMarketplaceScreenState
                 itemCount: packages.length,
                 itemBuilder: (context, index) {
                   final packageData = packages[index];
-                  final packageId = packageData['packageId'] as String;
+                  final packageId = packageData['packageId'] as String? ?? '';
                   final data =
-                      packageData['packageData'] as Map<String, dynamic>;
+                      packageData['packageData'] as Map<String, dynamic>? ??
+                      <String, dynamic>{};
                   final farmName = packageData['farmName'] as String? ?? '';
                   final province = packageData['province'] as String? ?? '';
 
@@ -393,9 +394,9 @@ class _PackageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = data['title'] ?? 'Untitled Package';
-    final description = data['description'] ?? '';
-    final price = (data['basePriceRands'] ?? 0).toDouble();
+    final title = data['title'] as String? ?? 'Untitled Package';
+    final description = data['description'] as String? ?? '';
+    final price = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
     final inclusions = List<String>.from(data['inclusions'] ?? []);
 
     return Card(
@@ -596,8 +597,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.data['title'] ?? 'Untitled Package';
-    final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
+    final title = widget.data['title'] as String? ?? 'Untitled Package';
+    final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
     final commission = basePrice * 0.05;
     final totalPrice = basePrice + commission;
 
@@ -796,7 +797,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
     try {
       final outfitterId = widget.data['outfitterId'] as String?;
-      final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
+      final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
 
       if (outfitterId == null) {
         throw Exception('Invalid package: missing outfitter ID');
@@ -928,10 +929,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.data['status'] ?? 'Pending Approval';
+    final status = widget.data['status'] as String? ?? 'Pending Approval';
     final packageName =
         widget.data['packageName'] as String? ?? 'Custom Package';
-    final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
+    final totalPrice = (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
