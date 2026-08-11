@@ -3,6 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Auth helper functions ────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
@@ -15,109 +16,179 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.role == 'outfitter';
     }
 
-    // Animals - public read
+    // True when the caller's uid matches the document's ownerId field.
+    // After-write resource is null on create; fall back to the incoming
+    // request.resource.data for create operations.
+    function isOwnerOf(ownerField) {
+      return isSignedIn() && (
+        (resource != null && resource.data[ownerField] == request.auth.uid) ||
+        (resource == null && request.resource.data[ownerField] == request.auth.uid)
+      );
+    }
+
+    // ── Animals - public read, admin write only ──────────────────────────
     match /animals/{animalId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Firearms - owner can read/write
+    // ── Firearms - owner-scoped read & write ─────────────────────────────
     match /firearms/{firearmId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isOwnerOf('ownerId');
     }
 
-    // Trophies
+    // ── Trophies - owner-scoped read & write ─────────────────────────────
     match /trophies/{trophyId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isOwnerOf('hunterId');
     }
 
-    // Users
+    // ── Users ────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read, write: if isSignedIn();
+      // A user may read any authenticated user's basic profile (marketplace
+      // needs to show outfitter/hunter display names) but may only write
+      // their own document.
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
     match /users {
       allow list: if isSignedIn();
     }
 
-    // Catalog - read by authenticated
+    // Outfitter profile documents created by the adminCreateOutfitter
+    // Cloud Function. Readable by any signed-in user (marketplace), only
+    // the owning outfitter (uid field) or an admin may write.
+    match /outfitters/{outfitterId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin() || isOwnerOf('uid');
+    }
+
+    // ── Catalog - read by authenticated ─────────────────────────────────
     match /factory_ammunition/{docId} {
       allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
     match /bullets/{docId} {
       allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
     match /propellants/{docId} {
       allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
-    // LICENSE APPLICATIONS - Allow all authenticated users full access
+    // ── License applications ─────────────────────────────────────────────
     match /license_applications/{docId} {
       allow read, write: if isSignedIn();
     }
 
-    // Carcass logs
+    // ── Carcass logs ─────────────────────────────────────────────────────
     match /carcass_logs/{docId} {
       allow read, write: if isSignedIn();
     }
 
-    // Waypoints
+    // ── Waypoints ───────────────────────────────────────────────────────
     match /waypoints/{docId} {
       allow read, write: if isSignedIn();
     }
 
-    // PACKAGES - Allow all authenticated users to read
+    // ── Packages (marketplace listings) ─────────────────────────────────
+    // Anyone signed in may browse; only the owning outfitter may create,
+    // update or delete their own packages.
     match /packages/{packageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.outfitterId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.outfitterId == request.auth.uid;
+    }
+
+    // ── Bookings ─────────────────────────────────────────────────────────
+    // Read: hunter who placed the booking OR outfitter who owns the package.
+    // Create: the hunter placing it (hunterId must be caller).
+    // Update: outfitter may flip the status field; the hunter may update
+    //         non-status fields. The PayFast ITN Cloud Function uses the
+    //         Admin SDK so it bypasses these rules entirely.
+    // Delete: admin only.
+    match /bookings/{bookingId} {
+      function isBookingParty() {
+        return isSignedIn() && (
+          resource.data.hunterId == request.auth.uid ||
+          resource.data.outfitterId == request.auth.uid
+        );
+      }
+      // Only the outfitter may change the status field. This prevents a
+      // hunter from self-approving their own booking.
+      function statusUpdateAllowed() {
+        return isSignedIn()
+          && resource.data.outfitterId == request.auth.uid
+          && request.resource.data.outfitterId == resource.data.outfitterId
+          && request.resource.data.hunterId == resource.data.hunterId;
+      }
+      allow read: if isBookingParty();
+      allow create: if isSignedIn() && request.resource.data.hunterId == request.auth.uid;
+      allow update: if statusUpdateAllowed()
+        || (isBookingParty()
+            && request.resource.data.status == resource.data.status);
+      allow delete: if isAdmin();
+
+      // Negotiation chat subcollection: only the two booking parties.
+      match /chats/{chatId} {
+        allow read, create: if isBookingParty();
+        allow update, delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // ── Lodging ─────────────────────────────────────────────────────────
+    match /lodging/{lodgingId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
     }
 
-    // BOOKINGS - Allow all authenticated users full access
-    match /bookings/{bookingId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // LODGING - Allow all authenticated users full access
-    match /lodging/{lodgingId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // FLEET - Allow all authenticated users full access
+    // ── Fleet ───────────────────────────────────────────────────────────
     match /fleet/{vehicleId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // Farms
+    // ── Farms ───────────────────────────────────────────────────────────
     match /farms/{farmId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
-    // Farm managers
+    // ── Farm managers ────────────────────────────────────────────────────
     match /farm_managers/{managerId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // Transport permits
+    // ── Transport permits ───────────────────────────────────────────────
     match /transport_permits/{permitId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.hunterId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.hunterId == request.auth.uid || isAdmin());
     }
 
-    // Scanned pricelists
+    // ── Scanned pricelists ──────────────────────────────────────────────
     match /scanned_pricelists/{listId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
-    // Ammunition inventory
+    // ── Ammunition inventory ─────────────────────────────────────────────
     match /ammunition/{docId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isOwnerOf('ownerId');
     }
 
-    // Spoor scans
+    // ── Spoor scans ─────────────────────────────────────────────────────
     match /spoor_scans/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
-    // Outfitter sub-collections
+    // ── Outfitter sub-collections (legacy nested paths) ─────────────────
     match /outfitter/bookings/{bookingId} {
       allow read, write: if isSignedIn();
     }
@@ -128,32 +199,29 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    // Managers
+    // ── Generic admin collections ──────────────────────────────────────
     match /managers/{managerId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
-
-    // Records
     match /records/{recordId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isOwnerOf('ownerId');
     }
-
-    // Assets
     match /assets/{assetId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isOwnerOf('ownerId');
     }
-
-    // Units
     match /units/{unitId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
-    // Chats
+    // ── Chats (top-level) ───────────────────────────────────────────────
     match /chats/{chatId} {
       allow read, write: if isSignedIn();
     }
 
-    // Default deny
+    // ── Default deny ────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
