@@ -956,10 +956,13 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
             (widget.data['totalPriceZAR'] as num?)?.toDouble() ??
             0.0;
     final statusLower = status.toLowerCase();
-    final showPayButton = (statusLower == 'pending_payment' ||
-            statusLower == 'pending_deposit' ||
-            statusLower == 'approved') &&
-        payfastAmount > 0;
+    // The Pay button is strictly hidden when there is nothing to pay.
+    // payfastAmount <= 0 (incl. 0, negative, or NaN) forces showPayButton false.
+    final isPayableStatus = statusLower == 'pending_payment' ||
+        statusLower == 'pending_deposit' ||
+        statusLower == 'approved';
+    final isPayableAmount = payfastAmount > 0;
+    final showPayButton = isPayableStatus && isPayableAmount;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1091,7 +1094,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         .map((e) =>
             '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
         .join('&');
-    final uri = Uri.parse('$_kPayfastSandboxHost/eng/process?$query');
+    final urlString = '$_kPayfastSandboxHost/eng/process?$query';
+    final uri = Uri.parse(urlString);
 
     if (!await canLaunchUrl(uri)) {
       if (!mounted) return;
