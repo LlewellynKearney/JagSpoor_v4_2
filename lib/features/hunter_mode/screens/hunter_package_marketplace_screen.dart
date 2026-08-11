@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
+
+// ── PayFast SANDBOX configuration ──────────────────────────────────────────
+// PayFast's published sandbox test credentials (NOT production secrets).
+// Replace merchant_id/merchant_key/host with live values before launch.
+const String _kPayfastSandboxHost = 'https://sandbox.payfast.co.za';
+const String _kPayfastSandboxMerchantId = '10000101';
+const String _kPayfastSandboxMerchantKey = '46f82cd474811f46f298a3e2bf6a3fdd';
+// Instant Transaction Notification endpoint — deployed payfastITNHandler
+// Cloud Function. Update region/host after deploy.
+const String _kPayfastNotifyUrl =
+    'https://us-central1-jagspoor.cloudfunctions.net/payfastITNHandler';
+const String _kPayfastReturnUrl = 'https://jagspoor.web.app/booking-success';
+const String _kPayfastCancelUrl = 'https://jagspoor.web.app/booking-cancelled';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -934,6 +948,19 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         widget.data['packageName'] as String? ?? 'Custom Package';
     final totalPrice = (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ?? 0.0;
 
+    // PayFast checkout eligibility: render the Pay button when the booking is
+    // awaiting payment (case-insensitive) and has a non-zero price. Price is
+    // resolved from totalHunterPriceRands, falling back to totalPriceZAR.
+    final payfastAmount =
+        (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ??
+            (widget.data['totalPriceZAR'] as num?)?.toDouble() ??
+            0.0;
+    final statusLower = status.toLowerCase();
+    final showPayButton = (statusLower == 'pending_payment' ||
+            statusLower == 'pending_deposit' ||
+            statusLower == 'approved') &&
+        payfastAmount > 0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -1013,9 +1040,67 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
           // 💬 Chat & Negotiation Thread Panel
           _buildChatDrawer(),
+
+          // 💳 PayFast checkout — shown only for payable bookings.
+          if (showPayButton)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.payment_rounded, color: Colors.white),
+                  label: const Text('Pay via PayFast'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => _initiatePayFastCheckout(
+                    bookingId: widget.bookingId,
+                    amount: payfastAmount,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// Builds the PayFast sandbox payment URL from the booking details and
+  /// launches it in the external browser. The booking id is passed as
+  /// `m_payment_id` so the ITN handler can reconcile it back to the booking.
+  Future<void> _initiatePayFastCheckout({
+    required String bookingId,
+    required double amount,
+  }) async {
+    final params = <String, String>{
+      'merchant_id': _kPayfastSandboxMerchantId,
+      'merchant_key': _kPayfastSandboxMerchantKey,
+      'return_url': _kPayfastReturnUrl,
+      'cancel_url': _kPayfastCancelUrl,
+      'notify_url': _kPayfastNotifyUrl,
+      'm_payment_id': bookingId,
+      'amount': amount.toStringAsFixed(2),
+      'item_name': 'JagSpoor Booking $bookingId',
+    };
+    final query = params.entries
+        .map((e) =>
+            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .join('&');
+    final uri = Uri.parse('$_kPayfastSandboxHost/eng/process?$query');
+
+    if (!await canLaunchUrl(uri)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open PayFast checkout')),
+      );
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Widget _buildChatDrawer() {
