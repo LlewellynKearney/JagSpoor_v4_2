@@ -394,7 +394,20 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     (run 31628707429, `Build Android APK` ✓ in ~10 min).
   - iOS: `flutter build ios --simulator --no-codesign` — `--no-codesign`
     skips signing (no provisioning profile on the hosted runner); `pod install`
-    runs inside the Flutter build (~6 min; resolves cleanly on 3.29.1).
+    runs inside the Flutter build (~8 min; resolves cleanly on 3.29.1 via
+    CocoaPods). Confirmed `pod install` + `Xcode build` both run on CI
+    (run 31632434809); the build now reaches the simulator link stage.
+  - **mobile_scanner arm64-simulator fix**: on Apple-Silicon runners
+    (`macos-latest`, arm64) the iphonesimulator build targets arm64, but
+    `mobile_scanner` 6.0.11's prebuilt ML xcframework ships no arm64-sim
+    slice → Xcode "User-Defined Issue: Unsupported Swift architecture" at
+    `mobile_scanner-Swift.h`. Fix: `EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64`
+    added BOTH in `ios/Podfile` post_install (pod targets) AND the Runner
+    target's 3 build configs in `project.pbxproj` (Profile/Debug/Release,
+    anchored after `ENABLE_BITCODE = NO;`). This forces the simulator build
+    to x86_64 (run via Rosetta on the arm64 runner), which the prebuilt
+    binaries support. Side effect: local iOS-sim builds also run x86_64
+    (acceptable, intentional CI parity).
   - One prior run failed on a transient `java.net.SocketException: Unexpected
     end of file from server` during `flutter pub get` (runner network glitch),
     not a code issue — re-runs clear it.

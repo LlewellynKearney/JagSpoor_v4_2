@@ -45,6 +45,13 @@ post_install do |installer|
     # (15.0). Pods with lower requirements are lifted up to match the app.
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+      # Apple-Silicon runners (macos-latest) build iphonesimulator for arm64,
+      # but some plugin prebuilt binaries (e.g. mobile_scanner's ML xcframework)
+      # ship no arm64-simulator slice -> "Unsupported Swift architecture".
+      # Excluding arm64 from the simulator build forces x86_64 (via Rosetta),
+      # which the prebuilt binaries do support. Mirrored on the Runner target
+      # in project.pbxproj so the final link matches.
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
   end
 end
