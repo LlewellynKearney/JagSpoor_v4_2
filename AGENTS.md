@@ -66,6 +66,37 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
+## Enterprise Control Panel — farms & managers (fixed 2026-08-12)
+
+- "No farms registered" bug on the Enterprise Control Panel was caused by the
+  `Registered Farms` stream query using
+  `.where('outfitterId', isEqualTo: uid).orderBy('createdAt', descending: true)`
+  with **no matching composite index** in `firestore.indexes.json`. The equality
+  + orderBy combo requires a composite index in Firestore; without it the query
+  errors — and the `StreamBuilder` only handled `ConnectionState.waiting`,
+  silently treating the errored snapshot as empty and rendering "No farms
+  registered" even when farms existed.
+- Fixes:
+  - Added `farms` composite index `(outfitterId ASC, createdAt DESC)` to
+    `firestore.indexes.json` (must be deployed: `npx firebase-tools deploy --only firestore:indexes`).
+  - `StreamBuilder` in `outfitter_enterprise_panel_screen.dart` now has an
+    explicit `snapshot.hasError` branch that surfaces the error instead of
+    masquerading as an empty list. The stream itself is already reactive, so the
+    list updates dynamically when `addFarm` writes a new doc.
+- Manager cell number: `Assign Farm Manager` block now has a dedicated
+  `Cell Phone Number` (`_managerCellController`) `TextFormField` (phone
+  keyboard, validator stripping `+ - ( )` and requiring ≥9 digits). The value is
+  passed through `_assignManager` → `OutfitterEnterpriseManager.assignManager()`
+  (new required `managerCell` param) and persisted to the `farm_managers` doc as
+  BOTH `managerCell` and `cellNr` fields (covers either read convention).
+- Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `firestore.indexes.json`.
+- Deploy reminder: the new `farms` index won't exist until
+  `firestore:indexes` is deployed in an environment with `firebase login` /
+  `FIREBASE_TOKEN`. Until then the query falls back to an error (now surfaced in
+  the UI) rather than silently showing empty.
+
 ## Camera capture-session hygiene (hardened 2026-08-12)
 
 - Black-preview bug on Blood Trail Tracker Radar was caused by capture-session
