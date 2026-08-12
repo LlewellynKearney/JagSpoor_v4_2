@@ -17,7 +17,7 @@ class OutfitterAnalyticsService {
   ///
   /// Calculates:
   /// - grossEarnings: Sum of all basePriceRands from approved bookings
-  /// - platformFees: Sum of all platformCommissionRands (5% split)
+  /// - platformFees: Sum of all platformCommissionRands (7.5% split)
   /// - netEarnings: grossEarnings minus platformFees
   /// - totalBookings: Count of approved bookings
   ///

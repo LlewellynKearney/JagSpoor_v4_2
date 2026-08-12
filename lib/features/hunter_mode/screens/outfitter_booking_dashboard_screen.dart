@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../models/package_pricing.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../services/package_booking_manager.dart';
 import '../services/outfitter_invoice_exporter.dart';
 import '../services/user_role_resolver.dart';
 import '../services/chat_and_filter_service.dart';
@@ -170,21 +172,64 @@ class _BookingCardState extends State<_BookingCard> {
     });
 
     try {
-      await OutfitterEnterpriseManager.instance.updateBookingStatus(
-        bookingId: widget.bookingId,
-        newStatus: newStatus,
-      );
+      // On approval, transition to the deposit-pending state so the hunter is
+      // prompted to pay the 25% non-refundable deposit. This also recomputes
+      // the 7.5% commission + deposit split on the booking.
+      if (newStatus == 'Approved') {
+        await PackageBookingManager.instance
+            .approveBookingAndRequestDeposit(bookingId: widget.bookingId);
+      } else {
+        await OutfitterEnterpriseManager.instance.updateBookingStatus(
+          bookingId: widget.bookingId,
+          newStatus: newStatus,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               newStatus == 'Approved'
-                  ? '✅ Booking approved!'
+                  ? '✅ Booking approved! Hunter prompted to pay 25% deposit.'
                   : '❌ Booking declined',
             ),
             backgroundColor:
                 newStatus == 'Approved' ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  /// Resolves a pending hunter date-change request (approve / decline).
+  Future<void> _resolveDateChange(bool approved) async {
+    setState(() {
+      _isProcessing = true;
+    });
+    try {
+      await PackageBookingManager.instance.resolveDateChange(
+        bookingId: widget.bookingId,
+        approved: approved,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(approved
+                ? '✅ Date change approved — booking dates updated.'
+                : '❌ Date change declined'),
+            backgroundColor: approved ? Colors.green : Colors.red,
           ),
         );
       }
@@ -259,7 +304,10 @@ class _BookingCardState extends State<_BookingCard> {
       case 'Pending Approval':
         return Colors.orange;
       case 'Approved':
+      case 'Pending Deposit':
         return Colors.green;
+      case 'Paid':
+        return Colors.teal;
       case 'Declined':
         return Colors.red;
       case 'Completed':
@@ -456,9 +504,22 @@ class _BookingCardState extends State<_BookingCard> {
     final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
     final commission = (widget.data['platformCommissionRands'] ?? 0).toDouble();
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
+    final depositAmount =
+        (widget.data['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
+    final balanceAmount =
+        (widget.data['balanceAmountRands'] as num?)?.toDouble() ?? 0.0;
     final status = widget.data['status'] ?? 'Pending Approval';
     final packageId = widget.data['packageId'] ?? 'Unknown';
     final hunterId = widget.data['hunterId'] ?? 'Unknown';
+
+    // Date-change request state.
+    final dateChangePending =
+        (widget.data['dateChangeRequestPending'] as bool?) ?? false;
+    final dateChangeMap =
+        widget.data['dateChangeRequest'] as Map<String, dynamic>?;
+    final dateChange = dateChangeMap != null
+        ? DateChangeRequest.fromMap(dateChangeMap)
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -622,14 +683,14 @@ class _BookingCardState extends State<_BookingCard> {
             child: Column(
               children: [
                 _FinancialRow(
-                  label: 'Base Package Rate',
+                  label: 'Outfitter Base Price',
                   value:
                       'R ${basePrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
                 ),
                 const Divider(height: 16),
                 _FinancialRow(
-                  label: '5% Platform Admin Fee',
+                  label: '7.5% Platform Fee',
                   value:
                       'R ${commission.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
@@ -637,15 +698,37 @@ class _BookingCardState extends State<_BookingCard> {
                 ),
                 const Divider(height: 16),
                 _FinancialRow(
-                  label: 'Total Cost',
+                  label: 'Total (incl. 7.5% fee)',
                   value:
                       'R ${totalPrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
                   isTotal: true,
                 ),
+                if (depositAmount > 0) ...[
+                  const Divider(height: 16),
+                  _FinancialRow(
+                    label: '25% Deposit Due (non-refundable)',
+                    value:
+                        'R ${depositAmount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                    theme: widget.theme,
+                  ),
+                  const Divider(height: 16),
+                  _FinancialRow(
+                    label: 'Balance (settled with hunter)',
+                    value:
+                        'R ${balanceAmount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                    theme: widget.theme,
+                  ),
+                ],
               ],
             ),
           ),
+
+          // Date-change request banner + approve/decline actions.
+          if (dateChange != null) ...[
+            const SizedBox(height: 12),
+            _buildDateChangeSection(dateChange, dateChangePending),
+          ],
           const SizedBox(height: 16),
 
           // Action Buttons
@@ -714,14 +797,16 @@ class _BookingCardState extends State<_BookingCard> {
                                     )
                                     : const Icon(Icons.check_circle_rounded),
                             label: const Text(
-                              'APPROVE',
+                              'APPROVE & REQUEST DEPOSIT',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                       ],
                     )
-                    : status == 'Approved'
+                    : status == 'Approved' ||
+                        status == 'Pending Deposit' ||
+                        status == 'Paid'
                     ? SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -760,6 +845,150 @@ class _BookingCardState extends State<_BookingCard> {
           const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  /// Date-change request section: shows the hunter's requested dates + reason
+  /// and, when pending, presents approve / decline actions to the outfitter.
+  Widget _buildDateChangeSection(
+      DateChangeRequest request, bool pending) {
+    final start = request.requestedStartDate;
+    final end = request.requestedEndDate;
+    final dateRange = (start != null || end != null)
+        ? '${start != null ? "${start.day}/${start.month}/${start.year}" : "?"}'
+            ' → '
+            '${end != null ? "${end.day}/${end.month}/${end.year}" : "?"}'
+        : 'No dates specified';
+
+    final statusColor = request.status == 'approved'
+        ? Colors.green
+        : request.status == 'declined'
+            ? Colors.red
+            : Colors.orange;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_repeat_rounded,
+                  color: statusColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'DATE CHANGE REQUEST',
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  request.status.toUpperCase(),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _dateChangeDetailRow('Requested dates', dateRange),
+          if (request.reason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _dateChangeDetailRow('Reason', request.reason),
+            ),
+          if (pending) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _resolveDateChange(false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('DECLINE',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _resolveDateChange(true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.check_circle_rounded, size: 18),
+                    label: const Text('APPROVE NEW DATES',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dateChangeDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label:  ',
+          style: TextStyle(
+            color: widget.theme.subtitleColor,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: widget.theme.textColor,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -46,8 +46,8 @@ class CarcassRecord {
   }
 
   double calculateHunterTotal(double ratePerKg) {
-    // Applying your 5% commission (1.05 markup) to the final butchery cost
+    // Applying your 7.5% commission (1.075 markup) to the final butchery cost
     double rawTotal = (carcassWeight * ratePerKg) + slaughterFee;
-    return rawTotal * 1.05;
+    return rawTotal * 1.075;
   }
 }

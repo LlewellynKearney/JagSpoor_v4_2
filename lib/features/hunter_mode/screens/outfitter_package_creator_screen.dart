@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../models/animal.dart';
+import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 
 class OutfitterPackageCreatorScreen extends StatefulWidget {
@@ -27,6 +29,32 @@ class _OutfitterPackageCreatorScreenState
   String? _selectedFarmId;
   bool _isLoading = false;
 
+  // Pricing mode: All-Inclusive vs Itemized.
+  PackagePricingMode _pricingMode = PackagePricingMode.allInclusive;
+
+  // All-inclusive single total price (mirrors _priceController for clarity).
+  double get _allInclusivePrice =>
+      double.tryParse(_priceController.text.replaceAll(',', '').trim()) ?? 0.0;
+
+  // Itemized breakdown line items keyed by category key.
+  final Map<String, ItemizedLineItem> _lineItems = {};
+
+  // Selected species with quantity + price-per-animal.
+  final List<SpeciesLineItem> _speciesItems = [];
+
+  // Availability window.
+  DateTime? _availabilityStart;
+  DateTime? _availabilityEnd;
+
+  // Live catalog of SA Game Guide species for the multi-species selector.
+  List<Animal> _speciesCatalog = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSpeciesCatalog();
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -34,6 +62,25 @@ class _OutfitterPackageCreatorScreenState
     _priceController.dispose();
     _inclusionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSpeciesCatalog() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('animals')
+          .orderBy('sortOrder')
+          .get();
+      if (mounted) {
+        setState(() {
+          _speciesCatalog = snapshot.docs
+              .map((doc) => Animal.fromFirestore(doc))
+              .where((a) => a.name.isNotEmpty)
+              .toList();
+        });
+      }
+    } catch (_) {
+      // Catalog is optional; selector remains usable but empty.
+    }
   }
 
   void _addInclusion() {
@@ -49,6 +96,299 @@ class _OutfitterPackageCreatorScreenState
   void _removeInclusion(String inclusion) {
     setState(() {
       _inclusions.remove(inclusion);
+    });
+  }
+
+  /// Resolved base price across both pricing modes.
+  double get _resolvedBasePrice {
+    if (_pricingMode == PackagePricingMode.allInclusive) {
+      return _allInclusivePrice;
+    }
+    double sum = 0;
+    for (final item in _lineItems.values) {
+      sum += item.total;
+    }
+    for (final species in _speciesItems) {
+      sum += species.total;
+    }
+    return sum;
+  }
+
+  Future<void> _pickAvailabilityDate(bool isStart) async {
+    final now = DateTime.now();
+    final initial = isStart
+        ? (_availabilityStart ?? now)
+        : (_availabilityEnd ?? _availabilityStart ?? now);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _availabilityStart = picked;
+          if (_availabilityEnd != null &&
+              _availabilityEnd!.isBefore(picked)) {
+            _availabilityEnd = picked;
+          }
+        } else {
+          _availabilityEnd = picked;
+        }
+      });
+    }
+  }
+
+  void _editLineItem(ItemizedBreakdownCategory category) {
+    final existing = _lineItems[category.key];
+    final qtyController = TextEditingController(
+      text: existing != null ? existing.quantity.toString() : '',
+    );
+    final priceController = TextEditingController(
+      text: existing != null
+          ? existing.pricePerUnit.toStringAsFixed(2)
+          : '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: widget.theme.cardColor,
+          title: Text(
+            category.label,
+            style: TextStyle(
+              color: widget.theme.textColor,
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: qtyController,
+                keyboardType: TextInputType.number,
+                style: TextStyle(color: widget.theme.textColor),
+                decoration: _inputDecoration(
+                  hint: 'Quantity',
+                  theme: widget.theme,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: priceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                style: TextStyle(color: widget.theme.textColor),
+                decoration: _inputDecoration(
+                  hint: 'Price per unit (ZAR)',
+                  prefix: 'R ',
+                  theme: widget.theme,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            if (existing != null)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _lineItems.remove(category.key);
+                  });
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Remove',
+                    style: TextStyle(color: Colors.red)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Cancel',
+                  style: TextStyle(color: widget.theme.subtitleColor)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final qty = int.tryParse(qtyController.text.trim()) ?? 0;
+                final price =
+                    double.tryParse(priceController.text.trim()) ?? 0.0;
+                if (qty <= 0 || price <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter a valid quantity and price'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                setState(() {
+                  _lineItems[category.key] = ItemizedLineItem(
+                    key: category.key,
+                    label: category.label,
+                    quantity: qty,
+                    pricePerUnit: price,
+                  );
+                });
+                Navigator.pop(dialogContext);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.theme.accentColor,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _addSpecies() {
+    if (_speciesCatalog.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'SA Game Guide species are still loading or unavailable. Try again shortly.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    Animal? selected;
+    final qtyController = TextEditingController(text: '1');
+    final priceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: widget.theme.cardColor,
+              title: Text(
+                'Add Species',
+                style: TextStyle(
+                  color: widget.theme.textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<Animal>(
+                    value: selected,
+                    decoration: _inputDecoration(
+                      hint: 'Select species from SA Game Guide...',
+                      theme: widget.theme,
+                    ),
+                    dropdownColor: widget.theme.cardColor,
+                    style: TextStyle(color: widget.theme.textColor),
+                    items: _speciesCatalog.map((animal) {
+                      return DropdownMenuItem<Animal>(
+                        value: animal,
+                        child: Text(animal.name),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selected = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: qtyController,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: widget.theme.textColor),
+                    decoration: _inputDecoration(
+                      hint: 'Quantity',
+                      theme: widget.theme,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: priceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    style: TextStyle(color: widget.theme.textColor),
+                    decoration: _inputDecoration(
+                      hint: 'Price per animal (ZAR)',
+                      prefix: 'R ',
+                      theme: widget.theme,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text('Cancel',
+                      style: TextStyle(color: widget.theme.subtitleColor)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (selected == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please select a species'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    final qty = int.tryParse(qtyController.text.trim()) ?? 0;
+                    final price =
+                        double.tryParse(priceController.text.trim()) ?? 0.0;
+                    if (qty <= 0 || price <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Enter a valid quantity and price per animal'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    setState(() {
+                      _speciesItems.add(SpeciesLineItem(
+                        speciesId: selected!.id,
+                        speciesName: selected!.name,
+                        quantity: qty,
+                        pricePerAnimal: price,
+                      ));
+                    });
+                    Navigator.pop(dialogContext);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.theme.accentColor,
+                    foregroundColor: Colors.black,
+                  ),
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _removeSpecies(int index) {
+    setState(() {
+      _speciesItems.removeAt(index);
     });
   }
 
@@ -75,19 +415,36 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
 
+    final basePrice = _resolvedBasePrice;
+    if (basePrice <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Package price must be greater than zero. Add a price or at least one itemized line.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final priceText =
-          _priceController.text.replaceAll(',', '').replaceAll('R', '').trim();
-      final basePrice = double.tryParse(priceText) ?? 0.0;
+      final pricing = PackagePricing(
+        mode: _pricingMode,
+        allInclusivePrice: _allInclusivePrice,
+        lineItems: _lineItems.values.toList(),
+        speciesItems: List<SpeciesLineItem>.from(_speciesItems),
+        availabilityStart: _availabilityStart,
+        availabilityEnd: _availabilityEnd,
+      );
 
       await PackageBookingManager.instance.publishPackage(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
-        basePriceRands: basePrice,
+        pricing: pricing,
         inclusions: List<String>.from(_inclusions),
         farmId: _selectedFarmId,
       );
@@ -262,36 +619,24 @@ class _OutfitterPackageCreatorScreenState
             ),
             const SizedBox(height: 24),
 
-            // Base Price
-            _buildSectionLabel('BASE PRICE (ZAR)', theme),
+            // ── PRICING MODE TOGGLE ──────────────────────────────────────
+            _buildSectionLabel('PRICING MODE', theme),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _priceController,
-              style: TextStyle(color: theme.textColor),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-              ],
-              decoration: _inputDecoration(
-                hint: '25000',
-                prefix: 'R ',
-                theme: theme,
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a price';
-                }
-                final price = double.tryParse(
-                  value.replaceAll(',', '').replaceAll('R', ''),
-                );
-                if (price == null || price <= 0) {
-                  return 'Please enter a valid price';
-                }
-                return null;
-              },
-            ),
+            _buildPricingModeToggle(theme),
+            const SizedBox(height: 24),
+
+            // ── PRICING BODY ─────────────────────────────────────────────
+            if (_pricingMode == PackagePricingMode.allInclusive)
+              _buildAllInclusiveSection(theme)
+            else
+              _buildItemizedSection(theme),
+
+            const SizedBox(height: 24),
+
+            // ── AVAILABILITY WINDOW ──────────────────────────────────────
+            _buildSectionLabel('PACKAGE AVAILABILITY', theme),
+            const SizedBox(height: 8),
+            _buildAvailabilityRow(theme),
             const SizedBox(height: 24),
 
             // Inclusions
@@ -365,7 +710,12 @@ class _OutfitterPackageCreatorScreenState
                   ),
                 ),
               ),
-            const SizedBox(height: 32),
+
+            const SizedBox(height: 24),
+
+            // ── DUAL PRICING SUMMARY (7.5% platform fee) ────────────────
+            _buildPricingSummary(theme),
+            const SizedBox(height: 24),
 
             // Publish Button
             SizedBox(
@@ -409,6 +759,484 @@ class _OutfitterPackageCreatorScreenState
           ],
         ),
       ),
+    );
+  }
+
+  // ── Pricing mode segmented toggle ──────────────────────────────────────
+  Widget _buildPricingModeToggle(ThemeController theme) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _modeSegment(
+              theme,
+              label: 'All-Inclusive',
+              icon: Icons.payments_rounded,
+              selected: _pricingMode == PackagePricingMode.allInclusive,
+              onTap: () => setState(() {
+                _pricingMode = PackagePricingMode.allInclusive;
+              }),
+            ),
+          ),
+          Expanded(
+            child: _modeSegment(
+              theme,
+              label: 'Itemized / Custom',
+              icon: Icons.list_alt_rounded,
+              selected: _pricingMode == PackagePricingMode.itemized,
+              onTap: () => setState(() {
+                _pricingMode = PackagePricingMode.itemized;
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeSegment(
+    ThemeController theme, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.accentColor.withValues(alpha: 0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: selected
+              ? Border.all(color: theme.accentColor, width: 1.5)
+              : Border.all(color: Colors.transparent),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? theme.accentColor : theme.subtitleColor,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? theme.accentColor : theme.subtitleColor,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── All-inclusive single price ─────────────────────────────────────────
+  Widget _buildAllInclusiveSection(ThemeController theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionLabel('TOTAL PACKAGE PRICE (ZAR)', theme),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _priceController,
+          style: TextStyle(color: theme.textColor),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+          ],
+          decoration: _inputDecoration(
+            hint: '25000',
+            prefix: 'R ',
+            theme: theme,
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Please enter a price';
+            }
+            final price = double.tryParse(
+              value.replaceAll(',', '').replaceAll('R', ''),
+            );
+            if (price == null || price <= 0) {
+              return 'Please enter a valid price';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // Optional species advertisement (not summed into all-inclusive price).
+        _buildSectionLabel('ADVERTISED SPECIES (OPTIONAL)', theme),
+        const SizedBox(height: 8),
+        _buildSpeciesList(theme),
+      ],
+    );
+  }
+
+  // ── Itemized breakdown + species ───────────────────────────────────────
+  Widget _buildItemizedSection(ThemeController theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionLabel('ITEMIZED BREAKDOWN', theme),
+        const SizedBox(height: 8),
+        ...ItemizedBreakdownCategory.all.map((category) {
+          final item = _lineItems[category.key];
+          return _lineItemRow(theme, category, item);
+        }),
+        const SizedBox(height: 16),
+
+        _buildSectionLabel('SPECIES & ANIMAL RATES', theme),
+        const SizedBox(height: 8),
+        _buildSpeciesList(theme),
+      ],
+    );
+  }
+
+  Widget _lineItemRow(
+    ThemeController theme,
+    ItemizedBreakdownCategory category,
+    ItemizedLineItem? item,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: item != null
+              ? theme.accentColor.withValues(alpha: 0.4)
+              : theme.accentColor.withValues(alpha: 0.15),
+        ),
+      ),
+      child: ListTile(
+        onTap: () => _editLineItem(category),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        title: Text(
+          category.label,
+          style: TextStyle(
+            color: theme.textColor,
+            fontSize: 14,
+            fontWeight: item != null ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        subtitle: item != null
+            ? Text(
+                'Qty ${item.quantity} × R ${item.pricePerUnit.toStringAsFixed(2)} = R ${item.total.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: theme.accentColor,
+                  fontSize: 12,
+                ),
+              )
+            : Text(
+                'Tap to add quantity & price',
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+        trailing: Icon(
+          item != null ? Icons.edit_rounded : Icons.add_circle_outline_rounded,
+          color: item != null ? theme.accentColor : theme.subtitleColor,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeciesList(ThemeController theme) {
+    if (_speciesItems.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.accentColor.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              _pricingMode == PackagePricingMode.itemized
+                  ? 'No species added yet'
+                  : 'No advertised species added yet',
+              style: TextStyle(
+                color: theme.subtitleColor,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: _addSpecies,
+              icon: const Icon(Icons.pets_rounded, size: 18),
+              label: const Text('Add Species'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.accentColor,
+                foregroundColor: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        ..._speciesItems.asMap().entries.map((entry) {
+          final index = entry.key;
+          final species = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.accentColor.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.pets_rounded,
+                    color: theme.accentColor, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        species.speciesName,
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'Qty ${species.quantity} × R ${species.pricePerAnimal.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  'R ${species.total.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: Colors.red,
+                  onPressed: () => _removeSpecies(index),
+                ),
+              ],
+            ),
+          );
+        }),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _addSpecies,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add another species'),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.accentColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvailabilityRow(ThemeController theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: _dateChip(
+            theme,
+            label: 'Start Date',
+            value: _availabilityStart,
+            onTap: () => _pickAvailabilityDate(true),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _dateChip(
+            theme,
+            label: 'End Date',
+            value: _availabilityEnd,
+            onTap: () => _pickAvailabilityDate(false),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dateChip(
+    ThemeController theme, {
+    required String label,
+    required DateTime? value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.accentColor.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.event_rounded,
+                color: theme.accentColor, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: theme.subtitleColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Text(
+                    value != null
+                        ? '${value.day}/${value.month}/${value.year}'
+                        : 'Select date',
+                    style: TextStyle(
+                      color: value != null
+                          ? theme.textColor
+                          : theme.subtitleColor,
+                      fontSize: 14,
+                      fontWeight:
+                          value != null ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Dual pricing summary: Base + 7.5% = Total ──────────────────────────
+  Widget _buildPricingSummary(ThemeController theme) {
+    final base = _resolvedBasePrice;
+    final fee = base * PackageBookingManager.platformCommissionRate;
+    final total = base + fee;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_rounded,
+                  color: theme.accentColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'PACKAGE VALUE (7.5% PLATFORM FEE)',
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _summaryRow(
+            theme,
+            label: 'Outfitter Base Price',
+            value: 'R ${base.toStringAsFixed(2)}',
+          ),
+          const SizedBox(height: 8),
+          _summaryRow(
+            theme,
+            label: '7.5% Platform Fee',
+            value: 'R ${fee.toStringAsFixed(2)}',
+            valueColor: Colors.amber.shade700,
+          ),
+          const Divider(height: 20),
+          _summaryRow(
+            theme,
+            label: 'Total Package Value',
+            value: 'R ${total.toStringAsFixed(2)}',
+            valueColor: Colors.green,
+            isTotal: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(
+    ThemeController theme, {
+    required String label,
+    required String value,
+    Color? valueColor,
+    bool isTotal = false,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: isTotal ? theme.textColor : theme.subtitleColor,
+            fontSize: isTotal ? 14 : 13,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? theme.textColor,
+            fontSize: isTotal ? 18 : 14,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 

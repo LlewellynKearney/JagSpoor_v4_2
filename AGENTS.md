@@ -235,3 +235,66 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     presentation screens), `deprecated_member_use` (3 — `withOpacity`, `androidProvider`,
     `appleProvider` in `lib/main.dart` + `role_selection_screen.dart`).
   - Production `lib/` ≈ 94 issues; `test/` ≈ 209 issues. No analyzer errors block the build.
+
+## Phase 3 — Hunting Package Publisher & Marketplace Pipeline (added 2026-08-12)
+
+- **Platform fee revised 5% → 7.5%** everywhere:
+  `PackageBookingManager.platformCommissionRate` is now `0.075`; the manual
+  invoice / carcass butchery `markup` is now `1.075`
+  (`invoice_pdf_service.dart`, `manual_invoice_screen.dart`,
+  `carcass_record.dart`). All UI labels + `context.md` updated to "7.5%".
+- **New pricing model** `lib/features/hunter_mode/models/package_pricing.dart`:
+  `PackagePricing` (all-inclusive vs itemized), `ItemizedLineItem`,
+  `SpeciesLineItem`, the 7 standard `ItemizedBreakdownCategory`s (bakkie,
+  slaughtering, coldroom, hunter daily, non-hunter observer daily, overnight
+  accommodation, catering), and `DateChangeRequest`.
+- **Outfitter Package Publisher** (`outfitter_package_creator_screen.dart`)
+  rewritten with an All-Inclusive ↔ Itemized segmented toggle, the 7 itemized
+  line-item editors (qty × price each), a SA Game Guide multi-species selector
+  (loads `animals` collection), Start/End date availability pickers, and a live
+  "Outfitter Base Price + 7.5% Platform Fee = Total Package Value" summary.
+- **`publishPackage`** now takes a `PackagePricing` (resolves base price from
+  mode + line items + species) and writes `mode`, `lineItems`, `speciesItems`,
+  `availabilityStart/End`, `platformCommissionRate`.
+- **25% non-refundable deposit**: `PackageBookingManager.depositFraction =
+  0.25`. `bookPackage` writes `depositAmountRands`/`balanceAmountRands`.
+  New `approveBookingAndRequestDeposit()` transitions an approved booking to
+  `Pending Deposit` and stores the deposit split — the outfitter "APPROVE &
+  REQUEST DEPOSIT" button calls it. The hunter PayFast button charges the 25%
+  deposit amount (falls back to full total for legacy bookings). `Paid` is a
+  new status (set by the PayFast ITN handler on COMPLETE payment).
+- **Date-change requests**: `requestDateChange()` (hunter) writes
+  `dateChangeRequest` + `dateChangeRequestPending:true`;
+  `resolveDateChange(approved)` (outfitter) clears the flag, sets the request
+  status, and on approval copies requested → `confirmedStartDate/EndDate`.
+  Hunter booking card has a "Request Date Change" button + sheet (date pickers
+  + reason); outfitter dashboard renders a date-change section with
+  APPROVE NEW DATES / DECLINE actions.
+- **Marketplace details view**: `_BookingConfirmationSheet` is now an
+  interactive details sheet showing the itemized / all-inclusive breakdown,
+  advertised species, inclusions, 7.5% fee split, and the 25% deposit row.
+  Package card shows the total price *incl.* the 7.5% fee + meta chips
+  (mode, species count, availability window).
+- **Firestore**: bookings now carry `status` ∈ `Pending Approval`,
+  `Approved`, `Pending Deposit`, `Paid`, `Declined`, `Completed`, `Cancelled`.
+  The status-update rule (`statusUpdateAllowed()`) is unaffected — only the
+  outfitter may flip status. Date-change fields are non-status fields so either
+  party can write them; resolution (status flip inside the map + the
+  `dateChangeRequestPending` flag) is done via the manager methods which the
+  respective party calls.
+- **`flutter analyze`**: 0 errors (319 infos + 14 warnings, all pre-existing).
+  Two new `deprecated_member_use` infos on `DropdownButtonFormField.value`
+  appear only under the locally-installed Flutter 3.44.9; the CI pin (3.29.1)
+  does not flag them.
+- Files: `lib/features/hunter_mode/models/package_pricing.dart` (new),
+  `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`,
+  `lib/features/hunter_mode/services/outfitter_invoice_exporter.dart`,
+  `lib/features/outfitter_mode/data/models/carcass_record.dart`,
+  `lib/features/outfitter_mode/data/services/invoice_pdf_service.dart`,
+  `lib/features/outfitter_mode/presentation/manual_invoice_screen.dart`,
+  `context.md`.

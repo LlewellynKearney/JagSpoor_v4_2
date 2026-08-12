@@ -3,7 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 class InvoicePdfService {
-  static const double markup = 1.05; // 5% marketplace commission
+  static const double markup = 1.075; // 7.5% marketplace commission
 
   static Future<Uint8List> generateInvoice({
     required String clientName,
@@ -47,7 +47,7 @@ class InvoicePdfService {
               ),
               pw.SizedBox(height: 24),
               pw.Text(
-                '1. Base Package (Includes 5% Commission)',
+                '1. Base Package (Includes 7.5% Commission)',
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
               pw.TableHelper.fromTextArray(

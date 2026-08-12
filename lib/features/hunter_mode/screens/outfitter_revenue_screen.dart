@@ -245,7 +245,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             title: 'Gross Revenue vs Platform Commission',
                             iconColor: widget.theme.accentColor,
                             description:
-                                'JagSpoor charges a flat 5% platform administration fee on every approved booking. The figures below break down how gross booking revenue becomes the outfitter\'s net earnings.',
+                                'JagSpoor charges a flat 7.5% platform administration fee on every approved booking. The figures below break down how gross booking revenue becomes the outfitter\'s net earnings.',
                             concepts: const [
                               ExplanationConcept(
                                 label: 'Gross Revenue',
@@ -253,7 +253,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                               ),
                               ExplanationConcept(
                                 label: 'Platform Fee',
-                                detail: 'gross × 0.05 — the 5% JagSpoor administration commission collected per booking.',
+                                detail: 'gross × 0.075 — the 7.5% JagSpoor administration commission collected per booking.',
                               ),
                               ExplanationConcept(
                                 label: 'Net Earnings',
@@ -282,7 +282,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                           Expanded(
                             child: _RevenueMetricCard(
                               title: 'Platform Fees',
-                              subtitle: '5% Admin',
+                              subtitle: '7.5% Admin',
                               value: platformFees,
                               icon: Icons.percent_rounded,
                               color: Colors.amber,
@@ -492,7 +492,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings minus the 5% platform administration fee collected by JagSpoor.',
+                              'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings minus the 7.5% platform administration fee collected by JagSpoor.',
                               style: TextStyle(
                                 color: widget.theme.subtitleColor,
                                 fontSize: 13,

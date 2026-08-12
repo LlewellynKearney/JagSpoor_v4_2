@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
+import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
@@ -411,7 +412,19 @@ class _PackageCard extends StatelessWidget {
     final title = data['title'] as String? ?? 'Untitled Package';
     final description = data['description'] as String? ?? '';
     final price = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+    final totalPrice =
+        (data['totalPriceZAR'] as num?)?.toDouble() ?? price;
     final inclusions = List<String>.from(data['inclusions'] ?? []);
+
+    // Pricing mode + breakdown details for the marketplace card.
+    final pricing = PackagePricing.fromMap(data);
+    final isItemized = pricing.mode == PackagePricingMode.itemized;
+    final speciesCount = pricing.speciesItems.length;
+    final lineItemCount = pricing.lineItems.length;
+
+    // Availability window.
+    final startDate = pricing.availabilityStart;
+    final endDate = pricing.availabilityEnd;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -491,13 +504,26 @@ class _PackageCard extends StatelessWidget {
                       color: Colors.green.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'R ${totalPrice.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Text(
+                          'incl. 7.5% fee',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -510,6 +536,43 @@ class _PackageCard extends StatelessWidget {
                 style: TextStyle(color: theme.subtitleColor, fontSize: 13),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 12),
+
+              // Pricing mode + species + availability meta row.
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _metaChip(
+                    theme,
+                    icon: isItemized
+                        ? Icons.list_alt_rounded
+                        : Icons.payments_rounded,
+                    label: isItemized ? 'Itemized' : 'All-Inclusive',
+                  ),
+                  if (speciesCount > 0)
+                    _metaChip(
+                      theme,
+                      icon: Icons.pets_rounded,
+                      label: '$speciesCount species'
+                          '${lineItemCount > 0 ? ' · $lineItemCount items' : ''}',
+                    )
+                  else if (lineItemCount > 0)
+                    _metaChip(
+                      theme,
+                      icon: Icons.list_alt_rounded,
+                      label: '$lineItemCount items',
+                    ),
+                  if (startDate != null)
+                    _metaChip(
+                      theme,
+                      icon: Icons.event_available_rounded,
+                      label: endDate != null
+                          ? '${startDate.day}/${startDate.month} – ${endDate.day}/${endDate.month}/${endDate.year}'
+                          : 'From ${startDate.day}/${startDate.month}/${startDate.year}',
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
 
@@ -575,7 +638,7 @@ class _PackageCard extends StatelessWidget {
                       Icon(Icons.book_online_rounded, size: 20),
                       SizedBox(width: 8),
                       Text(
-                        'BOOK THIS PACKAGE',
+                        'VIEW DETAILS & BOOK',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -585,6 +648,34 @@ class _PackageCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _metaChip(ThemeController theme,
+      {required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: theme.accentColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: theme.accentColor),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: theme.subtitleColor,
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -613,8 +704,12 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
     final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    final commission = basePrice * 0.05;
+    final commission = basePrice * PackageBookingManager.platformCommissionRate;
     final totalPrice = basePrice + commission;
+    final depositAmount = totalPrice * PackageBookingManager.depositFraction;
+
+    final pricing = PackagePricing.fromMap(widget.data);
+    final inclusions = List<String>.from(widget.data['inclusions'] ?? []);
 
     return Container(
       decoration: BoxDecoration(
@@ -627,182 +722,434 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         top: 20,
         bottom: MediaQuery.of(context).padding.bottom + 20,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: widget.theme.subtitleColor.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Title
-          Row(
-            children: [
-              Icon(
-                Icons.book_online_rounded,
-                color: widget.theme.accentColor,
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Confirm Booking',
-                  style: TextStyle(
-                    color: widget.theme.textColor,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: widget.theme.subtitleColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: TextStyle(color: widget.theme.accentColor, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-
-          // Price Breakdown
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: widget.theme.backgroundColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: widget.theme.accentColor.withValues(alpha: 0.2),
-              ),
             ),
-            child: Column(
+            const SizedBox(height: 20),
+
+            // Title
+            Row(
               children: [
-                // Base Package Rate
-                _PriceRow(
-                  label: 'Base Package Rate',
-                  value:
-                      'R ${basePrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                  theme: widget.theme,
+                Icon(
+                  Icons.book_online_rounded,
+                  color: widget.theme.accentColor,
+                  size: 28,
                 ),
-                const Divider(height: 20),
-
-                // 5% Platform Admin Fee
-                _PriceRow(
-                  label: '5% Platform Admin Fee',
-                  value:
-                      'R ${commission.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                  theme: widget.theme,
-                  isFee: true,
-                ),
-                const Divider(height: 20),
-
-                // Final Booking Total
-                _PriceRow(
-                  label: 'Booking Total',
-                  value:
-                      'R ${totalPrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                  theme: widget.theme,
-                  isTotal: true,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Warning
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.amber, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Booking will be sent for outfitter approval',
+                    'Package Details',
                     style: TextStyle(
-                      color: Colors.amber.shade700,
-                      fontSize: 13,
+                      color: widget.theme.textColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(color: widget.theme.accentColor, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
 
-          // Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: widget.theme.textColor,
-                    side: BorderSide(
-                      color: widget.theme.accentColor.withValues(alpha: 0.5),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Cancel'),
+            // Pricing mode + availability summary.
+            _packageMetaSummary(pricing),
+            const SizedBox(height: 16),
+
+            // Itemized / all-inclusive breakdown.
+            _breakdownSection(pricing, inclusions, basePrice),
+            const SizedBox(height: 16),
+
+            // Price Breakdown
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: widget.theme.backgroundColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: widget.theme.accentColor.withValues(alpha: 0.2),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _confirmBooking,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1565C0),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  // Base Package Rate
+                  _PriceRow(
+                    label: 'Outfitter Base Price',
+                    value: _formatZAR(basePrice),
+                    theme: widget.theme,
+                  ),
+                  const Divider(height: 20),
+
+                  // 7.5% Platform Fee
+                  _PriceRow(
+                    label: '7.5% Platform Fee',
+                    value: _formatZAR(commission),
+                    theme: widget.theme,
+                    isFee: true,
+                  ),
+                  const Divider(height: 20),
+
+                  // Final Booking Total
+                  _PriceRow(
+                    label: 'Total (incl. 7.5% fee)',
+                    value: _formatZAR(totalPrice),
+                    theme: widget.theme,
+                    isTotal: true,
+                  ),
+                  const Divider(height: 20),
+
+                  // Deposit due on approval
+                  _PriceRow(
+                    label:
+                        '25% Deposit (due on approval · non-refundable)',
+                    value: _formatZAR(depositAmount),
+                    theme: widget.theme,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Warning
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.amber, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Booking request is sent for outfitter approval. On approval '
+                      'a 25% non-refundable deposit is due to confirm your dates.',
+                      style: TextStyle(
+                        color: Colors.amber.shade700,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                  child:
-                      _isLoading
-                          ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                          : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.check_circle_outline, size: 20),
-                              SizedBox(width: 8),
-                              Text(
-                                'CONFIRM BOOKING',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: widget.theme.textColor,
+                      side: BorderSide(
+                        color: widget.theme.accentColor.withValues(alpha: 0.5),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _confirmBooking,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1565C0),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child:
+                        _isLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
                               ),
-                            ],
-                          ),
+                            )
+                            : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'CONFIRM BOOKING',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Compact meta summary: pricing mode + availability window.
+  Widget _packageMetaSummary(PackagePricing pricing) {
+    final isItemized = pricing.mode == PackagePricingMode.itemized;
+    final start = pricing.availabilityStart;
+    final end = pricing.availabilityEnd;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        _summaryChip(
+          icon: isItemized
+              ? Icons.list_alt_rounded
+              : Icons.payments_rounded,
+          label: isItemized ? 'Itemized Package' : 'All-Inclusive Package',
+        ),
+        if (start != null)
+          _summaryChip(
+            icon: Icons.event_available_rounded,
+            label: end != null
+                ? 'Available ${start.day}/${start.month} – ${end.day}/${end.month}/${end.year}'
+                : 'From ${start.day}/${start.month}/${start.year}',
+          ),
+      ],
+    );
+  }
+
+  Widget _summaryChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: widget.theme.accentColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: widget.theme.accentColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: widget.theme.accentColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: widget.theme.subtitleColor,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
     );
   }
+
+  /// Interactive itemized / all-inclusive breakdown view.
+  Widget _breakdownSection(
+      PackagePricing pricing, List<String> inclusions, double basePrice) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: widget.theme.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.theme.accentColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_rounded,
+                  color: widget.theme.accentColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                pricing.mode == PackagePricingMode.itemized
+                    ? 'ITEMIZED BREAKDOWN'
+                    : 'ALL-INCLUSIVE PACKAGE',
+                style: TextStyle(
+                  color: widget.theme.subtitleColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          if (pricing.mode == PackagePricingMode.itemized) ...[
+            if (pricing.lineItems.isEmpty && pricing.speciesItems.isEmpty)
+              Text(
+                'No itemized lines published.',
+                style: TextStyle(
+                    color: widget.theme.subtitleColor,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 13),
+              ),
+            ...pricing.lineItems.map((item) => _breakdownLine(
+                  label: item.label,
+                  detail:
+                      '${item.quantity} × R ${item.pricePerUnit.toStringAsFixed(2)}',
+                  total: item.total,
+                )),
+            if (pricing.lineItems.isNotEmpty &&
+                pricing.speciesItems.isNotEmpty)
+              const Divider(height: 16),
+            ...pricing.speciesItems.map((species) => _breakdownLine(
+                  label: species.speciesName,
+                  icon: Icons.pets_rounded,
+                  detail:
+                      '${species.quantity} × R ${species.pricePerAnimal.toStringAsFixed(2)} / animal',
+                  total: species.total,
+                )),
+          ] else ...[
+            _breakdownLine(
+              label: 'All-Inclusive Total',
+              icon: Icons.payments_rounded,
+              detail: 'Single package price',
+              total: pricing.allInclusivePrice,
+            ),
+            if (pricing.speciesItems.isNotEmpty) ...[
+              const Divider(height: 16),
+              Text(
+                'ADVERTISED SPECIES',
+                style: TextStyle(
+                  color: widget.theme.subtitleColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...pricing.speciesItems.map((species) => _breakdownLine(
+                    label: species.speciesName,
+                    icon: Icons.pets_rounded,
+                    detail:
+                        '${species.quantity} × R ${species.pricePerAnimal.toStringAsFixed(2)} / animal',
+                    total: species.total,
+                  )),
+            ],
+          ],
+
+          if (inclusions.isNotEmpty) ...[
+            const Divider(height: 16),
+            Text(
+              'INCLUSIONS',
+              style: TextStyle(
+                color: widget.theme.subtitleColor,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: inclusions.map((item) {
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: widget.theme.accentColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: widget.theme.accentColor.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    item,
+                    style: TextStyle(
+                      color: widget.theme.accentColor,
+                      fontSize: 11,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _breakdownLine({
+    required String label,
+    required String detail,
+    required double total,
+    IconData icon = Icons.circle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: widget.theme.accentColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  detail,
+                  style: TextStyle(
+                    color: widget.theme.subtitleColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            'R ${total.toStringAsFixed(2)}',
+            style: TextStyle(
+              color: Colors.green,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatZAR(double value) =>
+      'R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
 
   Future<void> _confirmBooking() async {
     setState(() {
@@ -812,6 +1159,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
     try {
       final outfitterId = widget.data['outfitterId'] as String?;
       final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+      final packageName = widget.data['title'] as String?;
 
       if (outfitterId == null) {
         throw Exception('Invalid package: missing outfitter ID');
@@ -821,6 +1169,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         packageId: widget.packageId,
         outfitterId: outfitterId,
         basePriceRands: basePrice,
+        packageName: packageName,
       );
 
       if (mounted) {
@@ -922,7 +1271,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       case 'Pending Approval':
         return Colors.orange;
       case 'Approved':
+      case 'Pending Deposit':
         return Colors.green;
+      case 'Paid':
+        return Colors.teal;
       case 'Declined':
         return Colors.red;
       case 'Completed':
@@ -977,21 +1329,40 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         widget.data['packageName'] as String? ?? 'Custom Package';
     final totalPrice = (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ?? 0.0;
 
-    // PayFast checkout eligibility: render the Pay button when the booking is
-    // awaiting payment (case-insensitive) and has a non-zero price. Price is
-    // resolved from totalHunterPriceRands, falling back to totalPriceZAR.
-    final payfastAmount =
-        (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ??
-            (widget.data['totalPriceZAR'] as num?)?.toDouble() ??
-            0.0;
+    // Deposit flow: when the outfitter approves, the booking moves to
+    // `Pending Deposit` and the hunter pays the 25% non-refundable deposit
+    // via PayFast. The deposit amount is stored on the booking; fall back to
+    // the full total if it is missing (legacy bookings).
+    final depositAmount =
+        (widget.data['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
+    final balanceAmount =
+        (widget.data['balanceAmountRands'] as num?)?.toDouble() ?? 0.0;
     final statusLower = status.toLowerCase();
-    // The Pay button is strictly hidden when there is nothing to pay.
-    // payfastAmount <= 0 (incl. 0, negative, or NaN) forces showPayButton false.
-    final isPayableStatus = statusLower == 'pending_payment' ||
-        statusLower == 'pending_deposit' ||
-        statusLower == 'approved';
-    final isPayableAmount = payfastAmount > 0;
-    final showPayButton = isPayableStatus && isPayableAmount;
+
+    // PayFast checkout eligibility: render the Pay button when the booking is
+    // awaiting the deposit (case-insensitive). The charge amount is the 25%
+    // deposit; if that is not stored we fall back to the full total.
+    final isDepositDueStatus = statusLower == 'pending_deposit' ||
+        statusLower == 'approved' ||
+        statusLower == 'pending_payment';
+    final payfastAmount = depositAmount > 0 ? depositAmount : totalPrice;
+    final showPayButton = isDepositDueStatus && payfastAmount > 0;
+
+    // Date-change request visibility: hunter may request a date change once
+    // the booking is approved / awaiting deposit / paid (i.e. dates matter).
+    // Hide if a request is already pending.
+    final dateChangePending =
+        (widget.data['dateChangeRequestPending'] as bool?) ?? false;
+    final dateChangeMap =
+        widget.data['dateChangeRequest'] as Map<String, dynamic>?;
+    final dateChange = dateChangeMap != null
+        ? DateChangeRequest.fromMap(dateChangeMap)
+        : null;
+    final canRequestDateChange =
+        (statusLower == 'pending_deposit' ||
+            statusLower == 'approved' ||
+            statusLower == 'paid') &&
+            !dateChangePending;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1072,10 +1443,50 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
             ),
           ),
 
+          // Deposit breakdown banner (when approved / awaiting deposit).
+          if (showPayButton && depositAmount > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    _depositRow('Total (incl. 7.5% fee)', totalPrice),
+                    const SizedBox(height: 4),
+                    _depositRow(
+                        '25% Non-Refundable Deposit Due', depositAmount,
+                        emphasize: true),
+                    const SizedBox(height: 4),
+                    _depositRow('Balance (settled with outfitter)',
+                        balanceAmount),
+                  ],
+                ),
+              ),
+            ),
+
+          // Date-change request status banner.
+          if (dateChange != null && !dateChange.isPending)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _dateChangeResolvedBanner(dateChange),
+            ),
+          if (dateChangePending)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _dateChangePendingBanner(),
+            ),
+
           // 💬 Chat & Negotiation Thread Panel
           _buildChatDrawer(),
 
-          // 💳 PayFast checkout — shown only for payable bookings.
+          // 💳 PayFast checkout — shown only for payable bookings (deposit due).
           if (showPayButton)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -1083,7 +1494,9 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.payment_rounded, color: Colors.white),
-                  label: const Text('Pay via PayFast'),
+                  label: Text(depositAmount > 0
+                      ? 'Pay 25% Deposit (R ${depositAmount.toStringAsFixed(2)}) via PayFast'
+                      : 'Pay via PayFast'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
@@ -1099,7 +1512,390 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 ),
               ),
             ),
+
+          // 📅 Request Date Change button.
+          if (canRequestDateChange)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.event_repeat_rounded, size: 20),
+                  label: const Text('Request Date Change'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: widget.theme.accentColor,
+                    side: BorderSide(
+                      color: widget.theme.accentColor.withValues(alpha: 0.5),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => _showDateChangeRequestSheet(),
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _depositRow(String label, double value, {bool emphasize = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: emphasize
+                ? widget.theme.textColor
+                : widget.theme.subtitleColor,
+            fontSize: emphasize ? 13 : 12,
+            fontWeight: emphasize ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        Text(
+          'R ${value.toStringAsFixed(2)}',
+          style: TextStyle(
+            color: emphasize ? Colors.green : widget.theme.textColor,
+            fontSize: emphasize ? 14 : 12,
+            fontWeight: emphasize ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dateChangePendingBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.hourglass_top_rounded,
+              color: Colors.orange, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Date change request sent — awaiting outfitter decision.',
+              style: TextStyle(
+                color: Colors.orange.shade700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dateChangeResolvedBanner(DateChangeRequest request) {
+    final approved = request.status == 'approved';
+    final color = approved ? Colors.green : Colors.red;
+    final verb = approved ? 'approved' : 'declined';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(approved ? Icons.check_circle_outline : Icons.cancel_outlined,
+              color: color, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Your date change request was $verb.',
+              style: TextStyle(
+                color: color.shade700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bottom sheet collecting the hunter's requested new dates + reason,
+  /// submitted via [PackageBookingManager.requestDateChange].
+  void _showDateChangeRequestSheet() {
+    DateTime? newStart;
+    DateTime? newEnd;
+    final reasonController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: widget.theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color:
+                            widget.theme.subtitleColor.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(Icons.event_repeat_rounded,
+                          color: widget.theme.accentColor, size: 24),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Request Date Change',
+                        style: TextStyle(
+                          color: widget.theme.textColor,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Propose new dates for your outfitter to approve or decline.',
+                    style: TextStyle(
+                      color: widget.theme.subtitleColor,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _dateChangeDateChip(
+                          label: 'New Start Date',
+                          value: newStart,
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: newStart ?? DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 730)),
+                            );
+                            if (picked != null) {
+                              setSheetState(() {
+                                newStart = picked;
+                                if (newEnd != null &&
+                                    newEnd!.isBefore(picked)) {
+                                  newEnd = picked;
+                                }
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _dateChangeDateChip(
+                          label: 'New End Date',
+                          value: newEnd,
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate:
+                                  newEnd ?? newStart ?? DateTime.now(),
+                              firstDate: newStart ?? DateTime.now(),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 730)),
+                            );
+                            if (picked != null) {
+                              setSheetState(() {
+                                newEnd = picked;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reasonController,
+                    style: TextStyle(color: widget.theme.textColor),
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Reason for date change (optional)...',
+                      hintStyle:
+                          TextStyle(color: widget.theme.subtitleColor),
+                      filled: true,
+                      fillColor: widget.theme.backgroundColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color:
+                              widget.theme.accentColor.withValues(alpha: 0.3),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: widget.theme.textColor,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (newStart == null && newEnd == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Please select at least one new date'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            try {
+                              await PackageBookingManager.instance
+                                  .requestDateChange(
+                                bookingId: widget.bookingId,
+                                request: DateChangeRequest(
+                                  requestedStartDate: newStart,
+                                  requestedEndDate: newEnd,
+                                  reason: reasonController.text.trim(),
+                                ),
+                              );
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        '✅ Date change request sent to outfitter'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (sheetContext.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Failed: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.theme.accentColor,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('SEND REQUEST',
+                              style:
+                                  TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _dateChangeDateChip({
+    required String label,
+    required DateTime? value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: widget.theme.backgroundColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: widget.theme.accentColor.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.event_rounded,
+                color: widget.theme.accentColor, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: widget.theme.subtitleColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    value != null
+                        ? '${value.day}/${value.month}/${value.year}'
+                        : 'Select date',
+                    style: TextStyle(
+                      color: value != null
+                          ? widget.theme.textColor
+                          : widget.theme.subtitleColor,
+                      fontSize: 13,
+                      fontWeight:
+                          value != null ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -45,9 +45,9 @@ clipping behind gesture bars.
 
 **Hardcoded financial rules:**
 
-- **5% platform commission multiplier.** Every package rate and manual outfitter
-  entry is multiplied by `1.05` and rounded to two decimals
-  (`(value * 1.05).toStringAsFixed(2)`) before rendering on any hunter-facing
+- **7.5% platform commission multiplier.** Every package rate and manual outfitter
+  entry is multiplied by `1.075` and rounded to two decimals
+  (`(value * 1.075).toStringAsFixed(2)`) before rendering on any hunter-facing
   viewport or A4 statement. See [§3](#3-marketplace--financial-layer) and
   [§4](#4-payfast-payment-integration) for the split-payment model.
 - **Currency standard.** All pricing fields use the South African Rand symbol
@@ -96,22 +96,25 @@ tactical enhancement widgets, marketplace booking interface, trophy browser.
 
 ## 3. Marketplace & Financial Layer (Locked to ZAR)
 
-### 3.1 Automated 5% Platform Commission (`package_booking_manager.dart`)
-The 5% fee is enforced at the data layer in `PackageBookingManager`:
+### 3.1 Automated 7.5% Platform Commission (`package_booking_manager.dart`)
+The 7.5% fee is enforced at the data layer in `PackageBookingManager`:
 
 ```dart
-static const double platformCommissionRate = 0.05;
+static const double platformCommissionRate = 0.075;
 ```
 
-- **On package publish** (`publishPackage`): computes
-  `platformCommissionZAR = basePriceRands × 0.05` and
+- **On package publish** (`publishPackage`): accepts a [PackagePricing]
+  definition (all-inclusive or itemized) and computes
+  `platformCommissionZAR = basePriceRands × 0.075` and
   `totalPriceZAR = basePriceRands + fee`, writing both to the package document.
 - **On booking** (`bookPackage`): computes the platform split metrics and writes
   them to the booking document:
   - `basePriceRands` — the outfitter's listed base price.
-  - `platformCommissionRands = basePriceRands × 0.05` — the platform commission.
+  - `platformCommissionRands = basePriceRands × 0.075` — the platform commission.
   - `totalHunterPriceRands = basePriceRands + platformCommissionRands` — the gross
     amount the hunter pays (the PayFast charge amount).
+  - `depositFraction = 0.25`, `depositAmountRands`, `balanceAmountRands` — the
+    25% non-refundable deposit due once the outfitter approves the booking.
 - Outfitters cannot book their own packages (enforced in code).
 
 ### 3.2 Split-Payment Model (Gross vs. Commission)
@@ -120,8 +123,10 @@ The booking document therefore carries the full split:
 | Field | Meaning |
 |-------|---------|
 | `basePriceRands` | Outfitter net (gross minus commission) |
-| `platformCommissionRands` | Platform's 5% cut |
+| `platformCommissionRands` | Platform's 7.5% cut |
 | `totalHunterPriceRands` | Gross booking volume charged to the hunter via PayFast |
+| `depositAmountRands` | 25% non-refundable deposit due on approval |
+| `balanceAmountRands` | Remaining balance settled with the outfitter |
 
 This allows revenue dashboards to report gross booking volume separately from
 platform commission without re-deriving it.

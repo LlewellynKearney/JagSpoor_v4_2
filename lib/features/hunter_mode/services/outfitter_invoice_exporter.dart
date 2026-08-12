@@ -14,7 +14,7 @@ class OutfitterInvoiceExporter {
   /// - [farmName]: Concession/farm property name
   /// - [hunterName]: Hunter/guest name
   /// - [basePrice]: Base package price in ZAR
-  /// - [platformFee]: 5% platform admin fee in ZAR
+  /// - [platformFee]: 7.5% platform admin fee in ZAR
   /// - [totalPrice]: Combined total price in ZAR
   Future<void> generateAndShareInvoice({
     required String bookingId,
@@ -193,7 +193,7 @@ class OutfitterInvoiceExporter {
                       ),
                       pw.SizedBox(height: 8),
                       _buildLineItemRow(
-                        'Platform Admin Booking Fee (5%)',
+                        'Platform Admin Booking Fee (7.5%)',
                         'R ${_formatZAR(platformFee)}',
                         isFee: true,
                       ),
