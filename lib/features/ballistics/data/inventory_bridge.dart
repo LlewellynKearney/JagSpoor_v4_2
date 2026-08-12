@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'models/optic_profile.dart';
 import 'models/rifle_profile.dart';
 
 /// Service layer that mimics data extraction hooks from a
@@ -194,6 +195,31 @@ class InventoryBridge {
     } catch (e) {
       debugPrint('InventoryBridge: Error adding ammunition: $e');
       return null;
+    }
+  }
+
+  /// Persists an [OpticProfile] against a firearm by writing it as a nested
+  /// `optic` map on the firearm document. Allowed because firearm docs are
+  /// owner-scoped (`ownerOrAdmin('ownerId')`) in the Firestore rules.
+  Future<bool> saveOpticProfile(String rifleId, OpticProfile optic) async {
+    try {
+      if (_currentUserId == null) {
+        debugPrint('InventoryBridge: Cannot save optic - user not authenticated');
+        return false;
+      }
+      if (rifleId.isEmpty) {
+        debugPrint('InventoryBridge: Cannot save optic - empty rifleId');
+        return false;
+      }
+      await _firestore
+          .collection('firearms')
+          .doc(rifleId)
+          .set({'optic': optic.toJson()}, SetOptions(merge: true));
+      debugPrint('InventoryBridge: Saved optic for rifle $rifleId');
+      return true;
+    } catch (e) {
+      debugPrint('InventoryBridge: Error saving optic: $e');
+      return false;
     }
   }
 

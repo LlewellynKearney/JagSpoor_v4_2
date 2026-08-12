@@ -1,14 +1,12 @@
-import 'dart:async';
-import 'dart:math' show sin, cos, atan2, sqrt, pi;
 import 'package:flutter/material.dart';
-import 'package:sensors_plus/sensors_plus.dart';
 import '../data/inventory_bridge.dart';
+import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
 import '../data/scope_calculator.dart';
 
-/// ScopeToolsBottomSheet provides a modal interface for configuring
-/// rifle scope settings including reticle type, adjustment values,
-/// gyroscopic barrel leveler, and AI target scanner.
+/// ScopeToolsBottomSheet is the state-of-the-art optical suite: a 4-tab
+/// interface covering optic profile configuration (linked to a firearm),
+/// zeroing click conversion, SFP reticle scaling, and turret tracking tests.
 class ScopeToolsBottomSheet extends StatefulWidget {
   const ScopeToolsBottomSheet({super.key});
 
@@ -20,1503 +18,1028 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // Inventory Bridge for firearm and ammunition data
+  static const Color _tacticalBlack = Color(0xFF0E0F11);
+  static const Color _panelBlack = Color(0xFF171A1E);
+  static const Color _accent = Color(0xFFC5A059);
+  static const Color _accentDim = Color(0xFF8A7038);
+  static const Color _dangerRed = Color(0xFFD14B3E);
+  static const Color _goGreen = Color(0xFF4CAF6A);
+
   final InventoryBridge _inventoryBridge = InventoryBridge();
-
-  // Persistent stream references - initialized once in initState to prevent rebuild loops
   late Stream<List<RifleProfile>> _firearmsStream;
-  Stream<List<AmmoProfile>>? _ammunitionStream;
 
-  // State variables
+  // Firearm linkage
   String? _selectedRifleId;
-  String? _selectedAmmoId;
   RifleProfile? _selectedRifle;
+  OpticProfile _optic = OpticProfile.defaults;
+  bool _isSaving = false;
 
-  // Scope reticle type selection
-  String _selectedReticle = 'Mil-Dot';
-  static const List<String> _reticleTypes = [
-    'Mil-Dot',
-    'MOA',
-    'BDC (Bullet Drop Compensator)',
-    'German #4',
-    'Ballistic Plex',
-    'Tactical Milling',
-  ];
+  // Zeroing calculator inputs
+  final TextEditingController _verticalCtrl =
+      TextEditingController(text: '2.5');
+  final TextEditingController _horizontalCtrl =
+      TextEditingController(text: '1.2');
+  final TextEditingController _zeroDistanceCtrl =
+      TextEditingController(text: '175');
+  ZeroingResult? _zeroResult;
 
-  // Scope adjustment settings
-  double _clickValue = 0.25; // MOA per click
-  double _tubeDiameter = 30.0; // mm
-  double _objectiveDiameter = 50.0; // mm
+  // SFP scaling inputs
+  final TextEditingController _nativeMagCtrl =
+      TextEditingController(text: '10');
+  final TextEditingController _currentMagCtrl =
+      TextEditingController(text: '6');
+  final TextEditingController _nativeHoldCtrl =
+      TextEditingController(text: '2');
+  SfpScalingResult? _sfpResult;
 
-  // Gyro barrel angle settings
-  double _barrelAngle = 0.0; // degrees
-  double _lineOfSightDistance = 200.0; // meters
-
-  // Gyroscope sensor state (v20.1)
-  StreamSubscription<AccelerometerEvent>? _gyroLevelerSubscription;
-  bool _isLiveGyroRadarActive = false;
-
-  // AI target scanner settings
-  double _targetDistance = 100.0; // meters
-  String _scopeUnitType = 'MOA';
-  List<Map<String, double>> _scanData = [];
-  Map<String, double>? _groupCenter;
-  String? _correctionResult;
-
-  // Turret settings
-  double _elevationAdjustment = 0.0; // MOA
-  double _windageAdjustment = 0.0; // MOA
-
-  // Parallax settings
-  double _parallaxDistance = 100.0; // yards
-
-  // Illumination settings
-  bool _isIlluminated = false;
-  double _illuminationLevel = 5.0;
-
-  // Calculated gyro values
-  GyroHoldoverResult? _gyroResult;
+  // Turret tracking log
+  final TextEditingController _dialedCtrl =
+      TextEditingController(text: '5');
+  final TextEditingController _measuredCtrl =
+      TextEditingController(text: '5.2');
+  final TextEditingController _trackDistanceCtrl =
+      TextEditingController(text: '100');
+  final List<TurretTrackingEntry> _trackingLog = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    // Initialize firearms stream once at lifecycle bootup to prevent rebuild loops
+    _tabController = TabController(length: 4, vsync: this);
     _firearmsStream = _inventoryBridge.watchSafeFirearms();
   }
 
   @override
   void dispose() {
-    // Cleanly cancel the gyro subscription to eliminate battery drain
-    _gyroLevelerSubscription?.cancel();
     _tabController.dispose();
+    _verticalCtrl.dispose();
+    _horizontalCtrl.dispose();
+    _zeroDistanceCtrl.dispose();
+    _nativeMagCtrl.dispose();
+    _currentMagCtrl.dispose();
+    _nativeHoldCtrl.dispose();
+    _dialedCtrl.dispose();
+    _measuredCtrl.dispose();
+    _trackDistanceCtrl.dispose();
     super.dispose();
   }
 
-  void _onRifleSelected(String? rifleId) {
+  void _onRifleSelected(List<RifleProfile> rifles, String? rifleId) {
     if (rifleId == null) return;
-
-    // Create new ammunition stream for the selected rifle
-    // This is assigned in setState to trigger a rebuild with the new stream
+    final rifle = rifles.where((r) => r.id == rifleId).firstOrNull;
+    if (rifle == null) return;
     setState(() {
       _selectedRifleId = rifleId;
-      _selectedAmmoId = null;
-      _ammunitionStream = _inventoryBridge.watchAvailableAmmunition(rifleId);
+      _selectedRifle = rifle;
+      _optic = rifle.optic ?? OpticProfile.defaults;
     });
   }
 
-  void _updateRifleFromSnapshots(List<RifleProfile> rifles) {
-    if (_selectedRifleId == null) return;
+  // ---------------------------------------------------------------------------
+  //  CALCULATIONS
+  // ---------------------------------------------------------------------------
 
-    final selectedRifle =
-        rifles.where((r) => r.id == _selectedRifleId).firstOrNull;
-    if (selectedRifle != null && selectedRifle.id != _selectedRifle?.id) {
-      setState(() {
-        _selectedRifle = selectedRifle;
-        _clickValue = selectedRifle.scopeClickValue;
-      });
-    }
-  }
-
-  void _onAmmoSelected(String? ammoId) {
-    if (ammoId == null) return;
-    setState(() => _selectedAmmoId = ammoId);
-  }
-
-  void _updateGyroCalculation() {
-    final result = ScopeCalculator.calculateGyroHoldover(
-      lineOfSightDistance: _lineOfSightDistance,
-      barrelAngleDegrees: _barrelAngle,
-      clickValueUnit: _clickValue,
-    );
-    setState(() => _gyroResult = result);
-  }
-
-  /// Toggles the live gyroscope leveler sensor (v20.1)
-  void _toggleLiveGyroLeveler(bool active) {
-    if (active) {
-      // Start listening to accelerometer events
-      _gyroLevelerSubscription = accelerometerEventStream().listen(
-        (AccelerometerEvent event) {
-          // Calculate vertical incline angle from raw physical gravity metrics
-          // Device orientation when rested flat along rifle chassis:
-          //   - event.x: lateral acceleration (left/right tilt)
-          //   - event.z: vertical acceleration (forward/backward tilt)
-          final double calculatedPitch = atan2(-event.x, event.z) * 180.0 / pi;
-
-          // Clamp values securely between -45.0 and 45.0 to filter mechanical tracking spikes
-          final double clampedPitch = calculatedPitch.clamp(-45.0, 45.0);
-
-          // Map live sensor reading directly to barrel angle variable
-          setState(() {
-            _barrelAngle = clampedPitch;
-          });
-
-          // Recalculate gyro values with live sensor data
-          _updateGyroCalculation();
-        },
-        onError: (error) {
-          debugPrint('Gyroscope sensor error: $error');
-        },
-      );
-
-      setState(() {
-        _isLiveGyroRadarActive = true;
-      });
-
-      debugPrint(
-        'Gyro radar leveler activated - hardware accelerometer streaming',
-      );
-    } else {
-      // Cancel the subscription to eliminate battery drain in the field
-      _gyroLevelerSubscription?.cancel();
-      _gyroLevelerSubscription = null;
-
-      setState(() {
-        _isLiveGyroRadarActive = false;
-      });
-
-      debugPrint(
-        'Gyro radar leveler deactivated - hardware accelerometer stream stopped',
-      );
-    }
-  }
-
-  void _runTargetScan() {
-    final scanData = ScopeCalculator.simulateTargetScanData(
-      targetDistanceMeters: _targetDistance,
-    );
-    final center = ScopeCalculator.calculateGroupCenter(scanData);
-
-    final correction = ScopeCalculator.calculateMoaTargetCorrection(
-      deviationX_cm: center['x']!,
-      deviationY_cm: center['y']!,
-      targetDistanceMeters: _targetDistance,
-      scopeUnitType: _scopeUnitType,
-    );
-
+  void _computeZeroing() {
+    final v = double.tryParse(_verticalCtrl.text) ?? 0;
+    final h = double.tryParse(_horizontalCtrl.text) ?? 0;
+    final d = double.tryParse(_zeroDistanceCtrl.text) ?? 100;
     setState(() {
-      _scanData = scanData;
-      _groupCenter = center;
-      _correctionResult = correction.tacticalString;
+      _zeroResult = ScopeCalculator.calculateZeroingClicks(
+        verticalInches: v,
+        horizontalInches: h,
+        distanceYards: d,
+        unit: _optic.turretUnit,
+        clickValue: _optic.clickValue,
+      );
     });
   }
 
-  double _calculateResolutionFactor() {
-    return (_tubeDiameter / 25.4) * sqrt(_objectiveDiameter / 50.0);
+  void _computeSfp() {
+    final nativeMag = double.tryParse(_nativeMagCtrl.text) ?? 10;
+    final currentMag = double.tryParse(_currentMagCtrl.text) ?? 10;
+    final nativeHold = double.tryParse(_nativeHoldCtrl.text) ?? 1;
+    setState(() {
+      _sfpResult = ScopeCalculator.calculateSfpScaling(
+        nativeMagnification: nativeMag,
+        currentMagnification: currentMag,
+        nativeReticleValue: nativeHold,
+        unit: _optic.turretUnit,
+        focalPlane: _optic.focalPlane,
+      );
+    });
   }
 
-  double _calculateReticleGroupSize() {
-    const double baseSize = 2.0;
-    final resolutionFactor = _calculateResolutionFactor();
-    return baseSize / resolutionFactor;
+  void _logTrackingTest() {
+    final dialed = double.tryParse(_dialedCtrl.text) ?? 0;
+    final measured = double.tryParse(_measuredCtrl.text) ?? 0;
+    final d = double.tryParse(_trackDistanceCtrl.text) ?? 100;
+    final result = ScopeCalculator.calculateTrackingError(
+      dialedValue: dialed,
+      measuredDisplacementInches: measured,
+      distanceYards: d,
+      unit: _optic.turretUnit,
+    );
+    setState(() {
+      _trackingLog.insert(
+        0,
+        TurretTrackingEntry(
+          dialedValue: dialed,
+          measuredInches: measured,
+          distanceYards: d,
+          result: result,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
   }
 
-  double _calculateEffectiveRange() {
-    return (_parallaxDistance / 100) * 500;
+  Future<void> _saveOptic() async {
+    if (_selectedRifleId == null) return;
+    setState(() => _isSaving = true);
+    final ok = await _inventoryBridge.saveOpticProfile(
+      _selectedRifleId!,
+      _optic,
+    );
+    if (mounted) {
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Optic profile saved to ${_selectedRifle?.name}.'
+              : 'Save failed — check connection.'),
+          backgroundColor: ok ? _goGreen : _dangerRed,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border.all(
-          color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-          width: 1,
-        ),
+      height: MediaQuery.of(context).size.height * 0.9,
+      decoration: const BoxDecoration(
+        color: _tacticalBlack,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
-        bottom: true,
         child: Column(
           children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.only(top: 20, left: 20, right: 20),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.center_focus_strong,
-                    color: Color(0xFFC5A059),
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '🎯 SCOPE SETTINGS & TOOLS',
-                      style: TextStyle(
-                        color: Color(0xFFC5A059),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Tab Bar
+            _buildHeader(),
+            _buildFirearmLink(),
             Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF8B4513).withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: const Color(0xFFC5A059).withValues(alpha: 0.3),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: _accentDim, width: 0.5),
                 ),
               ),
               child: TabBar(
                 controller: _tabController,
-                indicator: BoxDecoration(
-                  color: const Color(0xFFC5A059),
-                  borderRadius: BorderRadius.circular(6),
-                ),
+                labelColor: _accent,
+                unselectedLabelColor: Colors.white54,
+                indicatorColor: _accent,
                 indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: Colors.black,
-                unselectedLabelColor: const Color(0xFFC5A059),
-                labelStyle: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                unselectedLabelStyle: const TextStyle(fontSize: 12),
+                isScrollable: true,
                 tabs: const [
-                  Tab(text: 'SCOPE CONFIG'),
-                  Tab(text: '🔄 GYRO LEVELER'),
-                  Tab(text: '📷 AI SCANNER'),
+                  Tab(text: 'OPTIC PROFILE'),
+                  Tab(text: 'ZERO / CLICKS'),
+                  Tab(text: 'SFP SCALING'),
+                  Tab(text: 'TURRET TRACK'),
                 ],
               ),
             ),
-
-            // Inventory Selectors with Reactive Streams
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  // Firearm Stream Dropdown - uses persistent _firearmsStream reference
-                  StreamBuilder<List<RifleProfile>>(
-                    stream: _firearmsStream,
-                    builder: (context, riflesSnapshot) {
-                      // Handle error states with Thermal Glow recovery label
-                      if (riflesSnapshot.hasError) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildInventoryDropdown(
-                              label: 'Select Weapon from Safe',
-                              value: null,
-                              items: [],
-                              onChanged: null,
-                              isLoading: false,
-                              errorMessage:
-                                  riflesSnapshot.error?.toString() ??
-                                  'Unknown Error',
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Offline Mode Active',
-                              style: TextStyle(
-                                color: const Color(0xFFC5A059),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-
-                      // Handle loading and no data states
-                      if (!riflesSnapshot.hasData ||
-                          riflesSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                        return _buildInventoryDropdown(
-                          label: 'Select Weapon from Safe',
-                          value: null,
-                          items: [],
-                          onChanged: null,
-                          isLoading: true,
-                        );
-                      }
-
-                      final rifles = riflesSnapshot.data ?? [];
-
-                      // Filter out demo/seeded rifles - only show user's real registered firearms
-                      final userRifles =
-                          rifles.where((r) {
-                            final serial = r.serialNumber?.toUpperCase() ?? '';
-                            // Exclude demo rifles with TIKKA-, SAKO- prefixes
-                            if (serial.startsWith('TIKKA-') ||
-                                serial.startsWith('SAKO-')) {
-                              return false;
-                            }
-                            // Exclude rifles with "Unknown" in the name
-                            if (r.name.toLowerCase().contains('unknown')) {
-                              return false;
-                            }
-                            return true;
-                          }).toList();
-
-                      // Update selected rifle when stream data changes
-                      if (userRifles.isNotEmpty) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!context.mounted) return;
-                          _updateRifleFromSnapshots(rifles);
-                        });
-                      }
-
-                      return _buildInventoryDropdown(
-                        label: 'Select Weapon from Safe',
-                        value: _selectedRifleId,
-                        items:
-                            userRifles
-                                .map(
-                                  (r) => DropdownMenuItem(
-                                    value: r.id,
-                                    child: Text('${r.name} (${r.caliber})'),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (id) {
-                          if (!context.mounted) return;
-                          _onRifleSelected(id);
-                        },
-                        isLoading: false,
-                        onSeedRequested:
-                            null, // Disabled - only show real user firearms
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Ammunition Stream Dropdown - uses persistent _ammunitionStream reference
-                  StreamBuilder<List<AmmoProfile>>(
-                    stream: _ammunitionStream ?? Stream.value([]),
-                    builder: (context, ammoSnapshot) {
-                      // Handle error states with Thermal Glow recovery label
-                      if (ammoSnapshot.hasError) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildInventoryDropdown(
-                              label: 'Select Loaded Ammunition',
-                              value: null,
-                              items: [],
-                              onChanged: null,
-                              isLoading: false,
-                              errorMessage:
-                                  ammoSnapshot.error?.toString() ??
-                                  'Unknown Error',
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Offline Mode Active',
-                              style: TextStyle(
-                                color: const Color(0xFFC5A059),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-
-                      // Handle loading and no data states
-                      if (!ammoSnapshot.hasData ||
-                          ammoSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                        return _buildInventoryDropdown(
-                          label: 'Select Loaded Ammunition',
-                          value: null,
-                          items: [],
-                          onChanged: null,
-                          isLoading: true,
-                        );
-                      }
-
-                      final ammoList = ammoSnapshot.data ?? [];
-
-                      return _buildInventoryDropdown(
-                        label: 'Select Loaded Ammunition',
-                        value: _selectedAmmoId,
-                        items:
-                            ammoList
-                                .map(
-                                  (a) => DropdownMenuItem(
-                                    value: a.id,
-                                    child: Text(
-                                      '${a.bulletWeightGrains}gr (${a.remainingStockCount} remaining)',
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (id) {
-                          if (!context.mounted) return;
-                          _onAmmoSelected(id);
-                        },
-                        isLoading: false,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-            // Tab Views
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildScopeConfigTab(),
-                  _buildGyroLevelerTab(),
-                  _buildAiScannerTab(),
+                  _buildOpticProfileTab(),
+                  _buildZeroingTab(),
+                  _buildSfpTab(),
+                  _buildTrackingTab(),
                 ],
               ),
             ),
-
-            // Footer Action Buttons
-            _buildFooterButtons(),
+            _buildFooter(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInventoryDropdown({
-    required String label,
-    required String? value,
-    required List<DropdownMenuItem<String>> items,
-    required ValueChanged<String?>? onChanged,
-    required bool isLoading,
-    VoidCallback? onSeedRequested,
-    String? errorMessage,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            color: Color(0xFFC5A059),
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF8B4513).withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color:
-                  errorMessage != null
-                      ? const Color(0xFFB22222).withValues(alpha: 0.5)
-                      : const Color(0xFFC5A059).withValues(alpha: 0.3),
-            ),
-          ),
-          child:
-              isLoading
-                  ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFFC5A059),
-                        ),
-                      ),
-                    ),
-                  )
-                  : errorMessage != null
-                  ? Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      errorMessage,
-                      style: const TextStyle(color: Color(0xFFC5A059)),
-                    ),
-                  )
-                  : items.isEmpty
-                  ? _buildSeedButton(onSeedRequested)
-                  : DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: value,
-                      isExpanded: true,
-                      dropdownColor: const Color(0xFF2A2A2A),
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      hint: const Text(
-                        'No items available',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      items: items,
-                      onChanged: onChanged,
-                    ),
-                  ),
-        ),
-      ],
-    );
-  }
+  // ---------------------------------------------------------------------------
+  //  HEADER + FIREARM LINK
+  // ---------------------------------------------------------------------------
 
-  Widget _buildSeedButton(VoidCallback? onSeedRequested) {
-    if (onSeedRequested == null) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text('No data available', style: TextStyle(color: Colors.grey)),
-      );
-    }
-
-    return InkWell(
-      onTap: onSeedRequested,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFC5A059).withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFFC5A059)),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.cloud_download, color: Color(0xFFC5A059), size: 18),
-            SizedBox(width: 8),
-            Text(
-              'Seed Default Vault Hardware',
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: Row(
+        children: [
+          const Icon(Icons.center_focus_strong, color: _accent, size: 26),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'OPTICAL SUITE',
               style: TextStyle(
-                color: Color(0xFFC5A059),
+                color: _accent,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
-                fontSize: 13,
+                letterSpacing: 2,
               ),
             ),
-          ],
-        ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white54),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _seedDefaultVaultHardware(BuildContext context) async {
-    if (!context.mounted) return;
-
-    // Show loading indicator
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Seeding default vault hardware...'),
-        backgroundColor: Color(0xFFC5A059),
-        duration: Duration(seconds: 2),
-      ),
+  Widget _buildFirearmLink() {
+    return StreamBuilder<List<RifleProfile>>(
+      stream: _firearmsStream,
+      builder: (context, snapshot) {
+        final rifles = snapshot.data ?? [];
+        return Container(
+          margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: _panelBlack,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _accentDim.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.link, color: _accent, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedRifleId,
+                    isExpanded: true,
+                    dropdownColor: _panelBlack,
+                    hint: const Text('Link to Firearm',
+                        style: TextStyle(color: Colors.white70)),
+                    style: const TextStyle(color: Colors.white),
+                    items: rifles
+                        .map((r) => DropdownMenuItem(
+                              value: r.id,
+                              child: Text(
+                                '${r.name} (${r.caliber.isEmpty ? "—" : r.caliber})',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (id) => _onRifleSelected(rifles, id),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Chip(
+                label: Text(_optic.turretUnitLabel,
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.black)),
+                backgroundColor: _accent,
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        );
+      },
     );
-
-    try {
-      // Add default rifles
-      final tikkaRifle = RifleProfile(
-        id: '',
-        name: 'Tikka 6.5 CM',
-        caliber: '6.5mm Creedmoor',
-        scopeClickValue: 0.25,
-        serialNumber: 'TIKKA-2024-001',
-      );
-      final sakoRifle = RifleProfile(
-        id: '',
-        name: 'Sako .308',
-        caliber: '.308 Winchester',
-        scopeClickValue: 0.25,
-        serialNumber: 'SAKO-2024-001',
-      );
-
-      final tikkaId = await _inventoryBridge.addRifleToSafe(tikkaRifle);
-      final sakoId = await _inventoryBridge.addRifleToSafe(sakoRifle);
-
-      if (!context.mounted) return;
-
-      // Add default ammunition for each rifle
-      if (tikkaId != null) {
-        final tikkaAmmo = AmmoProfile(
-          id: '',
-          rifleId: tikkaId,
-          bulletWeightGrains: 140,
-          velocityMs: 810.0,
-          ballisticCoefficient: 0.487,
-          remainingStockCount: 20,
-        );
-        await _inventoryBridge.addAmmunition(tikkaAmmo);
-      }
-
-      if (sakoId != null) {
-        final sakoAmmo = AmmoProfile(
-          id: '',
-          rifleId: sakoId,
-          bulletWeightGrains: 175,
-          velocityMs: 800.0,
-          ballisticCoefficient: 0.435,
-          remainingStockCount: 15,
-        );
-        await _inventoryBridge.addAmmunition(sakoAmmo);
-      }
-
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Default vault hardware seeded successfully!'),
-          backgroundColor: Color(0xFF4CAF50),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error seeding vault: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 
-  Widget _buildScopeConfigTab() {
+  // ---------------------------------------------------------------------------
+  //  TAB 1 — OPTIC PROFILE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildOpticProfileTab() {
     return SingleChildScrollView(
-      padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom +
-            16,
-        left: 20,
-        right: 20,
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Reticle Type Selection
-          _buildSectionHeader('Reticle Configuration'),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF8B4513).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.2),
-              ),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedReticle,
-                isExpanded: true,
-                dropdownColor: const Color(0xFF2A2A2A),
-                style: const TextStyle(color: Colors.white),
-                items:
-                    _reticleTypes.map((type) {
-                      return DropdownMenuItem(value: type, child: Text(type));
-                    }).toList(),
-                onChanged: (value) {
-                  if (!context.mounted) return;
-                  setState(() => _selectedReticle = value!);
-                },
-              ),
-            ),
+          _buildSectionLabel('Optic Identity'),
+          _buildTextFieldCard(
+            label: 'Optic Name',
+            value: _optic.opticName,
+            hint: 'e.g. Vortex Razor HD',
+            onChanged: (v) =>
+                setState(() => _optic = _optic.copyWith(opticName: v)),
           ),
-
+          const SizedBox(height: 12),
+          _buildTextFieldCard(
+            label: 'Reticle Type',
+            value: _optic.reticleType,
+            hint: 'e.g. Mil-Dot',
+            dropdown: ReticleTypes.standard,
+            onChanged: (v) =>
+                setState(() => _optic = _optic.copyWith(reticleType: v)),
+          ),
           const SizedBox(height: 20),
 
-          // Scope Dimensions
-          _buildSectionHeader('Scope Dimensions'),
-          const SizedBox(height: 8),
-          _buildSliderTile(
-            label: 'Tube Diameter',
-            value: _tubeDiameter,
-            unit: 'mm',
-            min: 25.0,
-            max: 40.0,
-            onChanged: (v) => setState(() => _tubeDiameter = v),
-          ),
-          _buildSliderTile(
-            label: 'Objective Diameter',
-            value: _objectiveDiameter,
-            unit: 'mm',
-            min: 40.0,
-            max: 60.0,
-            onChanged: (v) => setState(() => _objectiveDiameter = v),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Click Value Settings
-          _buildSectionHeader('Adjustment Settings'),
-          const SizedBox(height: 8),
-          _buildSliderTile(
-            label: 'Click Value',
-            value: _clickValue,
-            unit: 'MOA',
-            min: 0.1,
-            max: 1.0,
-            divisions: 9,
-            onChanged: (v) => setState(() => _clickValue = v),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Turret Adjustments
-          _buildSectionHeader('Turret Adjustments'),
-          const SizedBox(height: 8),
-          _buildSliderTile(
-            label: 'Elevation',
-            value: _elevationAdjustment,
-            unit: 'MOA',
-            min: -20.0,
-            max: 20.0,
-            onChanged: (v) => setState(() => _elevationAdjustment = v),
-          ),
-          _buildSliderTile(
-            label: 'Windage',
-            value: _windageAdjustment,
-            unit: 'MOA',
-            min: -20.0,
-            max: 20.0,
-            onChanged: (v) => setState(() => _windageAdjustment = v),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Parallax Settings
-          _buildSectionHeader('Parallax Correction'),
-          const SizedBox(height: 8),
-          _buildSliderTile(
-            label: 'Parallax Distance',
-            value: _parallaxDistance,
-            unit: 'yd',
-            min: 50.0,
-            max: 300.0,
-            divisions: 25,
-            onChanged: (v) => setState(() => _parallaxDistance = v),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Illumination Settings
-          _buildSectionHeader('Illumination'),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            title: const Text(
-              'Illuminated Reticle',
-              style: TextStyle(color: Colors.white),
-            ),
-            value: _isIlluminated,
-            activeTrackColor: const Color(0xFFC5A059),
-            onChanged: (v) {
-              if (!context.mounted) return;
-              setState(() => _isIlluminated = v);
-            },
-          ),
-          if (_isIlluminated)
-            _buildSliderTile(
-              label: 'Brightness Level',
-              value: _illuminationLevel,
-              unit: '',
-              min: 1.0,
-              max: 10.0,
-              divisions: 9,
-              onChanged: (v) => setState(() => _illuminationLevel = v),
-            ),
-
-          const SizedBox(height: 24),
-
-          // Calculated Values Display
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC5A059).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.3),
+          _buildSectionLabel('Optical Configuration'),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSegControl(
+                  label: 'Focal Plane',
+                  options: ReticleTypes.focalPlanes,
+                  value: _optic.focalPlaneLabel,
+                  onChanged: (v) => setState(() => _optic =
+                      _optic.copyWith(
+                          focalPlane: v == 'FFP'
+                              ? FocalPlane.ffp
+                              : FocalPlane.sfp)),
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'CALCULATED VALUES',
-                  style: TextStyle(
-                    color: Color(0xFFC5A059),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildCalcRow(
-                  'Resolution Factor',
-                  _calculateResolutionFactor().toStringAsFixed(3),
-                ),
-                _buildCalcRow(
-                  'Reticle Group Size',
-                  '${_calculateReticleGroupSize().toStringAsFixed(3)} MOA',
-                ),
-                _buildCalcRow(
-                  'Effective Range',
-                  '${_calculateEffectiveRange().toStringAsFixed(0)} yards',
-                ),
-              ],
-            ),
+            ],
           ),
-
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGyroLevelerTab() {
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom +
-            16,
-        left: 20,
-        right: 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // HUD Ring Widget
-          Container(
-            width: 280,
-            height: 280,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF8B4513).withValues(alpha: 0.3),
-              border: Border.all(color: const Color(0xFFC5A059), width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  spreadRadius: 5,
-                ),
-              ],
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Crosshairs
-                CustomPaint(
-                  size: const Size(260, 260),
-                  painter: _GyroCrosshairPainter(),
-                ),
-                // Angle indicator
-                Transform.rotate(
-                  angle: _barrelAngle * pi / 180.0,
-                  child: Container(
-                    width: 160,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color:
-                          _barrelAngle.abs() < 1
-                              ? const Color(0xFFC5A059)
-                              : (_barrelAngle > 0 ? Colors.green : Colors.red),
-                      borderRadius: BorderRadius.circular(4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_barrelAngle > 0 ? Colors.green : Colors.red)
-                              .withValues(alpha: 0.5),
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Center bubble
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color:
-                        _barrelAngle.abs() < 1
-                            ? const Color(0xFFC5A059)
-                            : Colors.grey,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                ),
-                // Angle text
-                Positioned(
-                  top: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${_barrelAngle.toStringAsFixed(1)}°',
-                      style: const TextStyle(
-                        color: Color(0xFFC5A059),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ⚡ ACTIVATE CORE GYRO RADAR LEVELER Toggle Card (v20.1)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color:
-                  _isLiveGyroRadarActive
-                      ? Colors.green.withValues(alpha: 0.2)
-                      : const Color(0xFF8B4513).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color:
-                    _isLiveGyroRadarActive
-                        ? Colors.green
-                        : const Color(0xFFC5A059).withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: Row(
-                    children: [
-                      Icon(
-                        _isLiveGyroRadarActive
-                            ? Icons.sensors
-                            : Icons.sensors_off,
-                        color: const Color(0xFFC5A059),
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          '⚡ ACTIVATE CORE GYRO RADAR LEVELER',
-                          style: TextStyle(
-                            color: Color(0xFFC5A059),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  subtitle:
-                      _isLiveGyroRadarActive
-                          ? const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.warning_amber,
-                                  color: Colors.amber,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '⚠️ HARDWARE GYRO ACTIVE • PLACE FLAT ON BARREL CHASSIS',
-                                    style: TextStyle(
-                                      color: Colors.amber,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          : const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Text(
-                              'Uses built-in accelerometer for real-time pitch detection',
-                              style: TextStyle(
-                                color: Colors.white54,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                  value: _isLiveGyroRadarActive,
-                  activeTrackColor: const Color(
-                    0xFFC5A059,
-                  ).withValues(alpha: 0.5),
-                  inactiveTrackColor: Colors.grey.withValues(alpha: 0.3),
-                  onChanged: _toggleLiveGyroLeveler,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Barrel Angle Slider
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF8B4513).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Column(
-              children: [
-                _buildSectionHeader('Gyroscopic Barrel Sensor'),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Text('-45°', style: TextStyle(color: Colors.white54)),
-                    Expanded(
-                      child: Slider(
-                        value: _barrelAngle,
-                        min: -45.0,
-                        max: 45.0,
-                        divisions: 90,
-                        inactiveColor: Colors.grey.withValues(alpha: 0.3),
-                        onChanged: (v) {
-                          // Silent execution gate preserves values when gyro is active
-                          if (_isLiveGyroRadarActive) return;
-                          setState(() => _barrelAngle = v);
-                          _updateGyroCalculation();
-                        },
-                      ),
-                    ),
-                    const Text('+45°', style: TextStyle(color: Colors.white54)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _buildSliderTile(
-                  label: 'Line of Sight',
-                  value: _lineOfSightDistance,
-                  unit: 'm',
-                  min: 50.0,
-                  max: 500.0,
-                  divisions: 45,
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSegControl(
+                  label: 'Turret Units',
+                  options: ReticleTypes.turretUnits,
+                  value: _optic.turretUnitLabel,
                   onChanged: (v) {
-                    // Silent execution gate preserves values when gyro is active
-                    if (_isLiveGyroRadarActive) return;
-                    setState(() => _lineOfSightDistance = v);
-                    _updateGyroCalculation();
+                    final unit =
+                        v == 'MRAD' ? TurretUnit.mrad : TurretUnit.moa;
+                    final presets = ReticleTypes.clickPresets[v]!;
+                    setState(() => _optic = _optic.copyWith(
+                        turretUnit: unit, clickValue: presets.first));
                   },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          _buildTextFieldCard(
+            label: 'Click Value (${_optic.turretUnitLabel})',
+            value: _optic.clickValue.toString(),
+            hint: _optic.clickValueLabel,
+            keyboardType: TextInputType.number,
+            dropdown: ReticleTypes.clickPresets[_optic.turretUnitLabel]!
+                .map((e) => e.toString())
+                .toList(),
+            onChanged: (v) {
+              final d = double.tryParse(v);
+              if (d != null) {
+                setState(() => _optic = _optic.copyWith(clickValue: d));
+              }
+            },
+          ),
+          const SizedBox(height: 20),
 
+          _buildSectionLabel('Mechanical Specs'),
+          _buildSliderTile(
+            label: 'Tube Diameter',
+            value: _optic.tubeDiameterMm,
+            unit: 'mm',
+            min: 25,
+            max: 40,
+            divisions: 15,
+            onChanged: (v) => setState(
+                () => _optic = _optic.copyWith(tubeDiameterMm: v)),
+          ),
+          _buildSliderTile(
+            label: 'Height Over Bore',
+            value: _optic.heightOverBoreInches,
+            unit: 'in',
+            min: 0.5,
+            max: 4.0,
+            divisions: 35,
+            onChanged: (v) => setState(
+                () => _optic = _optic.copyWith(heightOverBoreInches: v)),
+          ),
+          _buildSliderTile(
+            label: 'Native Magnification',
+            value: _optic.nativeMagnification,
+            unit: 'x',
+            min: 1,
+            max: 25,
+            divisions: 24,
+            onChanged: (v) => setState(
+                () => _optic = _optic.copyWith(nativeMagnification: v)),
+          ),
+          _buildSliderTile(
+            label: 'Current Magnification',
+            value: _optic.currentMagnification,
+            unit: 'x',
+            min: 1,
+            max: 25,
+            divisions: 24,
+            onChanged: (v) => setState(
+                () => _optic = _optic.copyWith(currentMagnification: v)),
+          ),
           const SizedBox(height: 16),
-
-          // Calculated Result
-          if (_gyroResult != null)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'HOLD DIRECTION',
-                    style: TextStyle(
-                      color: Color(0xFFC5A059),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildCalcRow(
-                    'True Horizontal',
-                    '${_gyroResult!.trueHorizontalDistance.toStringAsFixed(1)} m',
-                  ),
-                  _buildCalcRow('Direction', _gyroResult!.direction),
-                  _buildCalcRow(
-                    'Click Adjustment',
-                    '${_gyroResult!.clickUnits.toStringAsFixed(1)} clicks',
-                  ),
-                  const Divider(color: Color(0xFFC5A059), height: 20),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B4513),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _gyroResult!.tacticalOutput,
-                      style: const TextStyle(
-                        color: Color(0xFFC5A059),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          const SizedBox(height: 24),
+          _buildSummaryCard(),
         ],
       ),
     );
   }
 
-  Widget _buildAiScannerTab() {
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom +
-            16,
-        left: 20,
-        right: 20,
+  Widget _buildSummaryCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _accent.withValues(alpha: 0.3)),
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Camera Capture Overlay
-          Container(
-            width: double.infinity,
-            height: 220,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFC5A059), width: 2),
-            ),
-            child: Stack(
-              children: [
-                // Grid overlay
-                CustomPaint(
-                  size: const Size(double.infinity, 220),
-                  painter: _ScannerGridPainter(),
-                ),
-                // Center crosshair
-                Center(
-                  child: Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: const Color(0xFFC5A059),
-                        width: 2,
-                      ),
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.center_focus_strong,
-                        color: Color(0xFFC5A059),
-                        size: 30,
-                      ),
-                    ),
-                  ),
-                ),
-                // Corner brackets
-                Positioned(top: 10, left: 10, child: _buildCornerBracket()),
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Transform.scale(
-                    scaleX: -1,
-                    child: _buildCornerBracket(),
-                  ),
-                ),
-                Positioned(
-                  bottom: 10,
-                  left: 10,
-                  child: Transform.scale(
-                    scaleY: -1,
-                    child: _buildCornerBracket(),
-                  ),
-                ),
-                Positioned(
-                  bottom: 10,
-                  right: 10,
-                  child: Transform.scale(
-                    scaleX: -1,
-                    scaleY: -1,
-                    child: _buildCornerBracket(),
-                  ),
-                ),
-                // Scan button
-                if (_scanData.isEmpty)
-                  Center(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFC5A059),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 16,
-                        ),
-                      ),
-                      onPressed: _runTargetScan,
-                      icon: const Icon(Icons.camera_alt, color: Colors.black),
-                      label: const Text(
-                        '📷 SCAN TARGET SHEET',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                // Scanned data visualization
-                if (_scanData.isNotEmpty && _groupCenter != null)
-                  CustomPaint(
-                    size: const Size(double.infinity, 220),
-                    painter: _ShotGroupPainter(
-                      hits: _scanData,
-                      center: _groupCenter!,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Target Distance Settings
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF8B4513).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-              ),
-            ),
-            child: Column(
-              children: [
-                _buildSectionHeader('Target Parameters'),
-                const SizedBox(height: 12),
-                _buildSliderTile(
-                  label: 'Target Distance',
-                  value: _targetDistance,
-                  unit: 'm',
-                  min: 50.0,
-                  max: 500.0,
-                  divisions: 45,
-                  onChanged: (v) => setState(() => _targetDistance = v),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Text(
-                      'Scope Type:',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'MOA', label: Text('MOA')),
-                          ButtonSegment(value: 'MRAD', label: Text('MRAD')),
-                        ],
-                        selected: {_scopeUnitType},
-                        onSelectionChanged: (v) {
-                          setState(() => _scopeUnitType = v.first);
-                        },
-                        style: ButtonStyle(
-                          backgroundColor: WidgetStateProperty.resolveWith((
-                            states,
-                          ) {
-                            if (states.contains(WidgetState.selected)) {
-                              return const Color(0xFFC5A059);
-                            }
-                            return Colors.transparent;
-                          }),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Correction Results
-          if (_correctionResult != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFC5A059).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFFC5A059).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'AI TARGET CORRECTION',
-                    style: TextStyle(
-                      color: Color(0xFFC5A059),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_groupCenter != null) ...[
-                    _buildCalcRow(
-                      'Group Center X',
-                      '${_groupCenter!['x']!.toStringAsFixed(2)} cm',
-                    ),
-                    _buildCalcRow(
-                      'Group Center Y',
-                      '${_groupCenter!['y']!.toStringAsFixed(2)} cm',
-                    ),
-                    _buildCalcRow('Shot Count', '${_scanData.length}'),
-                  ],
-                  const Divider(color: Color(0xFFC5A059), height: 20),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B4513),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _correctionResult!,
-                      style: const TextStyle(
-                        color: Color(0xFFC5A059),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          const SizedBox(height: 16),
-
-          // Re-scan button
-          if (_scanData.isNotEmpty)
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFC5A059)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: _runTargetScan,
-              icon: const Icon(Icons.refresh, color: Color(0xFFC5A059)),
-              label: const Text(
-                'RESCAN TARGET',
-                style: TextStyle(color: Color(0xFFC5A059)),
-              ),
-            ),
-
-          const SizedBox(height: 24),
+          const Text('LINKED OPTIC SUMMARY',
+              style: TextStyle(
+                  color: _accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2)),
+          const SizedBox(height: 10),
+          _buildSummaryRow('Firearm', _selectedRifle?.name ?? 'None linked'),
+          _buildSummaryRow('Optic', _optic.opticName.isEmpty
+              ? '—'
+              : _optic.opticName),
+          _buildSummaryRow(
+              'Tube', '${_optic.tubeDiameterMm.toStringAsFixed(0)} mm'),
+          _buildSummaryRow('HOB',
+              '${_optic.heightOverBoreInches.toStringAsFixed(2)} in'),
+          _buildSummaryRow('Turret',
+              '${_optic.turretUnitLabel} • ${_optic.clickValueLabel}'),
+          _buildSummaryRow('Plane', _optic.focalPlaneLabel),
+          _buildSummaryRow('Reticle', _optic.reticleType),
+          _buildSummaryRow(
+              'Magnification',
+              '${_optic.currentMagnification.toStringAsFixed(0)}x '
+              '(native ${_optic.nativeMagnification.toStringAsFixed(0)}x)'),
         ],
       ),
     );
   }
 
-  Widget _buildCornerBracket() {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: const BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Color(0xFFC5A059), width: 2),
-          left: BorderSide(color: Color(0xFFC5A059), width: 2),
-        ),
+  // ---------------------------------------------------------------------------
+  //  TAB 2 — ZERO / CLICK CALCULATOR
+  // ---------------------------------------------------------------------------
+
+  Widget _buildZeroingTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionLabel('Point-of-Impact Displacement'),
+          const SizedBox(height: 4),
+          Text(
+            'Positive vertical = impact HIGH. Positive horizontal = impact RIGHT.',
+            style: TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInputField(
+                  controller: _verticalCtrl,
+                  label: 'Vertical (in)',
+                  icon: Icons.swap_vert,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInputField(
+                  controller: _horizontalCtrl,
+                  label: 'Horizontal (in)',
+                  icon: Icons.swap_horiz,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInputField(
+            controller: _zeroDistanceCtrl,
+            label: 'Target Distance (yards)',
+            icon: Icons.straighten,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _computeZeroing,
+              icon: const Icon(Icons.calculate),
+              label: const Text('CONVERT TO CLICKS',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_zeroResult != null) _buildZeroResultCard(_zeroResult!),
+        ],
       ),
     );
   }
 
-  Widget _buildFooterButtons() {
+  Widget _buildZeroResultCard(ZeroingResult r) {
     return Container(
-      padding: EdgeInsets.only(
-        bottom:
-            MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom +
-            16,
-        left: 20,
-        right: 20,
-        top: 12,
-      ),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        border: Border(
-          top: BorderSide(
-            color: const Color(0xFFC5A059).withValues(alpha: 0.2),
+        color: _panelBlack,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _accent.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('CORRECTION — ${r.unit == TurretUnit.moa ? "MOA" : "MRAD"} turrets',
+              style: const TextStyle(
+                  color: _accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDirectionIndicator(
+                  label: 'ELEVATION',
+                  direction: r.elevationDirection,
+                  clicks: r.elevation.clicks,
+                  axis: Axis.vertical,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildDirectionIndicator(
+                  label: 'WINDAGE',
+                  direction: r.windageDirection,
+                  clicks: r.windage.clicks,
+                  axis: Axis.horizontal,
+                ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _tacticalBlack,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _accentDim),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.flag, color: _accent, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    r.tacticalString,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildSummaryRow('Angular (elev)',
+              '${r.elevation.angular.toStringAsFixed(2)} ${r.unit == TurretUnit.moa ? "MOA" : "MRAD"}'),
+          _buildSummaryRow('Angular (wind)',
+              '${r.windage.angular.toStringAsFixed(2)} ${r.unit == TurretUnit.moa ? "MOA" : "MRAD"}'),
+          _buildSummaryRow('Click value', _optic.clickValueLabel),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDirectionIndicator({
+    required String label,
+    required String direction,
+    required int clicks,
+    required Axis axis,
+  }) {
+    final bool isUp = direction == 'UP';
+    final bool isDown = direction == 'DOWN';
+    final bool isLeft = direction == 'LEFT';
+    final bool isRight = direction == 'RIGHT';
+    final bool none = direction.isEmpty || clicks == 0;
+
+    final Color color = none
+        ? Colors.white38
+        : (isUp || isLeft ? _goGreen : _dangerRed);
+
+    IconData icon;
+    if (isUp) {
+      icon = Icons.arrow_upward;
+    } else if (isDown) {
+      icon = Icons.arrow_downward;
+    } else if (isLeft) {
+      icon = Icons.arrow_back;
+    } else if (isRight) {
+      icon = Icons.arrow_forward;
+    } else {
+      icon = Icons.center_focus_strong;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1)),
+          const SizedBox(height: 8),
+          Icon(icon, color: color, size: 32),
+          const SizedBox(height: 6),
+          Text(
+            none ? 'ON' : '$direction $clicks',
+            style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5),
+            textAlign: TextAlign.center,
+          ),
+          if (!none)
+            Text('CLICKS',
+                style: TextStyle(color: color, fontSize: 10, letterSpacing: 1)),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  //  TAB 3 — SFP SCALING
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSfpTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionLabel('Reticle Focal-Plane Scaling'),
+          const SizedBox(height: 4),
+          Text(
+            _optic.focalPlane == FocalPlane.ffp
+                ? 'FFP active: reticle is true at ALL magnifications — no scaling needed.'
+                : 'SFP active: reticle subtension scales inversely with magnification.',
+            style: TextStyle(
+                color: _optic.focalPlane == FocalPlane.ffp
+                    ? _goGreen
+                    : _accent,
+                fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInputField(
+                  controller: _nativeMagCtrl,
+                  label: 'Native Mag (x)',
+                  icon: Icons.zoom_in,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInputField(
+                  controller: _currentMagCtrl,
+                  label: 'Current Mag (x)',
+                  icon: Icons.zoom_out,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInputField(
+            controller: _nativeHoldCtrl,
+            label: 'Native Reticle Hold (${_optic.turretUnitLabel})',
+            icon: Icons.grid_on,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _computeSfp,
+              icon: const Icon(Icons.calculate),
+              label: const Text('COMPUTE TRUE HOLDOVER',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_sfpResult != null) _buildSfpResultCard(_sfpResult!),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSfpResultCard(SfpScalingResult r) {
+    final unitLabel = r.unit == TurretUnit.moa ? 'MOA' : 'MRAD';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _panelBlack,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _accent.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${r.focalPlane == FocalPlane.ffp ? "FFP" : "SFP"} SCALING RESULT',
+              style: const TextStyle(
+                  color: _accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2)),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _tacticalBlack,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _accentDim),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('TRUE RETICLE VALUE',
+                    style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1)),
+                Text(
+                    '${r.trueReticleValue.toStringAsFixed(2)} $unitLabel',
+                    style: const TextStyle(
+                        color: _accent,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildSummaryRow(
+              'Scaling factor', '${r.scalingFactor.toStringAsFixed(3)}x'),
+          _buildSummaryRow(
+              'Status',
+              r.isScaled
+                  ? 'Scaled (non-native magnification)'
+                  : 'No scaling required'),
+          _buildSummaryRow('Focal plane',
+              r.focalPlane == FocalPlane.ffp ? 'FFP' : 'SFP'),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  //  TAB 4 — TURRET TRACKING LOG
+  // ---------------------------------------------------------------------------
+
+  Widget _buildTrackingTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionLabel('Tall-Target Turret Tracking Test'),
+          const SizedBox(height: 4),
+          Text(
+            'Dial a known ${_optic.turretUnitLabel} value, measure the actual target displacement, and verify tracking accuracy.',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildInputField(
+                  controller: _dialedCtrl,
+                  label: 'Dialed (${_optic.turretUnitLabel})',
+                  icon: Icons.tune,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildInputField(
+                  controller: _measuredCtrl,
+                  label: 'Measured (in)',
+                  icon: Icons.straighten,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInputField(
+            controller: _trackDistanceCtrl,
+            label: 'Distance (yards)',
+            icon: Icons.flag,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _logTrackingTest,
+              icon: const Icon(Icons.post_add),
+              label: const Text('LOG TRACKING TEST',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_trackingLog.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              alignment: Alignment.center,
+              child: Text(
+                'No tracking tests logged yet.\nRun a tall-target test to verify turret accuracy.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            )
+          else
+            ..._trackingLog.map(_buildTrackingEntryCard),
+          if (_trackingLog.length > 1) ...[
+            const SizedBox(height: 12),
+            _buildAggregateErrorCard(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingEntryCard(TurretTrackingEntry e) {
+    final r = e.result;
+    final color = _qualityColor(r.trackingQuality);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _panelBlack,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.verified, color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${r.qualityLabel} — ${r.trackingErrorPercent.toStringAsFixed(2)}% error',
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                  '${e.timestamp.hour.toString().padLeft(2, '0')}:${e.timestamp.minute.toString().padLeft(2, '0')}',
+                  style:
+                      const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildSummaryRow('Dialed',
+              '${e.dialedValue.toStringAsFixed(1)} ${r.unit == TurretUnit.moa ? "MOA" : "MRAD"}'),
+          _buildSummaryRow('Expected',
+              '${r.expectedDisplacementInches.toStringAsFixed(2)} in'),
+          _buildSummaryRow('Measured',
+              '${r.measuredDisplacementInches.toStringAsFixed(2)} in'),
+          _buildSummaryRow(
+              'Distance', '${e.distanceYards.toStringAsFixed(0)} yd'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAggregateErrorCard() {
+    final avg = _trackingLog
+            .map((e) => e.result.trackingErrorPercent)
+            .reduce((a, b) => a + b) /
+        _trackingLog.length;
+    final color = _qualityColor(
+        avg <= 1 ? TrackingQuality.excellent : (avg <= 3 ? TrackingQuality.good : (avg <= 5 ? TrackingQuality.fair : TrackingQuality.poor)));
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.insights, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Average tracking error across ${_trackingLog.length} tests: ${avg.toStringAsFixed(2)}%',
+              style: TextStyle(
+                  color: color, fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _qualityColor(TrackingQuality q) {
+    switch (q) {
+      case TrackingQuality.excellent:
+        return _goGreen;
+      case TrackingQuality.good:
+        return _accent;
+      case TrackingQuality.fair:
+        return Colors.orange;
+      case TrackingQuality.poor:
+        return _dangerRed;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  //  SHARED UI PRIMITIVES
+  // ---------------------------------------------------------------------------
+
+  Widget _buildFooter() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      decoration: const BoxDecoration(
+        color: _tacticalBlack,
+        border: Border(top: BorderSide(color: _accentDim, width: 0.5)),
       ),
       child: Row(
         children: [
           Expanded(
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFC5A059)),
+                foregroundColor: Colors.white54,
+                side: const BorderSide(color: _accentDim),
                 padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: () {
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-              },
-              child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('CLOSE'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             flex: 2,
-            child: ElevatedButton(
+            child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC5A059),
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: () {
-                if (!context.mounted) return;
-                _saveScopeSettings();
-                Navigator.of(context).pop();
-              },
-              child: const Text(
-                'APPLY SETTINGS',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              onPressed: _selectedRifleId == null || _isSaving ? null : _saveOptic,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : const Icon(Icons.save),
+              label: Text(
+                  _selectedRifleId == null ? 'LINK FIREARM FIRST' : 'SAVE OPTIC',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -1524,14 +1047,30 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _buildSectionLabel(String text) {
     return Text(
-      title.toUpperCase(),
+      text.toUpperCase(),
       style: const TextStyle(
-        color: Color(0xFFC5A059),
+        color: _accent,
         fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
@@ -1551,33 +1090,27 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         children: [
           Expanded(
             flex: 2,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
+            child: Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 13)),
           ),
           Expanded(
             flex: 3,
             child: Slider(
-              value: value,
+              value: value.clamp(min, max),
               min: min,
               max: max,
               divisions: divisions,
-              inactiveColor: Colors.grey.withValues(alpha: 0.3),
-              onChanged: (v) {
-                if (!context.mounted) return;
-                onChanged(v);
-              },
+              activeColor: _accent,
+              inactiveColor: _accentDim.withValues(alpha: 0.3),
+              onChanged: onChanged,
             ),
           ),
           SizedBox(
-            width: 70,
+            width: 56,
             child: Text(
-              '${value.toStringAsFixed(1)} $unit',
+              '${value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2)} $unit',
               style: const TextStyle(
-                color: Color(0xFFC5A059),
-                fontWeight: FontWeight.bold,
-              ),
+                  color: _accent, fontWeight: FontWeight.bold, fontSize: 12),
               textAlign: TextAlign.right,
             ),
           ),
@@ -1586,177 +1119,164 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     );
   }
 
-  Widget _buildCalcRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+  Widget _buildSegControl({
+    required String label,
+    required List<String> options,
+    required String value,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: _tacticalBlack,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _accentDim.withValues(alpha: 0.4)),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFFC5A059),
-              fontWeight: FontWeight.bold,
-            ),
+          child: Row(
+            children: options
+                .map((o) => Expanded(
+                      child: GestureDetector(
+                        onTap: () => onChanged(o),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: value == o ? _accent : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            o,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: value == o ? Colors.black : Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextFieldCard({
+    required String label,
+    required String value,
+    required String hint,
+    TextInputType? keyboardType,
+    List<String>? dropdown,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: _panelBlack,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _accentDim.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ),
+          Expanded(
+            flex: 3,
+            child: dropdown == null
+                ? TextField(
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    controller: TextEditingController(text: value)
+                      ..selection = TextSelection.fromPosition(
+                          TextPosition(offset: value.length)),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: hint,
+                      hintStyle: const TextStyle(color: Colors.white24),
+                      border: InputBorder.none,
+                    ),
+                    keyboardType: keyboardType,
+                    onChanged: onChanged,
+                  )
+                : DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: dropdown.contains(value) ? value : dropdown.first,
+                      isExpanded: true,
+                      dropdownColor: _panelBlack,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      items: dropdown
+                          .map((d) => DropdownMenuItem(
+                              value: d, child: Text(d, style: const TextStyle(fontSize: 13))))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) onChanged(v);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  void _saveScopeSettings() {
-    debugPrint('Scope settings saved:');
-    debugPrint('  Rifle: ${_selectedRifle?.name ?? "None"}');
-    debugPrint('  Ammo: ${_selectedAmmoId ?? "None"}');
-    debugPrint('  Reticle: $_selectedReticle');
-    debugPrint('  Click Value: $_clickValue MOA');
-    debugPrint('  Tube: $_tubeDiameter mm');
-    debugPrint('  Objective: $_objectiveDiameter mm');
-    debugPrint('  Elevation: $_elevationAdjustment MOA');
-    debugPrint('  Windage: $_windageAdjustment MOA');
-    debugPrint('  Parallax: $_parallaxDistance yd');
-    debugPrint('  Illuminated: $_isIlluminated');
-  }
-}
-
-/// Custom painter for the gyro crosshairs
-class _GyroCrosshairPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint =
-        Paint()
-          ..color = const Color(0xFFC5A059).withValues(alpha: 0.5)
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke;
-
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Horizontal line
-    canvas.drawLine(
-      Offset(20, center.dy),
-      Offset(size.width - 20, center.dy),
-      paint,
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.number,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      decoration: BoxDecoration(
+        color: _panelBlack,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _accentDim.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _accent, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              keyboardType: keyboardType,
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: label,
+                labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
-
-    // Vertical line
-    canvas.drawLine(
-      Offset(center.dx, 20),
-      Offset(center.dx, size.height - 20),
-      paint,
-    );
-
-    // Inner circle
-    canvas.drawCircle(center, 60, paint);
-
-    // Degree markers
-    final markerPaint =
-        Paint()
-          ..color = const Color(0xFFC5A059)
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke;
-
-    for (int i = -45; i <= 45; i += 15) {
-      final angle = i * pi / 180.0;
-      final innerRadius = 80.0;
-      final outerRadius = 90.0;
-
-      final start = Offset(
-        center.dx + innerRadius * sin(angle),
-        center.dy - innerRadius * cos(angle),
-      );
-      final end = Offset(
-        center.dx + outerRadius * sin(angle),
-        center.dy - outerRadius * cos(angle),
-      );
-
-      canvas.drawLine(start, end, markerPaint);
-    }
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Custom painter for the scanner grid overlay
-class _ScannerGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint =
-        Paint()
-          ..color = const Color(0xFFC5A059).withValues(alpha: 0.2)
-          ..strokeWidth = 1
-          ..style = PaintingStyle.stroke;
+/// A single tall-target turret tracking test entry, stored in the session log.
+class TurretTrackingEntry {
+  final double dialedValue;
+  final double measuredInches;
+  final double distanceYards;
+  final TrackingTestResult result;
+  final DateTime timestamp;
 
-    // Vertical lines
-    for (int i = 1; i < 4; i++) {
-      final x = size.width * i / 4;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-
-    // Horizontal lines
-    for (int i = 1; i < 4; i++) {
-      final y = size.height * i / 4;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Custom painter for displaying shot group on scanner
-class _ShotGroupPainter extends CustomPainter {
-  final List<Map<String, double>> hits;
-  final Map<String, double> center;
-
-  _ShotGroupPainter({required this.hits, required this.center});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centerX = size.width / 2;
-    final centerY = size.height / 2;
-    final scale = 10.0; // pixels per cm
-
-    // Draw hit markers
-    final hitPaint =
-        Paint()
-          ..color = Colors.red
-          ..style = PaintingStyle.fill;
-
-    for (final hit in hits) {
-      final x = centerX + (hit['x'] ?? 0) * scale;
-      final y =
-          centerY - (hit['y'] ?? 0) * scale; // Invert Y for screen coordinates
-      canvas.drawCircle(Offset(x, y), 4, hitPaint);
-    }
-
-    // Draw center marker
-    final centerPaint =
-        Paint()
-          ..color = const Color(0xFFC5A059)
-          ..style = PaintingStyle.fill;
-
-    final cx = centerX + (center['x'] ?? 0) * scale;
-    final cy = centerY - (center['y'] ?? 0) * scale;
-    canvas.drawCircle(Offset(cx, cy), 6, centerPaint);
-
-    // Draw crosshair at group center
-    final crosshairPaint =
-        Paint()
-          ..color = const Color(0xFFC5A059)
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke;
-
-    canvas.drawLine(Offset(cx - 15, cy), Offset(cx + 15, cy), crosshairPaint);
-    canvas.drawLine(Offset(cx, cy - 15), Offset(cx, cy + 15), crosshairPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShotGroupPainter oldDelegate) {
-    return hits != oldDelegate.hits || center != oldDelegate.center;
-  }
+  const TurretTrackingEntry({
+    required this.dialedValue,
+    required this.measuredInches,
+    required this.distanceYards,
+    required this.result,
+    required this.timestamp,
+  });
 }

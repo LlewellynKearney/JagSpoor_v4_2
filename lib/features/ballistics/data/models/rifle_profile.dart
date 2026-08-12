@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'optic_profile.dart';
 
 /// Represents a rifle profile from the Digital Firearm Safe.
 class RifleProfile {
@@ -10,6 +11,10 @@ class RifleProfile {
   final String serialNumber;
   final String ownerId;
 
+  /// Linked optic specification (tube diameter, HOB, turret units, focal
+  /// plane, reticle, etc.). May be null on legacy firearm documents.
+  final OpticProfile? optic;
+
   const RifleProfile({
     required this.id,
     required this.name,
@@ -17,6 +22,7 @@ class RifleProfile {
     this.scopeClickValue = 0.25,
     this.serialNumber = '',
     this.ownerId = '',
+    this.optic,
   });
 
   factory RifleProfile.fromFirestore(
@@ -31,24 +37,34 @@ class RifleProfile {
   }
 
   factory RifleProfile.fromJson(Map<String, dynamic> json, {String? id}) {
+    OpticProfile? optic;
+    final opticData = json['optic'];
+    if (opticData is Map) {
+      optic = OpticProfile.fromJson(
+        opticData.map((k, v) => MapEntry(k.toString(), v)),
+      );
+    }
+    final clickValue = _doubleOrDefault(json['scopeClickValue']);
     return RifleProfile(
       id: id ?? (json['id'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
       caliber: (json['caliber'] as String?) ?? '',
-      scopeClickValue: _doubleOrDefault(json['scopeClickValue']),
+      scopeClickValue: clickValue,
       serialNumber: (json['serialNumber'] as String?) ?? '',
       ownerId: (json['ownerId'] as String?) ?? '',
+      optic: optic,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'caliber': caliber,
-    'scopeClickValue': scopeClickValue,
-    'serialNumber': serialNumber,
-    'ownerId': ownerId,
-  };
+        'id': id,
+        'name': name,
+        'caliber': caliber,
+        'scopeClickValue': scopeClickValue,
+        'serialNumber': serialNumber,
+        'ownerId': ownerId,
+        if (optic != null) 'optic': optic!.toJson(),
+      };
 
   Map<String, dynamic> toFirestore() => toJson();
 
@@ -67,6 +83,7 @@ class RifleProfile {
     double? scopeClickValue,
     String? serialNumber,
     String? ownerId,
+    OpticProfile? optic,
   }) {
     return RifleProfile(
       id: id ?? this.id,
@@ -75,6 +92,7 @@ class RifleProfile {
       scopeClickValue: scopeClickValue ?? this.scopeClickValue,
       serialNumber: serialNumber ?? this.serialNumber,
       ownerId: ownerId ?? this.ownerId,
+      optic: optic ?? this.optic,
     );
   }
 }

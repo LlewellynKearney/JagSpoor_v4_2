@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'models/optic_profile.dart';
 
 /// Result of the gyro holdover calculation.
 class GyroHoldoverResult {
@@ -552,5 +553,291 @@ class ScopeCalculator {
       bulletDrops: bulletDrops,
       isValid: true,
     );
+  }
+
+  // ===========================================================================
+  //  STATE-OF-THE-ART OPTIC CALIBRATION TOOLSET
+  // ===========================================================================
+
+  /// Constant: 1 MOA subtends 1.047" at 100 yards.
+  static const double inchesPerMoaAt100yd = 1.047;
+
+  /// Constant: 1 MRAD subtends 3.6" at 100 yards (= 10 cm at 100 m).
+  static const double inchesPerMradAt100yd = 3.6;
+
+  /// One-direction click correction for a single axis.
+  static ClickAxisCorrection _axisCorrection({
+    required double displacementInches,
+    required double distanceYards,
+    required TurretUnit unit,
+    required double clickValue,
+  }) {
+    final safeDistance = distanceYards <= 0 ? 100.0 : distanceYards;
+    final safeClick = clickValue <= 0 ? 0.25 : clickValue;
+
+    // Angular correction in the scope's native unit.
+    double angular;
+    if (unit == TurretUnit.mrad) {
+      // MRAD = displacement / (distance * inchesPerMradAt100yd / 100)
+      angular = (displacementInches.abs() / safeDistance) *
+          (100.0 / inchesPerMradAt100yd);
+    } else {
+      // MOA = displacement / (distance * inchesPerMoaAt100yd / 100)
+      angular = (displacementInches.abs() / safeDistance) *
+          (100.0 / inchesPerMoaAt100yd);
+    }
+
+    final rawClicks = angular / safeClick;
+    final roundedClicks = rawClicks.round();
+    final direction = displacementInches > 0
+        ? ClickDirection.positive
+        : (displacementInches < 0 ? ClickDirection.negative : ClickDirection.zero);
+
+    return ClickAxisCorrection(
+      angular: angular,
+      rawClicks: rawClicks,
+      clicks: roundedClicks,
+      direction: direction,
+    );
+  }
+
+  /// Zeroing displacement → exact turret clicks for both MOA and MRAD scopes.
+  ///
+  /// Sign convention (point-of-impact relative to point-of-aim):
+  /// - [verticalInches]: + = impact HIGH (dial DOWN), - = impact LOW (dial UP).
+  ///   We return the elevation correction to dial, so "impact low" → UP.
+  /// - [horizontalInches]: + = impact RIGHT (dial LEFT), - = impact LEFT (dial RIGHT).
+  ///   We return the windage correction to dial, so "impact right" → LEFT.
+  static ZeroingResult calculateZeroingClicks({
+    required double verticalInches,
+    required double horizontalInches,
+    required double distanceYards,
+    required TurretUnit unit,
+    required double clickValue,
+  }) {
+    final v = _validateInput(verticalInches, 0.0);
+    final h = _validateInput(horizontalInches, 0.0);
+    final d = _validateInput(distanceYards, 100.0);
+
+    // Elevation: impact low (negative v) → dial UP. Invert sign so "dial up"
+    // is represented as a positive click count with direction UP.
+    final elev = _axisCorrection(
+      displacementInches: -v,
+      distanceYards: d,
+      unit: unit,
+      clickValue: clickValue,
+    );
+    // Windage: impact right (positive h) → dial LEFT. Invert sign so "dial left"
+    // is a positive click count with direction LEFT.
+    final wind = _axisCorrection(
+      displacementInches: -h,
+      distanceYards: d,
+      unit: unit,
+      clickValue: clickValue,
+    );
+
+    final elevDir = v > 0
+        ? 'DOWN'
+        : (v < 0 ? 'UP' : '');
+    final windDir = h > 0
+        ? 'LEFT'
+        : (h < 0 ? 'RIGHT' : '');
+
+    String tactical;
+    final parts = <String>[];
+    if (elevDir.isNotEmpty) parts.add('$elevDir ${elev.clicks} CLICKS');
+    if (windDir.isNotEmpty) parts.add('$windDir ${wind.clicks} CLICKS');
+    tactical = parts.isEmpty ? 'ON TARGET — NO ADJUSTMENT' : parts.join(' • ');
+
+    return ZeroingResult(
+      elevation: elev,
+      windage: wind,
+      elevationDirection: elevDir,
+      windageDirection: windDir,
+      tacticalString: tactical,
+      unit: unit,
+    );
+  }
+
+  /// True reticle holdover scaling for SFP scopes at non-native magnification.
+  ///
+  /// For a Second Focal Plane scope, the reticle's stated subtension (e.g. a
+  /// mil-dot) is only accurate at its [nativeMagnification]. At any other
+  /// magnification the true angular value scales as:
+  ///
+  ///   trueValue = nativeValue * (nativeMagnification / currentMagnification)
+  ///
+  /// For an FFP scope the reticle is true at all powers, so the value is
+  /// returned unchanged.
+  static SfpScalingResult calculateSfpScaling({
+    required double nativeMagnification,
+    required double currentMagnification,
+    required double nativeReticleValue,
+    required TurretUnit unit,
+    required FocalPlane focalPlane,
+  }) {
+    final nativeMag = _validateInput(nativeMagnification, 10.0);
+    final currentMag = _validateInput(currentMagnification, 10.0);
+    final nativeVal = _validateInput(nativeReticleValue, 1.0);
+
+    if (currentMag <= 0) {
+      return SfpScalingResult(
+        trueReticleValue: nativeVal,
+        scalingFactor: 1.0,
+        isScaled: false,
+        unit: unit,
+        focalPlane: focalPlane,
+      );
+    }
+
+    final bool isScaled = focalPlane == FocalPlane.sfp &&
+        (nativeMag - currentMag).abs() > 0.001;
+
+    final factor = focalPlane == FocalPlane.ffp
+        ? 1.0
+        : nativeMag / currentMag;
+    final trueValue = _sanitizeOutput(nativeVal * factor);
+
+    return SfpScalingResult(
+      trueReticleValue: trueValue,
+      scalingFactor: factor,
+      isScaled: isScaled,
+      unit: unit,
+      focalPlane: focalPlane,
+    );
+  }
+
+  /// Tall-target turret tracking test: compares dialed angular against the
+  /// measured displacement at a known range, returning the tracking error.
+  static TrackingTestResult calculateTrackingError({
+    required double dialedValue,
+    required double measuredDisplacementInches,
+    required double distanceYards,
+    required TurretUnit unit,
+  }) {
+    final dialed = _validateInput(dialedValue, 0.0);
+    final measured = _validateInput(measuredDisplacementInches, 0.0);
+    final d = _validateInput(distanceYards, 100.0);
+
+    // Expected displacement at range for the dialed angular amount.
+    final per100 = unit == TurretUnit.mrad
+        ? inchesPerMradAt100yd
+        : inchesPerMoaAt100yd;
+    final expected = _sanitizeOutput(dialed * per100 * (d / 100.0));
+
+    double errorPercent;
+    if (expected.abs() < 0.0001) {
+      errorPercent = 0.0;
+    } else {
+      errorPercent = _sanitizeOutput(
+        ((measured - expected).abs() / expected) * 100.0,
+      );
+    }
+
+    final trackingQuality = errorPercent <= 1.0
+        ? TrackingQuality.excellent
+        : (errorPercent <= 3.0
+            ? TrackingQuality.good
+            : (errorPercent <= 5.0
+                ? TrackingQuality.fair
+                : TrackingQuality.poor));
+
+    return TrackingTestResult(
+      expectedDisplacementInches: expected,
+      measuredDisplacementInches: measured,
+      trackingErrorPercent: errorPercent,
+      trackingQuality: trackingQuality,
+      unit: unit,
+    );
+  }
+}
+
+/// Direction of a single-axis click correction.
+enum ClickDirection { positive, negative, zero }
+
+/// Click correction along one turret axis (elevation or windage).
+class ClickAxisCorrection {
+  final double angular;
+  final double rawClicks;
+  final int clicks;
+  final ClickDirection direction;
+
+  const ClickAxisCorrection({
+    required this.angular,
+    required this.rawClicks,
+    required this.clicks,
+    required this.direction,
+  });
+}
+
+/// Full zeroing displacement → click correction result for both axes.
+class ZeroingResult {
+  final ClickAxisCorrection elevation;
+  final ClickAxisCorrection windage;
+  final String elevationDirection;
+  final String windageDirection;
+  final String tacticalString;
+  final TurretUnit unit;
+
+  const ZeroingResult({
+    required this.elevation,
+    required this.windage,
+    required this.elevationDirection,
+    required this.windageDirection,
+    required this.tacticalString,
+    required this.unit,
+  });
+
+  bool get hasAdjustment =>
+      elevation.clicks != 0 || windage.clicks != 0;
+}
+
+/// Result of an SFP reticle scaling computation.
+class SfpScalingResult {
+  final double trueReticleValue;
+  final double scalingFactor;
+  final bool isScaled;
+  final TurretUnit unit;
+  final FocalPlane focalPlane;
+
+  const SfpScalingResult({
+    required this.trueReticleValue,
+    required this.scalingFactor,
+    required this.isScaled,
+    required this.unit,
+    required this.focalPlane,
+  });
+}
+
+/// Quality band for a turret tracking test.
+enum TrackingQuality { excellent, good, fair, poor }
+
+/// Result of a single tall-target turret tracking test entry.
+class TrackingTestResult {
+  final double expectedDisplacementInches;
+  final double measuredDisplacementInches;
+  final double trackingErrorPercent;
+  final TrackingQuality trackingQuality;
+  final TurretUnit unit;
+
+  const TrackingTestResult({
+    required this.expectedDisplacementInches,
+    required this.measuredDisplacementInches,
+    required this.trackingErrorPercent,
+    required this.trackingQuality,
+    required this.unit,
+  });
+
+  String get qualityLabel {
+    switch (trackingQuality) {
+      case TrackingQuality.excellent:
+        return 'Excellent';
+      case TrackingQuality.good:
+        return 'Good';
+      case TrackingQuality.fair:
+        return 'Fair';
+      case TrackingQuality.poor:
+        return 'Poor';
+    }
   }
 }
