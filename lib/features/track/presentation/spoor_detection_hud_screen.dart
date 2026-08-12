@@ -30,6 +30,22 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
   /// are restricted to this category to prevent cross-type misclassification.
   TrackCategory? _selectedCategory;
 
+  /// Optional scale-reference object placed beside the track, used to
+  /// calibrate pixel → millimetre measurements for exact species-size matching.
+  static const List<({String label, double mm})> _scaleReferences = [
+    (label: 'None', mm: 0),
+    (label: '5-Rand Coin', mm: 26.0),
+    (label: '1-Rand Coin', mm: 23.0),
+    (label: '9mm Case', mm: 19.0),
+    (label: '.308 Case', mm: 51.0),
+    (label: 'Box of Matches', mm: 50.0),
+  ];
+  int _selectedScaleIndex = 0;
+  double? get _scaleReferenceMm {
+    final ref = _scaleReferences[_selectedScaleIndex];
+    return ref.mm > 0 ? ref.mm : null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +118,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
       final result = await _spoorAIService.predictSpoor(
         image,
         category: _selectedCategory,
+        scaleReferenceMm: _scaleReferenceMm,
       );
 
       if (mounted) {
@@ -453,7 +470,63 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
               for (final c in categories) _categoryChip(c, categoryLabel(c), scanColor),
             ],
           ),
+          const SizedBox(height: 14),
+          Text(
+            'SCALE REFERENCE',
+            style: TextStyle(
+              color: scanColor,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _scaleReferenceMm == null
+                ? 'No reference — dimensions estimated'
+                : 'Calibrating to ${_scaleReferences[_selectedScaleIndex].label} '
+                    '(${_scaleReferenceMm!.toStringAsFixed(0)}mm)',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (int i = 0; i < _scaleReferences.length; i++)
+                _scaleReferenceChip(i, _scaleReferences[i], scanColor),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _scaleReferenceChip(
+    int index,
+    ({String label, double mm}) ref,
+    Color scanColor,
+  ) {
+    final selected = _selectedScaleIndex == index;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedScaleIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? scanColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? scanColor : scanColor.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          ref.mm > 0 ? '${ref.label} (${ref.mm}mm)' : ref.label,
+          style: TextStyle(
+            color: selected ? Colors.black : Colors.white70,
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }

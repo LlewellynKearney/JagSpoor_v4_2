@@ -32,8 +32,28 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
   /// Pre-selected morphological track category (null = unfiltered).
   TrackCategory? _selectedCategory;
 
+  /// Optional scale-reference object placed beside the track, used to
+  /// calibrate pixel → millimetre measurements for exact species-size matching.
+  /// null = no reference (focal-scaling estimate used instead).
+  static const List<({String label, double mm})> _scaleReferences = [
+    (label: 'None', mm: 0),
+    (label: '5-Rand Coin', mm: 26.0),
+    (label: '1-Rand Coin', mm: 23.0),
+    (label: '9mm Case', mm: 19.0),
+    (label: '.308 Case', mm: 51.0),
+    (label: 'Box of Matches', mm: 50.0),
+  ];
+  int _selectedScaleIndex = 0;
+  double? get _scaleReferenceMm {
+    final ref = _scaleReferences[_selectedScaleIndex];
+    return ref.mm > 0 ? ref.mm : null;
+  }
+
   /// Ranked top-3 predictions from the last scan (empty if unavailable).
   List<SpoorPrediction> _topPredictions = const [];
+
+  /// Geometric metrics from the last scan (for displaying measured mm).
+  dynamic _lastMetrics;
 
   @override
   void initState() {
@@ -107,7 +127,11 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       });
 
       final nativeResult = await SpoorIdentifierService.instance
-          .classifySpoorTrack(capturedImage, category: _selectedCategory);
+          .classifySpoorTrack(
+        capturedImage,
+        category: _selectedCategory,
+        scaleReferenceMm: _scaleReferenceMm,
+      );
       final bool success = nativeResult['success'] as bool? ?? true;
       final String trackingResult =
           nativeResult['trackingResult'] as String? ??
@@ -119,6 +143,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
               ?.whereType<SpoorPrediction>()
               .toList() ??
           const <SpoorPrediction>[];
+      final metrics = nativeResult['metrics'];
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -130,6 +155,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         _matchedAnimal =
             '$trackingResult (${(confidence * 100).toStringAsFixed(1)}%)';
         _topPredictions = top;
+        _lastMetrics = metrics;
         _scanTimestamp = DateTime.now().toIso8601String();
         _latitude = position.latitude;
         _longitude = position.longitude;
@@ -362,7 +388,91 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
                 _categoryChip(c, categoryLabel(c), accent),
             ],
           ),
+          const SizedBox(height: 16),
+          // On-screen track scale reference for mm measurement.
+          Text(
+            'SCALE REFERENCE (place beside track)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: widget.theme.subtitleColor,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (int i = 0; i < _scaleReferences.length; i++)
+                _scaleReferenceChip(i, _scaleReferences[i], accent),
+            ],
+          ),
+          if (_lastMetrics != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: accent.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                _scaleReferenceMm == null
+                    ? 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
+                        '(estimate)'
+                    : 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
+                        '· Circ ${_mmString('circularity')} · Aspect ${_mmString('aspectRatio')}'
+                        ' (calibrated to ${_scaleReferences[_selectedScaleIndex].label})',
+                style: TextStyle(fontSize: 11, color: widget.theme.subtitleColor),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  String _mmString(String field) {
+    final m = _lastMetrics;
+    if (m == null) return '—';
+    try {
+      final v = (m as dynamic)[field];
+      if (v is num) return v.toStringAsFixed(1);
+      return v.toString();
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  Widget _scaleReferenceChip(
+    int index,
+    ({String label, double mm}) ref,
+    Color accent,
+  ) {
+    final selected = _selectedScaleIndex == index;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedScaleIndex = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? accent.withValues(alpha: 0.3)
+              : widget.theme.cardColor.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? accent : accent.withValues(alpha: 0.3),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          ref.mm > 0 ? '${ref.label} (${ref.mm}mm)' : ref.label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+            color: selected ? Colors.white : widget.theme.subtitleColor,
+          ),
+        ),
       ),
     );
   }

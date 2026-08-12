@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
-import '../widgets/vital_zone_painter.dart';
+import '../services/blood_detection_engine.dart';
 
 class BloodTrackerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -22,31 +24,31 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
+  bool _isInitializing = false; // re-entrancy guard for camera init
+  String? _cameraError; // null = no error; non-null = fallback UI shown
   bool _isTorchOn = false;
   bool _isNightVisionActive = false;
   bool _isThermalModeActive = false;
   bool _isDroppingPin = false;
-  bool _showMapView = false;
+  final bool _showMapView = false;
   FlashMode _flashMode = FlashMode.off;
+
+  // Live blood detection
+  final BloodDetectionEngine _bloodEngine = BloodDetectionEngine();
+  bool _isProcessingFrame = false; // throttle: skip frames while busy
+  bool _isStreaming = false;
+  BloodDetectionResult? _bloodResult;
 
   // GPS waypoint tracking
   final List<Map<String, dynamic>> _waypoints = [];
   double _totalDistance = 0;
 
-  // Vital zone anatomy overlay state
-  String _selectedSpecies = 'None'; // Options: None, Kudu, Impala, Warthog
-  String _currentStanceAngle =
-      'Broadside'; // Options: Broadside, Quartering-Towards, Quartering-Away
-  double _anatomyScale = 1.0;
-  Offset _anatomyOffset = Offset.zero;
-
   // High-contrast Ironbow pseudo-thermal color filter matrix
-  // Maps luminance deltas to hot reds/oranges while crushing greens and lifting cold shadows to deep blue
   final List<double> _thermalMatrix = <double>[
-    -1.0, 2.0, 2.0, 0.0, -50.0, // R channel: aggressive luminance amplification
-    2.0, -1.0, 0.0, 0.0, -100.0, // G channel: crushes foliage wavelengths
-    0.0, 0.0, 3.0, 0.0, 100.0, // B channel: lifts cold shadows to blue/indigo
-    0.0, 0.0, 0.0, 1.0, 0.0, // Alpha: transparency stability
+    -1.0, 2.0, 2.0, 0.0, -50.0,
+    2.0, -1.0, 0.0, 0.0, -100.0,
+    0.0, 0.0, 3.0, 0.0, 100.0,
+    0.0, 0.0, 0.0, 1.0, 0.0,
   ];
 
   @override
@@ -59,28 +61,63 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _stopImageStream();
     _cameraController?.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      return;
-    }
-
-    if (state == AppLifecycleState.inactive) {
+    // Robust lifecycle: dispose the camera when the app is backgrounded, and
+    // re-acquire it on resume. Guarded against re-entrant initialization.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _stopImageStream();
       _cameraController?.dispose();
+      _cameraController = null;
+      if (mounted) setState(() => _isInitialized = false);
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      if (!_isInitializing) _initializeCamera();
     }
   }
 
+  /// Checks and requests camera permission before any camera access.
+  /// Returns true if permission is granted.
+  Future<bool> _ensureCameraPermission() async {
+    final status = await Permission.camera.status;
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) {
+      _cameraError =
+          'Camera permission permanently denied. Enable it in app settings.';
+      if (mounted) setState(() {});
+      return false;
+    }
+    final result = await Permission.camera.request();
+    if (!result.isGranted) {
+      _cameraError = 'Camera permission denied.';
+      if (mounted) setState(() {});
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _initializeCamera() async {
+    // Re-entrancy guard: never start two init passes concurrently.
+    if (_isInitializing) return;
+    _isInitializing = true;
+
     try {
+      _cameraError = null;
+      if (mounted) setState(() {});
+
+      if (!await _ensureCameraPermission()) {
+        return;
+      }
+
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
-        _showErrorSnackBar('No cameras available on this device');
+        _cameraError = 'No cameras available on this device.';
+        if (mounted) setState(() {});
         return;
       }
 
@@ -89,11 +126,15 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         orElse: () => _cameras!.first,
       );
 
+      // Dispose any stale controller before creating a fresh one.
+      _cameraController?.dispose();
+
+      // yuv420 supports startImageStream for live blood detection.
       _cameraController = CameraController(
         backCamera,
         ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
       await _cameraController!.initialize();
@@ -103,11 +144,117 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         setState(() {
           _isInitialized = true;
         });
+        // Begin live blood-detection stream once the preview is live.
+        await _startImageStream();
       }
+    } on CameraException catch (e) {
+      // Hardware lens busy / contention: surface a retryable fallback.
+      debugPrint('CameraException: ${e.code} — ${e.description}');
+      _cameraError = e.description?.isNotEmpty == true
+          ? e.description!
+          : 'Camera is busy or unavailable. Try again.';
+      _cameraController = null;
+      if (mounted) setState(() => _isInitialized = false);
     } catch (e) {
-      _showErrorSnackBar('Camera initialization failed: $e');
       debugPrint('Camera initialization error: $e');
+      _cameraError = 'Camera initialization failed: $e';
+      _cameraController = null;
+      if (mounted) setState(() => _isInitialized = false);
+    } finally {
+      _isInitializing = false;
     }
+  }
+
+  Future<void> _startImageStream() async {
+    if (_cameraController == null ||
+        !_cameraController!.value.isInitialized ||
+        _isStreaming) {
+      return;
+    }
+    try {
+      await _cameraController!.startImageStream(_onCameraImage);
+      _isStreaming = true;
+    } catch (e) {
+      debugPrint('startImageStream failed: $e');
+      // Non-fatal: detection overlay simply won't update; preview still works.
+    }
+  }
+
+  Future<void> _stopImageStream() async {
+    if (_cameraController == null || !_isStreaming) return;
+    try {
+      await _cameraController!.stopImageStream();
+    } catch (e) {
+      debugPrint('stopImageStream failed: $e');
+    } finally {
+      _isStreaming = false;
+    }
+  }
+
+  /// Processes a single camera frame: converts YUV420 → RGBA grid, runs the
+  /// HSV blood mask, and triggers a repaint. Throttled so we never queue
+  /// frames faster than we can process them.
+  void _onCameraImage(CameraImage image) {
+    if (_isProcessingFrame) return;
+    _isProcessingFrame = true;
+
+    // Run synchronously on a microtask to keep memory pressure bounded.
+    // Conversion is on a 64×64 grid → cheap enough for the UI thread.
+    scheduleMicrotask(() {
+      try {
+        if (image.planes.length < 3) {
+          _isProcessingFrame = false;
+          return;
+        }
+        final y = image.planes[0].bytes;
+        final u = image.planes[1].bytes;
+        final v = image.planes[2].bytes;
+        final uvRowStride = image.planes[1].bytesPerRow;
+        // For YUV420 the U/V planes are subsampled; pixelStride == bytesPerPixel.
+        final uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
+
+        final grid = _bloodEngine.thresholds.gridSize;
+        final rgba = BloodDetectionEngine.yuv420ToRgbaGrid(
+          yPlane: y,
+          uPlane: u,
+          vPlane: v,
+          width: image.width,
+          height: image.height,
+          uvRowStride: uvRowStride,
+          uvPixelStride: uvPixelStride,
+          targetGridSize: grid,
+        );
+
+        final result = _bloodEngine.detect(
+          rgba: rgba,
+          width: grid,
+          height: grid,
+          bytesPerPixel: 4,
+        );
+
+        if (mounted) {
+          setState(() => _bloodResult = result);
+        }
+      } catch (e) {
+        debugPrint('Blood detection frame error: $e');
+      } finally {
+        _isProcessingFrame = false;
+      }
+    });
+  }
+
+  void _setThresholds({
+    double? redHueTolerance,
+    double? minSaturation,
+    double? minValue,
+  }) {
+    setState(() {
+      _bloodEngine.thresholds = _bloodEngine.thresholds.copyWith(
+        redHueTolerance: redHueTolerance,
+        minSaturation: minSaturation,
+        minValue: minValue,
+      );
+    });
   }
 
   Future<void> _toggleTorch() async {
@@ -135,7 +282,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
   void _toggleNightVision() {
     setState(() {
-      // Thermal mode overrides night vision - deactivate thermal when switching to night vision
       if (_isThermalModeActive) {
         _isThermalModeActive = false;
       }
@@ -157,7 +303,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     });
 
     try {
-      // Get current GPS position
       final position = await _getCurrentPosition();
       if (position == null) {
         _showErrorSnackBar('Could not acquire GPS position');
@@ -167,7 +312,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         return;
       }
 
-      // Calculate distance from last waypoint
       double distanceFromLast = 0;
       if (_waypoints.isNotEmpty) {
         final lastLat = _waypoints.last['lat'] as double;
@@ -181,7 +325,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         _totalDistance += distanceFromLast;
       }
 
-      // Create waypoint entry
       final waypoint = {
         'lat': position.latitude,
         'lon': position.longitude,
@@ -192,7 +335,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
 
       _waypoints.add(waypoint);
 
-      // Enqueue waypoint to OfflineSyncQueue
       await OfflineSyncQueue.instance.enqueueAction('waypoints', 'CREATE', {
         'name': 'Blood Spoor',
         'type': 'Blood Trail',
@@ -201,7 +343,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         'timestamp': DateTime.now().toIso8601String(),
       });
 
-      // Also append to MapPathTracer for drawing the animal's escape route
       MapPathTracer.instance.appendBloodDropNode(
         position.latitude,
         position.longitude,
@@ -394,51 +535,23 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera viewport layer
+          // Camera viewport layer (with graceful fallback on init failure)
           _buildCameraViewport(),
 
-          // Vital zone anatomy overlay (pinch to scale, drag to move)
-          if (_selectedSpecies != 'None')
-            Positioned.fill(
-              child: GestureDetector(
-                onScaleUpdate: (ScaleUpdateDetails details) {
-                  setState(() {
-                    _anatomyScale = (details.scale * _anatomyScale).clamp(
-                      0.5,
-                      3.0,
-                    );
-                    _anatomyOffset += details.focalPointDelta;
-                  });
-                },
-                onDoubleTap: () {
-                  setState(() {
-                    _anatomyScale = 1.0;
-                    _anatomyOffset = Offset.zero;
-                  });
-                },
-                child: CustomPaint(
-                  painter: VitalZonePainter(
-                    species: _selectedSpecies,
-                    scale: _anatomyScale,
-                    offset: _anatomyOffset,
-                    stanceAngle: _currentStanceAngle,
-                  ),
-                  child: Container(),
-                ),
-              ),
-            ),
+          // Live HSV red/hemoglobin blood detection mask overlay
+          _buildBloodDetectionOverlay(),
 
-          // Red color isolation overlay
+          // Red color isolation filter (night vision / thermal modes)
           _buildColorIsolationOverlay(),
 
           // HUD status bar at top
           _buildTopStatusBar(theme),
 
+          // Blood detection threshold controls
+          _buildThresholdControls(),
+
           // Tactical radar HUD controls
           _buildHudDashboard(theme),
-
-          // Anatomy selection toolbar
-          _buildAnatomySelectionToolbar(theme),
 
           // Crosshair reticle
           _buildCrosshairReticle(),
@@ -448,20 +561,48 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   }
 
   Widget _buildCameraViewport() {
-    if (!_isInitialized || _cameraController == null) {
+    // Graceful fallback when the camera failed to initialize (permission
+    // denied, lens busy, or no hardware). Offers a retry action.
+    if (_cameraError != null || !_isInitialized || _cameraController == null) {
       return Container(
         color: Colors.black,
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Colors.red),
-              SizedBox(height: 16),
-              Text(
-                'Initializing camera...',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ],
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _cameraError == null
+                      ? Icons.videocam
+                      : Icons.videocam_off,
+                  color: Colors.red,
+                  size: 48,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _cameraError ?? 'Initializing camera...',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                if (_cameraError != null)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _isInitializing ? null : _initializeCamera,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('RETRY CAMERA'),
+                  ),
+                if (_cameraError == null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: CircularProgressIndicator(color: Colors.red),
+                  ),
+              ],
+            ),
           ),
         ),
       );
@@ -479,42 +620,41 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     );
   }
 
+  /// Live HSV blood-detection mask: highlights red/hemoglobin-colored regions
+  /// on the camera stream in translucent red. Driven by startImageStream.
+  Widget _buildBloodDetectionOverlay() {
+    if (!_isInitialized || _bloodResult == null) {
+      return const SizedBox.shrink();
+    }
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: _BloodMaskPainter(
+            result: _bloodResult!,
+            detectionRatio: _bloodResult!.detectionRatio,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildColorIsolationOverlay() {
-    // Color matrix that boosts red tones and desaturates other colors
-    // This enhances blood trail visibility against green/brown backgrounds
-    const redIsolationMatrix = <double>[
-      // Red channel - enhance red, reduce green/blue contribution
-      1.5, -0.2, -0.1, 0, 0,
-      // Green channel - desaturate green
-      -0.1, 0.3, 0.1, 0, 0,
-      // Blue channel - reduce blue contribution
-      -0.2, 0.1, 0.2, 0, 0,
-      // Alpha channel
-      0, 0, 0, 1, 0,
-    ];
-
-    // Night vision green phosphor monochrome matrix
-    // Amplifies all luminance but maps it to green channel for night viewing
     const nightVisionMatrix = <double>[
-      // Red channel - convert to green luminance
       0.3, 0.59, 0.11, 0, 0,
-      // Green channel - boost green significantly
       0.2, 0.8, 0.1, 0, 0,
-      // Blue channel - minimal blue contribution
       0.1, 0.3, 0.4, 0, 0,
-      // Alpha channel
       0, 0, 0, 1, 0,
     ];
 
-    // Determine which matrix to use: Thermal overrides Night Vision
     List<double> colorMatrix;
     if (_isThermalModeActive) {
-      // Ironbow pseudo-thermal palette: hot reds/oranges, crushed greens, deep blue cold shadows
       colorMatrix = _thermalMatrix;
     } else if (_isNightVisionActive) {
       colorMatrix = nightVisionMatrix;
     } else {
-      colorMatrix = redIsolationMatrix;
+      // No whole-frame tint in normal mode — the per-pixel HSV mask overlay
+      // is what surfaces blood in daylight.
+      return const SizedBox.shrink();
     }
 
     return Positioned.fill(
@@ -547,14 +687,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Title
             Row(
               children: [
-                const Icon(
-                  Icons.visibility_rounded,
-                  color: Colors.red,
-                  size: 20,
-                ),
+                const Icon(Icons.visibility_rounded, color: Colors.red, size: 20),
                 const SizedBox(width: 8),
                 const Text(
                   '🩸 BLOOD TRAIL TRACKER',
@@ -567,32 +702,166 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                 ),
               ],
             ),
-            // GPS status indicator
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.green, width: 1),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.gps_fixed, color: Colors.green, size: 12),
-                  SizedBox(width: 4),
-                  Text(
-                    'GPS',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+            Row(
+              children: [
+                if (_bloodResult != null && _bloodResult!.hasDetection)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.red, width: 1),
+                    ),
+                    child: Text(
+                      '🩸 ${(_bloodResult!.detectionRatio * 100).toStringAsFixed(1)}%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ],
-              ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.green, width: 1),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.gps_fixed, color: Colors.green, size: 12),
+                      SizedBox(width: 4),
+                      Text(
+                        'GPS',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Adjustable HSV threshold sliders for the blood detection mask.
+  Widget _buildThresholdControls() {
+    return Positioned(
+      bottom: MediaQuery.of(context).padding.bottom + 100,
+      left: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.tune, color: Colors.red, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'BLOOD DETECTION THRESHOLDS',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+                Text(
+                  _bloodResult == null
+                      ? '—'
+                      : '${(_bloodResult!.detectionRatio * 100).toStringAsFixed(1)}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _buildThresholdSlider(
+              label: 'Hue Tol',
+              value: _bloodEngine.thresholds.redHueTolerance,
+              min: 5,
+              max: 45,
+              onChanged: (v) => _setThresholds(redHueTolerance: v),
+            ),
+            _buildThresholdSlider(
+              label: 'Sat Min',
+              value: _bloodEngine.thresholds.minSaturation,
+              min: 0.1,
+              max: 0.9,
+              onChanged: (v) => _setThresholds(minSaturation: v),
+            ),
+            _buildThresholdSlider(
+              label: 'Val Min',
+              value: _bloodEngine.thresholds.minValue,
+              min: 0.05,
+              max: 0.6,
+              onChanged: (v) => _setThresholds(minValue: v),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThresholdSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 11)),
+          ),
+          Expanded(
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              divisions: ((max - min) * 20).round(),
+              activeColor: Colors.red,
+              inactiveColor: Colors.red.withValues(alpha: 0.2),
+              onChanged: onChanged,
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              value.toStringAsFixed(2),
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -605,59 +874,48 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Torch toggle button
           _buildHudButton(
             icon: _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
             label: _isTorchOn ? 'ON' : 'OFF',
-            backgroundColor:
-                _isTorchOn
-                    ? Colors.amber.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.6),
+            backgroundColor: _isTorchOn
+                ? Colors.amber.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.6),
             iconColor: _isTorchOn ? Colors.amber : Colors.white70,
             onTap: _toggleTorch,
           ),
-
-          // Night Vision toggle button
           _buildHudButton(
-            icon:
-                _isNightVisionActive ? Icons.nightlight_round : Icons.wb_sunny,
+            icon: _isNightVisionActive
+                ? Icons.nightlight_round
+                : Icons.wb_sunny,
             label: _isNightVisionActive ? 'NV' : 'DAY',
-            backgroundColor:
-                _isNightVisionActive
-                    ? Colors.green.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.6),
+            backgroundColor: _isNightVisionActive
+                ? Colors.green.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.6),
             iconColor: _isNightVisionActive ? Colors.green : Colors.white70,
             onTap: _toggleNightVision,
           ),
-
-          // Blood drop pin button
           _buildBloodPinButton(theme),
-
-          // Map View button
           _buildHudButton(
             icon: Icons.map,
             label: '${_waypoints.length} WP',
-            backgroundColor:
-                _showMapView
-                    ? Colors.blue.withValues(alpha: 0.5)
-                    : Colors.black.withValues(alpha: 0.6),
-            iconColor: _showMapView ? Colors.lightBlueAccent : Colors.white70,
+            backgroundColor: _showMapView
+                ? Colors.blue.withValues(alpha: 0.5)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor:
+                _showMapView ? Colors.lightBlueAccent : Colors.white70,
             onTap: _showMapFullScreen,
           ),
-
-          // Export GPS button
           _buildHudButton(
             icon: Icons.download,
-            label:
-                _totalDistance > 0
-                    ? '${_totalDistance.toStringAsFixed(0)}m'
-                    : 'GPS',
-            backgroundColor:
-                _totalDistance > 0
-                    ? Colors.green.withValues(alpha: 0.5)
-                    : Colors.black.withValues(alpha: 0.6),
-            iconColor:
-                _totalDistance > 0 ? Colors.lightGreenAccent : Colors.white70,
+            label: _totalDistance > 0
+                ? '${_totalDistance.toStringAsFixed(0)}m'
+                : 'GPS',
+            backgroundColor: _totalDistance > 0
+                ? Colors.green.withValues(alpha: 0.5)
+                : Colors.black.withValues(alpha: 0.6),
+            iconColor: _totalDistance > 0
+                ? Colors.lightGreenAccent
+                : Colors.white70,
             onTap: _exportGpsData,
           ),
         ],
@@ -680,10 +938,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         decoration: BoxDecoration(
           color: backgroundColor,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.3),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.4),
@@ -724,10 +979,7 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
             colors: [Color(0xFFFF8C00), Color(0xFFFF6B00)],
           ),
           shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.amber.withValues(alpha: 0.6),
-            width: 2,
-          ),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.6), width: 2),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFFFF6B00).withValues(alpha: 0.5),
@@ -741,38 +993,33 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
             ),
           ],
         ),
-        child:
-            _isDroppingPin
-                ? const Center(
-                  child: SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: CircularProgressIndicator(
+        child: _isDroppingPin
+            ? const Center(
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 3,
+                  ),
+                ),
+              )
+            : const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.bloodtype_rounded, color: Colors.white, size: 32),
+                  SizedBox(height: 2),
+                  Text(
+                    'PIN',
+                    style: TextStyle(
                       color: Colors.white,
-                      strokeWidth: 3,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
                   ),
-                )
-                : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.bloodtype_rounded,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'PIN',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
+              ),
       ),
     );
   }
@@ -786,15 +1033,11 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
             height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.red.withValues(alpha: 0.5),
-                width: 1,
-              ),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 1),
             ),
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Center dot
                 Container(
                   width: 6,
                   height: 6,
@@ -803,7 +1046,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                     shape: BoxShape.circle,
                   ),
                 ),
-                // Cardinal crosshair lines
                 Positioned(
                   top: 0,
                   child: Container(
@@ -836,7 +1078,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                     color: Colors.red.withValues(alpha: 0.6),
                   ),
                 ),
-                // Corner brackets
                 ..._buildCornerBrackets(),
               ],
             ),
@@ -852,7 +1093,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     const color = Colors.red;
 
     return [
-      // Top-left bracket
       Positioned(
         top: 25,
         left: 25,
@@ -863,7 +1103,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           ],
         ),
       ),
-      // Top-right bracket
       Positioned(
         top: 25,
         right: 25,
@@ -874,7 +1113,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           ],
         ),
       ),
-      // Bottom-left bracket
       Positioned(
         bottom: 25,
         left: 25,
@@ -885,7 +1123,6 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
           ],
         ),
       ),
-      // Bottom-right bracket
       Positioned(
         bottom: 25,
         right: 25,
@@ -898,213 +1135,48 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       ),
     ];
   }
+}
 
-  /// Anatomy species and stance selection toolbar for vital zone overlays
-  Widget _buildAnatomySelectionToolbar(ThemeController theme) {
-    return Positioned(
-      bottom: 160,
-      left: 0,
-      right: 0,
-      child: Column(
-        children: [
-          // Stance angle selector row
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.cyan.withValues(alpha: 0.4),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Broadside button
-                _buildStanceButton(
-                  label: 'BROADSIDE (0°)',
-                  icon: '🏹',
-                  isSelected: _currentStanceAngle == 'Broadside',
-                  onTap: () => _setCurrentStanceAngle('Broadside'),
-                ),
-                // Quartering Towards button
-                _buildStanceButton(
-                  label: 'TOWARDS (+30°)',
-                  icon: '🏹',
-                  isSelected: _currentStanceAngle == 'Quartering-Towards',
-                  onTap: () => _setCurrentStanceAngle('Quartering-Towards'),
-                ),
-                // Quartering Away button
-                _buildStanceButton(
-                  label: 'AWAY (-30°)',
-                  icon: '🏹',
-                  isSelected: _currentStanceAngle == 'Quartering-Away',
-                  onTap: () => _setCurrentStanceAngle('Quartering-Away'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Species selector row
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(
-                color: Colors.orange.withValues(alpha: 0.4),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Kudu button
-                _buildAnatomyButton(
-                  label: 'KUDU',
-                  icon: '🦌',
-                  isSelected: _selectedSpecies == 'Kudu',
-                  onTap: () => _selectSpecies('Kudu'),
-                ),
-                // Impala button
-                _buildAnatomyButton(
-                  label: 'IMPALA',
-                  icon: '🦌',
-                  isSelected: _selectedSpecies == 'Impala',
-                  onTap: () => _selectSpecies('Impala'),
-                ),
-                // Warthog button
-                _buildAnatomyButton(
-                  label: 'WARTHOG',
-                  icon: '🐗',
-                  isSelected: _selectedSpecies == 'Warthog',
-                  onTap: () => _selectSpecies('Warthog'),
-                ),
-                // Hide button
-                _buildAnatomyButton(
-                  label: 'HIDE',
-                  icon: '🚫',
-                  isSelected: _selectedSpecies == 'None',
-                  onTap: () => _selectSpecies('None'),
-                  isRed: true,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+/// Paints the HSV blood-detection mask as a translucent red grid overlay,
+/// aligned to the full-bleed camera preview.
+class _BloodMaskPainter extends CustomPainter {
+  final BloodDetectionResult result;
+  final double detectionRatio;
 
-  Widget _buildStanceButton({
-    required String label,
-    required String icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color:
-              isSelected
-                  ? Colors.cyan.withValues(alpha: 0.3)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? Colors.cyan : Colors.white38,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 12)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.cyan : Colors.white54,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  _BloodMaskPainter({required this.result, required this.detectionRatio});
 
-  Widget _buildAnatomyButton({
-    required String label,
-    required String icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-    bool isRed = false,
-  }) {
-    final activeColor = isRed ? Colors.red : Colors.orange;
-    final inactiveColor = Colors.white54;
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!result.hasDetection) return;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color:
-              isSelected
-                  ? activeColor.withValues(alpha: 0.3)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? activeColor : inactiveColor,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? activeColor : inactiveColor,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final grid = result.gridSize;
+    final cellW = size.width / grid;
+    final cellH = size.height / grid;
 
-  void _selectSpecies(String species) {
-    setState(() {
-      _selectedSpecies = species;
-      // Reset scale and offset when switching species
-      _anatomyScale = 1.0;
-      _anatomyOffset = Offset.zero;
-    });
+    final paint = Paint()
+      ..color = Colors.red.withValues(alpha: 0.45)
+      ..style = PaintingStyle.fill;
 
-    if (species == 'None') {
-      _showToast('Vital zone overlay hidden', Colors.grey);
-    } else {
-      _showToast('🦌 $species vital zone overlay active', Colors.orange);
+    final edgePaint = Paint()
+      ..color = Colors.red.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (int y = 0; y < grid; y++) {
+      for (int x = 0; x < grid; x++) {
+        if (result.mask[y][x]) {
+          final rect = Rect.fromLTWH(x * cellW, y * cellH, cellW, cellH);
+          canvas.drawRect(rect, paint);
+          canvas.drawRect(rect, edgePaint);
+        }
+      }
     }
   }
 
-  void _setCurrentStanceAngle(String angle) {
-    setState(() {
-      _currentStanceAngle = angle;
-    });
-  }
+  @override
+  bool shouldRepaint(covariant _BloodMaskPainter oldDelegate) =>
+      detectionRatio != oldDelegate.detectionRatio ||
+      result.detectionCount != oldDelegate.result.detectionCount;
 }
 
 /// Full-screen map view for blood trail visualization

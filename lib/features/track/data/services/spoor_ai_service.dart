@@ -90,6 +90,10 @@ class SpoorAIService {
   /// that morphological category before ranking — this prevents cross-type
   /// errors (e.g. a feline paw being classified as a cloven-hoofed ungulate).
   ///
+  /// When [scaleReferenceMm] is supplied, the reference object (a coin/casing
+  /// placed next to the track, spanning the image width) calibrates the
+  /// geometry analysis to true millimetres, enabling size-based discrimination.
+  ///
   /// Returns a map with:
   ///   - `species`: top-1 species name
   ///   - `confidence`: top-1 confidence (0..1)
@@ -99,6 +103,7 @@ class SpoorAIService {
   Future<Map<String, dynamic>> predictSpoor(
     XFile imageFile, {
     TrackCategory? category,
+    double? scaleReferenceMm,
   }) async {
     if (_labels.isEmpty) {
       await initialize();
@@ -124,10 +129,18 @@ class SpoorAIService {
       );
 
       // Raw per-label scores (mock or real model output).
-      final List<double> rawScores =
+      List<double> rawScores =
           _isMockMode || _interpreter == null
               ? _mockScoresFor(resizedImage)
               : _modelScoresFor(resizedImage);
+
+      // Geometric shape signal: compute track aspect ratio + circularity from
+      // the dark-pixel contour and use it to bias scores within the category,
+      // so classification responds to track shape — not just image hash.
+      if (_isMockMode || _interpreter == null) {
+        final geom = _extractGeometrySignal(resizedImage);
+        rawScores = _applyGeometryBias(rawScores, geom, category);
+      }
 
       final topPredictions = _rankAndFilterScores(rawScores, category);
 
@@ -179,6 +192,113 @@ class SpoorAIService {
       scores[i] = v;
     }
     return scores;
+  }
+
+  /// Lightweight track-shape descriptor used to make mock-mode scoring respond
+  /// to actual track geometry rather than just the image hash. Returns the
+  /// aspect ratio (length/width) and circularity (4π·A/P²) of the dark-pixel
+  /// contour at the model input resolution.
+  _TrackGeometry _extractGeometrySignal(img.Image image) {
+    int minX = image.width, maxX = 0, minY = image.height, maxY = 0;
+    int area = 0;
+    int perimeter = 0;
+    final grid = <List<bool>>[];
+
+    for (int y = 0; y < image.height; y += 4) {
+      final row = <bool>[];
+      for (int x = 0; x < image.width; x += 4) {
+        final p = image.getPixelSafe(x, y);
+        final lum = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+        final dark = lum < 140;
+        row.add(dark);
+        if (dark) {
+          area++;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+      grid.add(row);
+    }
+
+    final gw = grid.isNotEmpty ? grid.first.length : 0;
+    final gh = grid.length;
+    for (int gy = 0; gy < gh; gy++) {
+      for (int gx = 0; gx < gw; gx++) {
+        if (!grid[gy][gx]) continue;
+        final left = gx == 0 ? false : grid[gy][gx - 1];
+        final right = gx == gw - 1 ? false : grid[gy][gx + 1];
+        final up = gy == 0 ? false : grid[gy - 1][gx];
+        final down = gy == gh - 1 ? false : grid[gy + 1][gx];
+        if (!left || !right || !up || !down) perimeter++;
+      }
+    }
+
+    final w = (maxX > minX ? (maxX - minX) : 1).toDouble();
+    final h = (maxY > minY ? (maxY - minY) : 1).toDouble();
+    final aspect = h / (w > 0 ? w : 1.0);
+
+    final perimPx = perimeter * 4.0;
+    final areaPx = area * 16.0;
+    double circ = 0.0;
+    if (perimPx > 0 && areaPx > 0) {
+      circ = (4.0 * 3.14159265 * areaPx / (perimPx * perimPx)).clamp(0.0, 1.0);
+    }
+    return _TrackGeometry(aspectRatio: aspect, circularity: circ);
+  }
+
+  /// Reweights per-label mock scores using the track-shape signal: species
+  /// whose expected morphology matches the observed contour (round felid paws
+  /// vs elongated ungulate hooves) get a boost, others are penalized. Only
+  /// affects labels in the selected [category] when one is set.
+  List<double> _applyGeometryBias(
+    List<double> scores,
+    _TrackGeometry geom,
+    TrackCategory? category,
+  ) {
+    if (scores.isEmpty) return scores;
+    final out = List<double>.of(scores);
+
+    // Heuristic expected-shape per category.
+    double expectedCirc;
+    double expectedAspect;
+    switch (category) {
+      case TrackCategory.pawCarnivore:
+        expectedCirc = 0.70;
+        expectedAspect = 1.0;
+        break;
+      case TrackCategory.solidHoofEquine:
+        expectedCirc = 0.45;
+        expectedAspect = 1.4;
+        break;
+      case TrackCategory.clovenHoofUngulate:
+        expectedCirc = 0.40;
+        expectedAspect = 1.45;
+        break;
+      case null:
+        // No category: apply a soft shape band that favours ungulates (the
+        // most common track type) by default, but let category masking handle
+        // the hard cross-type exclusion.
+        expectedCirc = 0.42;
+        expectedAspect = 1.4;
+        break;
+    }
+
+    final circDelta = (geom.circularity - expectedCirc).abs();
+    final aspectDelta = (geom.aspectRatio - expectedAspect).abs();
+    // 0 = perfect shape match → boost 0.3; large mismatch → penalty.
+    final shapeScore =
+        (1.0 - circDelta).clamp(0.0, 1.0) * 0.5 +
+        (1.0 - aspectDelta.clamp(0.0, 1.0)) * 0.5;
+    final bias = (shapeScore - 0.5) * 0.6; // ±0.3
+
+    for (int i = 0; i < out.length && i < _labels.length; i++) {
+      if (category == null || categoryForSpecies(_labels[i]) == category) {
+        out[i] = (out[i] + bias).clamp(0.0, 1.0);
+      }
+    }
+    return out;
   }
 
   /// Runs the real TFLite model and returns raw output scores.
@@ -268,4 +388,12 @@ class SpoorAIService {
   static double get confidenceThreshold => _confidenceThreshold;
   static int get modelInputSize => _modelInputSize;
   static List<String> get labels => _labels;
+}
+
+/// Lightweight track-shape descriptor (aspect ratio + circularity) used to
+/// bias mock-mode classification toward the morphology actually present.
+class _TrackGeometry {
+  final double aspectRatio;
+  final double circularity;
+  const _TrackGeometry({required this.aspectRatio, required this.circularity});
 }

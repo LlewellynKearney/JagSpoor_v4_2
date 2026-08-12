@@ -1,5 +1,16 @@
 # JagSpoor — Agent Memory
 
+## Canonical project context (added 2026-08-12)
+
+- `context.md` is now the **single source of truth** for architecture, features,
+  security posture, build/CI config, and roadmap. It supersedes `PROJECT_CONTEXT.md`
+  and `ai-context.md` for any conflicting detail. Reconciled against source on
+  2026-08-12; 17 sections covering RBAC, marketplace/financial layer, PayFast
+  integration, Firestore rules overhaul, image compression pipeline, FCM push
+  notifications, off-grid nav, tactical/vision pipelines, spoor identifier,
+  compliance exporters, Firestore collections, Cloud Functions, build & CI/CD,
+  environment/deploy constraints, and the active roadmap.
+
 ## Backend / Firebase infrastructure (added 2026-08-11)
 
 - A `functions/` Cloud Functions source tree now exists (TypeScript, `firebase-functions` v2 API,
