@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_screen.dart';
+import '../auth/change_password_dialog.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
 import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
 import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
@@ -461,6 +462,23 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                     onChanged: (_) => theme.toggleThemeMode(),
                     activeTrackColor: theme.accentColor,
                   ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Icon(Icons.lock_person_outlined, color: theme.accentColor),
+                  title: Text(
+                    'Change Password',
+                    style: TextStyle(color: theme.textColor),
+                  ),
+                  subtitle: Text(
+                    'Re-authenticate and set a new password.',
+                    style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                  ),
+                  trailing: Icon(
+                    Icons.chevron_right,
+                    color: theme.subtitleColor,
+                  ),
+                  onTap: () => ChangePasswordDialog.show(context),
                 ),
                 const SizedBox(height: 16),
               ],

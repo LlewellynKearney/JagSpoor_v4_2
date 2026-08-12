@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
+import '../auth/change_password_dialog.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
 
@@ -783,6 +784,42 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   ),
                   const SizedBox(height: 32),
 
+                  // Account Security Section
+                  _buildSectionHeader('ACCOUNT SECURITY'),
+                  const SizedBox(height: 12),
+                  Card(
+                    color: widget.theme.cardColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.lock_person_outlined,
+                        color: widget.theme.accentColor,
+                      ),
+                      title: Text(
+                        'Change Password',
+                        style: TextStyle(color: widget.theme.textColor),
+                      ),
+                      subtitle: Text(
+                        'Re-authenticate and set a new password.',
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: widget.theme.subtitleColor,
+                      ),
+                      onTap: _showChangePasswordDialog,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
                   // Delete Account & All Personal Data - Danger Zone
                   Container(
                     width: double.infinity,
@@ -1030,6 +1067,10 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    await ChangePasswordDialog.show(context);
   }
 
   Future<void> _handleAccountDeletion() async {
