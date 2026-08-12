@@ -298,3 +298,54 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/outfitter_mode/data/services/invoice_pdf_service.dart`,
   `lib/features/outfitter_mode/presentation/manual_invoice_screen.dart`,
   `context.md`.
+
+## Phase 4 — AI Paper Price List Scanner Updates & History Log (added 2026-08-12)
+
+- **7.5% platform fee applied to the AI scanner pipeline** (was 5%):
+  - `PricelistScannerService.platformCommissionRate` now `0.075`; the legacy
+    `processAndUploadPricelistImage`, `calculateTotalWithFee`, and
+    `submitCustomPackageBooking` all compute off this constant.
+  - `outfitter_pricelist_verification_screen.dart`: `_updateItem` + `_saveToFirestore`
+    now multiply base by `1.075`; the `_EditablePriceItem` preview row shows
+    "7.5% Fee" and "Hunter Display Price (incl. 7.5%)"; info banner reads
+    "7.5% commission will be applied on save."
+  - `outfitter_pricelist_scanner_screen.dart`: loading text + info panel updated
+    to "7.5% Platform Fees" / "7.5% platform commission".
+  - The custom-package builder (`hunter_custom_package_builder_screen.dart`)
+    reads `hunterDisplayPriceZAR` from stored items, so it automatically
+    reflects the 7.5% split applied at save time — no hardcoded fee there.
+- **Verification screen refactored** to persist via a new centralized
+  `PricelistScannerService.saveVerifiedPricelist()` method (drops its direct
+  Firestore/Auth fields), so both the verification flow and the history
+  re-export flow write through one path.
+- **Persistent Scanned Price List History Log**:
+  - New `lib/features/hunter_mode/screens/scanned_pricelist_history_screen.dart`
+    (`ScannedPriceListHistoryScreen`) renders a reactive list of the
+    outfitter's past AI scans via `getMyPriceListsStream()` (a `snapshots()`
+    query on `scanned_pricelists` scoped by `outfitterId` + `status=='active'`,
+    ordered by `createdAt` desc). Each card shows scan date, source farm, item
+    count, base total, and grand total incl. 7.5% fee.
+  - A draggable details sheet shows the full parsed species/line-item breakdown
+    (base price struck-through, hunter display price incl. 7.5%) plus summary
+    cells (Base Total / 7.5% Fee / Hunter Total) and three actions:
+    VIEW DETAILS, RE-EXPORT (formats a shareable text summary), and APPLY TO
+    PACKAGE (navigates to the Package Publisher). Archive (soft-delete) action
+    on each card calls `deletePriceList()`.
+  - `getMyPriceListsStream()` added to `PricelistScannerService`.
+- **Firestore**: new composite index `scanned_pricelists`
+  `(outfitterId ASC, status ASC, createdAt DESC)` added to
+  `firestore.indexes.json` (must be deployed:
+  `npx firebase-tools deploy --only firestore:indexes`). Rules already permit
+  owner-scoped read/write on `scanned_pricelists` (`ownerOrAdmin('outfitterId')`),
+  so no rules change is required. Until the index deploys, the history stream
+  surfaces the error in-UI (rather than silently showing empty).
+- **Dashboard**: a "Scan History Log" feature card was added to the outfitter
+  dashboard (in the `!_isManager` block, right after the AI Scan card)
+  navigating to `ScannedPriceListHistoryScreen`.
+- **`flutter analyze`**: 0 errors (319 infos + 14 warnings, all pre-existing).
+- Files: `lib/features/hunter_mode/screens/scanned_pricelist_history_screen.dart`
+  (new), `lib/features/hunter_mode/services/pricelist_scanner_service.dart`,
+  `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `firestore.indexes.json`.

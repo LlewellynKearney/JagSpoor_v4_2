@@ -71,6 +71,15 @@
         { "fieldPath": "outfitterId", "order": "ASCENDING" },
         { "fieldPath": "lastUpdated", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "scanned_pricelists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outfitterId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

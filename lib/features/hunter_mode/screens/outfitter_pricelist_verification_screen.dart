@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../services/pricelist_scanner_service.dart';
 
 /// Post-scan verification grid editor for reviewing and editing extracted price list items.
 /// Allows outfitters to verify species names and base prices before saving to Firestore.
@@ -29,8 +28,8 @@ class OutfitterPricelistVerificationScreen extends StatefulWidget {
 
 class _OutfitterPricelistVerificationScreenState
     extends State<OutfitterPricelistVerificationScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final PricelistScannerService _pricelistService =
+      PricelistScannerService.instance;
   final _formKey = GlobalKey<FormState>();
 
   late List<Map<String, dynamic>> _editableItems;
@@ -54,8 +53,8 @@ class _OutfitterPricelistVerificationScreenState
       }
       if (basePrice != null) {
         _editableItems[index]['outfitterBasePrice'] = basePrice;
-        // Recalculate display price with 5% platform fee
-        final double displayPrice = basePrice * 1.05;
+        // Recalculate display price with 7.5% platform fee
+        final double displayPrice = basePrice * 1.075;
         _editableItems[index]['hunterDisplayPriceZAR'] = displayPrice;
         _editableItems[index]['hunterPriceFormatted'] =
             'R${displayPrice.toStringAsFixed(0)}';
@@ -74,12 +73,7 @@ class _OutfitterPricelistVerificationScreenState
     setState(() => _isSaving = true);
 
     try {
-      final currentUser = _auth.currentUser;
-      if (currentUser == null) {
-        throw Exception('User must be authenticated to save price list');
-      }
-
-      // Build processed items with calculated prices
+      // Build processed items with 7.5% commission split
       final List<Map<String, dynamic>> processedItems = [];
 
       for (final item in _editableItems) {
@@ -87,8 +81,8 @@ class _OutfitterPricelistVerificationScreenState
         final basePrice =
             (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
 
-        // Calculate display price with 5% platform fee
-        final double displayPrice = basePrice * 1.05;
+        // Calculate display price with 7.5% platform fee
+        final double displayPrice = basePrice * 1.075;
 
         processedItems.add({
           'name': speciesName,
@@ -100,22 +94,13 @@ class _OutfitterPricelistVerificationScreenState
         });
       }
 
-      // Create structured document for Firestore
-      final pricelistData = {
-        'outfitterId': currentUser.uid,
-        'farmId': widget.farmId ?? '',
-        'farmName': widget.farmName ?? '',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'status': 'active',
-        'sourceImage': widget.imageFileName ?? 'unknown',
-        'items': processedItems,
-        'totalItems': processedItems.length,
-        'processingVersion': '1.0.0',
-      };
-
-      // Save to scanned_pricelists collection
-      await _firestore.collection('scanned_pricelists').add(pricelistData);
+      // Persist via the centralized service method (writes scanned_pricelists)
+      await _pricelistService.saveVerifiedPricelist(
+        items: processedItems,
+        farmId: widget.farmId,
+        farmName: widget.farmName,
+        imageFileName: widget.imageFileName,
+      );
 
       if (mounted) {
         _showSuccess(
@@ -212,7 +197,7 @@ class _OutfitterPricelistVerificationScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Review and edit extracted items. 5% commission will be applied on save.',
+                    'Review and edit extracted items. 7.5% commission will be applied on save.',
                     style: TextStyle(
                       color: widget.theme.subtitleColor,
                       fontSize: 13,
@@ -357,7 +342,7 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
   Widget build(BuildContext context) {
     final basePrice =
         (widget.item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
-    final displayPrice = basePrice * 1.05;
+    final displayPrice = basePrice * 1.075;
     final commission = displayPrice - basePrice;
 
     return Container(
@@ -393,7 +378,7 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
               ),
               const Spacer(),
               Text(
-                '5% Fee: R${commission.toStringAsFixed(2)}',
+                '7.5% Fee: R${commission.toStringAsFixed(2)}',
                 style: TextStyle(color: Colors.amber.shade700, fontSize: 11),
               ),
             ],
@@ -573,7 +558,7 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Hunter Display Price (incl. 5%):',
+                  'Hunter Display Price (incl. 7.5%):',
                   style: TextStyle(
                     color: widget.theme.subtitleColor,
                     fontSize: 12,

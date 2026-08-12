@@ -495,7 +495,7 @@ high-level map and current access posture:
 | `users` | Profiles & roles | signed-in read; owner write |
 | `outfitters/{uid}` | Outfitter profiles | signed-in read; admin create; admin/owner update |
 | `animals` | Wildlife species DB | **public read**; admin write |
-| `packages` | Hunting packages + 5% fee | signed-in read; owning outfitter write |
+| `packages` | Hunting packages + 7.5% fee | signed-in read; owning outfitter write |
 | `bookings` | Client bookings | two-party (hunter + outfitter); status = outfitter only |
 | `bookings/{id}/chats` | Negotiation messages | two-party via parent lookup |
 | `trophies` | Trophy registry + stock | signed-in read; owner write |
@@ -506,7 +506,7 @@ high-level map and current access posture:
 | `carcass_logs` | Carcass tracking | owner-scoped (`hunterId`) |
 | `waypoints` | GPS markers | owner-scoped (`hunterId`) |
 | `spoor_scans` | Track analysis records | owner-scoped (`userId`) |
-| `scanned_pricelists` | Parsed price lists | owner-scoped (`outfitterId`) |
+| `scanned_pricelists` | AI-scanned price lists (7.5% fee split) + history log | owner-scoped (`outfitterId`); indexed `outfitterId+status+createdAt` for the history stream |
 | `records` | Generic records | owner-scoped (`ownerId`) |
 | `farms` / `farm_managers` | Farm entities | signed-in read; outfitter/admin write |
 | `lodging` / `fleet` | Operational assets | signed-in read; outfitter/admin write |
@@ -592,6 +592,8 @@ Triggered on push to `main` and manual `workflow_dispatch`.
 cd /workspace/project/JagSpoor_v4_2
 (cd functions && npm install && npm run build)
 npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes,storage
+# Includes: bookings/farms/trophies/scanned_pricelists composite indexes +
+# trophy_photos storage rules + hardened firestore.rules.
 # Set PayFast passphrase:
 npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
@@ -695,7 +697,7 @@ lib/
 │   │   │   ├── license_scanner_screen.dart              # PDF417 mobile_scanner
 │   │   │   └── ...
 │   │   ├── services/
-│   │   │   ├── package_booking_manager.dart             # 5% commission split
+│   │   │   ├── package_booking_manager.dart             # 7.5% commission split
 │   │   │   ├── chat_and_filter_service.dart             # Negotiation threads + Haversine
 │   │   │   └── ...
 │   │   └── ...

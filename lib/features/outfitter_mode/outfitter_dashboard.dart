@@ -10,6 +10,7 @@ import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
 import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
+import '../hunter_mode/screens/scanned_pricelist_history_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -176,6 +177,27 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                                         (_) => OutfitterPricelistScannerScreen(
                                           theme: widget.theme,
                                         ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Scanned Price List History Log - Hidden for managers
+                            _buildFeatureCard(
+                              icon: Icons.history_rounded,
+                              title: 'Scan History Log',
+                              description:
+                                  'View, re-export, and apply past AI-scanned price lists at any time.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => ScannedPriceListHistoryScreen(
+                                      theme: widget.theme,
+                                    ),
                                   ),
                                 );
                               },

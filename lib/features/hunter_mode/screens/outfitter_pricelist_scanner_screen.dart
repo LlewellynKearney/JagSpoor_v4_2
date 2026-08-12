@@ -210,7 +210,7 @@ class _OutfitterPricelistScannerScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            'Extracting... Applying 5% Platform Fees...',
+            'Extracting... Applying 7.5% Platform Fees...',
             style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14),
           ),
         ],
@@ -413,7 +413,7 @@ class _OutfitterPricelistScannerScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '5% platform commission will be automatically applied to all extracted prices.',
+                    '7.5% platform commission will be automatically applied to all extracted prices.',
                     style: TextStyle(
                       color: widget.theme.subtitleColor,
                       fontSize: 13,

@@ -12,8 +12,8 @@ class PricelistScannerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Platform commission rate (5%)
-  static const double platformCommissionRate = 0.05;
+  /// Platform commission rate (7.5%)
+  static const double platformCommissionRate = 0.075;
 
   /// Simulates high-fidelity text extraction from price list images.
   ///
@@ -72,7 +72,7 @@ class PricelistScannerService {
   /// Processing steps:
   /// 1. Simulate text extraction from image
   /// 2. Parse raw strings into structured data
-  /// 3. Calculate 5% platform fee for each item
+  /// 3. Calculate 7.5% platform fee for each item
   /// 4. Upload structured document to Firestore
   Future<void> processAndUploadPricelistImage({
     required String farmId,
@@ -94,7 +94,7 @@ class PricelistScannerService {
       final speciesName = line['species'] as String;
       final basePrice = (line['basePrice'] as num).toDouble();
 
-      // Calculate hunter display price with 5% platform fee
+      // Calculate hunter display price with 7.5% platform fee
       final double hunterPrice = basePrice * (1 + platformCommissionRate);
 
       processedItems.add({
@@ -178,7 +178,7 @@ class PricelistScannerService {
   /// - [farmId]: The farm/concession where the hunt will take place
   /// - [outfitterId]: The UID of the outfitter who owns the farm
   /// - [selectedItems]: List of selected items with pricing from the price list
-  /// - [combinedTotalZAR]: Total price including 5% platform fee
+  /// - [combinedTotalZAR]: Total price including 7.5% platform fee
   ///
   /// Saves to the 'bookings' collection with status 'Pending Approval'
   Future<void> submitCustomPackageBooking({
@@ -300,7 +300,70 @@ class PricelistScannerService {
     }).toList();
   }
 
-  /// Calculates the total for selected price list items including 5% platform fee.
+  /// Returns a reactive stream of the authenticated outfitter's scanned price
+  /// lists, most recent first. Excludes soft-deleted entries.
+  ///
+  /// Used by [ScannedPriceListHistoryScreen] for the persistent scan history
+  /// log. The query is `outfitterId` (equality) + `status` (equality) +
+  /// `createdAt` (descending), which requires the `scanned_pricelists`
+  /// composite index in `firestore.indexes.json`.
+  Stream<List<Map<String, dynamic>>> getMyPriceListsStream() {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('User must be authenticated');
+    }
+
+    return _firestore
+        .collection('scanned_pricelists')
+        .where('outfitterId', isEqualTo: currentUser.uid)
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['id'] = doc.id;
+              return data;
+            }).toList());
+  }
+
+  /// Persists a verified/edited price list to the `scanned_pricelists`
+  /// collection. Centralised so both the verification screen and the history
+  /// re-export flow write through one path.
+  ///
+  /// Parameters:
+  /// - [items]: parsed species/line items with `name`, `outfitterBasePrice`,
+  ///   `hunterDisplayPriceZAR`, `commissionZAR` (7.5% split).
+  /// - [farmId], [farmName], [imageFileName]: provenance metadata.
+  Future<String> saveVerifiedPricelist({
+    required List<Map<String, dynamic>> items,
+    String? farmId,
+    String? farmName,
+    String? imageFileName,
+  }) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('User must be authenticated to save price list');
+    }
+
+    final pricelistData = {
+      'outfitterId': currentUser.uid,
+      'farmId': farmId ?? '',
+      'farmName': farmName ?? '',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'status': 'active',
+      'sourceImage': imageFileName ?? 'unknown',
+      'items': items,
+      'totalItems': items.length,
+      'processingVersion': '1.0.0',
+    };
+
+    final docRef =
+        await _firestore.collection('scanned_pricelists').add(pricelistData);
+    return docRef.id;
+  }
+
+  /// Calculates the total for selected price list items including 7.5% platform fee.
   ///
   /// Parameters:
   /// - [selectedItems]: List of selected items with base prices
