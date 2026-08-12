@@ -610,8 +610,8 @@ A dedicated admin surface (Phase 2, implemented 2026-08-12) for platform-wide
 oversight. Located in `lib/features/admin/`:
 - **Admin authorization guard** (`services/admin_auth_guard.dart`) — resolves
   admin status via the `admin == true` custom claim OR `users/{uid}.role ==
-  'admin'`, with an `admin@jagspoor.co.za` bootstrap allow-list. Cached and
-  refreshable.
+  'admin'` OR `outfitters/{uid}.role == 'admin'`, with an
+  `admin@jag-spoor.co.za` bootstrap allow-list. Cached and refreshable.
 - **Master analytics dashboard** (`screens/admin_dashboard_screen.dart`) —
   Entity Overview (Total Outfitters, Active Hunters, Listed Packages, Active
   Bookings, Total Trophies), Financial Analytics (daily/weekly/monthly/yearly

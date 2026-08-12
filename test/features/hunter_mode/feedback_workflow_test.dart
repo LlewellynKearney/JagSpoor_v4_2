@@ -242,14 +242,14 @@ Submitted via Jagspoor App
 
     group('Email Target Address', () {
       test('should use correct support email', () {
-        const expectedEmail = 'llewellynkearney@gmail.com';
+        const expectedEmail = 'support@jag-spoor.co.za';
 
         expect(expectedEmail.contains('@'), isTrue);
-        expect(expectedEmail.contains('gmail.com'), isTrue);
+        expect(expectedEmail.contains('jag-spoor.co.za'), isTrue);
       });
 
       test('should construct valid mailto URI', () {
-        const email = 'llewellynkearney@gmail.com';
+        const email = 'support@jag-spoor.co.za';
         const subject = 'Test Subject';
         const body = 'Test Body';
 

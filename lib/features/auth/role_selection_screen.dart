@@ -79,7 +79,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               ),
               // Admin portal entry point — only rendered for admins
               // (custom claim admin == true, users/{uid}.role == 'admin',
-              // or the admin@jagspoor.co.za allow-list).
+              // outfitters/{uid}.role == 'admin', or the admin@jag-spoor.co.za
+              // allow-list).
               if (_isAdmin) ...[
                 const SizedBox(height: 20.0),
                 RoleCard(

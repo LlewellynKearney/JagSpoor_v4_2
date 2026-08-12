@@ -30,7 +30,7 @@ class AdminAuthGuard {
   /// treated as admins regardless of claims/database flags, so a platform
   /// operator can bootstrap the first admin without a prior claim grant.
   static const Set<String> _adminEmailAllowList = {
-    'admin@jagspoor.co.za',
+    'admin@jag-spoor.co.za',
   };
 
   /// Returns `true` when the current user is a platform admin.
@@ -58,14 +58,29 @@ class AdminAuthGuard {
       // Token fetch can fail offline; fall through to the Firestore check.
     }
 
-    // 2. Firestore `users/{uid}.role == 'admin'` fallback.
+    // 2. Firestore role fallback: `users/{uid}.role == 'admin'` or
+    //    `outfitters/{uid}.role == 'admin'`.
     if (!admin) {
       try {
-        final doc = await _db.collection('users').doc(user.uid).get();
-        final role = doc.data()?['role'];
-        admin = role == 'admin';
+        final userDoc = await _db.collection('users').doc(user.uid).get();
+        final userRole = userDoc.data()?['role'];
+        if (userRole == 'admin') {
+          admin = true;
+        }
       } catch (_) {
-        // Keep whatever the claim check resolved (possibly false).
+        // users doc may not exist for this uid; continue to outfitters.
+      }
+    }
+    if (!admin) {
+      try {
+        final outfitterDoc =
+            await _db.collection('outfitters').doc(user.uid).get();
+        final outfitterRole = outfitterDoc.data()?['role'];
+        if (outfitterRole == 'admin') {
+          admin = true;
+        }
+      } catch (_) {
+        // outfitters doc may not exist; keep whatever was resolved.
       }
     }
 

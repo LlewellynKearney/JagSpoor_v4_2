@@ -192,7 +192,7 @@ This privacy policy may be updated periodically to reflect changes in our practi
 **Last Updated:** July 2026
 **Version:** 2.0
 
-For questions regarding this policy, contact: privacy@jagspoor.co.za
+For questions regarding this policy, contact: privacy@jag-spoor.co.za
 ''',
               ),
               const SizedBox(height: 32),
@@ -342,7 +342,7 @@ For questions regarding this policy, contact: privacy@jagspoor.co.za
             ),
             const SizedBox(height: 8),
             Text(
-              'Contact our Data Protection Officer:\nprivacy@jagspoor.co.za',
+              'Contact our Data Protection Officer:\nprivacy@jag-spoor.co.za',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: theme.subtitleColor),
             ),

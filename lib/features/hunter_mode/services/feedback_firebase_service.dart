@@ -8,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 class FeedbackFirebaseService {
   static const String _bugReportsCollection = 'bug_reports';
   static const String _featureSuggestionsCollection = 'feature_suggestions';
-  static const String _supportEmail = 'llewellynkearney@gmail.com';
+  static const String _supportEmail = 'support@jag-spoor.co.za';
 
   /// Submits a bug report to the 'bug_reports' Firestore collection.
   ///
