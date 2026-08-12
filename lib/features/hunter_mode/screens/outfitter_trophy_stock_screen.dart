@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../services/trophy_inventory_report_exporter.dart';
 import '../services/user_role_resolver.dart';
 
 class OutfitterTrophyStockScreen extends StatefulWidget {
@@ -94,6 +95,29 @@ class _OutfitterTrophyStockScreenState
     _priceController.dispose();
     _measurementController.dispose();
     super.dispose();
+  }
+
+  Future<void> _exportReport() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generating trophy inventory report…')),
+    );
+    try {
+      await TrophyInventoryReportExporter().generateAndShare();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trophy inventory report exported and shared'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _syncTrophyStock() async {
@@ -316,6 +340,13 @@ class _OutfitterTrophyStockScreenState
         backgroundColor: theme.backgroundColor,
         foregroundColor: theme.textColor,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_rounded),
+            tooltip: 'Export Trophy Inventory Report',
+            onPressed: _exportReport,
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

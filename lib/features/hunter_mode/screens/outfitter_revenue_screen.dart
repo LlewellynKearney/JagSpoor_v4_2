@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_analytics_service.dart';
+import '../services/revenue_analytics_report_exporter.dart';
 
 class OutfitterRevenueScreen extends StatefulWidget {
   final ThemeController theme;
@@ -23,6 +24,29 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
   }
 
+  Future<void> _exportReport() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generating revenue & analytics report…')),
+    );
+    try {
+      await RevenueAnalyticsReportExporter().generateAndShare();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Revenue & analytics report exported and shared'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -35,6 +59,13 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         backgroundColor: widget.theme.backgroundColor,
         foregroundColor: widget.theme.textColor,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_rounded),
+            tooltip: 'Export Revenue & Analytics Report',
+            onPressed: _exportReport,
+          ),
+        ],
       ),
       body:
           _currentUserId == null

@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
+import '../services/venison_permit_pdf_exporter.dart';
 import 'venison_permit_form_screen.dart';
 
 /// Permit log / manager for issued SA venison transport & hunt permits.
@@ -242,6 +243,7 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
       builder: (context) => _PermitDetailsSheet(
         permit: permit,
         theme: widget.theme,
+        onExport: () => _exportPermit(permit),
         onVoid: () {
           Navigator.pop(context);
           _voidPermit(permit);
@@ -252,6 +254,30 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _exportPermit(VenisonTransportPermit permit) async {
+    if (permit.id == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generating permit PDF…')),
+    );
+    try {
+      await exportVenisonPermitPdf(permit.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permit PDF exported and shared'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _voidPermit(VenisonTransportPermit permit) async {
@@ -509,12 +535,14 @@ class _PermitCard extends StatelessWidget {
 class _PermitDetailsSheet extends StatelessWidget {
   final VenisonTransportPermit permit;
   final ThemeController theme;
+  final VoidCallback onExport;
   final VoidCallback onVoid;
   final VoidCallback onDelete;
 
   const _PermitDetailsSheet({
     required this.permit,
     required this.theme,
+    required this.onExport,
     required this.onVoid,
     required this.onDelete,
   });
@@ -648,6 +676,24 @@ class _PermitDetailsSheet extends StatelessWidget {
                   ],
                   _DetailRow('Status', permit.status, theme),
                   const SizedBox(height: 24),
+                  // Export permit PDF
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onExport,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.accentColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                      label: const Text('EXPORT PERMIT PDF',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       if (permit.status != 'Voided')

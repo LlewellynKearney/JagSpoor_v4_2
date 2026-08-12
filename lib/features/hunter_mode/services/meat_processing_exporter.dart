@@ -1,8 +1,5 @@
-import 'dart:io';
-import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import '../../../core/services/pdf_document_engine.dart';
 
 class MeatProcessingExporter {
   // Compile processing requirements into a formal, printable PDF document matrix
@@ -17,115 +14,89 @@ class MeatProcessingExporter {
     required String
     specialInstructions, // e.g., "Keep skins for taxidermy, wrap backstraps separate"
   }) async {
-    final pw.Document pdf = pw.Document();
+    final doc = await JagSpoorPdfDocument.create(
+      title: 'Slaughterhouse Manifest',
+      documentId: carcassTag,
+    );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(24),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'JAGSPOOR SLAUGHTERHOUSE MANIFEST',
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.Divider(thickness: 2),
-                pw.SizedBox(height: 15),
-                pw.Text(
-                  'Hunter Name: $hunterName',
-                  style: const pw.TextStyle(fontSize: 14),
-                ),
-                pw.Text(
-                  'Carcass Tag ID: $carcassTag',
-                  style: const pw.TextStyle(fontSize: 14),
-                ),
-                pw.Text(
-                  'Species: $species',
-                  style: const pw.TextStyle(fontSize: 14),
-                ),
-                pw.Text(
-                  'Cold Hanging Weight: ${hangingWeight.toStringAsFixed(1)} kg',
-                  style: const pw.TextStyle(fontSize: 14),
-                ),
-                pw.SizedBox(height: 20),
-                pw.Text(
-                  'PROCESSING SPECIFICATIONS & PORTIONS REQUESTED:',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children:
-                      portionsRequested
-                          .map(
-                            (item) => pw.Text(
-                              '• $item',
-                              style: const pw.TextStyle(fontSize: 12),
-                            ),
-                          )
-                          .toList(),
-                ),
-                pw.SizedBox(height: 15),
-                pw.Text(
-                  'Spice Profile: $spicePreference',
-                  style: const pw.TextStyle(fontSize: 12),
-                ),
-                pw.SizedBox(height: 15),
-                pw.Text(
-                  'Special Instructions / Notes:',
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.Text(
-                  specialInstructions,
-                  style: const pw.TextStyle(fontSize: 12),
-                ),
-                pw.Spacer(),
-                pw.Divider(),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      'Date Generated: ${DateTime.now().toLocal().toString().substring(0, 16)}',
-                      style: const pw.TextStyle(fontSize: 10),
-                    ),
-                    pw.Text(
-                      'Generated via JagSpoor Ecosystem',
-                      style: const pw.TextStyle(fontSize: 10),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
+    doc.addPage(
+      margin: 30,
+      content: _buildContent(
+        carcassTag: carcassTag,
+        hunterName: hunterName,
+        species: species,
+        hangingWeight: hangingWeight,
+        portionsRequested: portionsRequested,
+        spicePreference: spicePreference,
+        specialInstructions: specialInstructions,
       ),
     );
 
-    // Save PDF directly to local system application storage document profiles
-    final Directory outputDir = await getApplicationDocumentsDirectory();
-    final File pdfFile = File(
-      "${outputDir.path}/Slaughterhouse_Manifest_$carcassTag.pdf",
+    final sanitized = carcassTag.replaceAll(RegExp(r'[^\w\-.]'), '_');
+    await doc.saveAndShare(
+      filename: 'JagSpoor_Slaughterhouse_Manifest_$sanitized',
+      shareSubject: 'JagSpoor Slaughterhouse Manifest — $carcassTag',
+      shareText: 'Meat processing manifest for $hunterName ($species)',
     );
-    await pdfFile.writeAsBytes(await pdf.save());
+  }
 
-    // Trigger phone OS native sharing/email dialog box instantly
-    await Share.shareXFiles(
-      [XFile(pdfFile.path)],
-      text:
-          'JagSpoor Processing Requirements Manifest for Carcass Tag: $carcassTag',
-      subject: 'Meat Processing Order: $carcassTag',
+  pw.Widget _buildContent({
+    required String carcassTag,
+    required String hunterName,
+    required String species,
+    required double hangingWeight,
+    required List<String> portionsRequested,
+    required String spicePreference,
+    required String specialInstructions,
+  }) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        JagSpoorPdfTheme.sectionBar('Carcass & Hunter Details'),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow('Hunter Name', hunterName),
+          JagSpoorPdfTheme.infoRow('Carcass Tag ID', carcassTag),
+          JagSpoorPdfTheme.infoRow('Species', species),
+          JagSpoorPdfTheme.infoRow(
+              'Cold Hanging Weight', '${hangingWeight.toStringAsFixed(1)} kg'),
+        ]),
+
+        JagSpoorPdfTheme.sectionBar('Processing Specifications & Portions'),
+        if (portionsRequested.isEmpty)
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(10),
+            child: pw.Text('No portions requested.', style: JagSpoorPdfTheme.body),
+          )
+        else
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: portionsRequested
+                .map((item) => pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+                      child: pw.Text('• $item', style: JagSpoorPdfTheme.body),
+                    ))
+                .toList(),
+          ),
+        pw.SizedBox(height: 8),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow('Spice Profile', spicePreference),
+        ]),
+
+        JagSpoorPdfTheme.sectionBar('Special Instructions / Notes'),
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: JagSpoorPdfTheme.band,
+            borderRadius: pw.BorderRadius.circular(6),
+            border: pw.Border.all(color: JagSpoorPdfTheme.divider, width: 0.5),
+          ),
+          child: pw.Text(
+            specialInstructions.isEmpty ? '—' : specialInstructions,
+            style: JagSpoorPdfTheme.body,
+          ),
+        ),
+      ],
     );
   }
 }

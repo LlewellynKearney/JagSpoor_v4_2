@@ -190,6 +190,64 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `bulk_csv_import_screen.dart` (CSV column spec: email, fullName, role,
     phoneNumber).
 
+## Universal PDF Document Engine (added 2026-08-12, Phase 6)
+
+- Central reusable PDF template service: `lib/core/services/pdf_document_engine.dart`.
+  - `JagSpoorPdfTheme` — static tactical Earth/Gold palette matching the app:
+    `accent` `#C68B59` (Warm Gold/Bronze), `accentGold` `#D4AF37` (Brushed Gold),
+    `deepBrown` `#795548`, `darkSlate` text, `band`/`cream` backgrounds,
+    `divider`, `white`. Text styles: `body`, `caption`, `label`, `value`,
+    `sectionTitle`.
+  - `JagSpoorPdfDocument` — async builder wrapper. `create(title:, documentId:)`
+    loads the branded logo asset (`assets/app logo/logo1.png`) once via root
+    bundle and caches it on the instance so every page reuses the same bytes.
+    `addPage(margin:, content:)` appends a `pw.MultiPage` with the standard
+    header (logo + "JAGSPOOR" wordmark + title + doc ID + issued date) and a
+    footer (support email `support@jagspoor.com`, "Page X of Y" via
+    `MultiPage`'s `pageFormat`-aware builder, and a legal disclaimer).
+    `saveAndShare(filename:, shareSubject:, shareText:)` writes to
+    `getApplicationDocumentsDirectory()` and invokes `Share.shareXFiles`.
+  - Reusable content builders (all return `pw.Widget`):
+    `sectionBar(title)`, `detailBox(rows)`, `infoRow(label, value)`,
+    `currencyRow(label, amount, {emphasis, bold})`, `dataTable(headers,
+    columnWidths, rows)`, `signatureBlock(label, imageBytes, width, height)`,
+    `formatZAR(double)` → "R 1 234.56", `formatDate(DateTime?)` → "YYYY-MM-DD".
+- Exporters using the engine (consistent branded header/footer across the
+  whole document line):
+  - **Venison Transport & Hunt Permit** — `lib/features/hunter_mode/services/
+    venison_permit_pdf_exporter.dart` (NEW). Fetches hunter + outfitter
+    signature images from Firebase Storage URLs via `http` and embeds them.
+    Wired via `onExport` callback into the permit list details sheet.
+  - **Booking Invoice / Confirmation** — `lib/features/hunter_mode/services/
+    outfitter_invoice_exporter.dart` (REFACTORED). Now takes the raw booking
+    map + bookingId; fetches the linked `packages` doc to recover the
+    itemized line-item / species / all-inclusive breakdown, prints the 7.5%
+    platform commission row, the 25% non-refundable deposit status + balance,
+    and any date-change request history. Call site in
+    `outfitter_booking_dashboard_screen.dart` updated to pass `bookingData`.
+  - **Trophy Inventory Report** — `lib/features/hunter_mode/services/
+    trophy_inventory_report_exporter.dart` (NEW). Farm-grouped trophy stock
+    (species, qty, price/animal, measurement in inches, photo count) +
+    inventory summary. Wired via AppBar PDF icon in
+    `outfitter_trophy_stock_screen.dart`.
+  - **Revenue & Farm Analytics Report** — `lib/features/hunter_mode/services/
+    revenue_analytics_report_exporter.dart` (NEW). Gross revenue, 7.5%
+    platform fees, net earnings, enterprise metrics, and a farm-manager
+    directory. Wired via AppBar PDF icon in `outfitter_revenue_screen.dart`.
+  - **SA Game Transport Permit** — `lib/features/hunter_mode/services/
+    transport_permit_pdf_exporter.dart` (REFACTORED to engine; Sections A–E
+    + signature blocks).
+  - **Slaughterhouse / Meat Processing Manifest** — `lib/features/hunter_mode/
+    services/meat_processing_exporter.dart` (REFACTORED to engine).
+- Remaining exporters NOT yet migrated to the engine (still use legacy
+  per-page layout): `SapsPdfGenerator`, `FirearmPdfGenerator`,
+  `InvoicePdfService`. They remain functionally correct; migration is a
+  follow-up cosmetic-consistency task.
+- Asset note: the header logo path `assets/app logo/logo1.png` is already
+  declared under `flutter.assets` in `pubspec.yaml` (and used for the app icon).
+- `flutter analyze`: 0 errors, 14 warnings, 319 infos (unchanged from Phase 5
+  baseline — no new issues introduced).
+
 ## Theme system (added 2026-08-12)
 
 - Central `ThemeController extends ChangeNotifier` in `lib/core/theme/app_theme.dart`.

@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:typed_data';
-import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import '../../../core/services/pdf_document_engine.dart';
 
+/// SA Game Transport Permit PDF, rendered through the universal
+/// [JagSpoorPdfDocument] engine so it carries the branded header + footer and
+/// tactical palette alongside the rest of the JagSpoor document line.
 class TransportPermitPdfExporter {
   Future<void> generateAndSharePermit({
     required String permitId,
@@ -20,247 +20,157 @@ class TransportPermitPdfExporter {
     required String destinationAddress,
     Uint8List? landownerSignatureBytes,
   }) async {
-    final pw.Document pdf = pw.Document();
+    final doc = await JagSpoorPdfDocument.create(
+      title: 'SA Game Transport Permit',
+      documentId: exemptionNumber.isEmpty ? permitId : exemptionNumber,
+    );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.all(32),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Center(
-                  child: pw.Text(
-                    'SOUTH AFRICAN GAME TRANSPORT PERMIT',
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-                pw.Center(
-                  child: pw.Text(
-                    '(Issued in terms of Provincial Environmental Management Legislation)',
-                    style: pw.TextStyle(
-                      fontSize: 10,
-                      fontStyle: pw.FontStyle.italic,
-                    ),
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Divider(thickness: 1.5),
-                pw.SizedBox(height: 10),
-
-                // Section A: Landowner
-                pw.Text(
-                  'SECTION A: OWNER / AUTHORISED ISSUER DETAILS',
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text('Concession Property / Farm Name: $farmName'),
-                pw.Text('CAE / Exemption / Permit Number: $exemptionNumber'),
-                pw.SizedBox(height: 15),
-
-                // Section B: Hunter
-                pw.Text(
-                  'SECTION B: RECEIVER / HUNTER DETAILS',
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text('Full Name & Surname: $hunterName'),
-                pw.Text('National ID / Passport Number: $hunterIdNumber'),
-                pw.Text('Physical Residential Address: $hunterAddress'),
-                pw.SizedBox(height: 15),
-
-                // Section C: Transport
-                pw.Text(
-                  'SECTION C: TRANSPORTER & VEHICLE DETAILS',
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text('Vehicle Make & Model: $vehicleMake'),
-                pw.Text('Vehicle Registration Number: $vehicleReg'),
-                pw.SizedBox(height: 15),
-
-                // Section D: Carcass Table
-                pw.Text(
-                  'SECTION D: SPECIFICATION OF GAME MEAT / CARCASSES',
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 6),
-
-                // Table
-                pw.Table(
-                  border: pw.TableBorder.all(color: PdfColors.grey, width: 0.5),
-                  children: [
-                    pw.TableRow(
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.grey200,
-                      ),
-                      children: [
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(
-                            'Species',
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                          ),
-                        ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(
-                            'Quantity',
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                          ),
-                        ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(
-                            'Sex',
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                    ...speciesList.map((item) {
-                      return pw.TableRow(
-                        children: [
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(item['species']?.toString() ?? ''),
-                          ),
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(item['quantity']?.toString() ?? ''),
-                          ),
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(item['sex']?.toString() ?? ''),
-                          ),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-                pw.SizedBox(height: 15),
-
-                // Section E: Destination
-                pw.Text(
-                  'SECTION E: FINAL DESTINATION DELIVERY ADDRESS',
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text(destinationAddress),
-
-                pw.Spacer(),
-                pw.Divider(),
-                pw.SizedBox(height: 5),
-                pw.Text(
-                  'LEGAL DECLARATION: By transporting this game meat/carcasses, the transporter declares that the products listed above were harvested legally in full compliance with national and provincial biodiversity frameworks.',
-                  style: const pw.TextStyle(
-                    fontSize: 8,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Column(
-                      children: [
-                        landownerSignatureBytes != null
-                            ? pw.Container(
-                              width: 150,
-                              height: 60,
-                              child: pw.Image(
-                                pw.MemoryImage(landownerSignatureBytes),
-                                fit: pw.BoxFit.contain,
-                              ),
-                            )
-                            : pw.Container(
-                              width: 120,
-                              decoration: const pw.BoxDecoration(
-                                border: pw.Border(
-                                  bottom: pw.BorderSide(
-                                    width: 0.5,
-                                    color: PdfColors.black,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Signature: Issuer/Owner',
-                          style: const pw.TextStyle(fontSize: 9),
-                        ),
-                      ],
-                    ),
-                    pw.Column(
-                      children: [
-                        pw.Container(
-                          width: 120,
-                          decoration: const pw.BoxDecoration(
-                            border: pw.Border(
-                              bottom: pw.BorderSide(
-                                width: 0.5,
-                                color: PdfColors.black,
-                              ),
-                            ),
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Signature: Transporter',
-                          style: const pw.TextStyle(fontSize: 9),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 15),
-                pw.Center(
-                  child: pw.Text(
-                    'Permit Reference ID: $permitId | Generated via JagSpoor Ecosystem',
-                    style: const pw.TextStyle(
-                      fontSize: 8,
-                      color: PdfColors.grey500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+    doc.addPage(
+      margin: 30,
+      content: _buildContent(
+        farmName: farmName,
+        exemptionNumber: exemptionNumber,
+        hunterName: hunterName,
+        hunterIdNumber: hunterIdNumber,
+        hunterAddress: hunterAddress,
+        vehicleReg: vehicleReg,
+        vehicleMake: vehicleMake,
+        speciesList: speciesList,
+        destinationAddress: destinationAddress,
+        landownerSignatureBytes: landownerSignatureBytes,
       ),
     );
 
-    final Directory outputDir = await getApplicationDocumentsDirectory();
-    final File permitFile = File(
-      "${outputDir.path}/SA_Game_Transport_Permit_$permitId.pdf",
+    await doc.saveAndShare(
+      filename: 'SA_Game_Transport_Permit_$permitId',
+      shareSubject: 'SA Game Transport Permit for Hunter: $hunterName',
+      shareText: 'Statutory SA Game Transport Permit for Hunter: $hunterName',
     );
-    await permitFile.writeAsBytes(await pdf.save());
+  }
 
-    await Share.shareXFiles(
-      [XFile(permitFile.path)],
-      text: 'Statutory SA Game Transport Permit for Hunter: $hunterName',
-      subject: 'SA Game Transport Permit: $farmName',
+  pw.Widget _buildContent({
+    required String farmName,
+    required String exemptionNumber,
+    required String hunterName,
+    required String hunterIdNumber,
+    required String hunterAddress,
+    required String vehicleReg,
+    required String vehicleMake,
+    required List<dynamic> speciesList,
+    required String destinationAddress,
+    Uint8List? landownerSignatureBytes,
+  }) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        // Document purpose banner
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: JagSpoorPdfTheme.band,
+            borderRadius: pw.BorderRadius.circular(6),
+          ),
+          child: pw.Column(
+            children: [
+              pw.Text(
+                'SOUTH AFRICAN GAME TRANSPORT PERMIT',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: JagSpoorPdfTheme.darkSlate,
+                ),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'Issued in terms of Provincial Environmental Management Legislation',
+                style: JagSpoorPdfTheme.caption,
+              ),
+            ],
+          ),
+        ),
+
+        // Section A: Landowner
+        JagSpoorPdfTheme.sectionBar('SECTION A: OWNER / AUTHORISED ISSUER DETAILS'),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow(
+              'Concession Property / Farm Name', farmName),
+          JagSpoorPdfTheme.infoRow(
+              'CAE / Exemption / Permit Number', exemptionNumber),
+        ]),
+
+        // Section B: Hunter
+        JagSpoorPdfTheme.sectionBar('SECTION B: RECEIVER / HUNTER DETAILS'),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow('Full Name & Surname', hunterName),
+          JagSpoorPdfTheme.infoRow('National ID / Passport Number', hunterIdNumber),
+          JagSpoorPdfTheme.infoRow('Physical Residential Address', hunterAddress),
+        ]),
+
+        // Section C: Transport
+        JagSpoorPdfTheme.sectionBar('SECTION C: TRANSPORTER & VEHICLE DETAILS'),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow('Vehicle Make & Model', vehicleMake),
+          JagSpoorPdfTheme.infoRow('Vehicle Registration Number', vehicleReg),
+        ]),
+
+        // Section D: Carcass Table
+        JagSpoorPdfTheme.sectionBar(
+            'SECTION D: SPECIFICATION OF GAME MEAT / CARCASSES'),
+        if (speciesList.isEmpty)
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(10),
+            child: pw.Text('No game meat / carcasses declared.',
+                style: JagSpoorPdfTheme.body),
+          )
+        else
+          JagSpoorPdfTheme.dataTable(
+            headers: ['Species', 'Quantity', 'Sex'],
+            columnWidths: [220, 120, 120],
+            rows: speciesList.map((item) {
+              return [
+                item['species']?.toString() ?? '',
+                item['quantity']?.toString() ?? '',
+                item['sex']?.toString() ?? '',
+              ];
+            }).toList(),
+          ),
+
+        // Section E: Destination
+        JagSpoorPdfTheme.sectionBar(
+            'SECTION E: FINAL DESTINATION DELIVERY ADDRESS'),
+        JagSpoorPdfTheme.detailBox([
+          JagSpoorPdfTheme.infoRow('Destination Address', destinationAddress),
+        ]),
+
+        // Declaration + signature
+        pw.SizedBox(height: 10),
+        pw.Text(
+          'LEGAL DECLARATION: By transporting this game meat/carcasses, the '
+          'transporter declares that the products listed above were harvested '
+          'legally in full compliance with national and provincial biodiversity '
+          'frameworks.',
+          style: JagSpoorPdfTheme.caption,
+        ),
+        pw.SizedBox(height: 16),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            JagSpoorPdfTheme.signatureBlock(
+              label: 'Signature: Issuer / Owner',
+              imageBytes: landownerSignatureBytes,
+              width: 180,
+              height: 70,
+            ),
+            JagSpoorPdfTheme.signatureBlock(
+              label: 'Signature: Transporter',
+              width: 180,
+              height: 70,
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

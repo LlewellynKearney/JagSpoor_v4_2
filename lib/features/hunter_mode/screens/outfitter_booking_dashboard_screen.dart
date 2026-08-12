@@ -254,23 +254,9 @@ class _BookingCardState extends State<_BookingCard> {
     });
 
     try {
-      final packageName =
-          widget.data['packageName'] as String? ?? 'Hunting Package';
-      final farmName = widget.data['farmName'] as String? ?? 'Outfitter Farm';
-      final hunterName = widget.data['hunterName'] as String? ?? 'Hunter';
-      final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
-      final commission =
-          (widget.data['platformCommissionRands'] ?? 0).toDouble();
-      final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
-
       await OutfitterInvoiceExporter().generateAndShareInvoice(
         bookingId: widget.bookingId,
-        packageName: packageName,
-        farmName: farmName,
-        hunterName: hunterName,
-        basePrice: basePrice,
-        platformFee: commission,
-        totalPrice: totalPrice,
+        bookingData: widget.data,
       );
 
       if (mounted) {
