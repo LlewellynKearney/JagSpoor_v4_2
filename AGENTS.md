@@ -66,6 +66,35 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
+## Contextual info icons (added 2026-08-12)
+
+- Reusable `lib/core/widgets/contextual_info_icon.dart`:
+  - `ContextualInfoIcon` — compact `IconButton` showing `info_outline` tinted
+    with the theme accent (override via `iconColor`); taps open an
+    `ExplanationDialog`. Props: `title`, `description`,
+    `concepts: List<ExplanationConcept>`, optional `iconColor`/`iconSize`.
+  - `ExplanationDialog` — `showModalBottomSheet` (scrollable, theme-coloured)
+    rendering Title, Description, a KEY CONCEPTS breakdown of
+    `(label, detail)` rows, and a "GOT IT" dismiss action.
+    Call via `ExplanationDialog.show(context, title:, description:, concepts:)`.
+- Placed info icons across complex feature headers:
+  - **Scope Settings & Tools** (`scope_tools_bottom_sheet.dart`): Turret Click
+    Math (1/4 MOA ≈ 0.261" @100yd vs 0.1 Mil = 1 cm @100m), SFP Magnification
+    Scaling (trueValue = ratedValue × calibratedMag/currentMag), Tall-Target
+    Tracking Test (error % = |measured−dialed|/dialed×100).
+  - **Spoor Identifier** (legacy `spoor_identifier_screen.dart` + HUD
+    `spoor_detection_hud_screen.dart`): Morphological Categories (Paw/Carnivore,
+    Cloven-Hoofed/Ungulate, Solid Hoof/Equine), Scale Reference Calibration
+    (mm-per-pixel = knownObjectMm/knownObjectPixels), Contour Circularity
+    Metric (4πA/P²).
+  - **Blood Trail Tracking Radar** (`blood_tracker_screen.dart`): HSV Spectrum
+    Thresholding (Hue Tolerance, Min Saturation, Min Value for haemoglobin
+    contrast in bush light).
+  - **Admin Portal & Analytics**: `outfitter_revenue_screen.dart` (Gross Revenue
+    vs Platform Commission — gross × 0.05 fee, net = gross − fee),
+    `bulk_csv_import_screen.dart` (CSV column spec: email, fullName, role,
+    phoneNumber).
+
 ## Theme system (added 2026-08-12)
 
 - Central `ThemeController extends ChangeNotifier` in `lib/core/theme/app_theme.dart`.
