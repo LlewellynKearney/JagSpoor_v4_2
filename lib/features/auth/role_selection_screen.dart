@@ -29,14 +29,29 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     });
   }
 
-  /// Shows the role-exclusivity confirmation dialog and, on confirmation,
-  /// persists the chosen role to the caller's `users/{uid}` document before
-  /// navigating to the matching dashboard.
+  /// Handles a Hunter/Outfitter card tap.
   ///
-  /// Admins bypass this dialog — they have system-wide access across all
-  /// profiles, which is exactly the exception the dialog message calls out.
+  /// Admins/Superusers bypass the single-role confirmation modal entirely and
+  /// never have a permanent role written to their `users/{uid}` document —
+  /// they are routed straight into the requested mode as a multi-profile
+  /// preview. Regular accounts see the exclusivity warning and, on confirm,
+  /// have their chosen role locked in to Firestore before navigating.
   Future<void> _confirmAndSelectRole(
       {required String role, required String routeName}) async {
+    // Resolve admin status authoritatively before deciding on the bypass —
+    // the `_isAdmin` UI flag is still `false` while the initial async
+    // resolution is in flight, so a tap during that window must re-check.
+    final isAdmin = _resolving
+        ? await AdminAuthGuard.instance.isCurrentUserAdmin()
+        : _isAdmin;
+
+    // Admins get seamless multi-profile access — no dialog, no role write.
+    if (isAdmin) {
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, routeName);
+      return;
+    }
+
     final confirmed = await _showRoleExclusivityDialog(role) ?? false;
     if (!confirmed || !mounted) return;
 
