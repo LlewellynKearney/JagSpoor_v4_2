@@ -115,6 +115,11 @@ class OutfitterEnterpriseManager {
   /// - [species]: Animal species name (e.g., "African Lion", "Cape Buffalo")
   /// - [availableCount]: Number of available trophy permits/quota
   /// - [pricePerTrophyRands]: Price per trophy in South African Rand
+  /// - [trophyMeasurement]: Optional trophy length/size in inches (horn, tusk,
+  ///   or skull measurement). Stored as both `trophyMeasurement` and
+  ///   `trophyLengthInches` for read compatibility. Null/empty when omitted.
+  /// - [trophyPhotoUrls]: Optional list of up to 3 photo download URLs for the
+  ///   trophy animal. Stored as the `trophyPhotoUrls` array.
   ///
   /// Returns: void (saves to Firestore 'trophies' collection)
   ///
@@ -124,6 +129,8 @@ class OutfitterEnterpriseManager {
     required String species,
     required int availableCount,
     required double pricePerTrophyRands,
+    double? trophyMeasurement,
+    List<String> trophyPhotoUrls = const [],
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to sync trophy stock');
@@ -142,7 +149,7 @@ class OutfitterEnterpriseManager {
       throw Exception('Price per trophy cannot be negative');
     }
 
-    final trophyData = {
+    final trophyData = <String, dynamic>{
       'farmId': farmId.trim(),
       'outfitterId': _currentUserId,
       'species': species.trim(),
@@ -151,6 +158,18 @@ class OutfitterEnterpriseManager {
       'status': 'available',
       'lastUpdated': FieldValue.serverTimestamp(),
     };
+
+    // Trophy measurement (horn/tusk/skull length in inches). Written under two
+    // aliases so either read convention resolves.
+    if (trophyMeasurement != null && trophyMeasurement > 0) {
+      trophyData['trophyMeasurement'] = trophyMeasurement;
+      trophyData['trophyLengthInches'] = trophyMeasurement;
+    }
+
+    // Up to 3 attached photo URLs.
+    if (trophyPhotoUrls.isNotEmpty) {
+      trophyData['trophyPhotoUrls'] = trophyPhotoUrls.take(3).toList();
+    }
 
     await _firestore.collection('trophies').add(trophyData);
   }

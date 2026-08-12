@@ -63,6 +63,14 @@
         { "fieldPath": "outfitterId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "trophies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outfitterId", "order": "ASCENDING" },
+        { "fieldPath": "lastUpdated", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

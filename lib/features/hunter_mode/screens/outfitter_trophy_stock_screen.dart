@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/user_role_resolver.dart';
@@ -22,11 +25,17 @@ class _OutfitterTrophyStockScreenState
   final _speciesController = TextEditingController();
   final _countController = TextEditingController();
   final _priceController = TextEditingController();
+  final _measurementController = TextEditingController();
 
   String? _selectedFarmId;
   String? _selectedFarmName;
   bool _isSyncing = false;
   bool _isManager = false;
+
+  // Multi-photo trophy attachments (up to 3).
+  static const int _maxTrophyPhotos = 3;
+  final List<XFile> _pickedPhotos = [];
+  final ImagePicker _imagePicker = ImagePicker();
 
   // Common species suggestions
   static const List<String> _commonSpecies = [
@@ -83,6 +92,7 @@ class _OutfitterTrophyStockScreenState
     _speciesController.dispose();
     _countController.dispose();
     _priceController.dispose();
+    _measurementController.dispose();
     super.dispose();
   }
 
@@ -111,18 +121,30 @@ class _OutfitterTrophyStockScreenState
             _priceController.text.replaceAll(',', '').replaceAll('R', ''),
           ) ??
           0;
+      // Trophy length/size in inches (horn, tusk, or skull). Optional.
+      final measurement =
+          double.tryParse(
+            _measurementController.text.replaceAll(',', '').trim(),
+          );
+
+      // Upload any picked photos to Firebase Storage (up to 3).
+      final photoUrls = await _uploadTrophyPhotos();
 
       await OutfitterEnterpriseManager.instance.syncTrophyStock(
         farmId: _selectedFarmId!,
         species: _speciesController.text.trim(),
         availableCount: count,
         pricePerTrophyRands: price,
+        trophyMeasurement: measurement,
+        trophyPhotoUrls: photoUrls,
       );
 
       if (mounted) {
         _speciesController.clear();
         _countController.clear();
         _priceController.clear();
+        _measurementController.clear();
+        setState(_pickedPhotos.clear);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -145,6 +167,65 @@ class _OutfitterTrophyStockScreenState
         });
       }
     }
+  }
+
+  /// Opens the image picker (gallery, multi-image) and appends up to
+  /// [_maxTrophyPhotos] selections to [_pickedPhotos].
+  Future<void> _pickTrophyPhotos() async {
+    if (_pickedPhotos.length >= _maxTrophyPhotos) return;
+    try {
+      final remaining = _maxTrophyPhotos - _pickedPhotos.length;
+      final picked = await _imagePicker.pickMultipleMedia(
+        imageQuality: 80,
+        limit: remaining,
+      );
+      if (picked.isNotEmpty && mounted) {
+        setState(() {
+          // Cap at the overall limit even if the platform returned extra.
+          _pickedPhotos.addAll(picked);
+          if (_pickedPhotos.length > _maxTrophyPhotos) {
+            _pickedPhotos.removeRange(_maxTrophyPhotos, _pickedPhotos.length);
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Image pick failed: $e')),
+        );
+      }
+    }
+  }
+
+  /// Removes a picked photo at [index].
+  void _removeTrophyPhoto(int index) {
+    setState(() => _pickedPhotos.removeAt(index));
+  }
+
+  /// Uploads each picked photo to Firebase Storage under
+  /// `trophy_photos/{outfitterId}/{timestamp}_{i}.jpg` and returns the download
+  /// URLs. Photos that fail to upload are skipped (partial success is OK).
+  Future<List<String>> _uploadTrophyPhotos() async {
+    if (_pickedPhotos.isEmpty) return const [];
+    final outfitterId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final urls = <String>[];
+    for (var i = 0; i < _pickedPhotos.length; i++) {
+      final file = File(_pickedPhotos[i].path);
+      if (!await file.exists()) continue;
+      final ref = FirebaseStorage.instance.ref(
+        'trophy_photos/$outfitterId/${timestamp}_$i.jpg',
+      );
+      try {
+        final task = await ref.putFile(file);
+        final url = await task.ref.getDownloadURL();
+        urls.add(url);
+      } catch (e) {
+        // Continue uploading the rest; report the first failure later.
+        debugPrint('Trophy photo $i upload failed: $e');
+      }
+    }
+    return urls;
   }
 
   void _showSpeciesPicker() {
@@ -570,6 +651,169 @@ class _OutfitterTrophyStockScreenState
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+
+                        // Trophy Measurement (horn/tusk/skull length in inches)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'TROPHY LENGTH / SIZE (INCHES)',
+                              style: TextStyle(
+                                color: theme.subtitleColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _measurementController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[\d.,]'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                hintText: 'e.g. 42.5',
+                                suffixText: 'in',
+                                hintStyle: TextStyle(
+                                  color: theme.subtitleColor.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: theme.backgroundColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: theme.accentColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(
+                                    color: theme.accentColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Multi-photo trophy attachments (up to 3)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'TROPHY PHOTOS (${_pickedPhotos.length}/$_maxTrophyPhotos)',
+                                  style: TextStyle(
+                                    color: theme.subtitleColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _pickedPhotos.length >=
+                                          _maxTrophyPhotos
+                                      ? null
+                                      : _pickTrophyPhotos,
+                                  icon: const Icon(Icons.add_photo_alternate_rounded),
+                                  label: const Text('Add Photos'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: theme.accentColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            if (_pickedPhotos.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Text(
+                                  'Attach up to 3 photos of the trophy animal '
+                                  '(horn, tusk, or full animal).',
+                                  style: TextStyle(
+                                    color: theme.subtitleColor.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              )
+                            else
+                              SizedBox(
+                                height: 110,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _pickedPhotos.length,
+                                  separatorBuilder: (context, index) =>
+                                      const SizedBox(width: 10),
+                                  itemBuilder: (context, index) {
+                                    return Stack(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Image.file(
+                                            File(_pickedPhotos[index].path),
+                                            width: 110,
+                                            height: 110,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stack) =>
+                                                    Container(
+                                              width: 110,
+                                              height: 110,
+                                              color: theme.backgroundColor,
+                                              child: Icon(
+                                                Icons.broken_image_rounded,
+                                                color: theme.subtitleColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 4,
+                                          right: 4,
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                _removeTrophyPhoto(index),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.6),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              padding: const EdgeInsets.all(4),
+                                              child: const Icon(
+                                                Icons.close_rounded,
+                                                color: Colors.white,
+                                                size: 16,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
                         const SizedBox(height: 24),
 
                         // Sync Button
@@ -665,6 +909,33 @@ class _OutfitterTrophyStockScreenState
                       );
                     }
 
+                    // A failed query (e.g. a missing composite index) must not be
+                    // mistaken for an empty result — otherwise existing stock
+                    // shows as "No trophy stock synced". Surface the error.
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.error_outline_rounded,
+                                color: Colors.red.withValues(alpha: 0.7),
+                                size: 48,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Unable to load stock.\n'
+                                'If this persists, deploy the Firestore indexes.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: theme.subtitleColor),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
                     final trophies = snapshot.data?.docs ?? [];
 
                     if (trophies.isEmpty) {
@@ -689,115 +960,171 @@ class _OutfitterTrophyStockScreenState
                       );
                     }
 
-                    return ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
-                      itemCount: trophies.length,
-                      separatorBuilder:
-                          (context, index) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final trophy = trophies[index];
-                        final data = trophy.data() as Map<String, dynamic>;
-                        final species = data['species'] ?? 'Unknown';
-                        final count = data['availableCount'] ?? 0;
-                        final price =
-                            (data['pricePerTrophyRands'] ?? 0).toDouble();
-                        final farmId = data['farmId'] ?? '';
+                    // Group trophies by farmId so the summary renders per-farm
+                    // tallies (the section is titled "Current Stock by Farm").
+                    final byFarm = <String, List<Map<String, dynamic>>>{};
+                    for (final doc in trophies) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final farmId = (data['farmId'] ?? '') as String;
+                      byFarm.putIfAbsent(farmId, () => []).add(data);
+                    }
 
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.backgroundColor,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color:
-                                  count > 0
+                    // Resolve farm names: fetch all the user's farms once into a
+                    // farmId → name map. Re-runs when the trophy stream emits.
+                    return FutureBuilder<QuerySnapshot>(
+                      future: FirebaseFirestore.instance
+                          .collection('farms')
+                          .where(
+                            'outfitterId',
+                            isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                          )
+                          .get(),
+                      builder: (context, farmSnapshot) {
+                        final farmNames = <String, String>{};
+                        for (final f in farmSnapshot.data?.docs ?? const []) {
+                          final fd = f.data() as Map<String, dynamic>;
+                          farmNames[f.id] = (fd['name'] ?? 'Unknown Farm') as String;
+                        }
+
+                        final farmIds = byFarm.keys.toList();
+                        return ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          itemCount: farmIds.length,
+                          separatorBuilder:
+                              (context, index) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final farmId = farmIds[index];
+                            final farmTrophies = byFarm[farmId]!;
+                            final farmName = farmNames[farmId] ??
+                                (farmId.isEmpty
+                                    ? 'Unassigned'
+                                    : 'Farm ${farmId.substring(0, farmId.length > 6 ? 6 : farmId.length)}…');
+                            final farmTotal = farmTrophies.fold<int>(
+                              0,
+                              (total, t) =>
+                                  total + ((t['availableCount'] ?? 0) as num).toInt(),
+                            );
+
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: theme.backgroundColor,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: farmTotal > 0
                                       ? Colors.green.withValues(alpha: 0.3)
                                       : Colors.red.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: theme.accentColor.withValues(
-                                    alpha: 0.2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Icon(
-                                  Icons.pets_rounded,
-                                  color: theme.accentColor,
-                                  size: 20,
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      species,
-                                      style: TextStyle(
-                                        color: theme.textColor,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Farm: ${farmId.substring(0, farmId.length > 6 ? 6 : farmId.length)}...',
-                                      style: TextStyle(
-                                        color: theme.subtitleColor,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          count > 0
-                                              ? Colors.green.withValues(
-                                                alpha: 0.2,
-                                              )
-                                              : Colors.red.withValues(
-                                                alpha: 0.2,
-                                              ),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '$count available',
-                                      style: TextStyle(
-                                        color:
-                                            count > 0
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: theme.accentColor.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Icon(
+                                          Icons.agriculture_rounded,
+                                          color: theme.accentColor,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          farmName,
+                                          style: TextStyle(
+                                            color: theme.textColor,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: farmTotal > 0
+                                              ? Colors.green.withValues(alpha: 0.2)
+                                              : Colors.red.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '$farmTotal total',
+                                          style: TextStyle(
+                                            color: farmTotal > 0
                                                 ? Colors.green
                                                 : Colors.red,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                                    style: TextStyle(
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                                  const SizedBox(height: 8),
+                                  // Per-species breakdown within this farm.
+                                  ...farmTrophies.map((data) {
+                                    final species = data['species'] ?? 'Unknown';
+                                    final count =
+                                        (data['availableCount'] ?? 0) as num;
+                                    final price =
+                                        (data['pricePerTrophyRands'] ?? 0)
+                                            .toDouble();
+                                    final measurement =
+                                        (data['trophyMeasurement'] ??
+                                                data['trophyLengthInches'])
+                                            ?.toDouble();
+                                    final photos =
+                                        (data['trophyPhotoUrls'] as List?)
+                                            ?.cast<String>() ??
+                                        const <String>[];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.pets_rounded,
+                                            color: theme.subtitleColor,
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              '$species — ${count.toInt()} available'
+                                              '${measurement != null ? " · ${measurement.toStringAsFixed(1)}in" : ""}'
+                                              '${photos.isNotEmpty ? " · ${photos.length} photo${photos.length > 1 ? "s" : ""}" : ""}',
+                                              style: TextStyle(
+                                                color: theme.textColor,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                                            style: const TextStyle(
+                                              color: Colors.green,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
                                 ],
                               ),
-                            ],
-                          ),
+                            );
+                          },
                         );
                       },
                     );
