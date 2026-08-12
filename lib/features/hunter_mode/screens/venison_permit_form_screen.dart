@@ -858,7 +858,7 @@ class _AddSpeciesDialogState extends State<_AddSpeciesDialog> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: _selectedSex,
+            value: _selectedSex,
             decoration: const InputDecoration(labelText: 'Sex'),
             items: _sexOptions
                 .map((sex) => DropdownMenuItem(value: sex, child: Text(sex)))

@@ -320,20 +320,70 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 
 ## Flutter SDK & analyze (this sandbox)
 
-- Flutter SDK installed at `/home/openhands/flutter` (version 3.29.1 stable, Dart 3.7.0 —
-  matches the CI pin in `.github/workflows/build-and-deploy.yml` and satisfies `sdk: ^3.6.0`).
+- Flutter SDK installed at `/home/openhands/flutter`. The local checkout was
+  upgraded to **3.44.9 stable** (Dart 3.9) — NEWER than the **CI pin of 3.29.1**
+  in `.github/workflows/build-and-deploy.yml`. This version skew matters:
+  - On **3.29.1** (CI) `DropdownButtonFormField` takes `value:`; `initialValue:`
+    is a hard compile ERROR (no such named parameter) — this was the root cause
+    of the CI build failures.
+  - On **3.44.9** (local) `DropdownButtonFormField.value` is DEPRECATED in favor
+    of `initialValue:` — only a non-blocking INFO. So local `flutter analyze`
+    can pass while CI fails. Always use `value:` for `DropdownButtonFormField`
+    (matches CI pin + the other 9 dropdowns in the codebase); the local
+    deprecation infos are accepted baseline.
   Add to PATH: `export PATH="$HOME/flutter/bin:$PATH"`.
 - `flutter pub get` succeeds (148 outdated but constraint-incompatible packages — expected).
-- `flutter analyze` result: **303 issues, 0 errors** — 17 warnings + 286 infos. Breakdown:
+- `flutter analyze` result (local 3.44.9): **0 errors, 14 warnings, 320 infos**.
+  No analyzer errors block the build. (CI 3.29.1 would show ~319 infos — the
+  extra local info is the `value` deprecation above.)
   - Warnings: `unused_local_variable` (9), `invalid_null_aware_operator` (1 in
     `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart:355`), plus
     unused imports/elements/fields.
   - Infos dominated by `avoid_print` (220, mostly debug `print()` calls), plus
     `non_constant_identifier_names` (16), `curly_braces_in_flow_control_structures` (14),
     `unnecessary_const` (13), `use_build_context_synchronously` (5, in outfitter
-    presentation screens), `deprecated_member_use` (3 — `withOpacity`, `androidProvider`,
-    `appleProvider` in `lib/main.dart` + `role_selection_screen.dart`).
+    presentation screens), `deprecated_member_use` (`withOpacity`, `androidProvider`,
+    `appleProvider` in `lib/main.dart` + `role_selection_screen.dart`, plus
+    `DropdownButtonFormField.value` on the local 3.44.9 only).
   - Production `lib/` ≈ 94 issues; `test/` ≈ 209 issues. No analyzer errors block the build.
+
+## CI workflow — Build & Deploy (fixed 2026-08-12)
+
+- `.github/workflows/build-and-deploy.yml` runs three jobs: `build-android`
+  (ubuntu), `build-ios` (macOS), then `deploy-firebase` (needs build-android)
+  and `notify` (needs deploy-firebase, `if: always()`).
+- **Root cause of prior CI failures**: a single compile error —
+  `venison_permit_form_screen.dart:861` passed `initialValue:` to
+  `DropdownButtonFormField`, which on the CI Flutter pin (3.29.1) has no such
+  parameter (it uses `value:`). The same error broke BOTH the Android
+  (`flutter build apk`) and iOS (`flutter build ios`) jobs because both run the
+  Dart kernel compile. Fixed by changing to `value: _selectedSex`
+  (`_selectedSex` is non-null, defaulting to 'Male', always in `_sexOptions`).
+  The other 4 `initialValue:` usages in the repo are on `FormField<T>` /
+  `TextFormField` (which legitimately accept `initialValue`) — left unchanged.
+- **Build incompatibilities verified/aligned**:
+  - Java 17 (Temurin) — correct for AGP 8.11.1 / Gradle 8.14 / Kotlin 2.2.20.
+  - Android: `flutter build apk --debug`; `ndkVersion = flutter.ndkVersion`
+    (CI auto-installs the NDK plugins request — a version warning about
+    26.3 vs 27.0 is emitted but is non-fatal; build proceeds).
+  - iOS: `flutter build ios --simulator --no-codesign` — `--no-codesign`
+    skips signing (no provisioning profile on the hosted runner); `pod install`
+    is run by the Flutter build. The iOS job previously spent ~8 min on
+    `pod install` then hit the same Dart compile error (now fixed).
+- **Secret handling**: `deploy-firebase` now gates ALL deploy steps behind a
+  `Check Firebase secrets` step that sets `steps.secrets.outputs.deploy`
+  (`true`/`false`). When `FIREBASE_SERVICE_ACCOUNT` is unset it emits a
+  `::warning::` with a clear "configure the repo secret" message and skips
+  deploy (every subsequent step is `if: deploy == 'true'`) — so missing
+  secrets no longer fail the job. Replaced the old broad
+  `continue-on-error: true` (which masked real deploy errors) with explicit,
+  per-step gating. `notify` still runs (`if: always()`) and only pings Discord
+  if `vars.DISCORD_WEBHOOK` is set.
+- **permissions**: added top-level `permissions: { contents: read }` (was
+  default-token; now least-privilege — the deploy uses its own Firebase
+  service-account secret, not GITHUB_TOKEN).
+- No `environment:` directive is used (referencing a non-existent GitHub
+  environment would block the job).
 
 ## Phase 3 — Hunting Package Publisher & Marketplace Pipeline (added 2026-08-12)
 

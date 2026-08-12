@@ -10,6 +10,11 @@ on:
         required: false
         default: 'New build available!'
 
+# Minimal permissions — the build only needs to read the repo; the deploy
+# job uploads to Firebase via its own service-account secret.
+permissions:
+  contents: read
+
 jobs:
   build-android:
     name: Build Android APK
@@ -18,7 +23,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17 (AGP 8.x requirement)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -60,7 +65,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS for simulator
+      # Run pod install against the iOS simulator so the Podfile.lock is
+      # resolved before the Xcode build. --no-codesign skips signing because
+      # the GitHub-hosted runner has no provisioning profile / signing cert.
+      - name: Build iOS for simulator (no codesign)
         run: flutter build ios --simulator --no-codesign
 
       - name: Upload iOS artifact
@@ -74,46 +82,59 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-android
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # Deployment is best-effort: if the required Firebase secrets are not
-    # configured for this repository, the job fails without failing the
-    # overall workflow (the Android/iOS builds above already validated the
-    # code). Set continue-on-error so missing secrets don't break CI.
-    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Check Firebase secrets
+        id: secrets
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT secret is not set — skipping Firebase App Distribution deploy."
+            echo "::warning::Configure the repo secret FIREBASE_SERVICE_ACCOUNT (and optional TESTER_EMAILS) to enable deployment."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Java 17
+        if: steps.secrets.outputs.deploy == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Flutter
+        if: steps.secrets.outputs.deploy == 'true'
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.29.1'
           channel: 'stable'
 
       - name: Install dependencies
+        if: steps.secrets.outputs.deploy == 'true'
         run: flutter pub get
 
       - name: Build debug APK
+        if: steps.secrets.outputs.deploy == 'true'
         run: flutter build apk --debug
 
       - name: Get latest commit info
+        if: steps.secrets.outputs.deploy == 'true'
         id: commit
         run: |
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
 
       - name: Download APK
+        if: steps.secrets.outputs.deploy == 'true'
         uses: actions/download-artifact@v4
         with:
           name: app-debug.apk
           path: build/app/outputs/flutter-apk/
 
       - name: Upload to Firebase App Distribution (Android)
+        if: steps.secrets.outputs.deploy == 'true'
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -142,3 +163,6 @@ jobs:
             📱 New APK available on Firebase App Distribution
             👥 Testers have been emailed
             🔗 Check Firebase Console for details
+        # Note: if deploy-firebase skipped (FIREBASE_SERVICE_ACCOUNT unset),
+        # this still reports a successful build. Adjust the message above to
+        # reflect deploy status if you want quieter "build-only" pings.
