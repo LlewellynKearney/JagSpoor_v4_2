@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
+import '../track/data/track_taxonomy.dart';
 import '../track/data/services/spoor_ai_service.dart';
 import 'services/spoor_identifier_service.dart';
 
@@ -27,6 +28,12 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
   double? _longitude;
   String? _confidenceWarning;
   bool _isAIInitialized = false;
+
+  /// Pre-selected morphological track category (null = unfiltered).
+  TrackCategory? _selectedCategory;
+
+  /// Ranked top-3 predictions from the last scan (empty if unavailable).
+  List<SpoorPrediction> _topPredictions = const [];
 
   @override
   void initState() {
@@ -100,13 +107,18 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       });
 
       final nativeResult = await SpoorIdentifierService.instance
-          .classifySpoorTrack(capturedImage);
+          .classifySpoorTrack(capturedImage, category: _selectedCategory);
       final bool success = nativeResult['success'] as bool? ?? true;
       final String trackingResult =
           nativeResult['trackingResult'] as String? ??
-          'Identified Spoor: Leopard (Male, Mature)';
+          'Identified Spoor: Unknown Track';
       final double confidence =
-          (nativeResult['confidence'] as num?)?.toDouble() ?? 0.88;
+          (nativeResult['confidence'] as num?)?.toDouble() ?? 0.0;
+      final List<SpoorPrediction> top =
+          (nativeResult['topPredictions'] as List?)
+              ?.whereType<SpoorPrediction>()
+              .toList() ??
+          const <SpoorPrediction>[];
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -117,6 +129,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         _showResults = true;
         _matchedAnimal =
             '$trackingResult (${(confidence * 100).toStringAsFixed(1)}%)';
+        _topPredictions = top;
         _scanTimestamp = DateTime.now().toIso8601String();
         _latitude = position.latitude;
         _longitude = position.longitude;
@@ -172,6 +185,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       _latitude = null;
       _longitude = null;
       _confidenceWarning = null;
+      _topPredictions = const [];
     });
   }
 
@@ -240,8 +254,8 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         if (!_showResults)
           Positioned(
             bottom: 40,
-            left: 0,
-            right: 0,
+            left: 16,
+            right: 16,
             child: Center(
               child:
                   _isScanning
@@ -262,30 +276,37 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
                           ),
                         ],
                       )
-                      : ElevatedButton.icon(
-                        onPressed: _isAIInitialized ? _scanSpoor : null,
-                        icon: Icon(
-                          Icons.camera_alt_rounded,
-                          color: widget.theme.backgroundColor,
-                        ),
-                        label: Text(
-                          'Scan Spoor',
-                          style: TextStyle(
-                            color: widget.theme.backgroundColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                      : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildCategorySelector(),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _isAIInitialized ? _scanSpoor : null,
+                            icon: Icon(
+                              Icons.camera_alt_rounded,
+                              color: widget.theme.backgroundColor,
+                            ),
+                            label: Text(
+                              'Scan Spoor',
+                              style: TextStyle(
+                                color: widget.theme.backgroundColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: widget.theme.accentColor,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                                vertical: 16,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                            ),
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: widget.theme.accentColor,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 32,
-                            vertical: 16,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
+                        ],
                       ),
             ),
           ),
@@ -303,92 +324,182 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     );
   }
 
+  Widget _buildCategorySelector() {
+    final accent = widget.theme.accentColor;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: widget.theme.cardColor.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TRACK CATEGORY (pre-filter)',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: widget.theme.subtitleColor,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _selectedCategory == null
+                ? 'Auto (no filter — may cross types)'
+                : categoryHint(_selectedCategory!),
+            style: TextStyle(fontSize: 11, color: widget.theme.subtitleColor),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _categoryChip(null, 'Auto', accent),
+              for (final c in TrackCategory.values)
+                _categoryChip(c, categoryLabel(c), accent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryChip(TrackCategory? c, String label, Color accent) {
+    final selected = _selectedCategory == c;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedCategory = c),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? accent : accent.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color:
+                selected ? widget.theme.backgroundColor : widget.theme.textColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildResultsOverlay() {
     final isLowConfidence = _matchedAnimal == null;
 
     return Container(
       color: widget.theme.backgroundColor.withValues(alpha: 0.95),
       padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            isLowConfidence
-                ? Icons.warning_rounded
-                : Icons.check_circle_rounded,
-            color: isLowConfidence ? Colors.orange : widget.theme.accentColor,
-            size: 64,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            isLowConfidence ? 'LOW CONFIDENCE' : 'MATCH FOUND',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: widget.theme.subtitleColor,
-              letterSpacing: 2,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isLowConfidence
+                  ? Icons.warning_rounded
+                  : Icons.check_circle_rounded,
+              color: isLowConfidence ? Colors.orange : widget.theme.accentColor,
+              size: 64,
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _matchedAnimal ?? 'Unable to classify',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: widget.theme.textColor,
-            ),
-          ),
-          if (_confidenceWarning != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange, width: 1),
+            const SizedBox(height: 24),
+            Text(
+              isLowConfidence ? 'LOW CONFIDENCE' : 'MATCH FOUND',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: widget.theme.subtitleColor,
+                letterSpacing: 2,
               ),
-              child: Text(
-                _confidenceWarning!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.orange,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _matchedAnimal ?? 'Unable to classify',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: widget.theme.textColor,
+              ),
+            ),
+            if (_topPredictions.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'TOP MATCHES',
+                style: TextStyle(
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
+                  color: widget.theme.subtitleColor,
+                  letterSpacing: 1.5,
                 ),
               ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          _buildInfoRow('Timestamp', _formatTimestamp(_scanTimestamp)),
-          const SizedBox(height: 12),
-          _buildInfoRow('Latitude', _latitude?.toStringAsFixed(6) ?? 'N/A'),
-          const SizedBox(height: 12),
-          _buildInfoRow('Longitude', _longitude?.toStringAsFixed(6) ?? 'N/A'),
-          const SizedBox(height: 32),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _resetScan,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.theme.accentColor,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Scan Another',
-                    style: TextStyle(
-                      color: widget.theme.backgroundColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+              const SizedBox(height: 8),
+              for (int i = 0; i < _topPredictions.length; i++)
+                _buildPredictionRow(_topPredictions[i], i == 0),
+            ],
+            if (_selectedCategory != null) ...[
+              const SizedBox(height: 20),
+              _buildVerificationPrompts(),
+            ],
+            if (_confidenceWarning != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange, width: 1),
+                ),
+                child: Text(
+                  _confidenceWarning!,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
-          ),
-        ],
+            const SizedBox(height: 24),
+            _buildInfoRow('Timestamp', _formatTimestamp(_scanTimestamp)),
+            const SizedBox(height: 12),
+            _buildInfoRow('Latitude', _latitude?.toStringAsFixed(6) ?? 'N/A'),
+            const SizedBox(height: 12),
+            _buildInfoRow('Longitude', _longitude?.toStringAsFixed(6) ?? 'N/A'),
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _resetScan,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: widget.theme.accentColor,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Scan Another',
+                      style: TextStyle(
+                        color: widget.theme.backgroundColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -426,6 +537,102 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     } catch (e) {
       return 'N/A';
     }
+  }
+
+  Widget _buildPredictionRow(SpoorPrediction p, bool isTop) {
+    final pct = p.confidencePercent.toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            isTop ? Icons.military_tech_rounded : Icons.label_outline,
+            size: 18,
+            color:
+                isTop ? widget.theme.accentColor : widget.theme.subtitleColor,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              p.species,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                color:
+                    isTop ? widget.theme.textColor : widget.theme.subtitleColor,
+              ),
+            ),
+          ),
+          Text(
+            '$pct%',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color:
+                  isTop ? widget.theme.accentColor : widget.theme.subtitleColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerificationPrompts() {
+    final accent = widget.theme.accentColor;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.fact_check_outlined, size: 18, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Verify anatomical features (${categoryLabel(_selectedCategory!)})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: widget.theme.textColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final prompt in verificationPrompts(_selectedCategory!))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.check_box_outline_blank,
+                    size: 18,
+                    color: widget.theme.subtitleColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      prompt,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: widget.theme.subtitleColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _showScanHistory(BuildContext context) {

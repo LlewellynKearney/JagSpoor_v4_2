@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../models/animal.dart';
 import '../../../core/theme/app_theme.dart';
+import '../data/track_taxonomy.dart';
 import '../../hunter_mode/add_trophy_screen.dart';
 
 class ClassificationResultWidget extends StatefulWidget {
@@ -11,12 +12,22 @@ class ClassificationResultWidget extends StatefulWidget {
   final ThemeController theme;
   final String? gpsCoordinates;
 
+  /// Optional ranked top-3 candidates. When supplied, all three matches are
+  /// shown with confidence bars instead of a single absolute result.
+  final List<SpoorPrediction>? topPredictions;
+
+  /// Optional morphological category used for the scan; drives the anatomical
+  /// verification prompts shown beneath the predictions.
+  final TrackCategory? category;
+
   const ClassificationResultWidget({
     super.key,
     required this.speciesName,
     required this.confidence,
     required this.theme,
     this.gpsCoordinates,
+    this.topPredictions,
+    this.category,
   });
 
   @override
@@ -49,6 +60,7 @@ class _ClassificationResultWidgetState
   Widget build(BuildContext context) {
     final confidencePercent = (widget.confidence * 100).toStringAsFixed(1);
     final isLowConfidence = widget.confidence < 0.5;
+    final top = widget.topPredictions ?? const <SpoorPrediction>[];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -123,6 +135,89 @@ class _ClassificationResultWidgetState
               ),
             ),
           ),
+
+          // Top-3 candidate matches.
+          if (top.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Text(
+              'TOP MATCHES',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: widget.theme.subtitleColor,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (int i = 0; i < top.length; i++)
+              _buildPredictionRow(top[i], i == 0),
+          ],
+
+          // Anatomical verification prompts (only when a category was chosen).
+          if (widget.category != null) ...[
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: widget.theme.accentColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: widget.theme.accentColor.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.fact_check_outlined,
+                        size: 18,
+                        color: widget.theme.accentColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Verify anatomical features (${categoryLabel(widget.category!)})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: widget.theme.textColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  for (final prompt in verificationPrompts(widget.category!))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.check_box_outline_blank,
+                            size: 18,
+                            color: widget.theme.subtitleColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              prompt,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: widget.theme.subtitleColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 24),
           Text(
             'Associate Firearm',
@@ -267,6 +362,47 @@ class _ClassificationResultWidgetState
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPredictionRow(SpoorPrediction p, bool isTop) {
+    final pct = p.confidencePercent.toStringAsFixed(1);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(
+            isTop ? Icons.military_tech_rounded : Icons.label_outline,
+            size: 18,
+            color: isTop ? widget.theme.accentColor : widget.theme.subtitleColor,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              p.species,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                color:
+                    isTop ? widget.theme.textColor : widget.theme.subtitleColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 60,
+            child: Text(
+              '$pct%',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isTop ? widget.theme.accentColor : widget.theme.subtitleColor,
               ),
             ),
           ),

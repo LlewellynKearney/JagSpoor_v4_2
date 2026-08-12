@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import '../track_taxonomy.dart';
+
+export '../track_taxonomy.dart' show TrackCategory, SpoorPrediction;
 
 class SpoorAIService {
   static final SpoorAIService _instance = SpoorAIService._internal();
@@ -71,11 +74,32 @@ class SpoorAIService {
         'Oribi',
         'Jackal',
         'Caracal',
+        'Hyena',
+        'Serval',
+        'Leopard',
+        'Lion',
+        'Cheetah',
+        'Wild Cat',
       ];
     }
   }
 
-  Future<Map<String, dynamic>> predictSpoor(XFile imageFile) async {
+  /// Classifies a spoor image and returns the top-3 candidate predictions.
+  ///
+  /// When [category] is supplied, candidates are **restricted** to species in
+  /// that morphological category before ranking — this prevents cross-type
+  /// errors (e.g. a feline paw being classified as a cloven-hoofed ungulate).
+  ///
+  /// Returns a map with:
+  ///   - `species`: top-1 species name
+  ///   - `confidence`: top-1 confidence (0..1)
+  ///   - `topPredictions`: `List<SpoorPrediction>` (up to 3, ranked, renormalized)
+  ///   - `category`: the [TrackCategory] used (null = unfiltered)
+  ///   - `success`: top-1 confidence >= threshold
+  Future<Map<String, dynamic>> predictSpoor(
+    XFile imageFile, {
+    TrackCategory? category,
+  }) async {
     if (_labels.isEmpty) {
       await initialize();
     }
@@ -84,7 +108,13 @@ class SpoorAIService {
       final imageBytes = await imageFile.readAsBytes();
       final decodedImage = img.decodeImage(imageBytes);
       if (decodedImage == null) {
-        return {'species': 'Unknown', 'confidence': 0.0, 'success': false};
+        return {
+          'species': 'Unknown',
+          'confidence': 0.0,
+          'success': false,
+          'topPredictions': <SpoorPrediction>[],
+          'category': category,
+        };
       }
 
       final resizedImage = img.copyResize(
@@ -93,62 +123,140 @@ class SpoorAIService {
         height: _modelInputSize,
       );
 
-      if (_isMockMode || _interpreter == null) {
-        int hash = 0;
-        for (int i = 0; i < 100; i++) {
-          final p = resizedImage.getPixelSafe(
-            i % _modelInputSize,
-            (i * 2) % _modelInputSize,
-          );
-          hash += p.r.toInt() + p.g.toInt() + p.b.toInt();
-        }
-        final speciesIndex = hash % _labels.length;
-        final species = _labels[speciesIndex];
-        final confidence = 0.55 + ((hash % 40) / 100.0);
+      // Raw per-label scores (mock or real model output).
+      final List<double> rawScores =
+          _isMockMode || _interpreter == null
+              ? _mockScoresFor(resizedImage)
+              : _modelScoresFor(resizedImage);
 
+      final topPredictions = _rankAndFilterScores(rawScores, category);
+
+      if (topPredictions.isEmpty) {
         return {
-          'species': species,
-          'confidence': confidence,
-          'success': confidence >= _confidenceThreshold,
+          'species': 'Unknown',
+          'confidence': 0.0,
+          'success': false,
+          'topPredictions': <SpoorPrediction>[],
+          'category': category,
         };
       }
 
-      final input = List.generate(
-        1,
-        (b) => List.generate(
-          _modelInputSize,
-          (y) => List.generate(_modelInputSize, (x) {
-            final pixel = resizedImage.getPixelSafe(x, y);
-            return [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
-          }),
-        ),
-      );
-
-      final output = [List<double>.filled(_labels.length, 0.0)];
-      _interpreter!.run(input, output);
-
-      int maxIndex = 0;
-      double maxConfidence = 0.0;
-      for (int i = 0; i < output[0].length; i++) {
-        if (output[0][i] > maxConfidence) {
-          maxConfidence = output[0][i];
-          maxIndex = i;
-        }
-      }
-
-      final predictedSpecies =
-          maxIndex < _labels.length ? _labels[maxIndex] : 'Unknown';
-      final success = maxConfidence >= _confidenceThreshold;
-
+      final best = topPredictions.first;
       return {
-        'species': predictedSpecies,
-        'confidence': maxConfidence,
-        'success': success,
+        'species': best.species,
+        'confidence': best.confidence,
+        'success': best.confidence >= _confidenceThreshold,
+        'topPredictions': topPredictions,
+        'category': category,
       };
     } catch (e) {
       debugPrint('✗ Prediction error: $e');
-      return {'species': 'Unknown', 'confidence': 0.0, 'success': false};
+      return {
+        'species': 'Unknown',
+        'confidence': 0.0,
+        'success': false,
+        'topPredictions': <SpoorPrediction>[],
+        'category': category,
+      };
     }
+  }
+
+  /// Deterministic pseudo-probabilities for mock mode derived from image hash.
+  List<double> _mockScoresFor(img.Image resizedImage) {
+    int hash = 0;
+    for (int i = 0; i < 100; i++) {
+      final p = resizedImage.getPixelSafe(
+        i % _modelInputSize,
+        (i * 2) % _modelInputSize,
+      );
+      hash += p.r.toInt() + p.g.toInt() + p.b.toInt();
+    }
+    // Spread the hash across all labels so we get a multi-class distribution.
+    final scores = List<double>.filled(_labels.length, 0.0);
+    for (int i = 0; i < _labels.length; i++) {
+      // Per-label pseudo-score, offset so different labels differ.
+      final v = ((hash * (i + 7)) % 1000) / 1000.0;
+      scores[i] = v;
+    }
+    return scores;
+  }
+
+  /// Runs the real TFLite model and returns raw output scores.
+  List<double> _modelScoresFor(img.Image resizedImage) {
+    final input = List.generate(
+      1,
+      (b) => List.generate(
+        _modelInputSize,
+        (y) => List.generate(_modelInputSize, (x) {
+          final pixel = resizedImage.getPixelSafe(x, y);
+          return [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
+        }),
+      ),
+    );
+
+    final output = [List<double>.filled(_labels.length, 0.0)];
+    _interpreter!.run(input, output);
+    return output[0];
+  }
+
+  /// Restricts raw scores to the selected category (masking others out),
+  /// applies softmax-style normalization over the survivors, and returns the
+  /// top-3 ranked predictions. When [category] is null, all labels compete.
+  List<SpoorPrediction> _rankAndFilterScores(
+    List<double> rawScores,
+    TrackCategory? category,
+  ) {
+    // Boost scores a touch so softmax doesn't collapse after masking.
+    final boosted = rawScores.map((s) => s * 6.0 + 0.05).toList();
+
+    final List<int> candidateIndices = [];
+    for (int i = 0; i < _labels.length && i < boosted.length; i++) {
+      final species = _labels[i];
+      if (category == null || categoryForSpecies(species) == category) {
+        candidateIndices.add(i);
+      }
+    }
+
+    if (candidateIndices.isEmpty) return const [];
+
+    // Softmax over survivors → normalized probabilities.
+    double maxVal = boosted[candidateIndices.first];
+    for (final i in candidateIndices) {
+      if (boosted[i] > maxVal) maxVal = boosted[i];
+    }
+    double sumExp = 0.0;
+    final exps = <int, double>{};
+    for (final i in candidateIndices) {
+      final e = _exp(boosted[i] - maxVal);
+      exps[i] = e;
+      sumExp += e;
+    }
+
+    final predictions = <SpoorPrediction>[];
+    final sortedIndices = candidateIndices.toList()
+      ..sort((a, b) => exps[b]!.compareTo(exps[a]!));
+    for (final i in sortedIndices.take(3)) {
+      final conf = sumExp > 0 ? (exps[i]! / sumExp) : 0.0;
+      predictions.add(
+        SpoorPrediction(species: _labels[i], confidence: conf.clamp(0.0, 1.0)),
+      );
+    }
+    return predictions;
+  }
+
+  // Local exp so we don't pull in dart:math just for this.
+  double _exp(double x) {
+    if (x.isNaN) return double.nan;
+    if (x > 50) return double.infinity;
+    if (x < -50) return 0.0;
+    double term = 1.0;
+    double result = 1.0;
+    for (int k = 1; k <= 18; k++) {
+      term *= x / k;
+      result += term;
+      if (result.isInfinite) break;
+    }
+    return result;
   }
 
   void dispose() {

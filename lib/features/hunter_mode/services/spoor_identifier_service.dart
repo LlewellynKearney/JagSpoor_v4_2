@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import '../../track/data/track_taxonomy.dart';
 
 /// Geometric track metrics profile extracted during visual analysis pass
 class SpoorGeometricMetrics {
@@ -36,7 +37,10 @@ class SpoorIdentifierService {
   static SpoorIdentifierService get instance => _instance;
   SpoorIdentifierService._internal();
 
-  /// Known wildlife species profiles with geometric classification signatures
+  /// Known wildlife species profiles with geometric classification signatures.
+  /// Each signature is tagged with its morphological [TrackCategory] so the
+  /// geometric matcher can be restricted to a single category, preventing
+  /// cross-type errors (e.g. a Leopard paw matching a Kudu hoof).
   static const List<Map<String, dynamic>> _speciesSignatures = [
     {
       'species': 'Leopard',
@@ -46,6 +50,7 @@ class SpoorIdentifierService {
       'hasClaws': false,
       'minToeAngle': 12.0,
       'maxToeAngle': 28.0,
+      'category': TrackCategory.pawCarnivore,
     },
     {
       'species': 'Lion',
@@ -55,6 +60,7 @@ class SpoorIdentifierService {
       'hasClaws': false,
       'minToeAngle': 15.0,
       'maxToeAngle': 35.0,
+      'category': TrackCategory.pawCarnivore,
     },
     {
       'species': 'Cheetah',
@@ -64,6 +70,27 @@ class SpoorIdentifierService {
       'hasClaws': true,
       'minToeAngle': 8.0,
       'maxToeAngle': 20.0,
+      'category': TrackCategory.pawCarnivore,
+    },
+    {
+      'species': 'Caracal',
+      'demographic': 'Adult',
+      'avgLength': 58.0,
+      'avgWidth': 52.0,
+      'hasClaws': false,
+      'minToeAngle': 10.0,
+      'maxToeAngle': 22.0,
+      'category': TrackCategory.pawCarnivore,
+    },
+    {
+      'species': 'Wild Cat',
+      'demographic': 'Adult',
+      'avgLength': 38.0,
+      'avgWidth': 34.0,
+      'hasClaws': false,
+      'minToeAngle': 9.0,
+      'maxToeAngle': 20.0,
+      'category': TrackCategory.pawCarnivore,
     },
     {
       'species': 'Kudu',
@@ -73,6 +100,7 @@ class SpoorIdentifierService {
       'hasClaws': false,
       'minToeAngle': 2.0,
       'maxToeAngle': 10.0,
+      'category': TrackCategory.clovenHoofUngulate,
     },
     {
       'species': 'Cape Buffalo',
@@ -82,6 +110,7 @@ class SpoorIdentifierService {
       'hasClaws': false,
       'minToeAngle': 1.0,
       'maxToeAngle': 8.0,
+      'category': TrackCategory.clovenHoofUngulate,
     },
     {
       'species': 'Impala',
@@ -91,12 +120,70 @@ class SpoorIdentifierService {
       'hasClaws': false,
       'minToeAngle': 2.0,
       'maxToeAngle': 9.0,
+      'category': TrackCategory.clovenHoofUngulate,
+    },
+    {
+      'species': 'Gemsbok',
+      'demographic': 'Adult',
+      'avgLength': 85.0,
+      'avgWidth': 60.0,
+      'hasClaws': false,
+      'minToeAngle': 2.0,
+      'maxToeAngle': 10.0,
+      'category': TrackCategory.clovenHoofUngulate,
+    },
+    {
+      'species': 'Eland',
+      'demographic': 'Adult',
+      'avgLength': 130.0,
+      'avgWidth': 100.0,
+      'hasClaws': false,
+      'minToeAngle': 2.0,
+      'maxToeAngle': 9.0,
+      'category': TrackCategory.clovenHoofUngulate,
+    },
+    {
+      'species': 'Warthog',
+      'demographic': 'Adult',
+      'avgLength': 70.0,
+      'avgWidth': 50.0,
+      'hasClaws': false,
+      'minToeAngle': 2.0,
+      'maxToeAngle': 11.0,
+      'category': TrackCategory.clovenHoofUngulate,
+    },
+    {
+      'species': 'Zebra',
+      'demographic': 'Adult',
+      'avgLength': 110.0,
+      'avgWidth': 100.0,
+      'hasClaws': false,
+      'minToeAngle': 1.0,
+      'maxToeAngle': 6.0,
+      'category': TrackCategory.solidHoofEquine,
+    },
+    {
+      'species': 'Donkey',
+      'demographic': 'Adult',
+      'avgLength': 95.0,
+      'avgWidth': 85.0,
+      'hasClaws': false,
+      'minToeAngle': 1.0,
+      'maxToeAngle': 6.0,
+      'category': TrackCategory.solidHoofEquine,
     },
   ];
 
   /// Analyzes track geometry by extracting image tensor metrics (print length, toe alignments, claw delta profiles)
   /// and running a model processor execution pass to generate descriptive tracking output strings.
-  Future<Map<String, dynamic>> classifySpoorTrack(XFile imageFile) async {
+  ///
+  /// When [category] is supplied, candidate species are restricted to that
+  /// morphological category before matching, preventing cross-type confusion
+  /// (e.g. a feline paw being classified as a cloven-hoofed ungulate).
+  Future<Map<String, dynamic>> classifySpoorTrack(
+    XFile imageFile, {
+    TrackCategory? category,
+  }) async {
     try {
       final imageBytes = await imageFile.readAsBytes();
       final decodedImage = img.decodeImage(imageBytes);
@@ -107,6 +194,8 @@ class SpoorIdentifierService {
               'Identified Spoor: Unknown Track (Unreadable Image)',
           'confidence': 0.0,
           'success': false,
+          'topPredictions': <SpoorPrediction>[],
+          'category': category,
         };
       }
 
@@ -114,11 +203,24 @@ class SpoorIdentifierService {
       final metrics = _extractTrackGeometricMetrics(decodedImage);
 
       // Step 2: Running Tensor Emulation & Metric Matching Pass
-      final classification = _matchGeometricMetricsToSpecies(metrics);
+      final rankings = _matchGeometricMetricsToSpecies(metrics, category);
 
-      final String species = classification['species'] as String;
-      final String demographic = classification['demographic'] as String;
-      final double confidence = classification['confidence'] as double;
+      if (rankings.isEmpty) {
+        return {
+          'trackingResult': 'Identified Spoor: Unknown Track',
+          'confidence': 0.0,
+          'success': false,
+          'topPredictions': <SpoorPrediction>[],
+          'category': category,
+          'metrics': metrics,
+        };
+      }
+
+      final top = rankings.first;
+      final String species = top.species;
+      final double confidence = top.confidence;
+      final sig = _signatureForSpecies(species);
+      final String demographic = sig?['demographic'] as String? ?? 'Adult';
       final String descriptiveString =
           'Identified Spoor: $species ($demographic)';
 
@@ -134,23 +236,32 @@ class SpoorIdentifierService {
         'confidence': confidence,
         'metrics': metrics,
         'success': confidence >= 0.50,
+        'topPredictions': rankings,
+        'category': category,
       };
     } catch (e) {
       debugPrint('✗ Spoor Identifier Service error: $e');
+      // Safe fallback: no fabricated classification, mark as failed.
       return {
-        'trackingResult':
-            'Identified Spoor: Leopard (Male, Mature)', // Descriptive fallback
-        'species': 'Leopard',
-        'demographic': 'Male, Mature',
-        'confidence': 0.88,
-        'success': true,
+        'trackingResult': 'Identified Spoor: Unknown Track (Analysis Error)',
+        'confidence': 0.0,
+        'success': false,
+        'topPredictions': <SpoorPrediction>[],
+        'category': category,
       };
     }
   }
 
+  Map<String, dynamic>? _signatureForSpecies(String species) {
+    for (final s in _speciesSignatures) {
+      if (s['species'] == species) return s;
+    }
+    return null;
+  }
+
   /// Extracts geometric metrics (print length, toe alignments, claw delta profiles) from image pixels
   SpoorGeometricMetrics _extractTrackGeometricMetrics(img.Image image) {
-    int totalR = 0, totalG = 0, totalB = 0;
+    int totalR = 0, totalB = 0;
     int pixelCount = 0;
     int minX = image.width, maxX = 0, minY = image.height, maxY = 0;
 
@@ -171,7 +282,6 @@ class SpoorIdentifierService {
           if (y > maxY) maxY = y;
 
           totalR += r;
-          totalG += g;
           totalB += b;
           pixelCount++;
         }
@@ -211,20 +321,27 @@ class SpoorIdentifierService {
     );
   }
 
-  /// Running model processor pass: Matches geometric metrics against species signatures
-  Map<String, dynamic> _matchGeometricMetricsToSpecies(
+  /// Running model processor pass: scores each in-category species signature
+  /// against the extracted metrics, then returns the top-3 ranked predictions
+  /// (renormalized so confidences sum to 1.0). When [category] is null, all
+  /// signatures compete.
+  List<SpoorPrediction> _matchGeometricMetricsToSpecies(
     SpoorGeometricMetrics metrics,
+    TrackCategory? category,
   ) {
-    double bestMatchScore = -1.0;
-    Map<String, dynamic> bestSignature = _speciesSignatures.first;
+    final candidates = _speciesSignatures.where((sig) {
+      return category == null || sig['category'] == category;
+    }).toList();
 
-    for (final sig in _speciesSignatures) {
+    if (candidates.isEmpty) return const [];
+
+    final scores = <double>[];
+    for (final sig in candidates) {
       final targetLength = sig['avgLength'] as double;
       final targetWidth = sig['avgWidth'] as double;
       final minAngle = sig['minToeAngle'] as double;
       final maxAngle = sig['maxToeAngle'] as double;
 
-      // Score components
       final lengthScore =
           1.0 -
           ((metrics.printLengthMm - targetLength).abs() / targetLength).clamp(
@@ -245,22 +362,49 @@ class SpoorIdentifierService {
 
       final double totalScore =
           (lengthScore * 0.4) + (widthScore * 0.4) + (angleScore * 0.2);
-
-      if (totalScore > bestMatchScore) {
-        bestMatchScore = totalScore;
-        bestSignature = sig;
-      }
+      scores.add(totalScore);
     }
 
-    final double finalConfidence = (0.75 + (bestMatchScore * 0.23)).clamp(
-      0.70,
-      0.98,
-    );
+    // Softmax over the (boosted) per-species scores → normalized confidences.
+    final boosted = scores.map((s) => s * 4.0).toList();
+    double maxVal = boosted.isEmpty ? 0.0 : boosted.first;
+    for (final v in boosted) {
+      if (v > maxVal) maxVal = v;
+    }
+    double sumExp = 0.0;
+    final exps = <double>[];
+    for (final v in boosted) {
+      final e = _exp(v - maxVal);
+      exps.add(e);
+      sumExp += e;
+    }
 
-    return {
-      'species': bestSignature['species'],
-      'demographic': bestSignature['demographic'],
-      'confidence': finalConfidence,
-    };
+    final indexed = <int>[
+      for (int i = 0; i < candidates.length; i++) i,
+    ]..sort((a, b) => exps[b].compareTo(exps[a]));
+
+    final predictions = <SpoorPrediction>[];
+    for (final i in indexed.take(3)) {
+      final conf = sumExp > 0 ? (exps[i] / sumExp) : 0.0;
+      predictions.add(SpoorPrediction(
+        species: candidates[i]['species'] as String,
+        confidence: conf.clamp(0.0, 1.0),
+      ));
+    }
+    return predictions;
+  }
+
+  double _exp(double x) {
+    if (x.isNaN) return double.nan;
+    if (x > 50) return double.infinity;
+    if (x < -50) return 0.0;
+    double term = 1.0;
+    double result = 1.0;
+    for (int k = 1; k <= 18; k++) {
+      term *= x / k;
+      result += term;
+      if (result.isInfinite) break;
+    }
+    return result;
   }
 }

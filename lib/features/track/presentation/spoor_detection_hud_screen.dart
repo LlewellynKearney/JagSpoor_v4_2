@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../core/theme/app_theme.dart';
+import '../data/track_taxonomy.dart';
 import '../data/services/spoor_ai_service.dart';
 import 'classification_result_widget.dart';
 
@@ -24,6 +25,10 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
   String? _latitude;
   String? _longitude;
   Map<String, dynamic>? _predictionResult;
+
+  /// Pre-selected morphological track category. When set, candidate species
+  /// are restricted to this category to prevent cross-type misclassification.
+  TrackCategory? _selectedCategory;
 
   @override
   void initState() {
@@ -94,7 +99,10 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
 
     try {
       final image = await _cameraController!.takePicture();
-      final result = await _spoorAIService.predictSpoor(image);
+      final result = await _spoorAIService.predictSpoor(
+        image,
+        category: _selectedCategory,
+      );
 
       if (mounted) {
         setState(() {
@@ -269,6 +277,13 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                     _latitude != null && _longitude != null
                                         ? '$_latitude, $_longitude'
                                         : null,
+                                topPredictions:
+                                    (_predictionResult!['topPredictions']
+                                            as List?)
+                                        ?.whereType<SpoorPrediction>()
+                                        .toList(),
+                                category: _predictionResult!['category']
+                                    as TrackCategory?,
                               ),
                               const SizedBox(height: 16),
                               ElevatedButton(
@@ -326,6 +341,9 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
                                   ],
                                 ),
                               ),
+                              const SizedBox(height: 20),
+                              // Morphological track category pre-filter
+                              _buildCategorySelector(scanColor),
                               const SizedBox(height: 20),
                               // Capture/Scan Trigger Button
                               GestureDetector(
@@ -395,6 +413,74 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
       case HuntingConcept.walnutLuxury:
         return 'OPTICS HUD ACTIVE';
     }
+  }
+
+  Widget _buildCategorySelector(Color scanColor) {
+    final categories = TrackCategory.values;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scanColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TRACK CATEGORY (pre-filter)',
+            style: TextStyle(
+              color: scanColor.withValues(alpha: 0.7),
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _selectedCategory == null
+                ? 'Auto (no filter — may cross types)'
+                : categoryHint(_selectedCategory!),
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _categoryChip(null, 'Auto', scanColor),
+              for (final c in categories) _categoryChip(c, categoryLabel(c), scanColor),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryChip(TrackCategory? c, String label, Color scanColor) {
+    final selected = _selectedCategory == c;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedCategory = c),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? scanColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? scanColor : scanColor.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black : Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildTacticalRow(String label, String value) {
