@@ -18,10 +18,15 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  static const Color _tacticalBlack = Color(0xFF0E0F11);
-  static const Color _panelBlack = Color(0xFF171A1E);
-  static const Color _accent = Color(0xFFC5A059);
-  static const Color _accentDim = Color(0xFF8A7038);
+  // Theme-aware palette sourced from the central tactical theme so the sheet
+  // responds to the Day/Night toggle (no hardcoded dark-only colors).
+  Color get _tacticalBlack => Theme.of(context).scaffoldBackgroundColor;
+  Color get _panelBlack => Theme.of(context).cardColor;
+  Color get _accent => Theme.of(context).colorScheme.primary;
+  Color get _accentDim => Theme.of(context).colorScheme.primary.withValues(alpha: 0.6);
+  Color get _textPrimary => Theme.of(context).textTheme.bodyLarge?.color ?? const Color(0xFFE0E0E0);
+  Color get _textSecondary => Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7) ?? const Color(0xFFB0B0B0);
+  Color get _textHint => _textSecondary.withValues(alpha: 0.6);
   static const Color _dangerRed = Color(0xFFD14B3E);
   static const Color _goGreen = Color(0xFF4CAF6A);
 
@@ -176,7 +181,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget build(BuildContext context) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.9,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _tacticalBlack,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -187,7 +192,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             _buildHeader(),
             _buildFirearmLink(),
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(color: _accentDim, width: 0.5),
                 ),
@@ -195,7 +200,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               child: TabBar(
                 controller: _tabController,
                 labelColor: _accent,
-                unselectedLabelColor: Colors.white54,
+                unselectedLabelColor: _textSecondary,
                 indicatorColor: _accent,
                 indicatorSize: TabBarIndicatorSize.tab,
                 labelStyle:
@@ -237,9 +242,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
         children: [
-          const Icon(Icons.center_focus_strong, color: _accent, size: 26),
+          Icon(Icons.center_focus_strong, color: _accent, size: 26),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
               'OPTICAL SUITE',
               style: TextStyle(
@@ -251,7 +256,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white54),
+            icon: Icon(Icons.close, color: _textSecondary),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
@@ -274,7 +279,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           ),
           child: Row(
             children: [
-              const Icon(Icons.link, color: _accent, size: 18),
+              Icon(Icons.link, color: _accent, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonHideUnderline(
@@ -282,15 +287,15 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     value: _selectedRifleId,
                     isExpanded: true,
                     dropdownColor: _panelBlack,
-                    hint: const Text('Link to Firearm',
-                        style: TextStyle(color: Colors.white70)),
-                    style: const TextStyle(color: Colors.white),
+                    hint: Text('Link to Firearm',
+                        style: TextStyle(color: _textSecondary)),
+                    style: TextStyle(color: _textPrimary),
                     items: rifles
                         .map((r) => DropdownMenuItem(
                               value: r.id,
                               child: Text(
                                 '${r.name} (${r.caliber.isEmpty ? "—" : r.caliber})',
-                                style: const TextStyle(fontSize: 13),
+                                style: TextStyle(fontSize: 13),
                               ),
                             ))
                         .toList(),
@@ -301,8 +306,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               const SizedBox(width: 8),
               Chip(
                 label: Text(_optic.turretUnitLabel,
-                    style: const TextStyle(
-                        fontSize: 11, color: Colors.black)),
+                    style: TextStyle(
+                        fontSize: 11, color: _textPrimary)),
                 backgroundColor: _accent,
                 padding: EdgeInsets.zero,
                 visualDensity: VisualDensity.compact,
@@ -456,7 +461,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('LINKED OPTIC SUMMARY',
+          Text('LINKED OPTIC SUMMARY',
               style: TextStyle(
                   color: _accent,
                   fontSize: 11,
@@ -498,7 +503,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           const SizedBox(height: 4),
           Text(
             'Positive vertical = impact HIGH. Positive horizontal = impact RIGHT.',
-            style: TextStyle(color: Colors.white54, fontSize: 11),
+            style: TextStyle(color: _textSecondary, fontSize: 11),
           ),
           const SizedBox(height: 12),
           Row(
@@ -532,7 +537,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
-                foregroundColor: Colors.black,
+                foregroundColor: _textPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -562,7 +567,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('CORRECTION — ${r.unit == TurretUnit.moa ? "MOA" : "MRAD"} turrets',
-              style: const TextStyle(
+              style: TextStyle(
                   color: _accent,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -599,13 +604,13 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             ),
             child: Row(
               children: [
-                const Icon(Icons.flag, color: _accent, size: 20),
+                Icon(Icons.flag, color: _accent, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     r.tacticalString,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: _textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,
@@ -639,7 +644,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     final bool none = direction.isEmpty || clicks == 0;
 
     final Color color = none
-        ? Colors.white38
+        ? _textHint
         : (isUp || isLeft ? _goGreen : _dangerRed);
 
     IconData icon;
@@ -665,8 +670,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       child: Column(
         children: [
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white54,
+              style: TextStyle(
+                  color: _textSecondary,
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1)),
@@ -744,7 +749,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
-                foregroundColor: Colors.black,
+                foregroundColor: _textPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -775,7 +780,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('${r.focalPlane == FocalPlane.ffp ? "FFP" : "SFP"} SCALING RESULT',
-              style: const TextStyle(
+              style: TextStyle(
                   color: _accent,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -791,15 +796,15 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('TRUE RETICLE VALUE',
+                Text('TRUE RETICLE VALUE',
                     style: TextStyle(
-                        color: Colors.white54,
+                        color: _textSecondary,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1)),
                 Text(
                     '${r.trueReticleValue.toStringAsFixed(2)} $unitLabel',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: _accent,
                         fontSize: 22,
                         fontWeight: FontWeight.bold)),
@@ -835,7 +840,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           const SizedBox(height: 4),
           Text(
             'Dial a known ${_optic.turretUnitLabel} value, measure the actual target displacement, and verify tracking accuracy.',
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
+            style: TextStyle(color: _textSecondary, fontSize: 11),
           ),
           const SizedBox(height: 12),
           Row(
@@ -869,7 +874,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
-                foregroundColor: Colors.black,
+                foregroundColor: _textPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -888,7 +893,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               child: Text(
                 'No tracking tests logged yet.\nRun a tall-target test to verify turret accuracy.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white38, fontSize: 12),
+                style: TextStyle(color: _textHint, fontSize: 12),
               ),
             )
           else
@@ -932,7 +937,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               Text(
                   '${e.timestamp.hour.toString().padLeft(2, '0')}:${e.timestamp.minute.toString().padLeft(2, '0')}',
                   style:
-                      const TextStyle(color: Colors.white38, fontSize: 11)),
+                      TextStyle(color: _textHint, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 10),
@@ -999,7 +1004,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildFooter() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _tacticalBlack,
         border: Border(top: BorderSide(color: _accentDim, width: 0.5)),
       ),
@@ -1008,8 +1013,8 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Expanded(
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white54,
-                side: const BorderSide(color: _accentDim),
+                foregroundColor: _textSecondary,
+                side: BorderSide(color: _accentDim),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -1024,22 +1029,22 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
-                foregroundColor: Colors.black,
+                foregroundColor: _textPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _selectedRifleId == null || _isSaving ? null : _saveOptic,
               icon: _isSaving
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black))
+                          strokeWidth: 2, color: _textPrimary))
                   : const Icon(Icons.save),
               label: Text(
                   _selectedRifleId == null ? 'LINK FIREARM FIRST' : 'SAVE OPTIC',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -1050,7 +1055,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Widget _buildSectionLabel(String text) {
     return Text(
       text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         color: _accent,
         fontSize: 12,
         fontWeight: FontWeight.bold,
@@ -1066,10 +1071,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: TextStyle(color: _textSecondary, fontSize: 12)),
           Text(value,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: _textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -1091,7 +1096,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Expanded(
             flex: 2,
             child: Text(label,
-                style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                style: TextStyle(color: _textSecondary, fontSize: 13)),
           ),
           Expanded(
             flex: 3,
@@ -1109,7 +1114,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
             width: 56,
             child: Text(
               '${value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2)} $unit',
-              style: const TextStyle(
+              style: TextStyle(
                   color: _accent, fontWeight: FontWeight.bold, fontSize: 12),
               textAlign: TextAlign.right,
             ),
@@ -1129,7 +1134,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            style: TextStyle(color: _textSecondary, fontSize: 11)),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.all(2),
@@ -1153,7 +1158,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                             o,
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: value == o ? Colors.black : Colors.white70,
+                              color: value == o ? _textPrimary : _textSecondary,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -1188,20 +1193,20 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Expanded(
             flex: 2,
             child: Text(label,
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                style: TextStyle(color: _textSecondary, fontSize: 12)),
           ),
           Expanded(
             flex: 3,
             child: dropdown == null
                 ? TextField(
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    style: TextStyle(color: _textPrimary, fontSize: 14),
                     controller: TextEditingController(text: value)
                       ..selection = TextSelection.fromPosition(
                           TextPosition(offset: value.length)),
                     decoration: InputDecoration(
                       isDense: true,
                       hintText: hint,
-                      hintStyle: const TextStyle(color: Colors.white24),
+                      hintStyle: TextStyle(color: _textHint),
                       border: InputBorder.none,
                     ),
                     keyboardType: keyboardType,
@@ -1212,10 +1217,10 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                       value: dropdown.contains(value) ? value : dropdown.first,
                       isExpanded: true,
                       dropdownColor: _panelBlack,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style: TextStyle(color: _textPrimary, fontSize: 14),
                       items: dropdown
                           .map((d) => DropdownMenuItem(
-                              value: d, child: Text(d, style: const TextStyle(fontSize: 13))))
+                              value: d, child: Text(d, style: TextStyle(fontSize: 13))))
                           .toList(),
                       onChanged: (v) {
                         if (v != null) onChanged(v);
@@ -1248,12 +1253,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Expanded(
             child: TextField(
               controller: controller,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: _textPrimary, fontSize: 14),
               keyboardType: keyboardType,
               decoration: InputDecoration(
                 isDense: true,
                 labelText: label,
-                labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
+                labelStyle: TextStyle(color: _textSecondary, fontSize: 11),
                 border: InputBorder.none,
               ),
             ),

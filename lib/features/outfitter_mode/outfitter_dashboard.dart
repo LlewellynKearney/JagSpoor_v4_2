@@ -459,7 +459,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   ),
                   trailing: Switch(
                     value: theme.isDarkMode,
-                    onChanged: (_) => theme.toggleThemeMode(),
+                    onChanged: (v) => theme.setDarkMode(v),
                     activeTrackColor: theme.accentColor,
                   ),
                 ),

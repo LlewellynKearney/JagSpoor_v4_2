@@ -25,6 +25,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final themeController = ThemeController();
+  // Load persisted Day/Night preference before runApp so the first frame
+  // uses the user's saved mode (no flash of the default on cold start).
+  await themeController.init();
 
   try {
     await Firebase.initializeApp(
@@ -146,7 +149,9 @@ class JagspoorApp extends StatelessWidget {
         return MaterialApp(
           title: 'Jagspoor',
           debugShowCheckedModeBanner: false,
-          theme: themeController.materialTheme,
+          theme: themeController.lightTheme,
+          darkTheme: themeController.darkTheme,
+          themeMode: themeController.themeMode,
           initialRoute: '/splash',
           routes: {
             '/splash': (context) => SplashScreen(theme: themeController),

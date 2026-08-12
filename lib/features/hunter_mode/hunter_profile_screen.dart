@@ -392,7 +392,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                       trailing: Switch(
                         value: widget.theme.isDarkMode,
-                        onChanged: (v) => widget.theme.toggleThemeMode(),
+                        onChanged: (v) => widget.theme.setDarkMode(v),
                       ),
                     ),
                   ),

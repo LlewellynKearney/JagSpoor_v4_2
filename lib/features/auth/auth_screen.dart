@@ -623,19 +623,21 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// Premium Google Sign-In Button
   Widget _buildGoogleSignInButton() {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           colors: [
-            Color(0xFF3C2A21), // Dark walnut
-            Color(0xFF5C4033), // Walnut brown
+            accent.withValues(alpha: 0.85),
+            accent,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         border: Border.all(
-          color: const Color(0xFFE6A15C).withValues(alpha: 0.4),
+          color: accent.withValues(alpha: 0.4),
           width: 1,
         ),
         boxShadow: [
@@ -660,14 +662,14 @@ class _AuthScreenState extends State<AuthScreen> {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: theme.colorScheme.surface,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
                       'G',
                       style: TextStyle(
-                        color: Color(0xFF4285F4),
+                        color: accent,
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
@@ -675,10 +677,10 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'Continue with Google',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: theme.colorScheme.onPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
@@ -756,17 +758,19 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
     return Container(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1F1C),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         border: Border(
-          top: BorderSide(color: Color(0xFFE6A15C), width: 2),
-          left: BorderSide(color: Color(0xFFE6A15C), width: 1),
-          right: BorderSide(color: Color(0xFFE6A15C), width: 1),
+          top: BorderSide(color: accent, width: 2),
+          left: BorderSide(color: accent, width: 1),
+          right: BorderSide(color: accent, width: 1),
         ),
       ),
       child: Padding(
@@ -781,23 +785,23 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.24),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // Header
-            const Row(
+            Row(
               children: [
-                Icon(Icons.security, color: Color(0xFFE6A15C), size: 28),
-                SizedBox(width: 12),
+                Icon(Icons.security, color: accent, size: 28),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'TWO-FACTOR AUTHENTICATION',
                     style: TextStyle(
-                      color: Color(0xFFE6A15C),
+                      color: accent,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.5,
@@ -807,47 +811,47 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Enter the 6-digit security code sent to your verified phone number.',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
+              style: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
             ),
             const SizedBox(height: 24),
-            
+
             // OTP Input
             TextFormField(
               controller: _otpController,
               keyboardType: TextInputType.number,
               maxLength: 6,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 8,
-                color: Colors.white,
+                color: theme.colorScheme.onSurface,
               ),
               decoration: InputDecoration(
                 counterText: '',
                 hintText: '------',
                 hintStyle: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                   fontSize: 28,
                   letterSpacing: 8,
                 ),
                 filled: true,
-                fillColor: const Color(0xFF2A2F2C),
+                fillColor: theme.cardColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: const Color(0xFFE6A15C).withValues(alpha: 0.5),
+                    color: accent.withValues(alpha: 0.5),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE6A15C), width: 2),
+                  borderSide: BorderSide(color: accent, width: 2),
                 ),
               ),
             ),
-            
+
             // Error message
             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
@@ -858,12 +862,12 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
               ),
             ],
             const SizedBox(height: 24),
-            
+
             // Verify Button
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE6A15C),
-                foregroundColor: Colors.black,
+                backgroundColor: accent,
+                foregroundColor: theme.colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -885,13 +889,13 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
                     ),
             ),
             const SizedBox(height: 12),
-            
+
             // Cancel Button
             TextButton(
               onPressed: widget.onCancel,
-              child: const Text(
+              child: Text(
                 'Cancel',
-                style: TextStyle(color: Colors.white54),
+                style: TextStyle(color: theme.textTheme.bodySmall?.color),
               ),
             ),
           ],

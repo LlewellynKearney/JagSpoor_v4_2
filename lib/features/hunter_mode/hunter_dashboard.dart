@@ -377,6 +377,14 @@ class _HunterDashboardState extends State<HunterDashboard> {
             elevation: 0,
             actions: [
               IconButton(
+                tooltip: theme.isDarkMode ? 'Switch to Day Mode' : 'Switch to Night Mode',
+                icon: Icon(
+                  theme.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                  color: theme.accentColor,
+                ),
+                onPressed: () => theme.toggleThemeMode(),
+              ),
+              IconButton(
                 icon: Icon(Icons.settings_rounded, color: theme.accentColor),
                 onPressed:
                     () => Navigator.push(
