@@ -16,10 +16,12 @@ class SpoorDetectionHudScreen extends StatefulWidget {
       _SpoorDetectionHudScreenState();
 }
 
-class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
+class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
+    with WidgetsBindingObserver {
   CameraController? _cameraController;
   final SpoorAIService _spoorAIService = SpoorAIService();
   bool _isCameraInitialized = false;
+  bool _isInitializing = false; // re-entrancy guard for camera init
   bool _isScanning = false;
   bool _isAIInitialized = false;
 
@@ -50,9 +52,49 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeCamera();
     _initializeAI();
     _fetchLocation();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Fire-and-forget release: dispose() must run so the Camera2 capture
+    // session is torn down before the next screen acquires the camera,
+    // otherwise the next preview renders black.
+    _releaseCamera();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Release the camera when backgrounded so its capture session is torn down
+    // cleanly; re-acquire on resume (with a short hardware delay to let
+    // Camera2 finish waitUntilIdle() and free the SurfaceTexture).
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _releaseCamera();
+      if (mounted) setState(() => _isCameraInitialized = false);
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_isInitializing) _initializeCamera(withHardwareDelay: true);
+    }
+  }
+
+  /// Fully releases the camera capture session: awaits `dispose()` so Android's
+  /// Camera2 driver can run `waitUntilIdle()` and free the `SurfaceTexture`,
+  /// then nullifies the controller reference. Safe to call repeatedly.
+  Future<void> _releaseCamera() async {
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller != null) {
+      try {
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('Camera dispose failed: $e');
+      }
+    }
   }
 
   Future<void> _initializeAI() async {
@@ -66,22 +108,63 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
     }
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializeCamera({bool withHardwareDelay = false}) async {
+    if (_isInitializing) return;
+    _isInitializing = true;
+
+    // Give Android's Camera2 driver a brief window to finish waitUntilIdle()
+    // and release the SurfaceTexture before we open a new capture session.
+    if (withHardwareDelay) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted) {
+        _isInitializing = false;
+        return;
+      }
+    }
+
     try {
       final cameras = await availableCameras();
-      if (cameras.isNotEmpty) {
+      if (cameras.isEmpty) {
+        debugPrint('No cameras available.');
+        return;
+      }
+
+      // Release any stale controller before creating a fresh one so we never
+      // hold two capture sessions open.
+      await _releaseCamera();
+
+      _cameraController = CameraController(
+        cameras[0],
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+
+      try {
+        await _cameraController!.initialize();
+      } catch (e) {
+        // Initialization failed — likely the hardware is still releasing the
+        // previous session. Release what we have and retry once.
+        debugPrint('Camera initialize failed, retrying once: $e');
+        await _releaseCamera();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
         _cameraController = CameraController(
           cameras[0],
           ResolutionPreset.high,
           enableAudio: false,
         );
-        await _cameraController!.initialize();
-        if (mounted) {
-          setState(() => _isCameraInitialized = true);
-        }
+        await _cameraController!.initialize(); // throws on second failure
+      }
+
+      if (mounted) {
+        setState(() => _isCameraInitialized = true);
       }
     } catch (e) {
       debugPrint('Camera initialization error: $e');
+      await _releaseCamera();
+      if (mounted) setState(() => _isCameraInitialized = false);
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -140,12 +223,6 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
         );
       }
     }
-  }
-
-  @override
-  void dispose() {
-    _cameraController?.dispose();
-    super.dispose();
   }
 
   @override

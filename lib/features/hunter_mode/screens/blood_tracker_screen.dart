@@ -62,8 +62,10 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _stopImageStream();
-    _cameraController?.dispose();
+    // Fire-and-forget release: stopImageStream + dispose must complete before
+    // the State is torn down, otherwise the Camera2 capture session leaks and
+    // the next screen to acquire the camera gets a black preview.
+    _releaseCamera();
     super.dispose();
   }
 
@@ -73,13 +75,31 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     // re-acquire it on resume. Guarded against re-entrant initialization.
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      _stopImageStream();
-      _cameraController?.dispose();
-      _cameraController = null;
+      _releaseCamera();
       if (mounted) setState(() => _isInitialized = false);
     } else if (state == AppLifecycleState.resumed) {
-      if (!_isInitializing) _initializeCamera();
+      if (!_isInitializing) {
+        _initializeCamera(withHardwareDelay: true);
+      }
     }
+  }
+
+  /// Fully releases the camera capture session: stops the image stream, awaits
+  /// `dispose()` so Android's Camera2 driver can run `waitUntilIdle()` and free
+  /// the `SurfaceTexture`, then nullifies the controller reference. Safe to call
+  /// repeatedly. Returns a Future so callers can `await` full teardown.
+  Future<void> _releaseCamera() async {
+    await _stopImageStream();
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller != null) {
+      try {
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('Camera dispose failed: $e');
+      }
+    }
+    _isStreaming = false;
   }
 
   /// Checks and requests camera permission before any camera access.
@@ -102,10 +122,23 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
     return true;
   }
 
-  Future<void> _initializeCamera() async {
+  Future<void> _initializeCamera({bool withHardwareDelay = false}) async {
     // Re-entrancy guard: never start two init passes concurrently.
     if (_isInitializing) return;
     _isInitializing = true;
+
+    // When re-acquiring the camera after a navigation/lifecycle pause, give
+    // Android's Camera2 driver a brief window to finish waitUntilIdle() and
+    // release the SurfaceTexture before we open a new capture session. Without
+    // this delay the fresh session can attach to a half-released surface and
+    // render a black preview.
+    if (withHardwareDelay) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted) {
+        _isInitializing = false;
+        return;
+      }
+    }
 
     try {
       _cameraError = null;
@@ -127,8 +160,9 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         orElse: () => _cameras!.first,
       );
 
-      // Dispose any stale controller before creating a fresh one.
-      _cameraController?.dispose();
+      // Fully release any stale controller (stops stream + disposes + nullifies)
+      // before creating a fresh one, so we never hold two capture sessions open.
+      await _releaseCamera();
 
       // yuv420 supports startImageStream for live blood detection.
       _cameraController = CameraController(
@@ -138,7 +172,28 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
         imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
-      await _cameraController!.initialize();
+      try {
+        await _cameraController!.initialize();
+      } catch (e) {
+        // Initialization failed — likely the hardware is still releasing the
+        // previous session. Release what we have and retry once.
+        debugPrint('Camera initialize failed, retrying once: $e');
+        await _releaseCamera();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        final retryCamera = _cameras!.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras!.first,
+        );
+        _cameraController = CameraController(
+          retryCamera,
+          ResolutionPreset.high,
+          enableAudio: false,
+          imageFormatGroup: ImageFormatGroup.yuv420,
+        );
+        await _cameraController!.initialize(); // throws on second failure
+      }
+
       await _cameraController!.setFlashMode(FlashMode.off);
 
       if (mounted) {
@@ -154,12 +209,12 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
       _cameraError = e.description?.isNotEmpty == true
           ? e.description!
           : 'Camera is busy or unavailable. Try again.';
-      _cameraController = null;
+      await _releaseCamera();
       if (mounted) setState(() => _isInitialized = false);
     } catch (e) {
       debugPrint('Camera initialization error: $e');
       _cameraError = 'Camera initialization failed: $e';
-      _cameraController = null;
+      await _releaseCamera();
       if (mounted) setState(() => _isInitialized = false);
     } finally {
       _isInitializing = false;
