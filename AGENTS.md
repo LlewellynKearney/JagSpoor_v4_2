@@ -66,6 +66,35 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
+## Theme system (added 2026-08-12)
+
+- Central `ThemeController extends ChangeNotifier` in `lib/core/theme/app_theme.dart`.
+  Persists Day/Night choice to `SharedPreferences` key `jagspoor_dark_mode`.
+  `main()` calls `await themeController.init()` before `runApp` so the first
+  frame uses the saved mode (no cold-start flash).
+- `MaterialApp` wired with `theme: lightTheme`, `darkTheme: darkTheme`,
+  `themeMode: themeController.themeMode`, wrapped in `AnimatedBuilder` so
+  toggling `setDarkMode`/`toggleThemeMode` rebuilds the whole app instantly.
+- Official tactical palette in `AppColors` (use these / `Theme.of(context)`,
+  never raw `Colors.white`/`Colors.black`):
+  - Dark: bg `#121212`, card `#262626`, accent `#C68B59`/`#D4AF37`,
+    text `#E0E0E0`, subtitle `#B0B0B0`.
+  - Light: bg `#F4EFEA`, card `#FFFFFF`, accent `#795548`/`#8D6E63`,
+    text `#212121`, subtitle `#5D4037`.
+- Day/Night toggles: Hunter Dashboard AppBar icon (light_mode/dark_mode),
+  Hunter Profile switch (`setDarkMode(v)`), Outfitter Dashboard switch
+  (`setDarkMode(v)`).
+- Standardized screens: `scope_tools_bottom_sheet.dart` (converted hardcoded
+  `_tacticalBlack`/`_panelBlack`/`_accent` const → Theme.of getters; all
+  `Colors.white`/`black` text → `_textPrimary`/`_textSecondary`/`_textHint`),
+  `auth_screen.dart` (Google sign-in button + 2FA sheet use theme colors).
+  Dashboards + legacy spoor screen already use `theme.*`/`Theme.of`.
+- Camera-overlay screens (spoor HUD, blood tracker) intentionally use
+  high-contrast `Colors.white`/`black` for HUD text over the live camera
+  preview — that contrast is by design, not a theme violation.
+- Tests: `test/theme_controller_test.dart` (9 tests: persistence load/default,
+  setDarkMode/toggle persist, idempotency, notify, brightness, exact palette).
+
 ## Flutter SDK & analyze (this sandbox)
 
 - Flutter SDK installed at `/home/openhands/flutter` (version 3.29.1 stable, Dart 3.7.0 —
