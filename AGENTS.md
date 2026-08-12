@@ -66,6 +66,33 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
+## Camera capture-session hygiene (hardened 2026-08-12)
+
+- Black-preview bug on Blood Trail Tracker Radar was caused by capture-session
+  contention: `CameraController.dispose()` was called without first stopping
+  the image stream, the controller reference wasn't nullified, and there was
+  no delay between sessions — so Android's Camera2 driver couldn't finish
+  `waitUntilIdle()` / free the `SurfaceTexture` before the next screen opened
+  a fresh session against a half-released surface.
+- Both camera screens now follow the same release contract:
+  - `_releaseCamera()` helper: `await _stopImageStream()` → nullify the
+    controller ref → `await controller.dispose()` in a try/catch. Safe to
+    call repeatedly.
+  - `dispose()` calls `_releaseCamera()` (fire-and-forget) so the session is
+    torn down before the State is destroyed.
+  - `didChangeAppLifecycleState` (both states are now `WidgetsBindingObserver`):
+    on `inactive`/`paused` → `_releaseCamera()` + clear `_isInitialized`;
+    on `resumed` → `_initializeCamera(withHardwareDelay: true)`.
+  - `_initializeCamera({withHardwareDelay})`: 300ms `Future.delayed` before
+    re-init so Camera2 can release the surface; `_releaseCamera()` before
+    creating a fresh controller; inner try-catch around `initialize()` that
+    releases + waits 300ms + retries once on failure; outer catch clears the
+    error state; `_isInitializing` re-entrancy guard.
+- Files: `lib/features/hunter_mode/screens/blood_tracker_screen.dart`
+  (image-stream screen — stream stop is essential), `lib/features/track/
+  presentation/spoor_detection_hud_screen.dart` (takePicture screen — was
+  missing observer/lifecycle entirely; now has them).
+
 ## Contextual info icons (added 2026-08-12)
 
 - Reusable `lib/core/widgets/contextual_info_icon.dart`:
