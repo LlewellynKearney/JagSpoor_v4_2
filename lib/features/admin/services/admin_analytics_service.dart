@@ -78,31 +78,35 @@ class AdminAnalyticsService {
   }
 
   /// Entity overview metrics.
+  ///
+  /// Each sub-query is wrapped independently so a PERMISSION_DENIED or missing
+  /// index on one collection never blocks the whole dashboard — failed counts
+  /// contribute 0 and the remaining metrics still render.
   Future<AdminMetrics> fetchEntityMetrics() async {
     final results = await Future.wait([
-      _count(_db.collection('outfitters')),
-      _countQuery(_db.collection('users').where('role', isEqualTo: 'hunter')),
-      _count(_db.collection('packages')),
-      _countQuery(_db.collection('bookings').where('status', isEqualTo: 'Paid')),
-      _count(_db.collection('trophies')),
-      _count(_db.collection('users')),
+      _safeCount(() => _count(_db.collection('outfitters'))),
+      _safeCount(() => _countQuery(
+          _db.collection('users').where('role', isEqualTo: 'hunter'))),
+      _safeCount(() => _count(_db.collection('packages'))),
+      _safeCount(() => _countQuery(
+          _db.collection('bookings').where('status', isEqualTo: 'Paid'))),
+      _safeCount(() => _count(_db.collection('trophies'))),
+      _safeCount(() => _count(_db.collection('users'))),
     ]);
 
     // Active sessions = signed-in users we can observe. Firebase Auth does not
     // expose a live session count from the client; we approximate it with the
     // number of users whose `users` doc carries a recent FCM token (a proxy for
-    // devices that have logged in and registered for push). This is best-effort.
-    int activeSessions = 0;
-    try {
+    // devices that have logged in and registered for push). Best-effort: on
+    // failure (absent field / index / permission) it stays at 0.
+    final activeSessions = await _safeCount(() async {
       final tokenAgg = await _db
           .collection('users')
           .where('fcmTokens', isNotEqualTo: null)
           .count()
           .get();
-      activeSessions = tokenAgg.count ?? 0;
-    } catch (_) {
-      // fcmTokens may be absent entirely; leave at 0.
-    }
+      return tokenAgg.count ?? 0;
+    });
 
     return AdminMetrics(
       totalOutfitters: results[0],
@@ -115,69 +119,92 @@ class AdminAnalyticsService {
     );
   }
 
+  /// Runs a count operation, returning 0 on any failure (permission denied,
+  /// missing index, network) so a single broken query never blocks the rest.
+  Future<int> _safeCount(Future<int> Function() op) async {
+    try {
+      return await op();
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Sums gross booking revenue and platform commission for bookings whose
   /// `bookingTimestamp` (falling back to `createdAt`) falls within the window
   /// `[start, end)`. Only paid bookings contribute to realized revenue.
+  ///
+  /// Returns a zeroed period on any failure (permission denied, missing index)
+  /// so one broken window never blocks the rest of the financial section.
   Future<FinancialPeriod> _sumPeriod(String label, DateTime start, DateTime end) async {
-    final startTs = Timestamp.fromDate(start);
-    final endTs = Timestamp.fromDate(end);
-
-    Query<Map<String, dynamic>> query = _db
-        .collection('bookings')
-        .where('status', isEqualTo: 'Paid')
-        .where('bookingTimestamp', isGreaterThanOrEqualTo: startTs)
-        .where('bookingTimestamp', isLessThan: endTs);
-
-    QuerySnapshot<Map<String, dynamic>> snap;
     try {
-      snap = await query.get();
+      final startTs = Timestamp.fromDate(start);
+      final endTs = Timestamp.fromDate(end);
+
+      QuerySnapshot<Map<String, dynamic>> snap;
+      try {
+        snap = await _db
+            .collection('bookings')
+            .where('status', isEqualTo: 'Paid')
+            .where('bookingTimestamp', isGreaterThanOrEqualTo: startTs)
+            .where('bookingTimestamp', isLessThan: endTs)
+            .get();
+      } catch (_) {
+        // Fall back to `createdAt` if `bookingTimestamp` is not indexed/absent.
+        snap = await _db
+            .collection('bookings')
+            .where('status', isEqualTo: 'Paid')
+            .where('createdAt', isGreaterThanOrEqualTo: startTs)
+            .where('createdAt', isLessThan: endTs)
+            .get();
+      }
+
+      double gross = 0;
+      double commission = 0;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final grossVal =
+            (data['totalHunterPriceRands'] as num?)?.toDouble() ??
+                (data['totalPriceZAR'] as num?)?.toDouble() ??
+                0.0;
+        final commVal =
+            (data['platformCommissionRands'] as num?)?.toDouble() ??
+                (data['platformCommissionZAR'] as num?)?.toDouble() ??
+                (grossVal * 0.05);
+        gross += grossVal;
+        commission += commVal;
+      }
+
+      return FinancialPeriod(
+        label: label,
+        grossBookingRevenue: gross,
+        platformCommission: commission,
+      );
     } catch (_) {
-      // Fall back to `createdAt` if `bookingTimestamp` is not indexed/absent.
-      snap = await _db
-          .collection('bookings')
-          .where('status', isEqualTo: 'Paid')
-          .where('createdAt', isGreaterThanOrEqualTo: startTs)
-          .where('createdAt', isLessThan: endTs)
-          .get();
+      // Graceful degradation: return a zeroed period instead of throwing.
+      return FinancialPeriod(
+          label: label, grossBookingRevenue: 0, platformCommission: 0);
     }
-
-    double gross = 0;
-    double commission = 0;
-    for (final doc in snap.docs) {
-      final data = doc.data();
-      final grossVal = (data['totalHunterPriceRands'] as num?)?.toDouble() ??
-          (data['totalPriceZAR'] as num?)?.toDouble() ??
-          0.0;
-      final commVal = (data['platformCommissionRands'] as num?)?.toDouble() ??
-          (data['platformCommissionZAR'] as num?)?.toDouble() ??
-          (grossVal * 0.05);
-      gross += grossVal;
-      commission += commVal;
-    }
-
-    return FinancialPeriod(
-      label: label,
-      grossBookingRevenue: gross,
-      platformCommission: commission,
-    );
   }
 
   /// Financial analytics across daily / weekly / monthly / yearly windows,
-  /// measured backwards from now.
+  /// measured backwards from now. Each period is independent; a failure in one
+  /// window yields a zeroed period rather than failing the whole bundle.
   Future<FinancialAnalytics> fetchFinancialAnalytics({DateTime? now}) async {
     final ref = now ?? DateTime.now();
     final startOfToday = DateTime(ref.year, ref.month, ref.day);
 
-    final daily = await _sumPeriod('Today', startOfToday, ref);
-    final weekly = await _sumPeriod('This Week', ref.subtract(const Duration(days: 7)), ref);
-    final monthly = await _sumPeriod('This Month', ref.subtract(const Duration(days: 30)), ref);
-    final yearly = await _sumPeriod('This Year', ref.subtract(const Duration(days: 365)), ref);
+    final results = await Future.wait([
+      _sumPeriod('Today', startOfToday, ref),
+      _sumPeriod('This Week', ref.subtract(const Duration(days: 7)), ref),
+      _sumPeriod('This Month', ref.subtract(const Duration(days: 30)), ref),
+      _sumPeriod('This Year', ref.subtract(const Duration(days: 365)), ref),
+    ]);
 
     return FinancialAnalytics(
-      daily: daily,
-      weekly: weekly,
-      monthly: monthly,
-      yearly: yearly,
+      daily: results[0],
+      weekly: results[1],
+      monthly: results[2],
+      yearly: results[3],
     );
   }
 

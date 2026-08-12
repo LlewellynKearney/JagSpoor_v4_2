@@ -8,8 +8,20 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Admin access recognizes three sources so the client-side AdminAuthGuard
+    // (custom claim, email allow-list, or users/{uid}.role == 'admin') and the
+    // server-side rules stay consistent:
+    //   1. The `admin == true` custom claim on the ID token.
+    //   2. The official admin email allow-list (token.email).
+    //   3. A `role == 'admin'` field on the caller's users/{uid} document.
+    // The get() is evaluated server-side and is not itself subject to read
+    // rules; if the users doc is absent, .data.role resolves to null (false).
     function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.email == 'admin@jag-spoor.co.za' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
     }
 
     function isOutfitter() {
@@ -27,8 +39,10 @@ service cloud.firestore {
     }
 
     // Owner-or-admin scope for strictly private user data collections.
+    // isOwnerOf is checked first so a normal owner access never triggers the
+    // users-doc get() inside isAdmin(); admin access falls through to it.
     function ownerOrAdmin(ownerField) {
-      return isAdmin() || isOwnerOf(ownerField);
+      return isOwnerOf(ownerField) || isAdmin();
     }
 
     // Booking party check that works for both the booking document itself
@@ -196,7 +210,7 @@ service cloud.firestore {
           && request.resource.data.outfitterId == resource.data.outfitterId
           && request.resource.data.hunterId == resource.data.hunterId;
       }
-      allow read: if isBookingParty();
+      allow read: if isAdmin() || isBookingParty();
       allow create: if isSignedIn()
         && request.resource.data.hunterId == request.auth.uid;
       allow update: if statusUpdateAllowed()
