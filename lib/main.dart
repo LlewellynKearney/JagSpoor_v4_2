@@ -17,6 +17,7 @@ import 'features/hunter_mode/trophy_detail_screen.dart';
 import 'features/hunter_mode/add_trophy_screen.dart';
 import 'features/hunter_mode/edit_trophy_screen.dart';
 import 'features/outfitter_mode/outfitter_dashboard.dart';
+import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 
@@ -155,6 +156,8 @@ class JagspoorApp extends StatelessWidget {
                 (context) => HunterDashboard(theme: themeController),
             '/outfitter_dashboard':
                 (context) => OutfitterDashboard(theme: themeController),
+            '/admin_dashboard':
+                (context) => AdminDashboardScreen(theme: themeController),
             '/scan_license':
                 (context) => LicenseScannerScreen(theme: themeController),
             '/add_firearm_form':

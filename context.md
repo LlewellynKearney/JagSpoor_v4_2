@@ -605,11 +605,26 @@ npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 
 Active roadmap items, in priority order:
 
-### 16.1 Superuser / Admin Portal & Master Analytics Dashboard
-A dedicated admin surface (beyond the current outfitter cockpit) for platform-wide
-oversight: cross-outfitter revenue, booking volume, user/role management, and
-master analytics. Backed by the existing `admin` custom claim and the
-`adminCreateOutfitter` callable.
+### 16.1 Superuser / Admin Portal & Master Analytics Dashboard ✅ Implemented
+A dedicated admin surface (Phase 2, implemented 2026-08-12) for platform-wide
+oversight. Located in `lib/features/admin/`:
+- **Admin authorization guard** (`services/admin_auth_guard.dart`) — resolves
+  admin status via the `admin == true` custom claim OR `users/{uid}.role ==
+  'admin'`, with an `admin@jagspoor.co.za` bootstrap allow-list. Cached and
+  refreshable.
+- **Master analytics dashboard** (`screens/admin_dashboard_screen.dart`) —
+  Entity Overview (Total Outfitters, Active Hunters, Listed Packages, Active
+  Bookings, Total Trophies), Financial Analytics (daily/weekly/monthly/yearly
+  gross booking revenue vs. platform commission, in ZAR), and User Engagement
+  (registered users + active sessions).
+- **Manual account creation** (`screens/create_user_screen.dart`) — form-driven
+  provisioning of hunter/outfitter Firestore documents + password reset email.
+- **Bulk CSV importer** (`screens/bulk_csv_import_screen.dart`) — sequential
+  CSV import with a summary log ("Successfully imported X accounts, Y errors").
+- Entry point: the role-selection screen conditionally renders an "ADMIN PORTAL"
+  card for authorized admins; the dashboard also re-checks the guard on entry.
+- Backed by the existing `admin` custom claim and Firestore rules
+  (`outfitters/{uid}` create = admin).
 
 ### 16.2 In-App Password Reset & In-App Password Change
 The auth screen currently supports email/password sign-in and sign-up only. Add:

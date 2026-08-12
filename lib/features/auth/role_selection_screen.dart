@@ -1,7 +1,31 @@
 import 'package:flutter/material.dart';
+import '../admin/services/admin_auth_guard.dart';
 
-class RoleSelectionScreen extends StatelessWidget {
+class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
+
+  @override
+  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
+}
+
+class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
+  bool _isAdmin = false;
+  bool _resolving = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveAdmin();
+  }
+
+  Future<void> _resolveAdmin() async {
+    final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+    if (!mounted) return;
+    setState(() {
+      _isAdmin = admin;
+      _resolving = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +52,6 @@ class RoleSelectionScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 40.0),
-              // Fixed: Passing theme directly into constructor signature
               RoleCard(
                 title: 'HUNTER MODE',
                 description:
@@ -42,7 +65,6 @@ class RoleSelectionScreen extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 20.0),
-              // Fixed: Correct parameter label alignment
               RoleCard(
                 title: 'OUTFITTER MODE',
                 description:
@@ -55,6 +77,33 @@ class RoleSelectionScreen extends StatelessWidget {
                       '/outfitter_dashboard',
                     ),
               ),
+              // Admin portal entry point — only rendered for admins
+              // (custom claim admin == true, users/{uid}.role == 'admin',
+              // or the admin@jagspoor.co.za allow-list).
+              if (_isAdmin) ...[
+                const SizedBox(height: 20.0),
+                RoleCard(
+                  title: 'ADMIN PORTAL',
+                  description:
+                      'Master analytics dashboard, account management, and bulk imports.',
+                  icon: Icons.admin_panel_settings_sharp,
+                  themeData: theme,
+                  onTap:
+                      () => Navigator.pushReplacementNamed(
+                        context,
+                        '/admin_dashboard',
+                      ),
+                ),
+              ] else if (_resolving) ...[
+                const SizedBox(height: 20.0),
+                const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
