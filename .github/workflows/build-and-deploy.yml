@@ -155,14 +155,13 @@ jobs:
     steps:
       - name: Send Discord Notification
         if: vars.DISCORD_WEBHOOK != ''
-        uses: aristidp/discord-action@v1
-        with:
-          webhook: ${{ vars.DISCORD_WEBHOOK }}
-          message: |
-            ✅ **Jagspoor Build Deployed!**
-            📱 New APK available on Firebase App Distribution
-            👥 Testers have been emailed
-            🔗 Check Firebase Console for details
+        # Plain curl POST (no third-party action) so a missing/unset webhook
+        # never fails the workflow — the step is skipped when DISCORD_WEBHOOK
+        # is absent, and `|| true` keeps the job green even on a curl error.
+        run: |
+          curl -s -X POST -H "Content-Type: application/json" \
+            -d "{\"content\":\"✅ **Jagspoor Build Deployed!**\n📱 New APK available on Firebase App Distribution\n👥 Testers have been emailed\n🔗 Check Firebase Console for details\"}" \
+            "${{ vars.DISCORD_WEBHOOK }}" || true
         # Note: if deploy-firebase skipped (FIREBASE_SERVICE_ACCOUNT unset),
         # this still reports a successful build. Adjust the message above to
         # reflect deploy status if you want quieter "build-only" pings.
