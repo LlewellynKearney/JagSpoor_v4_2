@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../core/theme/app_theme.dart';
 import '../track/data/track_taxonomy.dart';
 import '../track/data/services/spoor_ai_service.dart';
@@ -362,14 +363,40 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'TRACK CATEGORY (pre-filter)',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: widget.theme.subtitleColor,
-              letterSpacing: 1.5,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'TRACK CATEGORY (pre-filter)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: widget.theme.subtitleColor,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+              ContextualInfoIcon(
+                title: 'Morphological Categories',
+                iconColor: widget.theme.subtitleColor,
+                description:
+                    'Pre-filters the species database by track morphology so the matcher only compares against anatomically plausible candidates. Choosing the wrong category is the most common cause of misidentification.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'Paw / Carnivore',
+                    detail: 'Symmetrical pads with toe beans and claw marks (may show 4-5 toes).',
+                  ),
+                  ExplanationConcept(
+                    label: 'Cloven-Hoofed / Ungulate',
+                    detail: 'Two split dewclaws forming a heart/paired outline — antelope, deer, sheep, cattle, pigs.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Solid Hoof / Equine',
+                    detail: 'Single rounded undivided hoof — horse, zebra, donkey.',
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -390,14 +417,40 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
           ),
           const SizedBox(height: 16),
           // On-screen track scale reference for mm measurement.
-          Text(
-            'SCALE REFERENCE (place beside track)',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: widget.theme.subtitleColor,
-              letterSpacing: 1.5,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'SCALE REFERENCE (place beside track)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: widget.theme.subtitleColor,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+              ContextualInfoIcon(
+                title: 'Scale Reference Calibration',
+                iconColor: widget.theme.subtitleColor,
+                description:
+                    'A coin or casing of known size placed beside the track gives the image a real-world dimension. The app measures how many pixels that object occupies and computes a millimetres-per-pixel factor, which it then uses to convert the track\'s pixel dimensions into true length and width in mm.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'Known object',
+                    detail: 'A coin or cartridge casing placed in the same plane as the track.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Pixel ratio',
+                    detail: 'mm-per-pixel = knownObjectMm ÷ knownObjectPixels.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Track size',
+                    detail: 'lengthMm = trackPixels × mm-per-pixel (same for width).',
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -417,14 +470,46 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: accent.withValues(alpha: 0.3)),
               ),
-              child: Text(
-                _scaleReferenceMm == null
-                    ? 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
-                        '(estimate)'
-                    : 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
-                        '· Circ ${_mmString('circularity')} · Aspect ${_mmString('aspectRatio')}'
-                        ' (calibrated to ${_scaleReferences[_selectedScaleIndex].label})',
-                style: TextStyle(fontSize: 11, color: widget.theme.subtitleColor),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _scaleReferenceMm == null
+                          ? 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
+                              '(estimate)'
+                          : 'Measured: ${_mmString('printLengthMm')} × ${_mmString('printWidthMm')} mm '
+                              '· Circ ${_mmString('circularity')} · Aspect ${_mmString('aspectRatio')}'
+                              ' (calibrated to ${_scaleReferences[_selectedScaleIndex].label})',
+                      style: TextStyle(fontSize: 11, color: widget.theme.subtitleColor),
+                    ),
+                  ),
+                  ContextualInfoIcon(
+                    title: 'Contour Circularity Metric',
+                    iconColor: widget.theme.subtitleColor,
+                    iconSize: 15,
+                    description:
+                        'A dimensionless shape factor that describes how close the track contour is to a perfect circle. It helps distinguish compact, rounded pads (carnivores) from elongated or split outlines (ungulates) even when absolute size is uncertain.',
+                    concepts: const [
+                      ExplanationConcept(
+                        label: 'Formula',
+                        detail: 'circularity = 4πA ÷ P²  (A = contour area, P = perimeter).',
+                      ),
+                      ExplanationConcept(
+                        label: 'Circle',
+                        detail: 'A perfect circle scores 1.0; any departure from circular lowers the value.',
+                      ),
+                      ExplanationConcept(
+                        label: 'Low score',
+                        detail: 'Elongated or split (cloven) outlines score well below 1, signalling an ungulate.',
+                      ),
+                      ExplanationConcept(
+                        label: 'Aspect ratio',
+                        detail: 'Length ÷ width — complements circularity to flag elongated tracks.',
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/track_taxonomy.dart';
 import '../data/services/spoor_ai_service.dart';
@@ -444,15 +445,41 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'TRACK CATEGORY (pre-filter)',
-            style: TextStyle(
-              color: scanColor.withValues(alpha: 0.7),
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              letterSpacing: 1.5,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'TRACK CATEGORY (pre-filter)',
+                  style: TextStyle(
+                    color: scanColor.withValues(alpha: 0.7),
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+              ContextualInfoIcon(
+                title: 'Morphological Categories',
+                iconColor: scanColor,
+                description:
+                    'Pre-filters the species database by track morphology so the matcher only compares against anatomically plausible candidates. Choosing the wrong category is the most common cause of misidentification.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'Paw / Carnivore',
+                    detail: 'Symmetrical pads with toe beans and claw marks (may show 4-5 toes).',
+                  ),
+                  ExplanationConcept(
+                    label: 'Cloven-Hoofed / Ungulate',
+                    detail: 'Two split dewclaws forming a heart/paired outline — antelope, deer, sheep, cattle, pigs.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Solid Hoof / Equine',
+                    detail: 'Single rounded undivided hoof — horse, zebra, donkey.',
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -471,14 +498,41 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            'SCALE REFERENCE',
-            style: TextStyle(
-              color: scanColor,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'SCALE REFERENCE',
+                  style: TextStyle(
+                    color: scanColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+              ContextualInfoIcon(
+                title: 'Scale Reference Calibration',
+                iconColor: scanColor,
+                iconSize: 15,
+                description:
+                    'A coin or casing of known size placed beside the track gives the image a real-world dimension. The app measures how many pixels that object occupies and computes a millimetres-per-pixel factor, which it then uses to convert the track\'s pixel dimensions into true length and width in mm.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'Known object',
+                    detail: 'A coin or cartridge casing placed in the same plane as the track.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Pixel ratio',
+                    detail: 'mm-per-pixel = knownObjectMm ÷ knownObjectPixels.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Track size',
+                    detail: 'lengthMm = trackPixels × mm-per-pixel (same for width).',
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(

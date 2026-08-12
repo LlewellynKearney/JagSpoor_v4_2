@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
@@ -785,6 +786,31 @@ class _BloodTrackerScreenState extends State<BloodTrackerScreen>
                       letterSpacing: 1,
                     ),
                   ),
+                ),
+                ContextualInfoIcon(
+                  title: 'HSV Spectrum Thresholding',
+                  iconColor: Colors.red,
+                  iconSize: 15,
+                  description:
+                      'Blood (haemoglobin) is isolated in the HSV colour space rather than RGB because hue is far more stable under uneven bush lighting. Three thresholds tune the mask: how wide a hue band to accept, how saturated (pure) the red must be, and how bright it must be to count.',
+                  concepts: const [
+                    ExplanationConcept(
+                      label: 'Hue Tolerance',
+                      detail: 'How far either side of the blood-red hue (≈0°/360°) to accept — wider catches faded blood, narrower rejects orange/brown soil.',
+                    ),
+                    ExplanationConcept(
+                      label: 'Min Saturation',
+                      detail: 'Rejects grey/white reflections and bleached substrate; only sufficiently pure reds qualify.',
+                    ),
+                    ExplanationConcept(
+                      label: 'Min Value',
+                      detail: 'Rejects dark shadow noise so only bright-enough red pixels count as haemoglobin.',
+                    ),
+                    ExplanationConcept(
+                      label: 'Bush tuning',
+                      detail: 'Lower saturation/value under deep canopy; tighten hue in bright, high-contrast light.',
+                    ),
+                  ],
                 ),
                 Text(
                   _bloodResult == null

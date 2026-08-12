@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -499,7 +500,30 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionLabel('Point-of-Impact Displacement'),
+          Row(
+            children: [
+              Expanded(child: _buildSectionLabel('Point-of-Impact Displacement')),
+              ContextualInfoIcon(
+                title: 'Turret Click Math',
+                description:
+                    'Converts the observed point-of-impact displacement into the exact turret clicks needed to correct zero. Each scope unit moves the reticle by a fixed angular amount; the displacement is divided by that per-click value to yield clicks.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: '1/4 MOA click',
+                    detail: '≈ 0.261" of adjustment at 100 yards (1 MOA ≈ 1.047" @ 100yd).',
+                  ),
+                  ExplanationConcept(
+                    label: '0.1 Mil click',
+                    detail: '= 1 cm at 100 metres (1 mil ≈ 10 cm @ 100m), so 0.1 mil moves impact 1 cm per click.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Formula',
+                    detail: 'clicks = displacement ÷ per-click-subtension-at-target-distance.',
+                  ),
+                ],
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             'Positive vertical = impact HIGH. Positive horizontal = impact RIGHT.',
@@ -705,7 +729,30 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionLabel('Reticle Focal-Plane Scaling'),
+          Row(
+            children: [
+              Expanded(child: _buildSectionLabel('Reticle Focal-Plane Scaling')),
+              ContextualInfoIcon(
+                title: 'SFP Magnification Scaling',
+                description:
+                    'On a Second Focal Plane (SFP) scope the reticle stays the same physical size as you zoom, so its subtension changes with magnification. Holdover marks are only true at the calibrated magnification; at other powers you must scale the reticle value by the ratio of calibrated to current magnification.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'FFP',
+                    detail: 'Reticle is true at every magnification — no scaling needed.',
+                  ),
+                  ExplanationConcept(
+                    label: 'SFP',
+                    detail: 'Reticle subtension scales inversely with magnification.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Formula',
+                    detail: 'trueValue = ratedValue × (calibratedMag ÷ currentMag).',
+                  ),
+                ],
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             _optic.focalPlane == FocalPlane.ffp
@@ -836,7 +883,34 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionLabel('Tall-Target Turret Tracking Test'),
+          Row(
+            children: [
+              Expanded(child: _buildSectionLabel('Tall-Target Turret Tracking Test')),
+              ContextualInfoIcon(
+                title: 'Tall-Target Tracking Test',
+                description:
+                    'A mechanical-accuracy test: dial a known turret value against a measured target displacement and quantify how much the turret deviates from its rated movement. A persistent error indicates a turret-true or click-count problem that must be corrected before relying on dialled corrections in the field.',
+                concepts: const [
+                  ExplanationConcept(
+                    label: 'Tracking error %',
+                    detail: 'error = |measured − dialed| ÷ dialed × 100.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Dialled',
+                    detail: 'The turret value you entered (in the optic\'s turret unit).',
+                  ),
+                  ExplanationConcept(
+                    label: 'Measured',
+                    detail: 'The actual target displacement observed at the known distance.',
+                  ),
+                  ExplanationConcept(
+                    label: 'Pass',
+                    detail: '≤ 1% is generally considered acceptable; > 3% warrants service.',
+                  ),
+                ],
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             'Dial a known ${_optic.turretUnitLabel} value, measure the actual target displacement, and verify tracking accuracy.',

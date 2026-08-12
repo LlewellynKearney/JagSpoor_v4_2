@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/user_management_service.dart';
 
@@ -208,6 +209,30 @@ class _BulkCsvImportScreenState extends State<BulkCsvImportScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+                            ),
+                            ContextualInfoIcon(
+                              title: 'Bulk CSV Importer Column Spec',
+                              iconColor: widget.theme.accentColor,
+                              description:
+                                  'The importer expects a header row containing the four columns below (case-insensitive, spaces ignored). Each subsequent row becomes one account; missing columns abort the import.',
+                              concepts: const [
+                                ExplanationConcept(
+                                  label: 'email',
+                                  detail: 'Unique login email — becomes the Firebase Auth username.',
+                                ),
+                                ExplanationConcept(
+                                  label: 'fullName',
+                                  detail: 'Display name written to the user profile.',
+                                ),
+                                ExplanationConcept(
+                                  label: 'role',
+                                  detail: 'Must be exactly "hunter" or "outfitter"; anything else fails validation.',
+                                ),
+                                ExplanationConcept(
+                                  label: 'phoneNumber',
+                                  detail: 'Contact number stored on the profile (used for 2FA SMS where enabled).',
+                                ),
+                              ],
                             ),
                           ],
                         ),

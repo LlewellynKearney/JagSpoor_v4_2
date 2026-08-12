@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/outfitter_analytics_service.dart';
 
@@ -226,6 +227,43 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'FINANCIAL SUMMARY',
+                              style: TextStyle(
+                                color: widget.theme.accentColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          ContextualInfoIcon(
+                            title: 'Gross Revenue vs Platform Commission',
+                            iconColor: widget.theme.accentColor,
+                            description:
+                                'JagSpoor charges a flat 5% platform administration fee on every approved booking. The figures below break down how gross booking revenue becomes the outfitter\'s net earnings.',
+                            concepts: const [
+                              ExplanationConcept(
+                                label: 'Gross Revenue',
+                                detail: 'Sum paid by hunters across all approved bookings before any fees are deducted.',
+                              ),
+                              ExplanationConcept(
+                                label: 'Platform Fee',
+                                detail: 'gross × 0.05 — the 5% JagSpoor administration commission collected per booking.',
+                              ),
+                              ExplanationConcept(
+                                label: 'Net Earnings',
+                                detail: 'gross − platformFee — the amount the outfitter actually receives.',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
 
                       // Financial Grid
                       Row(
