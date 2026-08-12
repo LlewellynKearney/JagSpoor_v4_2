@@ -11,6 +11,8 @@ import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
 import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
 import '../hunter_mode/screens/scanned_pricelist_history_screen.dart';
+import '../hunter_mode/screens/venison_permit_form_screen.dart';
+import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -264,6 +266,48 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                                       (_) => OutfitterTransportPermitScreen(
                                         theme: widget.theme,
                                       ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Venison Transport & Hunt Permit — legal SA form
+                          _buildFeatureCard(
+                            icon: Icons.receipt_long_rounded,
+                            title: 'Venison Transport Permit',
+                            description:
+                                'Legal SA venison / game transport & hunt permit with dual digital signatures.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => VenisonPermitFormScreen(
+                                    theme: widget.theme,
+                                    isOutfitterMode: true,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Venison Permit Log / Manager
+                          _buildFeatureCard(
+                            icon: Icons.list_alt_rounded,
+                            title: 'Permit Log & Manager',
+                            description:
+                                'View, search, and manage issued venison transport permits.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => VenisonPermitListScreen(
+                                    theme: widget.theme,
+                                    isOutfitterMode: true,
+                                  ),
                                 ),
                               );
                             },

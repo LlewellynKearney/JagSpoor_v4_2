@@ -503,6 +503,7 @@ high-level map and current access posture:
 | `ammunition` (top-level) | Ammo inventory | signed-in read; owner write |
 | `license_applications` | SAPS licenses | owner-scoped (`hunterId`) |
 | `transport_permits` | Game transport permits | owner-scoped (`outfitterId`) |
+| `venison_permits` | Legal SA venison / game transport & hunt permits (dual signatures) | two-party (hunter + outfitter) read; signed-in create; outfitter/admin update+delete; indexed `outfitterId+createdAt` and `hunterId+createdAt` |
 | `carcass_logs` | Carcass tracking | owner-scoped (`hunterId`) |
 | `waypoints` | GPS markers | owner-scoped (`hunterId`) |
 | `spoor_scans` | Track analysis records | owner-scoped (`userId`) |
@@ -604,6 +605,8 @@ npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
   live merchant credentials before launch (and move them off the client into a
   server-generated payment request for production).
 - Firestore rules enforce default-deny; Storage rules scope writes per owner uid.
+  `permit_signatures/{permitId}/{fileName}` permits any authenticated user to
+  write (dual-party permit signatures); reads are globally authenticated-read.
 - `PAYFAST_PASSPHRASE` is a server-side env var, never bundled into the client.
 
 ---

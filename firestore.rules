@@ -173,6 +173,28 @@ service cloud.firestore {
       allow read, write: if ownerOrAdmin('outfitterId');
     }
 
+    // Venison / game transport & hunt permits — two-party (hunter + outfitter).
+    // Read: the hunter named on the permit OR the issuing outfitter (or admin).
+    // Create: any signed-in party (either role may initiate a permit). Update /
+    // delete: outfitter or admin — the outfitter is the statutory issuer.
+    match /venison_permits/{permitId} {
+      function isPermitParty() {
+        return isSignedIn() && (
+          (resource != null && (
+            resource.data.outfitterId == request.auth.uid ||
+            resource.data.hunterId == request.auth.uid
+          )) ||
+          (resource == null && (
+            request.resource.data.outfitterId == request.auth.uid ||
+            request.resource.data.hunterId == request.auth.uid
+          ))
+        );
+      }
+      allow read: if isPermitParty() || isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isOwnerOf('outfitterId') || isAdmin();
+    }
+
     // Scanned pricelists (outfitterId).
     match /scanned_pricelists/{listId} {
       allow read, write: if ownerOrAdmin('outfitterId');

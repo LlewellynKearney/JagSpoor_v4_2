@@ -349,3 +349,66 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`,
   `lib/features/outfitter_mode/outfitter_dashboard.dart`,
   `firestore.indexes.json`.
+
+
+## Phase 5 — Legal SA Game Transport & Venison Permit (added 2026-08-12)
+
+- New **`venison_permits`** collection models the official South African
+  Venison / Game Transport & Hunt Permit. The `VenisonTransportPermit`
+  data model (`lib/features/hunter_mode/models/venison_transport_permit.dart`)
+  captures the full statutory template: hunter block (name, ID, cell, address),
+  authorized-person/farm block (name, farm, address, cell), hunt window
+  (start/end dates), species hunted-and-transported list, dual signature URLs
+  + signed dates, and audit fields (`outfitterId`, `hunterId`, `bookingId?`,
+  `createdAt`, `status`).
+- **`VenisonPermitManager`** (`services/venison_permit_manager.dart`) owns the
+  issue lifecycle: (1) write the doc to `venison_permits` to obtain a stable
+  `permitId`; (2) upload both signature PNGs to Firebase Storage at
+  `permit_signatures/{permitId}/hunter_signature.png` +
+  `permit_signatures/{permitId}/outfitter_signature.png`; (3) patch the doc
+  with the real download URLs + signed timestamps. Also exposes
+  `getMyPermitsStream({isOutfitter})` (scopes by `outfitterId` or `hunterId`,
+  ordered by `createdAt` desc), `getPermitById`, `updatePermitStatus`,
+  `deletePermit` (best-effort storage cleanup), `prefillFromBooking` (fetches
+  booking + linked `users`/`outfitters` docs to prefill the form), and
+  `generatePermitNumber` (format `JSV-YYYY-...`).
+- **`VenisonPermitFormScreen`** (`screens/venison_permit_form_screen.dart`):
+  two interactive `SignatureController` pads (hunter + authorized person) via
+  the `signature` package (already a dep); JagSpoor branded header rendering
+  `assets/app logo/logo1.png`; hunter/farm/date/species field cards;
+  multi-species checklist dialog (species, sex, quantity); date pickers for
+  the hunt window. Pre-fills hunter + outfitter/farm details when opened with
+  a `bookingId`, while remaining fully editable. Both signatures optional.
+- **`VenisonPermitListScreen`** (`screens/venison_permit_list_screen.dart`):
+  reactive, searchable permit log for both hunters and outfitters. Tap a card
+  -> draggable details sheet showing the full permit breakdown + both captured
+  signature images (`cached_network_image`) + signed dates, with VOID and
+  DELETE actions.
+- **Firestore rules**: new `match /venison_permits/{permitId}` -- read by
+  hunter OR outfitter party (`isPermitParty()` helper) or admin; create by any
+  signed-in party; update/delete by `isOwnerOf('outfitterId')` or admin.
+- **Storage rules**: new `match /permit_signatures/{permitId}/{fileName}` --
+  write by any authenticated user (both parties are authenticated); reads
+  covered by the global authenticated-read rule.
+- **Firestore indexes**: two composite indexes added to
+  `firestore.indexes.json` for the two `getMyPermitsStream` queries:
+  `venison_permits` `(outfitterId ASC, createdAt DESC)` and
+  `(hunterId ASC, createdAt DESC)`.
+- **Dashboard nav**: outfitter dashboard gained "Venison Transport Permit"
+  (form) and "Permit Log & Manager" cards (after the Game Transport Permit
+  card, in the `!_isManager` block). Hunter dashboard marketplace features
+  gained "Venison Transport Permit" and "My Transport Permits" cards.
+- **`flutter analyze`**: 0 errors (319 infos + 14 warnings, all pre-existing;
+  the 4 new files + rules are analyzer-clean).
+- Deploy reminder: the new `venison_permits` indexes + `firestore.rules` +
+  `storage.rules` changes must be deployed
+  (`npx firebase-tools deploy --only firestore:indexes,firestore:rules,storage`)
+  in an environment with Firebase credentials. Until the indexes are built
+  the permit streams surface the index-missing error in-UI.
+- Files: `lib/features/hunter_mode/models/venison_transport_permit.dart` (new),
+  `lib/features/hunter_mode/services/venison_permit_manager.dart` (new),
+  `lib/features/hunter_mode/screens/venison_permit_form_screen.dart` (new),
+  `lib/features/hunter_mode/screens/venison_permit_list_screen.dart` (new),
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`, `firestore.rules`,
+  `storage.rules`, `firestore.indexes.json`.
