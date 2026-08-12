@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin/services/admin_auth_guard.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
@@ -25,6 +27,66 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       _isAdmin = admin;
       _resolving = false;
     });
+  }
+
+  /// Shows the role-exclusivity confirmation dialog and, on confirmation,
+  /// persists the chosen role to the caller's `users/{uid}` document before
+  /// navigating to the matching dashboard.
+  ///
+  /// Admins bypass this dialog — they have system-wide access across all
+  /// profiles, which is exactly the exception the dialog message calls out.
+  Future<void> _confirmAndSelectRole(
+      {required String role, required String routeName}) async {
+    final confirmed = await _showRoleExclusivityDialog(role) ?? false;
+    if (!confirmed || !mounted) return;
+
+    // Persist the role choice so it is locked in (single-role accounts).
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .set({
+          'role': role,
+          'roleSetAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {
+        // Non-fatal: proceed to the dashboard even if the role write fails
+        // (e.g. offline). The selection still navigates the user onward.
+      }
+    }
+
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, routeName);
+  }
+
+  Future<bool?> _showRoleExclusivityDialog(String role) {
+    final roleLabel = role == 'outfitter' ? 'Outfitter' : 'Hunter';
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Operational Role'),
+        content: Text(
+          'Please note: Regular accounts are strictly single-role. You can '
+          'only be registered as EITHER a Hunter OR an Outfitter. Once set, '
+          'you will not be able to switch between profiles (only the JagSpoor '
+          'Admin/Superuser has system-wide access across all profiles).\n\n'
+          'Are you sure you want to proceed as a $roleLabel?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirm & Proceed'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -58,11 +120,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     'Tactical field utilities, digital safe, ballistic processing, and logs.',
                 icon: Icons.gps_fixed_sharp,
                 themeData: theme,
-                onTap:
-                    () => Navigator.pushReplacementNamed(
-                      context,
-                      '/hunter_dashboard',
-                    ),
+                onTap: () => _confirmAndSelectRole(
+                    role: 'hunter', routeName: '/hunter_dashboard'),
               ),
               const SizedBox(height: 20.0),
               RoleCard(
@@ -71,16 +130,14 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     'Game farm management ops, client tracking, lodging, and fleets.',
                 icon: Icons.business_center_sharp,
                 themeData: theme,
-                onTap:
-                    () => Navigator.pushReplacementNamed(
-                      context,
-                      '/outfitter_dashboard',
-                    ),
+                onTap: () => _confirmAndSelectRole(
+                    role: 'outfitter', routeName: '/outfitter_dashboard'),
               ),
               // Admin portal entry point — only rendered for admins
               // (custom claim admin == true, users/{uid}.role == 'admin',
               // outfitters/{uid}.role == 'admin', or the admin@jag-spoor.co.za
-              // allow-list).
+              // allow-list). Admins skip the role-exclusivity dialog since they
+              // have system-wide access across all profiles.
               if (_isAdmin) ...[
                 const SizedBox(height: 20.0),
                 RoleCard(

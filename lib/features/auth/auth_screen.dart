@@ -241,6 +241,114 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// "Forgot Password?" flow: prompts for the email address (pre-filled from
+  /// the login email field when present) and sends a Firebase password reset
+  /// email. Shows a confirmation on success or a clear error on failure.
+  Future<void> _showForgotPasswordDialog() async {
+    final resetController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+
+    Future<void> submit() async {
+      final email = resetController.text.trim();
+      if (email.isEmpty ||
+          !RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(email)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid email address.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      Navigator.pop(context); // close the dialog before awaiting
+
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Password reset link sent! Please check your inbox (and spam '
+              'folder) for instructions.',
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      } on FirebaseAuthException catch (e) {
+        if (!mounted) return;
+        final msg = switch (e.code) {
+          'user-not-found' =>
+            'No account found for that email. Please check the address and try again.',
+          'invalid-email' => 'That email address is not valid.',
+          'too-many-requests' =>
+            'Too many reset attempts. Please try again later.',
+          _ => 'Could not send reset email: ${e.message ?? e.code}',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not send reset email: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your account email and we will send you a link to reset '
+              'your password.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: resetController,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Email Address',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: submit,
+            child: const Text('Send Reset Link'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -320,6 +428,25 @@ class _AuthScreenState extends State<AuthScreen> {
                       validator:
                           (val) => val!.isEmpty ? 'Enter password' : null,
                     ),
+                    // "Forgot Password?" reset link — shown on the login card,
+                    // directly below the password field.
+                    if (_isLoginMode)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _showForgotPasswordDialog,
+                          icon: const Icon(Icons.lock_reset, size: 18),
+                          label: const Text(
+                            'Forgot Password?',
+                            style: TextStyle(fontFamily: 'Mono', fontSize: 12.0),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 12.0),
                     CheckboxListTile(
                       title: const Text(
