@@ -55,6 +55,14 @@
         { "fieldPath": "hunterId", "order": "ASCENDING" },
         { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "farms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outfitterId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

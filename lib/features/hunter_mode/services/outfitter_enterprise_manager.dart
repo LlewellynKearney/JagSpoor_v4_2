@@ -62,6 +62,7 @@ class OutfitterEnterpriseManager {
   /// - [farmId]: Firestore document ID of the farm
   /// - [managerEmail]: Email address of the manager
   /// - [managerName]: Full name of the manager
+  /// - [managerCell]: Cell phone number of the manager
   ///
   /// Returns: void (saves to Firestore 'farm_managers' collection)
   ///
@@ -70,6 +71,7 @@ class OutfitterEnterpriseManager {
     required String farmId,
     required String managerEmail,
     required String managerName,
+    required String managerCell,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to assign a manager');
@@ -84,12 +86,17 @@ class OutfitterEnterpriseManager {
     if (managerName.trim().isEmpty) {
       throw Exception('Manager name cannot be empty');
     }
+    if (managerCell.trim().isEmpty) {
+      throw Exception('Manager cell number cannot be empty');
+    }
 
     final managerData = {
       'farmId': farmId.trim(),
       'outfitterId': _currentUserId,
       'managerEmail': managerEmail.trim().toLowerCase(),
       'managerName': managerName.trim(),
+      'managerCell': managerCell.trim(),
+      'cellNr': managerCell.trim(),
       'status': 'Active',
       'assignedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

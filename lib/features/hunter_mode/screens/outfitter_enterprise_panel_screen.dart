@@ -22,6 +22,7 @@ class _OutfitterEnterprisePanelScreenState
   final _provinceController = TextEditingController();
   final _managerEmailController = TextEditingController();
   final _managerNameController = TextEditingController();
+  final _managerCellController = TextEditingController();
 
   String? _selectedFarmId;
   bool _isAddingFarm = false;
@@ -34,6 +35,7 @@ class _OutfitterEnterprisePanelScreenState
     _provinceController.dispose();
     _managerEmailController.dispose();
     _managerNameController.dispose();
+    _managerCellController.dispose();
     super.dispose();
   }
 
@@ -89,10 +91,11 @@ class _OutfitterEnterprisePanelScreenState
     }
 
     if (_managerEmailController.text.trim().isEmpty ||
-        _managerNameController.text.trim().isEmpty) {
+        _managerNameController.text.trim().isEmpty ||
+        _managerCellController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Please fill in manager details'),
+          content: Text('⚠️ Please fill in manager name, email and cell number'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -108,11 +111,13 @@ class _OutfitterEnterprisePanelScreenState
         farmId: _selectedFarmId!,
         managerEmail: _managerEmailController.text.trim(),
         managerName: _managerNameController.text.trim(),
+        managerCell: _managerCellController.text.trim(),
       );
 
       if (mounted) {
         _managerEmailController.clear();
         _managerNameController.clear();
+        _managerCellController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Manager assigned successfully!'),
@@ -320,6 +325,31 @@ class _OutfitterEnterprisePanelScreenState
                     theme: theme,
                   ),
                 ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _managerCellController,
+                  style: TextStyle(color: theme.textColor),
+                  keyboardType: TextInputType.phone,
+                  decoration: _inputDecoration(
+                    hint: 'e.g. +27 82 123 4567',
+                    label: 'Cell Phone Number',
+                    theme: theme,
+                  ),
+                  validator: (value) {
+                    final trimmed = value?.trim() ?? '';
+                    if (trimmed.isEmpty) {
+                      return 'Please enter a cell number';
+                    }
+                    // Accept digits, spaces, +, -, ( and ). A loose check keeps
+                    // international formats valid without a phone-library dep.
+                    final digits = trimmed.replaceAll(RegExp(r'[\s+\-()]'), '');
+                    if (digits.length < 9 ||
+                        int.tryParse(digits) == null) {
+                      return 'Enter a valid phone number';
+                    }
+                    return null;
+                  },
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -376,6 +406,33 @@ class _OutfitterEnterprisePanelScreenState
                     child: Padding(
                       padding: EdgeInsets.all(20),
                       child: CircularProgressIndicator(color: Colors.green),
+                    ),
+                  );
+                }
+
+                // A failed query (e.g. a missing composite index) must not be
+                // mistaken for an empty result — otherwise existing farms show
+                // as "No farms registered". Surface the error explicitly.
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: Colors.red.withValues(alpha: 0.7),
+                            size: 48,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Unable to load farms.\n'
+                            'If this persists, deploy the Firestore indexes.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: theme.subtitleColor),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
