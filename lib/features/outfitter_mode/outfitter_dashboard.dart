@@ -14,6 +14,8 @@ import '../hunter_mode/screens/scanned_pricelist_history_screen.dart';
 import '../hunter_mode/screens/venison_permit_form_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
+import '../admin/services/admin_auth_guard.dart';
+import '../admin/widgets/admin_mode_switcher.dart';
 
 class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -28,6 +30,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   bool _isManager = false;
   String? _assignedFarmId;
   bool _isLoading = true;
+  bool _isAdmin = false;
 
   @override
   void initState() {
@@ -39,9 +42,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
+      final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+      if (!mounted) return;
       setState(() {
         _isManager = UserRoleResolver.instance.isManager;
         _assignedFarmId = UserRoleResolver.instance.assignedFarmId;
+        _isAdmin = admin;
         _isLoading = false;
       });
     } else {
@@ -364,6 +370,11 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       actions: [
+        if (_isAdmin)
+          AdminModeSwitcherButton(
+            theme: theme,
+            activeMode: AdminMode.outfitter,
+          ),
         IconButton(
           icon: Icon(Icons.settings_rounded, color: theme.accentColor),
           onPressed: () => _showSettingsBottomSheet(context, theme),

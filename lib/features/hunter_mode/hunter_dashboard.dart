@@ -24,6 +24,8 @@ import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/hunter_custom_package_builder_screen.dart';
 import 'screens/venison_permit_list_screen.dart';
 import 'screens/venison_permit_form_screen.dart';
+import '../admin/services/admin_auth_guard.dart';
+import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
 
 class HunterDashboard extends StatefulWidget {
@@ -37,11 +39,19 @@ class HunterDashboard extends StatefulWidget {
 class _HunterDashboardState extends State<HunterDashboard> {
   static const _favoritePrefKey = 'favorited_dashboard_features';
   final List<String> favoriteIds = [];
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
     _loadFavoriteIds();
+    _resolveAdmin();
+  }
+
+  Future<void> _resolveAdmin() async {
+    final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+    if (!mounted) return;
+    setState(() => _isAdmin = admin);
   }
 
   Future<void> _loadFavoriteIds() async {
@@ -412,6 +422,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
             iconTheme: IconThemeData(color: theme.accentColor),
             elevation: 0,
             actions: [
+              if (_isAdmin)
+                AdminModeSwitcherButton(
+                  theme: theme,
+                  activeMode: AdminMode.hunter,
+                ),
               IconButton(
                 tooltip: theme.isDarkMode ? 'Switch to Day Mode' : 'Switch to Night Mode',
                 icon: Icon(

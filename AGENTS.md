@@ -248,6 +248,47 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - `flutter analyze`: 0 errors, 14 warnings, 319 infos (unchanged from Phase 5
   baseline — no new issues introduced).
 
+## Superuser 3-mode instant switcher (added 2026-08-12)
+
+- Reusable widget `lib/features/admin/widgets/admin_mode_switcher.dart`:
+  - `AdminMode` enum: `hunter`, `outfitter`, `admin`.
+  - `AdminModeSwitcher` — three-segment control bar (Hunter / Outfitter /
+    Admin). Active segment is highlighted with the theme accent; tapping an
+    inactive segment issues `Navigator.pushReplacementNamed` to
+    `/hunter_dashboard`, `/outfitter_dashboard`, or `/admin_dashboard`,
+    rebuilding the navigation stack for the new role context **immediately
+    without sign-out or credential re-entry** (mirrors the existing admin
+    bypass in `role_selection_screen.dart`).
+  - `AdminModeSwitcherButton` — AppBar `IconButton` (swap icon) that opens the
+    same selector as a modal bottom sheet. `activeMode` marks the current
+    context.
+- Wiring:
+  - **Admin dashboard** (`admin_dashboard_screen.dart`): `AdminModeSwitcher`
+    embedded at the top of the body ListView (activeMode = admin) so admins
+    can jump to Hunter/Outfitter mode from the portal.
+  - **Hunter dashboard** (`hunter_dashboard.dart`): added `_isAdmin` resolved
+    via `AdminAuthGuard.isCurrentUserAdmin()` in initState; conditionally
+    renders `AdminModeSwitcherButton` (activeMode = hunter) in the AppBar.
+  - **Outfitter dashboard** (`outfitter_dashboard.dart`): `_isAdmin` resolved
+    alongside `UserRoleResolver` in `_resolveUserRole`; conditionally renders
+    `AdminModeSwitcherButton` (activeMode = outfitter) in the AppBar.
+- The switcher relies on the existing named routes registered in `main.dart`
+  (`/hunter_dashboard`, `/outfitter_dashboard`, `/admin_dashboard`) and the
+  `AdminAuthGuard` admin check (custom claim `admin==true`,
+  `users/{uid}.role=='admin'`, or `admin@jag-spoor.co.za` allow-list).
+
+## Branding audit (2026-08-12)
+
+- Codebase audited for Dixon / Dixon Batteries / Dixon logo references: **none
+  found** (source, assets, pubspec, PDFs). Only `BatterySaverManager` (the
+  off-grid battery-saver feature) matches the "battery" substring — unrelated
+  to any Dixon branding.
+- All admin/support email references already point to
+  `support@jag-spoor.co.za` / `admin@jag-spoor.co.za` (and `privacy@` for the
+  privacy policy). PDF engine footer uses `support@jag-spoor.co.za`.
+- Only logo asset: `assets/app logo/logo1.png` (official JagSpoor logo), used
+  by the PDF engine header and the app icon.
+
 ## Theme system (added 2026-08-12)
 
 - Central `ThemeController extends ChangeNotifier` in `lib/core/theme/app_theme.dart`.

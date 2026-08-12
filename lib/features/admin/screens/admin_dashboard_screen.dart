@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
+import '../widgets/admin_mode_switcher.dart';
 import 'create_user_screen.dart';
 import 'bulk_csv_import_screen.dart';
 
@@ -109,6 +110,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                         children: [
+                          AdminModeSwitcher(
+                            theme: widget.theme,
+                            activeMode: AdminMode.admin,
+                          ),
                           _buildSectionHeader('Entity Overview'),
                           _buildEntityGrid(),
                           const SizedBox(height: 24),
