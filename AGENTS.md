@@ -66,6 +66,43 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
+## Trophy Inventory — measurements, photos, stock-by-farm (added 2026-08-12)
+
+- Trophy Inventory form (`outfitter_trophy_stock_screen.dart`) gained:
+  - **Trophy Measurement** field (`_measurementController`, decimal, `in` suffix)
+    → passed as `trophyMeasurement` (double?) to
+    `OutfitterEnterpriseManager.syncTrophyStock`, which stores it under BOTH
+    `trophyMeasurement` and `trophyLengthInches` aliases for read compatibility.
+  - **Multi-photo attachments (up to 3)**: `List<XFile> _pickedPhotos` filled via
+    `ImagePicker.pickMultipleMedia(imageQuality: 80, limit: remaining)`.
+    Horizontal thumbnail strip with per-image remove buttons (`_removeTrophyPhoto`).
+    On sync, `_uploadTrophyPhotos()` uploads each to Firebase Storage at
+    `trophy_photos/{outfitterId}/{timestamp}_{i}.jpg` and returns download URLs,
+    which `syncTrophyStock` stores as the `trophyPhotoUrls` array (capped at 3).
+    Added `match /trophy_photos/{uid}/{fileName}` to `storage.rules` (owner-scoped
+    write). image_picker 1.2.1 + firebase_storage 13.4.3 already in pubspec.
+- **Current Stock by Farm** binding fixed: the list stream
+  (`.where('outfitterId').orderBy('lastUpdated', descending)`) had the SAME
+  missing-composite-index + silent-error bug as the farms list. Fixes:
+  - Added `trophies` composite index `(outfitterId ASC, lastUpdated DESC)` to
+    `firestore.indexes.json`.
+  - `snapshot.hasError` branch surfaces the error instead of "No trophy stock
+    synced".
+  - Rewrote the list to actually GROUP by `farmId` (the section is titled
+    "Current Stock by Farm"): nested `FutureBuilder` fetches the outfitter's
+    farms once into a `farmId → name` map; each farm card shows a per-farm total
+    badge + per-species breakdown rows (count, price, measurement, photo count).
+    The trophy stream is already reactive (`snapshots()`), so the grouped tally
+    updates immediately when a new trophy is added.
+- `syncTrophyStock` got new optional params `trophyMeasurement` and
+  `trophyPhotoUrls` (both omitted → no field written). Docstring updated.
+- Deploy reminder: new `trophies` index + `storage.rules` change need deployment
+  (`npx firebase-tools deploy --only firestore:indexes,storage`). Until the
+  index is deployed the stock query falls back to the now-surfaced error UI.
+- Files: `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `firestore.indexes.json`, `storage.rules`.
+
 ## Enterprise Control Panel — farms & managers (fixed 2026-08-12)
 
 - "No farms registered" bug on the Enterprise Control Panel was caused by the
