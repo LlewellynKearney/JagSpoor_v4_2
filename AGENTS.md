@@ -370,6 +370,16 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     skips signing (no provisioning profile on the hosted runner); `pod install`
     is run by the Flutter build. The iOS job previously spent ~8 min on
     `pod install` then hit the same Dart compile error (now fixed).
+  - **iOS AppDelegate version skew (fixed)**: `ios/Runner/AppDelegate.swift`
+    conformed to `FlutterImplicitEngineDelegate` and referenced
+    `FlutterImplicitEngineBridge` / `didInitializeImplicitFlutterEngine` —
+    APIs that do NOT exist in the CI Flutter pin (3.29.1)'s framework (they
+    were added in a later Flutter). The Swift compiler errored with
+    "Cannot find type 'FlutterImplicitEngineDelegate' in scope". Reverted to
+    the canonical version-agnostic `FlutterAppDelegate` subclass that calls
+    `GeneratedPluginRegistrant.register(with: self)` — works on 3.29.1 through
+    3.44+. (The implicit-engine conformance was an optional newer optimization
+    not needed for this single-engine app.)
 - **Secret handling**: `deploy-firebase` now gates ALL deploy steps behind a
   `Check Firebase secrets` step that sets `steps.secrets.outputs.deploy`
   (`true`/`false`). When `FIREBASE_SERVICE_ACCOUNT` is unset it emits a
