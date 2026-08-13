@@ -1545,3 +1545,44 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Files: `lib/features/ballistics/presentation/ballistic_calc_screen.dart`,
   `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`.
 
+## Manage Farms & Managers — farm selection & editing (added 2026-08-13)
+
+- The "Registered Farms" block in
+  `outfitter_enterprise_panel_screen.dart` previously rendered static,
+  non-interactive farm cards. Each card is now **tappable** (whole card
+  wrapped in `Material > InkWell` with a tap → edit sheet) AND carries an
+  explicit **EDIT** `TextButton.icon`.
+- New **Edit Farm sheet** (`_showEditFarmSheet(data, farmId)`): a
+  `showModalBottomSheet` + `StatefulBuilder` form pre-filled from the farm
+  doc, with validated fields for: Farm Name * (required), District, Province,
+  Size (hectares, decimal-validated → `double?`), Contact Number (phone),
+  Registration Number. Uses `isScrollControlled: true` + `viewInsets.bottom`
+  padding so the keyboard never covers the save button. The SAVE button
+  shows a spinner + `SAVING…` label while the update is in flight
+  (`_isUpdatingFarm`).
+- `_submitFarmEdit()` validates the form, parses/validates the size, then
+  calls `OutfitterEnterpriseManager.instance.updateFarm(...)`. On success it
+  pops the sheet + shows a success snackbar; on failure it surfaces the error
+  and keeps the sheet open so the user can retry. The Registered Farms list
+  refreshes **automatically** — it is already a reactive Firestore
+  `snapshots()` `StreamBuilder`, so the `updateFarm` write triggers a re-render
+  with no manual `setState`/reload needed.
+- New `OutfitterEnterpriseManager.updateFarm({farmId, name, district,
+  province, sizeHectares?, contactNumber?, registrationNumber?})`: validates
+  auth + farmId + name, then `_firestore.collection('farms').doc(farmId)
+  .update({...})` with `updatedAt: serverTimestamp()`. Optional fields are
+  written as `null` when blank (clears stale values). `firestore.rules`
+  already permits `update, delete` for `isAdmin() || isOwnerOf('outfitterId')`
+  on `farms/{farmId}` — no rules/index change required.
+- Card UI extended to surface the new fields inline: a `Wrap` of detail chips
+  (size `ha`, contact number, registration number) renders below a divider
+  **only when at least one of those fields is set** on the document, so legacy
+  farms (created before these fields existed) render cleanly without empty
+  chips. New `_farmDetailChip(icon, label, theme)` helper.
+- `flutter analyze`: 0 errors, 13 warnings (all pre-existing, none in changed
+  files). `flutter test`: 201 passed, 4 pre-existing failures (saps_tracker,
+  offline_sync_queue, advanced_ballistics, bluetooth_mesh — none touch the
+  changed files).
+- Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`.
+

@@ -54,6 +54,55 @@ class OutfitterEnterpriseManager {
   }
 
   // ==========================================
+  // UPDATE FARM / CONCESSION DETAILS
+  // ==========================================
+  /// Updates an existing farm/concession entry for the authenticated outfitter.
+  ///
+  /// Parameters:
+  /// - [farmId]: Firestore document ID of the farm to update.
+  /// - [name]: Farm or concession name.
+  /// - [district]: District or region name.
+  /// - [province]: Province.
+  /// - [sizeHectares]: Optional farm size in hectares.
+  /// - [contactNumber]: Optional contact phone number.
+  /// - [registrationNumber]: Optional farm/concession registration number.
+  ///
+  /// Throws: Exception if user is not authenticated, [farmId] is empty, or the
+  /// save fails. Only the outfitter that owns the farm should call this
+  /// (enforced by `firestore.rules` `isOwnerOf('outfitterId')`).
+  Future<void> updateFarm({
+    required String farmId,
+    required String name,
+    required String district,
+    required String province,
+    double? sizeHectares,
+    String? contactNumber,
+    String? registrationNumber,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to update a farm');
+    }
+    if (farmId.trim().isEmpty) {
+      throw Exception('Farm ID cannot be empty');
+    }
+    if (name.trim().isEmpty) {
+      throw Exception('Farm name cannot be empty');
+    }
+
+    final updates = <String, dynamic>{
+      'name': name.trim(),
+      'district': district.trim(),
+      'province': province.trim(),
+      'sizeHectares': sizeHectares,
+      'contactNumber': contactNumber?.trim(),
+      'registrationNumber': registrationNumber?.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await _firestore.collection('farms').doc(farmId).update(updates);
+  }
+
+  // ==========================================
   // ASSIGN MANAGER TO FARM
   // ==========================================
   /// Assigns a manager to a specific farm/concession.

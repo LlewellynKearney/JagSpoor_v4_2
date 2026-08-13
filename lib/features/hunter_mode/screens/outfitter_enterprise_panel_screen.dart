@@ -25,9 +25,18 @@ class _OutfitterEnterprisePanelScreenState
   final _managerNameController = TextEditingController();
   final _managerCellController = TextEditingController();
 
+  // Edit-farm sheet controllers (reused across edits; populated on open).
+  final _editFarmNameController = TextEditingController();
+  final _editDistrictController = TextEditingController();
+  final _editProvinceController = TextEditingController();
+  final _editSizeHectaresController = TextEditingController();
+  final _editContactNumberController = TextEditingController();
+  final _editRegistrationNumberController = TextEditingController();
+
   String? _selectedFarmId;
   bool _isAddingFarm = false;
   bool _isAssigningManager = false;
+  bool _isUpdatingFarm = false;
 
   @override
   void dispose() {
@@ -37,6 +46,12 @@ class _OutfitterEnterprisePanelScreenState
     _managerEmailController.dispose();
     _managerNameController.dispose();
     _managerCellController.dispose();
+    _editFarmNameController.dispose();
+    _editDistrictController.dispose();
+    _editProvinceController.dispose();
+    _editSizeHectaresController.dispose();
+    _editContactNumberController.dispose();
+    _editRegistrationNumberController.dispose();
     super.dispose();
   }
 
@@ -137,6 +152,260 @@ class _OutfitterEnterprisePanelScreenState
         setState(() {
           _isAssigningManager = false;
         });
+      }
+    }
+  }
+
+  /// Opens a modal sheet pre-filled with the farm's current details so the
+  /// outfitter can edit name, district, province, size, contact, and
+  /// registration number. Saving calls [OutfitterEnterpriseManager.updateFarm];
+  /// the Registered Farms `StreamBuilder` re-renders automatically on success
+  /// (Firestore snapshots).
+  void _showEditFarmSheet(Map<String, dynamic> data, String farmId) {
+    final theme = widget.theme;
+    _editFarmNameController.text = (data['name'] ?? '').toString();
+    _editDistrictController.text = (data['district'] ?? '').toString();
+    _editProvinceController.text = (data['province'] ?? '').toString();
+    final size = data['sizeHectares'];
+    _editSizeHectaresController.text =
+        (size == null) ? '' : size.toString();
+    _editContactNumberController.text =
+        (data['contactNumber'] ?? '').toString();
+    _editRegistrationNumberController.text =
+        (data['registrationNumber'] ?? '').toString();
+
+    final editFormKey = GlobalKey<FormState>();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Form(
+                key: editFormKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.edit_location_alt_rounded,
+                              color: theme.accentColor, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'EDIT FARM DETAILS',
+                              style: TextStyle(
+                                color: theme.textColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close,
+                                color: theme.subtitleColor),
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 1),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _editFarmNameController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'Farm name',
+                          label: 'Farm Name *',
+                          theme: theme,
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Please enter farm name';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editDistrictController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'District / region',
+                          label: 'District',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editProvinceController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'Province',
+                          label: 'Province',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editSizeHectaresController,
+                        style: TextStyle(color: theme.textColor),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'e.g. 2500',
+                          label: 'Size (hectares)',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editContactNumberController,
+                        style: TextStyle(color: theme.textColor),
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: '+27 ...',
+                          label: 'Contact Number',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editRegistrationNumberController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.done,
+                        decoration: _inputDecoration(
+                          hint: 'Farm / concession registration no.',
+                          label: 'Registration Number',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: _isUpdatingFarm
+                            ? null
+                            : () => _submitFarmEdit(
+                                  farmId,
+                                  editFormKey,
+                                  setSheetState,
+                                ),
+                        icon: _isUpdatingFarm
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: Text(
+                          _isUpdatingFarm ? 'SAVING…' : 'SAVE CHANGES',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitFarmEdit(
+    String farmId,
+    GlobalKey<FormState> formKey,
+    void Function(void Function()) setSheetState,
+  ) async {
+    if (!formKey.currentState!.validate()) return;
+
+    setSheetState(() => _isUpdatingFarm = true);
+
+    double? sizeHectares;
+    final sizeText = _editSizeHectaresController.text.trim();
+    if (sizeText.isNotEmpty) {
+      sizeHectares = double.tryParse(sizeText);
+      if (sizeHectares == null) {
+        setSheetState(() => _isUpdatingFarm = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Size must be a valid number'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    try {
+      await OutfitterEnterpriseManager.instance.updateFarm(
+        farmId: farmId,
+        name: _editFarmNameController.text,
+        district: _editDistrictController.text,
+        province: _editProvinceController.text,
+        sizeHectares: sizeHectares,
+        contactNumber: _editContactNumberController.text.trim().isEmpty
+            ? null
+            : _editContactNumberController.text.trim(),
+        registrationNumber:
+            _editRegistrationNumberController.text.trim().isEmpty
+                ? null
+                : _editRegistrationNumberController.text.trim(),
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Farm updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('❌ Failed to update: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setSheetState(() => _isUpdatingFarm = false);
       }
     }
   }
@@ -467,83 +736,170 @@ class _OutfitterEnterprisePanelScreenState
                       farms.map((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         final farmStatus = data['status'] ?? 'active';
+                        final sizeHectares = data['sizeHectares'];
+                        final contactNumber = data['contactNumber'];
+                        final registrationNumber =
+                            data['registrationNumber'];
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.backgroundColor,
+                        return Material(
+                          color: Colors.transparent,
+                          child: InkWell(
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color:
-                                  farmStatus == 'active'
-                                      ? Colors.green.withValues(alpha: 0.3)
-                                      : Colors.red.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: theme.accentColor.withValues(
-                                    alpha: 0.2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Icon(
-                                  Icons.landscape_rounded,
-                                  color: theme.accentColor,
-                                  size: 20,
+                            onTap: () => _showEditFarmSheet(data, doc.id),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: theme.backgroundColor,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color:
+                                      farmStatus == 'active'
+                                          ? Colors.green.withValues(alpha: 0.3)
+                                          : Colors.red.withValues(alpha: 0.3),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      data['name'] ?? 'Unknown Farm',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: theme.accentColor.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(
+                                      Icons.landscape_rounded,
+                                      color: theme.accentColor,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          data['name'] ?? 'Unknown Farm',
+                                          style: TextStyle(
+                                            color: theme.textColor,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${data['district'] ?? ""}, ${data['province'] ?? ""}',
+                                          style: TextStyle(
+                                            color: theme.subtitleColor,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          farmStatus == 'active'
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.2)
+                                              : Colors.red.withValues(
+                                                  alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      farmStatus.toUpperCase(),
                                       style: TextStyle(
-                                        color: theme.textColor,
+                                        color:
+                                            farmStatus == 'active'
+                                                ? Colors.green
+                                                : Colors.red,
+                                        fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    Text(
-                                      '${data['district'] ?? ""}, ${data['province'] ?? ""}',
-                                      style: TextStyle(
-                                        color: theme.subtitleColor,
-                                        fontSize: 12,
+                                  ),
+                                ],
+                              ),
+                              // Extended details (size / contact / reg no.) —
+                              // only the fields that are set on the document.
+                              if (sizeHectares != null ||
+                                  (contactNumber is String &&
+                                      contactNumber.isNotEmpty) ||
+                                  (registrationNumber is String &&
+                                      registrationNumber.isNotEmpty)) ...[
+                                const SizedBox(height: 8),
+                                Divider(
+                                  height: 1,
+                                  color: theme.subtitleColor
+                                      .withValues(alpha: 0.15),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  runSpacing: 4,
+                                  children: [
+                                    if (sizeHectares != null)
+                                      _farmDetailChip(
+                                        icon: Icons.crop_square_rounded,
+                                        label: '$sizeHectares ha',
+                                        theme: theme,
                                       ),
-                                    ),
+                                    if (contactNumber is String &&
+                                        contactNumber.isNotEmpty)
+                                      _farmDetailChip(
+                                        icon: Icons.phone_rounded,
+                                        label: contactNumber,
+                                        theme: theme,
+                                      ),
+                                    if (registrationNumber is String &&
+                                        registrationNumber.isNotEmpty)
+                                      _farmDetailChip(
+                                        icon: Icons.badge_outlined,
+                                        label: registrationNumber,
+                                        theme: theme,
+                                      ),
                                   ],
                                 ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      farmStatus == 'active'
-                                          ? Colors.green.withValues(alpha: 0.2)
-                                          : Colors.red.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  farmStatus.toUpperCase(),
-                                  style: TextStyle(
-                                    color:
-                                        farmStatus == 'active'
-                                            ? Colors.green
-                                            : Colors.red,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                              ],
+                              const SizedBox(height: 8),
+                              // Tap the card or the EDIT button to open the
+                              // edit sheet. The whole card is tappable.
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: () =>
+                                      _showEditFarmSheet(data, doc.id),
+                                  icon: Icon(Icons.edit_rounded,
+                                      size: 18, color: theme.accentColor),
+                                  label: Text(
+                                    'EDIT',
+                                    style: TextStyle(
+                                      color: theme.accentColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
+                          ),
+                            ),
                           ),
                         );
                       }).toList(),
@@ -554,6 +910,24 @@ class _OutfitterEnterprisePanelScreenState
           const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  Widget _farmDetailChip({
+    required IconData icon,
+    required String label,
+    required ThemeController theme,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: theme.subtitleColor),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+        ),
+      ],
     );
   }
 
