@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:signature/signature.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../outfitter_mode/data/services/client_roster_manager.dart';
+import '../../outfitter_mode/data/services/guided_hunt_log_manager.dart';
 import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
 
@@ -25,11 +27,29 @@ class VenisonPermitFormScreen extends StatefulWidget {
   /// is treated as the primary signer and the permit's `outfitterId`.
   final bool isOutfitterMode;
 
+  /// Optional raw prefill map applied directly (no Firestore lookup). Used by
+  /// the guided-hunt log flow, which seeds the hunter block + species list
+  /// from a [ClientProfile] + harvested game (see
+  /// `GuidedHuntLogManager.buildPermitPrefill`). When set it takes precedence
+  /// over [bookingId].
+  final Map<String, dynamic>? prefillData;
+
+  /// Optional client-roster id the permit is being issued for (carried through
+  /// to the saved permit so the roster can record the permit reference).
+  final String? clientId;
+
+  /// Optional guided-hunt-log id this permit is generated from (recorded on
+  /// the saved permit for traceability).
+  final String? guidedHuntLogId;
+
   const VenisonPermitFormScreen({
     super.key,
     required this.theme,
     this.bookingId,
     this.isOutfitterMode = true,
+    this.prefillData,
+    this.clientId,
+    this.guidedHuntLogId,
   });
 
   @override
@@ -106,6 +126,36 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (widget.isOutfitterMode && currentUser != null) {
       _prefillOutfitterId = currentUser.uid;
+    }
+
+    // Direct prefill map from a guided-hunt log (takes precedence over the
+    // booking lookup — it already carries the harvested species list).
+    if (widget.prefillData != null) {
+      final p = widget.prefillData!;
+      if (!mounted) return;
+      setState(() {
+        _hunterNameController.text = p['hunterName'] ?? '';
+        _hunterCellController.text = p['hunterCell'] ?? '';
+        _hunterAddressController.text = p['hunterAddress'] ?? '';
+        _hunterIdController.text = p['hunterIdNumber'] ?? '';
+        _authorizedPersonController.text = p['authorizedPersonName'] ?? '';
+        _farmNameController.text = p['farmName'] ?? '';
+        _farmAddressController.text = p['farmAddress'] ?? '';
+        _farmCellController.text = p['farmCell'] ?? '';
+        _prefillOutfitterId = p['outfitterId'] ?? _prefillOutfitterId;
+        if (widget.clientId != null) _prefillHunterId = widget.clientId;
+        final species =
+            p['speciesHuntedAndTransported'] as List<dynamic>?;
+        if (species != null) {
+          _speciesList.addAll(
+            species
+                .whereType<Map<dynamic, dynamic>>()
+                .map((e) => Map<String, dynamic>.from(e)),
+          );
+        }
+      });
+      if (mounted) setState(() => _isPrefilling = false);
+      return;
     }
 
     if (widget.bookingId != null) {
@@ -209,6 +259,23 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
         hunterSignatureBytes: hunterSig,
         outfitterSignatureBytes: outfitterSig,
       );
+
+      // When issued from a guided-hunt log, link the permit back to the
+      // hunt log and the client roster for end-to-end traceability.
+      if (widget.guidedHuntLogId != null || widget.clientId != null) {
+        try {
+          if (widget.guidedHuntLogId != null) {
+            await GuidedHuntLogManager.instance
+                .linkPermit(widget.guidedHuntLogId!, permitId);
+          }
+          if (widget.clientId != null) {
+            await ClientRosterManager.instance
+                .addPermitReference(widget.clientId!, permitId);
+          }
+        } catch (_) {
+          // Best-effort linking — the permit itself is already saved.
+        }
+      }
 
       if (mounted) {
         _showSuccessDialog(permitId);

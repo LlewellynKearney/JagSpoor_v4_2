@@ -917,3 +917,109 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (engine delegation + G1/G7 + pressure/humidity/powder-temp UI + energy/DA
   summary), `test/ballistics_engine_test.dart` (new). No Firestore / Storage
   / rules changes (pure on-device ballistics, no backend).
+
+## Phase 9 — Outfitter Client Roster & Guided Hunt Logs (added 2026-08-13)
+
+- The outfitter suite had no dedicated client roster and no guided-hunt
+  harvest logging. `ClientBooking` was lodge-only (name + contact + lodging/
+  vehicle, no passport/ID, no permit references, no assigned package). The
+  `CarcassRecord` (SQLite `carcass_records`, read by the Slaghuis Matrix)
+  carried only a `hunterId` placeholder string (`'CURRENT_SESSION_ID'`).
+  Item #17 added the full client roster + harvest-logging workflow and
+  explicitly tied each harvest to a roster client and onward to venison
+  permits + the slaughterhouse manifest.
+- **New models** (`lib/features/outfitter_mode/data/models/`):
+  - `ClientProfile` — the PH's client hunter book entry: `outfitterId`,
+    `fullName`, `idPassportNumber`, `nationality`, `cellNumber`, `email`,
+    `address`, optional `assignedPackageId`/`assignedPackageName`/
+    `assignedBookingId`, a running `permitReferenceIds` list, `notes`,
+    timestamps. `fromFirestore` (now delegates to a snapshot-free
+    `fromMap(data, {id})`), `toMap`, `copyWith`.
+  - `GuidedHuntLog` — a guided-hunt harvest entry: `outfitterId`,
+    `clientId`/`clientName`/`clientIdPassport` snapshot, optional `bookingId`,
+    `species`, `sex`, `carcassWeightKg`, `shotLocationDescription` +
+    `shotLat`/`shotLng`, `trophyMeasurementInches`/`trophyMeasurementLabel`/
+    `trophyPhotoUrls`, `shotPlacement`, `rifleCalibreMm`, `distanceMeters`,
+    cross-reference ids `permitId` + `carcassRecordId`, `notes`, `huntDate`,
+    timestamps. Same `fromMap`/`toMap`/`copyWith` shape.
+- **New services** (`lib/features/outfitter_mode/data/services/`):
+  - `ClientRosterManager` (singleton) — `client_roster` Firestore CRUD scoped
+    by `outfitterId`: `getMyClientsStream` (reactive, ordered by `createdAt`
+    desc, de-duplicated by doc id), `getClientById`, `addClient`,
+    `updateClient` (merge), `deleteClient`, and `addPermitReference`
+    (transactionally appends a permit id to the client's running list).
+  - `GuidedHuntLogManager` (singleton) — `guided_hunt_logs` Firestore CRUD
+    scoped by `outfitterId`: `getMyHuntLogsStream` (reactive, ordered by
+    `huntDate` desc, de-duplicated), `getHuntLogById`, `addHuntLog`,
+    `updateHuntLog`, `deleteHuntLog`, `linkPermit`, `linkCarcassRecord`, plus
+    the two downstream bridges:
+      * `buildPermitPrefill({log, client})` — assembles the prefill map
+        (hunter block + farm block from the `outfitters` doc + the harvested
+        species seeded into `speciesHuntedAndTransported`) that seeds a
+        venison transport permit straight from the hunt log.
+      * `pushToSlaughterhouseManifest(log)` — writes a `CarcassRecord` into
+        the local SQLite `carcass_records` table the Slaghuis Matrix reads,
+        using the client's `clientId` as `hunterId`, then links the new local
+        id back onto the hunt log via `linkCarcassRecord`.
+- **New screens** (`lib/features/outfitter_mode/presentation/`):
+  - `ClientRosterScreen` — reactive, searchable roster. Tap a card to edit;
+    remove with a confirmation modal (linked logs/permits are kept). "Add
+    Client" sheet validates name (required) and captures passport/ID,
+    nationality, cell, email, address, assigned package, notes.
+  - `GuidedHuntLogScreen` — reactive, searchable hunt log. Each card shows
+    species, client, date, carcass weight, trophy, shot location/placement
+    and status chips ("Permit issued" / "In coldroom") or action chips
+    ("Generate Permit", "Push to Manifest", "Delete"). The editor sheet
+    requires a client selected from the active roster (blocks logging if the
+    roster is empty) and captures species (required), sex, carcass weight,
+    trophy measurement + label, shot location + lat/lng, shot placement,
+    calibre, distance, hunt date, notes. "Generate Permit" builds the
+    prefill map and opens `VenisonPermitFormScreen`; "Push to Manifest"
+    pushes the carcass to the Slaghuis coldroom.
+- **Venison permit linkage** (`venison_permit_form_screen.dart`): gained
+  optional backward-compatible params `prefillData`
+  (`Map<String,dynamic>?`), `clientId`, and `guidedHuntLogId`. When
+  `prefillData` is present it is applied directly (no Firestore booking
+  lookup) and seeds the species list; the hunter block + farm block are
+  prefilled from the client + outfitter. After the permit is issued, if
+  `guidedHuntLogId`/`clientId` were supplied, the form links the new permit
+  id back onto the hunt log (`GuidedHuntLogManager.linkPermit`) and appends
+  it to the client's `permitReferenceIds` (`ClientRosterManager.addPermitReference`)
+  — end-to-end traceability client → hunt log → permit.
+- **Dashboard**: two new cards on the outfitter dashboard
+  (`outfitter_dashboard.dart`) — "Client Roster" and "Guided Hunt Logs" —
+  placed immediately before the "Permit Log & Manager" card (the natural
+  clients → hunt logs → permits grouping).
+- **Firestore rules** (`firestore.rules`): new owner-scoped
+  `match /client_roster/{clientId}` and `match /guided_hunt_logs/{logId}`
+  blocks (`ownerOrAdmin('outfitterId')`).
+- **Firestore indexes** (`firestore.indexes.json`): new composite indexes
+  `client_roster` `(outfitterId ASC, createdAt DESC)` and `guided_hunt_logs`
+  `(outfitterId ASC, huntDate DESC)` for the two stream queries (must be
+  deployed: `npx firebase-tools deploy --only firestore:indexes`).
+- **Tests**: `test/outfitter_client_roster_test.dart` — **6 tests, all
+  pass**: `ClientProfile` + `GuidedHuntLog` `toMap`/`fromMap` round-trips
+  (all fields), missing-field tolerance, `huntDate` fallback to now, and
+  `copyWith` permit/carcass linking + `updatedAt` bump.
+- **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings, 0 infos in
+  all changed/new files** (project total 295, unchanged baseline — all
+  remaining issues are pre-existing in unrelated files). The 4 pre-existing
+  failing tests (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+  `bluetooth_mesh`) remain unchanged and unrelated.
+- Files: `lib/features/outfitter_mode/data/models/client_profile.dart` (new),
+  `lib/features/outfitter_mode/data/models/guided_hunt_log.dart` (new),
+  `lib/features/outfitter_mode/data/services/client_roster_manager.dart` (new),
+  `lib/features/outfitter_mode/data/services/guided_hunt_log_manager.dart` (new),
+  `lib/features/outfitter_mode/presentation/client_roster_screen.dart` (new),
+  `lib/features/outfitter_mode/presentation/guided_hunt_log_screen.dart` (new),
+  `lib/features/hunter_mode/screens/venison_permit_form_screen.dart`
+  (prefillData/clientId/guidedHuntLogId + post-issue linking),
+  `lib/features/outfitter_mode/outfitter_dashboard.dart` (2 dashboard cards),
+  `firestore.rules`, `firestore.indexes.json`,
+  `test/outfitter_client_roster_test.dart` (new).
+- Deploy reminder: the new `client_roster` / `guided_hunt_logs` rules +
+  indexes must be deployed
+  (`npx firebase-tools deploy --only firestore:rules,firestore:indexes`) in
+  an environment with Firebase credentials. Until the indexes are built the
+  roster / hunt-log streams surface the index-missing error in-UI (rather
+  than silently showing empty).
