@@ -29,6 +29,11 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   String? _resolvedTownName;
   double? _compassHeading;
   StreamSubscription<CompassEvent>? _compassSubscription;
+  // Target bearing (direction to the quarry) used for crosswind assessment.
+  // When [_trackHeadingForTarget] is true this is ignored in favour of the
+  // live device heading.
+  double _targetBearing = 0.0;
+  bool _trackHeadingForTarget = true;
 
   static const String _prefLatitude = 'cached_latitude';
   static const String _prefLongitude = 'cached_longitude';
@@ -601,8 +606,12 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
 
   Widget _buildCompassCard(ThemeController theme) {
     final windBearing = _weather?.windDirectionDegrees ?? 0.0;
-    final inverseBearing = (windBearing + 180) % 360;
-    final cardinalDirection = _getCardinalDirection(inverseBearing);
+    final windSpeed = _weather?.windSpeedKmh ?? 0.0;
+    final heading = _compassHeading ?? 0.0;
+    final targetBearing = _trackHeadingForTarget ? heading : _targetBearing;
+    final windToward = (windBearing + 180) % 360;
+    final crosswind =
+        _computeCrosswind(windBearing, targetBearing, windSpeed);
 
     return Container(
       width: double.infinity,
@@ -619,7 +628,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'TACTICAL COMPASS WHEEL',
+                'TACTICAL COMPASS ROSE',
                 style: TextStyle(
                   color: theme.textColor.withAlpha(180),
                   fontWeight: FontWeight.w800,
@@ -638,20 +647,105 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
+          // Live numeric heading + wind-from readouts.
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              _headingChip(
+                theme,
+                label: 'HEADING',
+                value:
+                    '${heading.toStringAsFixed(0)}° ${_getCardinalDirection(heading)}',
+                color: theme.accentColor,
+              ),
+              _headingChip(
+                theme,
+                label: 'WIND FROM',
+                value:
+                    '${windBearing.toStringAsFixed(0)}° ${_getCardinalDirection(windBearing)}',
+                color: Colors.orange,
+              ),
+              _headingChip(
+                theme,
+                label: 'TARGET',
+                value:
+                    '${targetBearing.toStringAsFixed(0)}° ${_getCardinalDirection(targetBearing)}',
+                color: Colors.amber,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           SizedBox(
-            height: 220,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                _buildCompassDial(theme),
-                _buildWindVectorArrow(theme, windBearing),
-                _buildDeviceHeadingIndicator(theme),
-              ],
+            width: 264,
+            height: 264,
+            child: CustomPaint(
+              painter: _TacticalCompassPainter(
+                theme: theme,
+                windBearing: windBearing,
+                windSpeed: windSpeed,
+                targetBearing: targetBearing,
+                heading: heading,
+              ),
             ),
           ),
           const SizedBox(height: 20),
-          _buildStalkPromptBadge(theme, cardinalDirection, inverseBearing),
+          _buildTargetBearingControl(theme, heading),
+          const SizedBox(height: 16),
+          _buildCrosswindPanel(
+            theme,
+            crosswind: crosswind,
+            targetBearing: targetBearing,
+            windBearing: windBearing,
+            windToward: windToward,
+            windSpeed: windSpeed,
+          ),
+          const SizedBox(height: 16),
+          _buildStalkPromptBadge(
+            theme,
+            _getCardinalDirection(windToward),
+            windToward,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headingChip(
+    ThemeController theme, {
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withAlpha(120), width: 1),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: theme.textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -660,79 +754,251 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   void _showStalkingGuideDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.info_outline, color: widget.theme.accentColor),
-                const SizedBox(width: 8),
-                const Text('Stalking Guide'),
-              ],
-            ),
-            content: const Text(
-              'WEATHER & WIND HUD LOGISTICS: Utilizes your phone\'s internal hardware barometric sensor and magnetometer to determine off-grid stalking profiles. Scent Cone Vectors display local drift direction. Cross-reference your micro-climate readouts to remain downwind of plains game during close-range approaches.\n\nKeep the orange wind vector arrow pointing down/away from your phone\'s heading indicator needle to stay downwind of your quarry.',
-              style: TextStyle(fontSize: 14),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Got it'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  Widget _buildCompassDial(ThemeController theme) {
-    return SizedBox(
-      width: 200,
-      height: 200,
-      child: CustomPaint(painter: _CompassDialPainter(theme: theme)),
-    );
-  }
-
-  Widget _buildWindVectorArrow(ThemeController theme, double windBearing) {
-    return Transform.rotate(
-      angle: (windBearing - 90) * math.pi / 180,
-      child: Container(
-        width: 200,
-        height: 200,
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.arrow_forward_rounded,
-          color: Colors.orange.withValues(alpha: 0.8),
-          size: 40,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.info_outline, color: widget.theme.accentColor),
+            const SizedBox(width: 8),
+            const Text('Stalking Guide'),
+          ],
         ),
+        content: const Text(
+          'WEATHER & WIND HUD LOGISTICS: Utilizes your phone\'s internal hardware barometric sensor and magnetometer to determine off-grid stalking profiles. Scent Cone Vectors display local drift direction. Cross-reference your micro-climate readouts to remain downwind of plains game during close-range approaches.\n\nThe compass rose shows explicit numeric headings (0°–360°) with cardinal markers. The orange arrow is the wind-flow vector (direction the wind is blowing TOWARD). The amber reticle is your target bearing; the gold needle is your live device heading. The crosswind panel reports the wind component perpendicular to your shot line — the value that drifts your bullet.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDeviceHeadingIndicator(ThemeController theme) {
-    final heading = _compassHeading ?? 0.0;
-    return Transform.rotate(
-      angle: heading * math.pi / 180,
-      child: Container(
-        width: 200,
-        height: 200,
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.navigation_rounded, color: theme.accentColor, size: 32),
-            const SizedBox(height: 4),
-            Transform.rotate(
-              angle: -heading * math.pi / 180,
-              child: Text(
-                '${heading.toStringAsFixed(0)}°',
-                style: TextStyle(
-                  color: theme.textColor,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
+  /// Target-bearing control: a toggle to track the live device heading, or a
+  /// slider to dial in a fixed target bearing manually.
+  Widget _buildTargetBearingControl(ThemeController theme, double heading) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withAlpha(90), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.gps_fixed, color: Colors.amber.shade300, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'TARGET BEARING',
+                  style: TextStyle(
+                    color: theme.textColor.withAlpha(180),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    letterSpacing: 1,
+                  ),
                 ),
+              ),
+              Switch(
+                value: _trackHeadingForTarget,
+                activeColor: Colors.amber,
+                onChanged: (v) => setState(() => _trackHeadingForTarget = v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _trackHeadingForTarget
+                ? 'Tracking live device heading (${heading.toStringAsFixed(0)}°).'
+                : 'Manual: ${_targetBearing.toStringAsFixed(0)}° ${_getCardinalDirection(_targetBearing)}.',
+            style: TextStyle(color: theme.textColor, fontSize: 12),
+          ),
+          if (!_trackHeadingForTarget) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: _targetBearing,
+                    min: 0,
+                    max: 359,
+                    divisions: 359,
+                    activeColor: Colors.amber,
+                    label: '${_targetBearing.toStringAsFixed(0)}°',
+                    onChanged: (v) => setState(() => _targetBearing = v),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Sync to current heading',
+                  icon: Icon(Icons.sync, color: theme.accentColor, size: 20),
+                  onPressed: () => setState(() {
+                    _targetBearing = heading.roundToDouble();
+                  }),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Crosswind alignment panel: reports the wind component perpendicular to the
+  /// shot line (the value that drifts the bullet), colour-coded by severity.
+  Widget _buildCrosswindPanel(
+    ThemeController theme, {
+    required _Crosswind crosswind,
+    required double targetBearing,
+    required double windBearing,
+    required double windToward,
+    required double windSpeed,
+  }) {
+    final severity = crosswind.severity;
+    final color = severity == _CrosswindSeverity.low
+        ? Colors.green
+        : severity == _CrosswindSeverity.moderate
+            ? Colors.orange
+            : Colors.redAccent;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withAlpha(120), width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.compare_arrows, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'CROSSWIND ALIGNMENT',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (windSpeed <= 0)
+            Text(
+              'No wind data — awaiting location update.',
+              style: TextStyle(color: theme.textColor.withAlpha(160), fontSize: 12),
+            )
+          else ...[
+            _crosswindRow(
+              theme,
+              label: 'Shot line',
+              value:
+                  '${targetBearing.toStringAsFixed(0)}° ${_getCardinalDirection(targetBearing)}',
+            ),
+            _crosswindRow(
+              theme,
+              label: 'Wind flow toward',
+              value:
+                  '${windToward.toStringAsFixed(0)}° ${_getCardinalDirection(windToward)}',
+            ),
+            _crosswindRow(
+              theme,
+              label: 'Wind from (rel. target)',
+              value:
+                  '${crosswind.fromRelativeAbs.toStringAsFixed(0)}° ${crosswind.fromSide}',
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _crosswindRow(
+                    theme,
+                    label: 'Crosswind',
+                    value:
+                        '${crosswind.componentKmh.toStringAsFixed(1)} km/h (${(crosswind.fraction * 100).toStringAsFixed(0)}%)',
+                    emphasize: true,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: color.withAlpha(30),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    crosswind.driftLeft
+                        ? Icons.arrow_back_rounded
+                        : Icons.arrow_forward_rounded,
+                    color: color,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      crosswind.fraction < 0.15
+                          ? 'Near head/tail wind — minimal lateral drift.'
+                          : 'Wind from your ${crosswind.fromSide} → drift ${crosswind.driftLeft ? 'LEFT' : 'RIGHT'}.',
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _crosswindRow(
+    ThemeController theme, {
+    required String label,
+    required String value,
+    bool emphasize = false,
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: theme.textColor.withAlpha(150),
+              fontSize: emphasize ? 12 : 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color ?? theme.textColor,
+              fontSize: emphasize ? 13 : 12,
+              fontWeight: emphasize ? FontWeight.w900 : FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -812,107 +1078,319 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
     final index = ((normalized + 11.25) / 22.5).floor() % 16;
     return directions[index];
   }
+
+  /// Computes the crosswind component perpendicular to the shot line.
+  /// [windBearing] is the meteorological wind-FROM bearing; [targetBearing]
+  /// is the direction to the target (shot line). Returns the relative wind
+  /// angle, the lateral fraction (|sin|), the crosswind speed, and the drift
+  /// direction (wind from hunter's left pushes the bullet right, and vice
+  /// versa).
+  _Crosswind _computeCrosswind(
+    double windBearing,
+    double targetBearing,
+    double windSpeed,
+  ) {
+    // Wind-FROM bearing relative to the shot line, normalised to [-180, 180].
+    final fromRelative =
+        ((windBearing - targetBearing + 540) % 360) - 180;
+    final fromRelativeAbs = fromRelative.abs();
+    final fraction = (math.sin(fromRelative * math.pi / 180)).abs();
+    final componentKmh = windSpeed * fraction;
+
+    // Wind from the hunter's RIGHT (positive relative) drifts the bullet LEFT.
+    final driftLeft = fromRelative > 0;
+    final fromSide = driftLeft ? 'RIGHT' : 'LEFT';
+
+    final severity = fraction < 0.25
+        ? _CrosswindSeverity.low
+        : fraction < 0.75
+            ? _CrosswindSeverity.moderate
+            : _CrosswindSeverity.high;
+
+    return _Crosswind(
+      fromRelativeAbs: fromRelativeAbs,
+      fraction: fraction,
+      componentKmh: componentKmh,
+      driftLeft: driftLeft,
+      fromSide: fromSide,
+      severity: severity,
+    );
+  }
 }
 
-class _CompassDialPainter extends CustomPainter {
-  final ThemeController theme;
+/// Crosswind solution for the shot line vs. wind vector.
+class _Crosswind {
+  final double fromRelativeAbs;
+  final double fraction;
+  final double componentKmh;
+  final bool driftLeft;
+  final String fromSide;
+  final _CrosswindSeverity severity;
 
-  _CompassDialPainter({required this.theme});
+  const _Crosswind({
+    required this.fromRelativeAbs,
+    required this.fraction,
+    required this.componentKmh,
+    required this.driftLeft,
+    required this.fromSide,
+    required this.severity,
+  });
+}
+
+enum _CrosswindSeverity { low, moderate, high }
+
+/// High-precision tactical compass rose. Renders:
+/// - A fixed bearing rose with 8 cardinal/intercardinal labels (N, NE, E, SE,
+///   S, SW, W, NW) and numeric degree headings every 30° (0–330), plus minor
+///   ticks every 15°.
+/// - The live device-heading needle (gold).
+/// - The target-bearing reticle + shot line (amber, dashed).
+/// - The wind-flow vector arrow (orange→red by speed) showing the direction
+///   the wind is blowing TOWARD, with a FROM tick.
+class _TacticalCompassPainter extends CustomPainter {
+  final ThemeController theme;
+  final double windBearing;
+  final double windSpeed;
+  final double targetBearing;
+  final double heading;
+
+  _TacticalCompassPainter({
+    required this.theme,
+    required this.windBearing,
+    required this.windSpeed,
+    required this.targetBearing,
+    required this.heading,
+  });
+
+  static const _cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+  double _degToRad(double deg) => deg * math.pi / 180;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 10;
+    final radius = (size.shortestSide / 2) - 14;
 
-    final dialPaint =
-        Paint()
-          ..color = theme.textColor.withAlpha(30)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2;
+    // Outer bezel rings.
+    final bezelPaint = Paint()
+      ..color = theme.textColor.withAlpha(28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(center, radius, bezelPaint);
+    canvas.drawCircle(center, radius - 6, Paint()..color = theme.textColor.withAlpha(12));
 
-    final tickPaint =
-        Paint()
-          ..color = theme.textColor.withAlpha(60)
-          ..strokeWidth = 2;
+    // Tick marks: minor every 15°, major every 30°.
+    final minorTick = Paint()
+      ..color = theme.textColor.withAlpha(50)
+      ..strokeWidth = 1;
+    final majorTick = Paint()
+      ..color = theme.textColor.withAlpha(110)
+      ..strokeWidth = 1.6;
 
-    final cardinalPaint =
-        Paint()
-          ..color = theme.accentColor
-          ..strokeWidth = 3;
-
-    final northPaint =
-        Paint()
-          ..color = Colors.red
-          ..strokeWidth = 4;
-
-    canvas.drawCircle(center, radius, dialPaint);
-
-    for (int i = 0; i < 360; i += 30) {
-      final angle = (i - 90) * math.pi / 180;
-      final isNorth = i == 0;
-      final isCardinal = i % 90 == 0;
-      final tickLength = isNorth ? 20.0 : (isCardinal ? 15.0 : 8.0);
-      final paint =
-          isNorth ? northPaint : (isCardinal ? cardinalPaint : tickPaint);
-
+    for (int d = 0; d < 360; d += 15) {
+      final angle = _degToRad(d - 90);
+      final isMajor = d % 30 == 0;
+      final len = isMajor ? 10.0 : 5.0;
+      final paint = isMajor ? majorTick : minorTick;
       final start = Offset(
-        center.dx + (radius - tickLength) * math.cos(angle),
-        center.dy + (radius - tickLength) * math.sin(angle),
+        center.dx + (radius - len) * math.cos(angle),
+        center.dy + (radius - len) * math.sin(angle),
       );
       final end = Offset(
         center.dx + radius * math.cos(angle),
         center.dy + radius * math.sin(angle),
       );
-
       canvas.drawLine(start, end, paint);
     }
 
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-
-    const directions = ['N', 'E', 'S', 'W'];
-    for (int i = 0; i < directions.length; i++) {
+    // Cardinal labels (outer) + numeric degree headings every 30° (inner).
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (int i = 0; i < _cardinals.length; i++) {
+      final deg = i * 45;
       final isNorth = i == 0;
-      final angle = (i * 90 - 90) * math.pi / 180;
-      final labelRadius = radius - 28;
-      final x = center.dx + labelRadius * math.cos(angle);
-      final y = center.dy + labelRadius * math.sin(angle);
-
-      textPainter.text = TextSpan(
-        text: directions[i],
+      final angle = _degToRad(deg - 90);
+      final labelR = radius - 22;
+      final x = center.dx + labelR * math.cos(angle);
+      final y = center.dy + labelR * math.sin(angle);
+      tp.text = TextSpan(
+        text: _cardinals[i],
         style: TextStyle(
           color: isNorth ? Colors.red : theme.accentColor,
-          fontSize: isNorth ? 20 : 16,
+          fontSize: isNorth ? 16 : 12,
           fontWeight: FontWeight.w900,
         ),
       );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(x - textPainter.width / 2, y - textPainter.height / 2),
-      );
+      tp.layout();
+      tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
     }
 
-    textPainter.text = TextSpan(
-      text: '0°',
-      style: TextStyle(
-        color: Colors.red.withAlpha(180),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
+    for (int d = 0; d < 360; d += 30) {
+      // Skip positions already carrying a cardinal letter.
+      if (d % 45 == 0) continue;
+      final angle = _degToRad(d - 90);
+      final r = radius - 22;
+      final x = center.dx + r * math.cos(angle);
+      final y = center.dy + r * math.sin(angle);
+      tp.text = TextSpan(
+        text: '$d°',
+        style: TextStyle(
+          color: theme.textColor.withAlpha(150),
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      tp.layout();
+      tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
+    }
+
+    // ---- Target bearing: dashed shot line + reticle (amber) ----
+    final targetAngle = _degToRad(targetBearing - 90);
+    final targetEdge = Offset(
+      center.dx + (radius - 8) * math.cos(targetAngle),
+      center.dy + (radius - 8) * math.sin(targetAngle),
     );
-    textPainter.layout();
-    final northAngle = (-90) * math.pi / 180;
-    final degreeRadius = radius - 42;
-    final degreeX = center.dx + degreeRadius * math.cos(northAngle);
-    final degreeY = center.dy + degreeRadius * math.sin(northAngle);
-    textPainter.paint(
-      canvas,
-      Offset(degreeX - textPainter.width / 2, degreeY - textPainter.height / 2),
+    _drawDashedLine(canvas, center, targetEdge, Colors.amber, 2, 6, 4);
+    // Reticle ring + cross at the target edge.
+    final reticlePaint = Paint()
+      ..color = Colors.amber
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawCircle(targetEdge, 7, reticlePaint);
+    canvas.drawLine(
+      Offset(targetEdge.dx - 10, targetEdge.dy),
+      Offset(targetEdge.dx + 10, targetEdge.dy),
+      reticlePaint,
     );
+    canvas.drawLine(
+      Offset(targetEdge.dx, targetEdge.dy - 10),
+      Offset(targetEdge.dx, targetEdge.dy + 10),
+      reticlePaint,
+    );
+
+    // ---- Wind-flow vector (orange→red by speed) ----
+    // WindDirectionDegrees is the FROM bearing; flow is toward FROM+180.
+    final windToward = (windBearing + 180) % 360;
+    final windAngle = _degToRad(windToward - 90);
+    final windLen = (radius - 26);
+    final windTip = Offset(
+      center.dx + windLen * math.cos(windAngle),
+      center.dy + windLen * math.sin(windAngle),
+    );
+    final windColor = _windColor(windSpeed);
+    final windPaint = Paint()
+      ..color = windColor
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(center, windTip, windPaint);
+    _drawArrowHead(canvas, windTip, windAngle, 12, windColor);
+    // Small FROM tick on the rim opposite the flow.
+    final fromAngle = _degToRad(windBearing - 90);
+    final fromTick = Paint()
+      ..color = windColor.withAlpha(160)
+      ..strokeWidth = 3;
+    final fStart = Offset(
+      center.dx + (radius - 4) * math.cos(fromAngle),
+      center.dy + (radius - 4) * math.sin(fromAngle),
+    );
+    final fEnd = Offset(
+      center.dx + radius * math.cos(fromAngle),
+      center.dy + radius * math.sin(fromAngle),
+    );
+    canvas.drawLine(fStart, fEnd, fromTick);
+
+    // ---- Device heading needle (gold) ----
+    final headAngle = _degToRad(heading - 90);
+    final headTip = Offset(
+      center.dx + (radius - 30) * math.cos(headAngle),
+      center.dy + (radius - 30) * math.sin(headAngle),
+    );
+    final headPaint = Paint()
+      ..color = theme.accentColor
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(center, headTip, headPaint);
+    _drawArrowHead(canvas, headTip, headAngle, 9, theme.accentColor);
+
+    // Center hub.
+    canvas.drawCircle(
+      center,
+      5,
+      Paint()..color = theme.textColor.withAlpha(120),
+    );
+    canvas.drawCircle(center, 2, Paint()..color = theme.backgroundColor);
+  }
+
+  Color _windColor(double speed) {
+    if (speed >= 25) return Colors.redAccent;
+    if (speed >= 15) return Colors.deepOrange;
+    return Colors.orange;
+  }
+
+  void _drawArrowHead(
+    Canvas canvas,
+    Offset tip,
+    double angle,
+    double size,
+    Color color,
+  ) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(
+        tip.dx - size * math.cos(angle - 0.4),
+        tip.dy - size * math.sin(angle - 0.4),
+      )
+      ..lineTo(
+        tip.dx - size * 0.5 * math.cos(angle),
+        tip.dy - size * 0.5 * math.sin(angle),
+      )
+      ..lineTo(
+        tip.dx - size * math.cos(angle + 0.4),
+        tip.dy - size * math.sin(angle + 0.4),
+      )
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    Color color,
+    double width,
+    double dash,
+    double gap,
+  ) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round;
+    final dx = end.dx - start.dx;
+    final dy = end.dy - start.dy;
+    final total = math.sqrt(dx * dx + dy * dy);
+    final step = dash + gap;
+    final ux = dx / total;
+    final uy = dy / total;
+    double dist = 0;
+    while (dist < total) {
+      final d0 = dist;
+      final d1 = math.min(dist + dash, total);
+      canvas.drawLine(
+        Offset(start.dx + ux * d0, start.dy + uy * d0),
+        Offset(start.dx + ux * d1, start.dy + uy * d1),
+        paint,
+      );
+      dist += step;
+    }
   }
 
   @override
-  bool shouldRepaint(_CompassDialPainter oldDelegate) {
-    return false;
+  bool shouldRepaint(_TacticalCompassPainter oldDelegate) {
+    return oldDelegate.windBearing != windBearing ||
+        oldDelegate.windSpeed != windSpeed ||
+        oldDelegate.targetBearing != targetBearing ||
+        oldDelegate.heading != heading;
   }
 }
