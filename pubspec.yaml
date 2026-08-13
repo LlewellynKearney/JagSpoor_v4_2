@@ -104,6 +104,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
+  # Native splash screen generator (Android + iOS launch screens)
+  flutter_native_splash: ^2.4.6
   # Test mocking libraries
   test: ^1.25.0
   mockito: ^5.4.4

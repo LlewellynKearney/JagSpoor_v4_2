@@ -126,11 +126,14 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // App Logo
+                  // App Logo — upscaled emblem so it displays prominent and
+                  // high-resolution while Firebase auth / role checks run.
+                  // Uses a fraction of the screen width so it scales gracefully
+                  // across phone/tablet aspect ratios without cropping.
                   Image.asset(
                     'assets/app logo/logo1.png',
-                    width: 150,
-                    height: 150,
+                    width: MediaQuery.of(context).size.width * 0.6,
+                    height: MediaQuery.of(context).size.width * 0.6,
                     fit: BoxFit.contain,
                   ),
                   const SizedBox(height: 32),

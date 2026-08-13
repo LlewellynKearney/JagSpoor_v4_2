@@ -1,0 +1,28 @@
+# Native splash screen configuration for JagSpoor.
+# Regenerate after edits with:
+#   dart run flutter_native_splash:create
+# Remove with:
+#   dart run flutter_native_splash:remove
+
+flutter_native_splash:
+  # Brand palette (matches lib/core/theme/app_theme.dart):
+  #   light background = cream #F4EFEA, dark background = #121212
+  color: "#F4EFEA"
+  color_dark: "#121212"
+
+  # Primary JagSpoor emblem. High-resolution (500x500) so it renders crisp and
+  # prominent on the native launch screen. flutter_native_splash centers the
+  # image and never crops it, so it stays fully framed across all Android/iOS
+  # aspect ratios.
+  image: assets/app logo/logo1.png
+
+  android: true
+  ios: true
+  web: false
+
+  # Android 12+ uses the system splash (icon on a colored window). Configure
+  # it so the launch experience matches the rest of the app.
+  android_12:
+    image: assets/app logo/logo1.png
+    icon_background_color: "#121212"
+    icon_background_color_dark: "#121212"
