@@ -303,6 +303,24 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── User feedback / bug reports ─────────────────────────────────────
+    // Any authenticated user may submit a new report (create). Report
+    // documents carry the submitter's `hunterId`, so reads/edits/deletes are
+    // restricted to admins to protect user privacy and to let the support
+    // team manage the inbound queue. isAdmin() covers the
+    // `request.auth.token.admin == true` custom claim plus the email
+    // allow-list and users/{uid}.role == 'admin' sources used by
+    // AdminAuthGuard, keeping server- and client-side admin detection
+    // consistent.
+    match /bug_reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+    match /feature_suggestions/{suggestionId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
     // ── Default deny ────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
