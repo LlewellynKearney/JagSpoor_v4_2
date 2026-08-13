@@ -42,6 +42,9 @@ class WeatherRepository {
         // Request useful hourly fields and request windspeed in km/h for clarity
         'hourly':
             'relativehumidity_2m,surface_pressure,windgusts_10m,winddirection_10m',
+          // Solar forecast: today's sunrise/sunset.
+          'daily': 'sunrise,sunset',
+          'forecast_days': '1',
         'windspeed_unit': 'kmh',
         'timezone': 'auto',
       },

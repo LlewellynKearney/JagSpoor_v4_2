@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/measurement_formatter.dart';
 import '../../../services/location_resolver_service.dart';
@@ -29,6 +30,9 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   String? _resolvedTownName;
   double? _compassHeading;
   StreamSubscription<CompassEvent>? _compassSubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  // True when there is no network connectivity (zero-signal bushveld).
+  bool _isOffline = false;
   // Target bearing (direction to the quarry) used for crosswind assessment.
   // When [_trackHeadingForTarget] is true this is ignored in favour of the
   // live device heading.
@@ -46,6 +50,9 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   static const String _prefWindDirection = 'cached_wind_direction';
   static const String _prefWindGust = 'cached_wind_gust';
   static const String _prefWeatherFetchedAt = 'cached_weather_fetched_at';
+  static const String _prefSunrise = 'cached_sunrise';
+  static const String _prefSunset = 'cached_sunset';
+  static const String _prefMoonPhase = 'cached_moon_phase';
 
   @override
   void initState() {
@@ -59,10 +66,30 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
         });
       }
     });
+    // Monitor connectivity so we can fall back to cached data when offline.
+    Connectivity().checkConnectivity().then(_onConnectivityChanged);
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen(_onConnectivityChanged);
+  }
+
+  void _onConnectivityChanged(List<ConnectivityResult> results) {
+    final offline =
+        results.isEmpty || results.every((r) => r == ConnectivityResult.none);
+    if (mounted && offline != _isOffline) {
+      setState(() {
+        _isOffline = offline;
+        // When going offline, surface a graceful fallback message instead of a
+        // hard error — the last cached reading remains visible.
+        if (offline && _weather != null) {
+          _failureMessage = null;
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _connectivitySubscription?.cancel();
     _compassSubscription?.cancel();
     super.dispose();
   }
@@ -105,6 +132,9 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
     final fetchedAtStr = prefs.getString(_prefWeatherFetchedAt);
     final lat = prefs.getDouble(_prefLatitude);
     final lon = prefs.getDouble(_prefLongitude);
+    final sunriseStr = prefs.getString(_prefSunrise);
+    final sunsetStr = prefs.getString(_prefSunset);
+    final moonFraction = prefs.getDouble(_prefMoonPhase);
 
     if (temperature != null &&
         surfacePressure != null &&
@@ -127,10 +157,31 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
           windDirectionDegrees: windDirection,
           windGustKmh: windGust,
           fetchedAt: DateTime.parse(fetchedAtStr),
+          sunrise: _tryParseDateTime(sunriseStr),
+          sunset: _tryParseDateTime(sunsetStr),
+          moonPhaseFraction: moonFraction ?? 0.0,
+          moonPhaseName: moonFraction == null
+              ? 'New Moon'
+              : WeatherModel.moonPhaseNameFor(moonFraction),
         );
       });
     }
   }
+
+  static DateTime? _tryParseDateTime(String? value) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// "HH:mm" of the last cached weather fetch, for the offline badge.
+  String? get _cachedUpdatedTime => _weather == null
+      ? null
+      : '${_weather!.fetchedAt.toLocal().hour.toString().padLeft(2, '0')}:'
+          '${_weather!.fetchedAt.toLocal().minute.toString().padLeft(2, '0')}';
 
   Future<void> _saveCachedLocation(
     double lat,
@@ -161,10 +212,43 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
       _prefWeatherFetchedAt,
       weather.fetchedAt.toIso8601String(),
     );
+    // Solar + lunar cache (offline fallback for the bushveld).
+    if (weather.sunrise != null) {
+      await prefs.setString(_prefSunrise, weather.sunrise!.toIso8601String());
+    }
+    if (weather.sunset != null) {
+      await prefs.setString(_prefSunset, weather.sunset!.toIso8601String());
+    }
+    await prefs.setDouble(_prefMoonPhase, weather.moonPhaseFraction);
   }
 
   Future<void> _updateCurrentWeather() async {
     if (_isLoading) return;
+
+    // Offline (zero-signal bushveld): fall back seamlessly to the last cached
+    // reading rather than attempting a doomed network round-trip.
+    if (_isOffline) {
+      if (mounted) {
+        setState(() {
+          _failureMessage = _weather == null
+              ? 'No connectivity — and no cached weather yet. Reconnect to fetch.'
+              : null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _weather == null
+                  ? 'Offline — no cached weather available.'
+                  : 'Offline — showing last cached weather reading '
+                      '(${_cachedUpdatedTime ?? 'unknown'}).',
+            ),
+            backgroundColor:
+                _weather == null ? Colors.redAccent : Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -207,7 +291,14 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _failureMessage = error.toString();
+          // When a fetch fails but cached data exists, fall back gracefully
+          // rather than masking the reading with a hard error.
+          if (_weather != null) {
+            _failureMessage =
+                'Live fetch failed — showing last cached reading. ($error)';
+          } else {
+            _failureMessage = error.toString();
+          }
         });
       }
     } finally {
@@ -281,11 +372,14 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
+                        if (_isOffline) _buildOfflineBadge(theme),
                         _buildStatusCard(theme),
                         const SizedBox(height: 20),
                         _buildUpdateButton(theme),
                         const SizedBox(height: 24),
                         _buildWeatherMetricsGrid(theme),
+                        const SizedBox(height: 24),
+                        _buildSolarLunarCard(theme),
                         const SizedBox(height: 24),
                         _buildWindSummaryCard(theme),
                         const SizedBox(height: 24),
@@ -311,6 +405,151 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildOfflineBadge(ThemeController theme) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.orange.withValues(alpha: 0.5),
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: Colors.orange, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _weather == null
+                  ? 'Offline — no cached data yet'
+                  : 'Offline / Cached Data (Last updated: $_cachedUpdatedTime)',
+              style: TextStyle(
+                color: theme.textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSolarLunarCard(ThemeController theme) {
+    final sunrise = _weather?.sunriseText ?? '—';
+    final sunset = _weather?.sunsetText ?? '—';
+    final moonName = _weather?.moonPhaseName ?? '—';
+    final moonPct = _weather?.moonIlluminationPercent;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.textColor.withAlpha(20), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.wb_sunny_rounded, color: theme.accentColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'SOLAR & LUNAR FORECAST',
+                style: TextStyle(
+                  color: theme.textColor.withAlpha(180),
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetricCard(
+                  theme: theme,
+                  label: 'SUNRISE',
+                  value: sunrise,
+                  icon: Icons.wb_twilight_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildMetricCard(
+                  theme: theme,
+                  label: 'SUNSET',
+                  value: sunset,
+                  icon: Icons.nights_stay_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: theme.backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.nightlight_rounded,
+                    color: theme.accentColor, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        moonName,
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        moonPct == null
+                            ? 'Illumination unavailable'
+                            : '$moonPct% illuminated',
+                        style: TextStyle(
+                          color: theme.textColor.withAlpha(140),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (moonPct != null)
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      value: (moonPct / 100).clamp(0.0, 1.0),
+                      strokeWidth: 3,
+                      backgroundColor:
+                          theme.textColor.withValues(alpha: 0.15),
+                      valueColor: AlwaysStoppedAnimation(theme.accentColor),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
