@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/image_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/trophy_inventory_report_exporter.dart';
 import '../services/user_role_resolver.dart';
@@ -221,6 +222,25 @@ class _OutfitterTrophyStockScreenState
     }
   }
 
+  /// Opens the device camera and appends a single captured photo to
+  /// [_pickedPhotos] (capped at [_maxTrophyPhotos]). Compression is applied
+  /// uniformly at upload time in [_uploadTrophyPhotos].
+  Future<void> _takeTrophyPhoto() async {
+    if (_pickedPhotos.length >= _maxTrophyPhotos) return;
+    try {
+      final xFile = await _imagePicker.pickImage(source: ImageSource.camera);
+      if (xFile != null && mounted) {
+        setState(() => _pickedPhotos.add(xFile));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Camera capture failed: $e')),
+        );
+      }
+    }
+  }
+
   /// Removes a picked photo at [index].
   void _removeTrophyPhoto(int index) {
     setState(() => _pickedPhotos.removeAt(index));
@@ -228,20 +248,27 @@ class _OutfitterTrophyStockScreenState
 
   /// Uploads each picked photo to Firebase Storage under
   /// `trophy_photos/{outfitterId}/{timestamp}_{i}.jpg` and returns the download
-  /// URLs. Photos that fail to upload are skipped (partial success is OK).
+  /// URLs. Each photo is first downscaled + JPEG-compressed via [ImageService]
+  /// (1280px, quality 75) to keep Storage usage and bandwidth low. Photos that
+  /// fail to upload are skipped (partial success is OK).
   Future<List<String>> _uploadTrophyPhotos() async {
     if (_pickedPhotos.isEmpty) return const [];
     final outfitterId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final urls = <String>[];
     for (var i = 0; i < _pickedPhotos.length; i++) {
-      final file = File(_pickedPhotos[i].path);
-      if (!await file.exists()) continue;
+      final raw = File(_pickedPhotos[i].path);
+      if (!await raw.exists()) continue;
+      // Compress before upload (downscale to 1280px, JPEG q75).
+      final file = await ImageService.compressExisting(raw);
       final ref = FirebaseStorage.instance.ref(
         'trophy_photos/$outfitterId/${timestamp}_$i.jpg',
       );
       try {
-        final task = await ref.putFile(file);
+        final task = await ref.putFile(
+          file,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         final url = await task.ref.getDownloadURL();
         urls.add(url);
       } catch (e) {
@@ -758,16 +785,33 @@ class _OutfitterTrophyStockScreenState
                                     letterSpacing: 1.2,
                                   ),
                                 ),
-                                TextButton.icon(
-                                  onPressed: _pickedPhotos.length >=
-                                          _maxTrophyPhotos
-                                      ? null
-                                      : _pickTrophyPhotos,
-                                  icon: const Icon(Icons.add_photo_alternate_rounded),
-                                  label: const Text('Add Photos'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: theme.accentColor,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: _pickedPhotos.length >=
+                                              _maxTrophyPhotos
+                                          ? null
+                                          : _takeTrophyPhoto,
+                                      icon: const Icon(Icons.camera_alt_rounded),
+                                      label: const Text('Camera'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: theme.accentColor,
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: _pickedPhotos.length >=
+                                              _maxTrophyPhotos
+                                          ? null
+                                          : _pickTrophyPhotos,
+                                      icon:
+                                          const Icon(Icons.add_photo_alternate_rounded),
+                                      label: const Text('Gallery'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: theme.accentColor,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
