@@ -26,6 +26,25 @@ void main() {
     });
   });
 
+  group('RoleGuard.canAccess — admin full cross-mode access', () {
+    // Admins must be able to reach every dashboard / screen without ever
+    // triggering an Access Denied banner — including admin-only routes.
+    const allRoutes = <String>[
+      '/admin_dashboard',
+      '/hunter_dashboard',
+      '/outfitter_dashboard',
+      '/scan_license',
+      '/add_trophy',
+      '/role_selection',
+      '/some_future_route',
+    ];
+    for (final route in allRoutes) {
+      test('admin may access $route', () {
+        expect(RoleGuard.canAccess(AppRole.admin, route), isTrue);
+      });
+    }
+  });
+
   group('RoleGuard.canAccess — admin-only routes', () {
     for (final route in RoleGuard.adminOnlyRoutes) {
       test('admin may access $route', () {

@@ -26,20 +26,26 @@ class RoleGuard {
   /// Returns `true` when [role] is permitted to navigate to [route].
   ///
   /// Policy:
-  ///   - Admin-only routes require [AppRole.admin].
-  ///   - The Hunter / Outfitter dashboards require the matching role (or
-  ///     admin, who may preview any mode).
+  ///   - **Admins have full cross-mode access to EVERY route** (Hunter,
+  ///     Outfitter, and Admin Portal, plus all forms/screens) — short-circuited
+  ///     first so an admin can never trigger an Access Denied banner.
+  ///   - Admin-only routes (e.g. `/admin_dashboard`) deny every non-admin.
+  ///   - The Hunter / Outfitter dashboards require the matching non-admin role.
   ///   - Every other route (forms, detail screens, license scanner, etc.) is
   ///     not role-scoped at this layer and defaults to allowed.
   static bool canAccess(AppRole role, String route) {
+    // Admins bypass all route restrictions — full access to every mode.
+    if (role == AppRole.admin) {
+      return true;
+    }
     if (adminOnlyRoutes.contains(route)) {
-      return role == AppRole.admin;
+      return false;
     }
     if (route == '/hunter_dashboard') {
-      return role == AppRole.admin || role == AppRole.hunter;
+      return role == AppRole.hunter;
     }
     if (route == '/outfitter_dashboard') {
-      return role == AppRole.admin || role == AppRole.outfitter;
+      return role == AppRole.outfitter;
     }
     return true;
   }

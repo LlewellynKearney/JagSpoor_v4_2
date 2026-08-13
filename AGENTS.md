@@ -1337,12 +1337,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Separated the "what may they do" policy into a pure, dependency-free
   `lib/features/auth/services/role_guard.dart` (no Firebase / Flutter imports
   → fully unit-testable):
-  - `RoleGuard.canAccess(role, route)` — admin-only routes
-    (`/admin_dashboard`) require `admin`; the Hunter / Outfitter dashboards
-    require the matching role (admin may preview any); all other routes
+  - `RoleGuard.canAccess(role, route)` — **admins short-circuit to `true` for
+    EVERY route** (Hunter, Outfitter, Admin Portal, plus all forms/screens),
+    so an admin can never trigger an Access Denied banner. Below that:
+    admin-only routes (`/admin_dashboard`) deny every non-admin; the Hunter /
+    Outfitter dashboards require the matching non-admin role; all other routes
     default to allowed. → Hunters cannot open the Admin Portal or Outfitter
     Management; Outfitters default to Outfitter Mode and cannot open
-    Hunter / Admin.
+    Hunter / Admin; Admins have full cross-mode access to all three.
   - `RoleGuard.defaultHomeFor(role)` — where an unauthorized user is bounced
     (`unknown` → `/role_selection`, never dropped on a dashboard).
   - `RoleGuard.canSwitchModes(role)` — only `admin` may use the instant mode
@@ -1384,11 +1386,22 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   redirects unauthorized users before the screen mounts).
 - **`flutter analyze`**: 0 errors, 13 warnings (all pre-existing, unchanged;
   no new issues in the new/modified files).
+- **Admin cross-mode access fix (2026-08-13)**: `RoleGuard.canAccess` was
+  restructured so `AppRole.admin` short-circuits to `true` at the TOP of the
+  method — admins now have guaranteed full access to Hunter, Outfitter, AND
+  Admin routes (plus every other screen) and can never trigger an Access
+  Denied banner. Previously admin was admitted per-branch on each dashboard
+  route, which worked but was implicit and fragile against future admin-only
+  routes. The non-admin branches were tightened accordingly (admin-only
+  routes deny all non-admins; hunter/outfitter dashboards require the exact
+  matching non-admin role). `test/role_guard_test.dart` gained an explicit
+  "admin may access <route>" sweep over 7 representative routes.
 - **Tests** (all green locally, Flutter 3.44.9):
-  - `test/role_guard_test.dart` (24 tests) — `AppRole.fromString` parsing +
+  - `test/role_guard_test.dart` (31 tests) — `AppRole.fromString` parsing +
     `RoleGuard.canAccess` / `defaultHomeFor` / `canSwitchModes` /
     `accessDeniedMessage` for admin, outfitter, hunter, and unknown profiles
-    across admin-only, hunter, outfitter, and non-restricted routes.
+    across admin-only, hunter, outfitter, and non-restricted routes, plus an
+    explicit admin-full-cross-mode-access sweep over 7 representative routes.
   - `test/user_role_provider_test.dart` (7 tests) — provider default state,
     `setRole` caching for all three roles, `resolveRole` cache-hit contract
     (returns cached role without touching Firebase), and `reset`.
