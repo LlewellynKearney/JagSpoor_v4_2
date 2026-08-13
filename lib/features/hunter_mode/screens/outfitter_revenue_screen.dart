@@ -543,8 +543,23 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
   }
 
   Stream<Map<String, dynamic>> _combinedAnalyticsStream() async* {
-    final revenueStream = OutfitterAnalyticsService.instance
-        .getRevenueSummaryStream(_currentUserId!);
+    // Unauthenticated / un-resolved uid: yield a stable empty payload instead
+    // of dereferencing `_currentUserId!` (which would throw a NullCheckException
+    // into the StreamBuilder). The screen then renders the zero-state metrics
+    // rather than an "Error loading analytics" banner.
+    final uid = _currentUserId;
+    if (uid == null) {
+      yield const {
+        'revenue': <String, double>{},
+        'enterprise': <String, int>{},
+        'speciesRevenue': <Map<String, dynamic>>[],
+        'monthlyStats': <Map<String, dynamic>>[],
+      };
+      return;
+    }
+
+    final revenueStream =
+        OutfitterAnalyticsService.instance.getRevenueSummaryStream(uid);
 
     await for (final revenue in revenueStream) {
       final farms = await _getFarmsData();

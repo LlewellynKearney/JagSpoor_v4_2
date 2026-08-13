@@ -63,6 +63,13 @@ class _AmmunitionTypeSelectionScreenState
     final caliber = widget.firearm['caliber'] ?? '';
     final caliberVariations = CaliberNormalizer.getVariants(caliber);
 
+    // An empty `whereIn` array is rejected by Firestore ("A non-empty array is
+    // required"), which would surface as a stream error. Return a stable empty
+    // stream instead so the dropdown renders its empty/warning state cleanly.
+    if (caliberVariations.isEmpty) {
+      return const Stream.empty();
+    }
+
     // Use whereIn with all normalized variations for robust matching
     return FirebaseFirestore.instance
         .collection('factory_ammunition')

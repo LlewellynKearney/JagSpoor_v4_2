@@ -1422,3 +1422,70 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/authentication/services/auth_gate_service.dart`,
   `test/role_guard_test.dart` (new), `test/user_role_provider_test.dart` (new).
 
+## StreamBuilder initialization safeguards (added 2026-08-13)
+
+- Audited all `StreamBuilder`/`FutureBuilder` call sites (34 files) for the
+  "initialization crash in lazy list/sliver items" pattern: stream getters
+  that pass `null`, throw synchronously, or leak single-subscription stream
+  errors to the widget. Findings + fixes:
+  - **`OutfitterRevenueScreen._combinedAnalyticsStream`** (CRASH): dereferenced
+    `_currentUserId!` at the top of the `async*` generator — a
+    `NullCheckException` when the uid was unresolved (manager w/ no uid,
+    pre-auth mount, or post-sign-out). Now guards `uid == null` and yields a
+    stable empty payload `{'revenue':{}, 'enterprise':{}, 'speciesRevenue':[],
+    'monthlyStats':[]}` so the screen renders zero-state metrics instead of
+    the "Error loading analytics" banner.
+  - **`OutfitterFirebaseService`** (5 stream getters: bookings/lodging/fleet/
+    vacant-lodging/active-fleet): had NO auth guard and only `.handleError`
+    (not the project's `OfflineStreamGuard`). Hardened: each getter now
+    returns `Stream.value(const <T>[])` when `_auth.currentUser == null`
+    (unauthenticated / pre-auth / post-sign-out), and the live Firestore
+    stream is wrapped in `OfflineStreamGuard.offlineResilient(..., fallback:
+    const <T>[])` so a hard error (missing index / permissions / offline w/
+    no cache) serves an empty list instead of propagating to the
+    `StreamBuilder`. Matches the pattern already used by
+    `ClientRosterManager`, `GuidedHuntLogManager`, `MeatProcessingOrderManager`,
+    `PricelistScannerService`, `VenisonPermitManager`, `PackageBookingManager`,
+    `OutfitterAnalyticsService`.
+  - **`AmmunitionTypeSelectionScreen._buildFactoryAmmoStream`**:
+    `.where('caliber', whereIn: caliberVariations)` threw a Firestore
+    "A non-empty array is required for 'whereIn'" error when the firearm had
+    no caliber (empty variants). Now returns `const Stream.empty()` when
+    `caliberVariations.isEmpty`, so the dropdown renders its empty/warning
+    state cleanly (the builder's `snapshot.hasError` branch no longer fires).
+  - **`AnimalRepository.watchAnimals`**: wrapped the `animals` snapshots
+    stream in `OfflineStreamGuard.offlineResilient(..., fallback: const
+    <Animal>[])` for offline resilience + consistency. The two consumers
+    (`animal_list_screen`, `add_trophy_screen`) already had `snapshot.hasError`
+    branches; the guard converts hard errors to a clean empty list.
+- **Verified safe (no change needed)** — call sites already null-safe:
+  - `ammunition_screen.dart` is the gold-standard pattern:
+    `_currentUserId != null ? ...snapshots() : const Stream.empty()` + hasError.
+  - `InventoryBridge.watchSafeFirearms`/`watchAvailableAmmunition`:
+    null-uid → `Stream.value([])`, empty rifleId → local fallback, `.handleError`.
+  - `ClientRosterManager`/`GuidedHuntLogManager`: null-uid →
+    `Stream.value(const [])` + `.handleError` + doc-id de-dup.
+  - `PackageBookingManager.getMyPackagesStream`: null-uid →
+    `const Stream.empty()` (documented).
+  - Chat `StreamBuilder`s inside expandable list items
+    (`outfitter_booking_dashboard_screen`, `hunter_package_marketplace_screen`):
+    `bookingId` is a non-nullable `String`, so `.doc(bookingId)` never throws;
+    builders have `snapshot.hasError` branches.
+  - `snapshot.data!.docs` usages (`spoor_identifier_screen`,
+    `ballistic_calc_screen`, `slaghuis_matrix_screen`) are all gated by
+    `!snapshot.hasData` first.
+- **`flutter analyze`**: 0 errors, 13 warnings (all pre-existing in unmodified
+  files; none in the 4 changed files).
+- **Tests**: `flutter test` → 201 passed, 4 failed. All 4 failures are
+  **pre-existing** (verified by stashing the changes and re-running on the
+  prior commit `17af183` — identical 4 failures): `saps_tracker_test`
+  (status-string conversion), `advanced_ballistics_test` (density assertion),
+  `bluetooth_mesh_test` (mesh-sync assertion), `offline_sync_queue_test`
+  (fake_cloud_firestore/cloud_firestore compile skew). None touch the 4
+  changed files. RBAC + offline-guard + package + theme suites (76 tests) all
+  green.
+- Files: `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `lib/features/outfitter_mode/data/services/outfitter_firebase_service.dart`,
+  `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`,
+  `lib/repositories/animal_repository.dart`.
+

@@ -1,92 +1,106 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/services/offline_stream_guard.dart';
 import '../models/client_booking.dart';
 import '../models/lodging_unit.dart';
 import '../models/fleet_asset.dart';
 
 class OutfitterFirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  /// True when there is a signed-in outfitter. Stream getters return a stable
+  /// empty stream when this is false so an unauthenticated caller (e.g. a
+  /// screen mounting before auth resolves, or after sign-out) never crashes
+  /// its StreamBuilder with a null-scoped Firestore query.
+  bool get _isAuthenticated => _auth.currentUser != null;
 
   Stream<List<ClientBooking>> getBookingsStream() {
-    return _firestore
-        .collection('outfitter/bookings')
-        .orderBy('arrivalDate', descending: false)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ClientBooking.fromFirestore(doc))
-              .toList();
-        })
-        .handleError((error) {
-          debugPrint('Error fetching bookings stream: $error');
-          return <ClientBooking>[];
-        });
+    if (!_isAuthenticated) return Stream.value(const <ClientBooking>[]);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('outfitter/bookings')
+          .orderBy('arrivalDate', descending: false)
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map((doc) => ClientBooking.fromFirestore(doc))
+                .toList();
+          }),
+      fallback: const <ClientBooking>[],
+      debugLabel: 'outfitter.bookings',
+    );
   }
 
   Stream<List<LodgingUnit>> getLodgingStream() {
-    return _firestore
-        .collection('outfitter/lodging')
-        .orderBy('unitName')
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => LodgingUnit.fromFirestore(doc))
-              .toList();
-        })
-        .handleError((error) {
-          debugPrint('Error fetching lodging stream: $error');
-          return <LodgingUnit>[];
-        });
+    if (!_isAuthenticated) return Stream.value(const <LodgingUnit>[]);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('outfitter/lodging')
+          .orderBy('unitName')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map((doc) => LodgingUnit.fromFirestore(doc))
+                .toList();
+          }),
+      fallback: const <LodgingUnit>[],
+      debugLabel: 'outfitter.lodging',
+    );
   }
 
   Stream<List<FleetAsset>> getFleetStream() {
-    return _firestore
-        .collection('outfitter/fleet')
-        .orderBy('vehicleName')
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => FleetAsset.fromFirestore(doc))
-              .toList();
-        })
-        .handleError((error) {
-          debugPrint('Error fetching fleet stream: $error');
-          return <FleetAsset>[];
-        });
+    if (!_isAuthenticated) return Stream.value(const <FleetAsset>[]);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('outfitter/fleet')
+          .orderBy('vehicleName')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map((doc) => FleetAsset.fromFirestore(doc))
+                .toList();
+          }),
+      fallback: const <FleetAsset>[],
+      debugLabel: 'outfitter.fleet',
+    );
   }
 
   Stream<List<LodgingUnit>> getVacantLodgingStream() {
-    return _firestore
-        .collection('outfitter/lodging')
-        .where('status', isEqualTo: 'vacant')
-        .orderBy('unitName')
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => LodgingUnit.fromFirestore(doc))
-              .toList();
-        })
-        .handleError((error) {
-          debugPrint('Error fetching vacant lodging stream: $error');
-          return <LodgingUnit>[];
-        });
+    if (!_isAuthenticated) return Stream.value(const <LodgingUnit>[]);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('outfitter/lodging')
+          .where('status', isEqualTo: 'vacant')
+          .orderBy('unitName')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map((doc) => LodgingUnit.fromFirestore(doc))
+                .toList();
+          }),
+      fallback: const <LodgingUnit>[],
+      debugLabel: 'outfitter.vacant_lodging',
+    );
   }
 
   Stream<List<FleetAsset>> getActiveFleetStream() {
-    return _firestore
-        .collection('outfitter/fleet')
-        .where('operationalStatus', isEqualTo: 'active')
-        .orderBy('vehicleName')
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => FleetAsset.fromFirestore(doc))
-              .toList();
-        })
-        .handleError((error) {
-          debugPrint('Error fetching active fleet stream: $error');
-          return <FleetAsset>[];
-        });
+    if (!_isAuthenticated) return Stream.value(const <FleetAsset>[]);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('outfitter/fleet')
+          .where('operationalStatus', isEqualTo: 'active')
+          .orderBy('vehicleName')
+          .snapshots()
+          .map((snapshot) {
+            return snapshot.docs
+                .map((doc) => FleetAsset.fromFirestore(doc))
+                .toList();
+          }),
+      fallback: const <FleetAsset>[],
+      debugLabel: 'outfitter.active_fleet',
+    );
   }
 
   Future<String> createBooking({
