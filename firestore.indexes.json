@@ -96,6 +96,14 @@
         { "fieldPath": "hunterId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "meat_processing_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hunterId", "order": "ASCENDING" },
+        { "fieldPath": "orderTimestamp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

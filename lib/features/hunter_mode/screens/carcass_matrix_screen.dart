@@ -7,6 +7,7 @@ import '../services/carcass_log_manager.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
 import 'meat_processing_screen.dart';
+import 'meat_processing_order_history_screen.dart';
 import '../../../core/utils/measurement_formatter.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
@@ -335,6 +336,21 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
         backgroundColor: theme.backgroundColor,
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Order Logs',
+            icon: const Icon(Icons.receipt_long_rounded),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      MeatProcessingOrderHistoryScreen(theme: theme),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(

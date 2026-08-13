@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/meat_processing_exporter.dart';
+import '../services/meat_processing_order_manager.dart';
 
 class MeatProcessingScreen extends StatefulWidget {
   final ThemeController theme;
@@ -189,6 +190,22 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
         spicePreference: _selectedSpiceProfile,
         specialInstructions: _specialInstructionsController.text.trim(),
       );
+
+      // Persist the submitted order so it appears in the order history log.
+      // Persistence failures are surfaced but never undo a successful share.
+      try {
+        await MeatProcessingOrderManager().saveOrder(
+          hunterName: _hunterNameController.text.trim(),
+          carcassTag: _tagNumberController.text.trim(),
+          species: _selectedSpecies,
+          hangingWeight: double.parse(_hangingWeightController.text.trim()),
+          portions: portions,
+          spicePreference: _selectedSpiceProfile,
+          specialInstructions: _specialInstructionsController.text.trim(),
+        );
+      } catch (_) {
+        // Best-effort; the manifest was already shared.
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

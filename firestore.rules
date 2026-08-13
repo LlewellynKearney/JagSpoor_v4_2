@@ -163,6 +163,11 @@ service cloud.firestore {
       allow read, write: if ownerOrAdmin('hunterId');
     }
 
+    // Meat processing / slaughterhouse orders (hunterId).
+    match /meat_processing_orders/{orderId} {
+      allow read, write: if ownerOrAdmin('hunterId');
+    }
+
     // Waypoints (hunterId).
     match /waypoints/{docId} {
       allow read, write: if ownerOrAdmin('hunterId');
