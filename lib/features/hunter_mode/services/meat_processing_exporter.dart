@@ -35,7 +35,7 @@ class MeatProcessingExporter {
     final sanitized = carcassTag.replaceAll(RegExp(r'[^\w\-.]'), '_');
     await doc.saveAndShare(
       filename: 'JagSpoor_Slaughterhouse_Manifest_$sanitized',
-      shareSubject: 'JagSpoor Slaughterhouse Manifest — $carcassTag',
+      shareSubject: 'JagSpoor Slaughterhouse Manifest - $carcassTag',
       shareText: 'Meat processing manifest for $hunterName ($species)',
     );
   }
@@ -73,7 +73,7 @@ class MeatProcessingExporter {
             children: portionsRequested
                 .map((item) => pw.Padding(
                       padding: const pw.EdgeInsets.symmetric(vertical: 1),
-                      child: pw.Text('• $item', style: JagSpoorPdfTheme.body),
+                      child: pw.Text('- $item', style: JagSpoorPdfTheme.body),
                     ))
                 .toList(),
           ),
@@ -92,7 +92,7 @@ class MeatProcessingExporter {
             border: pw.Border.all(color: JagSpoorPdfTheme.divider, width: 0.5),
           ),
           child: pw.Text(
-            specialInstructions.isEmpty ? '—' : specialInstructions,
+            specialInstructions.isEmpty ? '-' : specialInstructions,
             style: JagSpoorPdfTheme.body,
           ),
         ),

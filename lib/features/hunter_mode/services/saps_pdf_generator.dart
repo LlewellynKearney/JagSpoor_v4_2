@@ -54,7 +54,7 @@ class SapsPdfGenerator {
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'SAPS 518(a) — APPLICATION FOR RENEWAL OF FIREARM LICENCE',
+                      'SAPS 518(a) - APPLICATION FOR RENEWAL OF FIREARM LICENCE',
                       style: pw.TextStyle(
                         fontSize: 13,
                         fontWeight: pw.FontWeight.bold,

@@ -36,7 +36,7 @@ class VenisonPermitPdfExporter {
 
     await doc.saveAndShare(
       filename: 'Venison_Transport_Permit_${permit.permitNumber.isEmpty ? permitId : permit.permitNumber}',
-      shareSubject: 'SA Venison Transport Permit — ${permit.hunterName}',
+      shareSubject: 'SA Venison Transport Permit - ${permit.hunterName}',
       shareText:
           'Legal SA Venison / Game Transport & Hunt Permit for ${permit.hunterName}',
     );
@@ -178,7 +178,7 @@ class VenisonPermitPdfExporter {
         return [
           s['species']?.toString() ?? 'Unknown',
           s['quantity']?.toString() ?? '1',
-          s['sex']?.toString() ?? '—',
+          s['sex']?.toString() ?? '-',
         ];
       }).toList(),
     );

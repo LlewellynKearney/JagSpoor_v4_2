@@ -122,7 +122,7 @@ class RevenueAnalyticsReportExporter {
         ]),
         pw.SizedBox(height: 4),
         pw.Text(
-            'Net earnings = Gross Revenue − 7.5% platform administration fee '
+            'Net earnings = Gross Revenue - 7.5% platform administration fee '
             'collected by JagSpoor. Based on approved bookings.',
             style: JagSpoorPdfTheme.caption),
 
@@ -151,7 +151,7 @@ class RevenueAnalyticsReportExporter {
             rows: managers
                 .map((m) => [
                       m['name']!,
-                      m['cell']!.isEmpty ? '—' : m['cell']!,
+                      m['cell']!.isEmpty ? '-' : m['cell']!,
                       m['farm']!,
                     ])
                 .toList(),

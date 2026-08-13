@@ -85,7 +85,7 @@ class OutfitterInvoiceExporter {
     final sanitized = bookingId.replaceAll(RegExp(r'[^\w\-]'), '_');
     await doc.saveAndShare(
       filename: 'JagSpoor_Invoice_$sanitized',
-      shareSubject: 'JagSpoor Booking Invoice — $bookingId',
+      shareSubject: 'JagSpoor Booking Invoice - $bookingId',
       shareText: 'JagSpoor booking confirmation/invoice for $hunterName',
     );
   }

@@ -182,7 +182,7 @@ class PdfGenerator {
                 pw.Padding(
                   padding: const pw.EdgeInsets.only(bottom: 16),
                   child: pw.Text(
-                    'Digital Firearm Safe — Registry',
+                    'Digital Firearm Safe - Registry',
                     style: pw.TextStyle(
                       fontSize: 18,
                       fontWeight: pw.FontWeight.bold,

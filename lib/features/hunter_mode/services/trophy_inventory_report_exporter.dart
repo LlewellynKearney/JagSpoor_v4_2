@@ -143,7 +143,7 @@ class TrophyInventoryReportExporter {
                       fontWeight: pw.FontWeight.bold,
                       color: JagSpoorPdfTheme.deepBrown)),
               pw.Text(
-                  '$farmAnimals animals • ${JagSpoorPdfTheme.formatZAR(farmValue)} • $farmPhotos photos',
+                  '$farmAnimals animals - ${JagSpoorPdfTheme.formatZAR(farmValue)} - $farmPhotos photos',
                   style: JagSpoorPdfTheme.caption),
             ],
           ),
@@ -167,7 +167,7 @@ class TrophyInventoryReportExporter {
                   qty.toString(),
                   JagSpoorPdfTheme.formatZAR(price),
                   measurement == null
-                      ? '—'
+                      ? '-'
                       : measurement.toStringAsFixed(1),
                   photoCount.toString(),
                 ];

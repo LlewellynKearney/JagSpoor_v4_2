@@ -328,7 +328,7 @@ class JagSpoorPdfTheme {
             ),
           ),
           pw.Expanded(
-            child: pw.Text(value.isEmpty ? '—' : value, style: body),
+            child: pw.Text(value.isEmpty ? '-' : value, style: body),
           ),
         ],
       ),
@@ -467,9 +467,9 @@ class JagSpoorPdfTheme {
     )}';
   }
 
-  /// Formats a date as DD/MM/YYYY, returning '—' for null.
+  /// Formats a date as DD/MM/YYYY, returning '-' for null.
   static String formatDate(DateTime? d) {
-    if (d == null) return '—';
+    if (d == null) return '-';
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 }

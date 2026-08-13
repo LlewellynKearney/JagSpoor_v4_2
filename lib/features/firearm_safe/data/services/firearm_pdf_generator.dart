@@ -84,7 +84,7 @@ class FirearmPdfGenerator {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  'Digital Firearm Safe — Registry',
+                  'Digital Firearm Safe - Registry',
                   style: pw.TextStyle(
                     fontSize: 22,
                     fontWeight: pw.FontWeight.bold,
