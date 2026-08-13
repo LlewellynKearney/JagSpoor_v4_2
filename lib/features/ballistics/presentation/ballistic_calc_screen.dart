@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import '../../ballistics/data/ballistics_engine.dart';
+
 /// JagspoorTheme provides dynamic theme colors that can be overridden
 /// by the hunter profile's ThemeController for consistent styling.
 class JagspoorTheme {
@@ -32,12 +34,14 @@ class TrajectoryPoint {
   final double dropCm;
   final double windageCm;
   final double velocityMs;
+  final double energyJoules;
 
   const TrajectoryPoint({
     required this.rangeMeters,
     required this.dropCm,
     required this.windageCm,
     required this.velocityMs,
+    this.energyJoules = 0.0,
   });
 }
 
@@ -50,13 +54,21 @@ class BallisticPhysicsEngine {
     return lineOfSightRange * math.cos(angleDegrees * math.pi / 180.0);
   }
 
+  /// Air-density ratio relative to the ICAO sea-level standard, computed by
+  /// the [BallisticsEngine] ICAO atmosphere (temperature / pressure / humidity
+  /// / altitude). Kept for the legacy single-ratio consumers.
   static double calculateAirDensityRatio(
     double altitudeMeters,
-    double tempCelsius,
-  ) {
-    final double altitudeFactor = 1.0 - ((altitudeMeters / 300.0) * 0.03);
-    final double tempFactor = 1.0 - (((tempCelsius - 15.0) / 5.0) * 0.01);
-    return math.max(0.5, math.min(1.5, altitudeFactor * tempFactor));
+    double tempCelsius, {
+    double pressureHpa = 1013.25,
+    double relativeHumidity = 0.0,
+  }) {
+    return BallisticsEngine.instance.airDensityRatio(Atmosphere(
+      temperatureCelsius: tempCelsius,
+      pressureHpa: pressureHpa,
+      relativeHumidity: relativeHumidity,
+      altitudeMeters: altitudeMeters,
+    ));
   }
 
   /// Calculates ballistic coefficient adjustment based on bullet weight.
@@ -87,6 +99,11 @@ class BallisticPhysicsEngine {
     return baseBc * (1.0 + 0.05 * (velocityRatio - 1.0));
   }
 
+  /// Generates a trajectory grid (0–1000 m, 50 m steps) using the
+  /// [BallisticsEngine] point-mass integrator with G1/G7 drag models, ICAO
+  /// density altitude (temperature / pressure / humidity / altitude), and
+  /// powder-temperature muzzle-velocity correction. Returns drop, windage,
+  /// remaining velocity, and kinetic energy at each step.
   static List<TrajectoryPoint> generateTrajectoryGrid({
     required double muzzleVelocityMs,
     required double ballisticCoefficient,
@@ -96,6 +113,12 @@ class BallisticPhysicsEngine {
     required double pitchAngleDegrees,
     required double altitudeMeters,
     required double temperatureCelsius,
+    DragModel dragModel = DragModel.g1,
+    double barometricPressureHpa = 1013.25,
+    double relativeHumidity = 0.0,
+    double powderTempCelsius = 15.0,
+    double powderTempCoefficientFpsPerF = 1.5,
+    double scopeHeightMeters = 0.045,
   }) {
     if (muzzleVelocityMs <= 0 || ballisticCoefficient <= 0) {
       return List.generate(
@@ -109,7 +132,8 @@ class BallisticPhysicsEngine {
       );
     }
 
-    // Apply physics adjustments for bullet weight and muzzle velocity
+    // Apply the legacy bullet-weight / muzzle-velocity BC heuristic on top of
+    // the published BC so existing per-load tuning is preserved.
     final double weightAdjustedBc = calculateBulletWeightAdjustment(
       bulletWeightGrains,
       ballisticCoefficient,
@@ -119,68 +143,39 @@ class BallisticPhysicsEngine {
       weightAdjustedBc,
     );
 
-    final List<TrajectoryPoint> grid = [];
-    final double densityRatio = calculateAirDensityRatio(
-      altitudeMeters,
-      temperatureCelsius,
+    final trajectory = BallisticsEngine.instance.trajectoryTable(
+      bullet: BulletProfile(
+        muzzleVelocityMs: muzzleVelocityMs,
+        ballisticCoefficient: velocityAdjustedBc,
+        bulletWeightGrains: bulletWeightGrains,
+        zeroDistanceMeters: zeroDistanceMeters,
+        crossWindMps: crossWindMps,
+        pitchAngleDegrees: pitchAngleDegrees,
+        scopeHeightMeters: scopeHeightMeters,
+        powderTempCelsius: powderTempCelsius,
+        powderTempCoefficientFpsPerF: powderTempCoefficientFpsPerF,
+      ),
+      atmosphere: Atmosphere(
+        temperatureCelsius: temperatureCelsius,
+        pressureHpa: barometricPressureHpa,
+        relativeHumidity: relativeHumidity,
+        altitudeMeters: altitudeMeters,
+      ),
+      dragModel: dragModel,
+      startMeters: 50.0,
+      endMeters: 1000.0,
+      stepMeters: 50.0,
     );
-    final double adjustedBc = velocityAdjustedBc / densityRatio;
-    final double gravity =
-        9.80665 * math.cos(pitchAngleDegrees * math.pi / 180.0);
 
-    for (int stepRange = 0; stepRange <= 1000; stepRange += 50) {
-      final double x = stepRange.toDouble();
-      if (x == 0) {
-        grid.add(
-          TrajectoryPoint(
-            rangeMeters: 0,
-            dropCm: 0,
-            windageCm: 0,
-            velocityMs: muzzleVelocityMs,
-          ),
-        );
-        continue;
-      }
-
-      // Enhanced velocity decay model with bullet weight factor
-      final double ballisticDecayFactor =
-          adjustedBc * 1500.0 * (1.0 + 100.0 / bulletWeightGrains);
-      final double velocityAtX =
-          muzzleVelocityMs * math.exp(-x / ballisticDecayFactor);
-      final double averageVelocity = (muzzleVelocityMs + velocityAtX) / 2.0;
-      final double timeOfFlight = x / averageVelocity;
-
-      double rawDropCm = 0.5 * gravity * math.pow(timeOfFlight, 2) * 100.0;
-      final double zeroTime =
-          zeroDistanceMeters /
-          ((muzzleVelocityMs +
-                  muzzleVelocityMs *
-                      math.exp(-zeroDistanceMeters / ballisticDecayFactor)) /
-              2.0);
-      final double zeroDropCompensationAtX =
-          (0.5 * gravity * math.pow(zeroTime, 2) * 100.0) *
-          (x / zeroDistanceMeters);
-
-      double dropCorrectionCm = zeroDropCompensationAtX - rawDropCm;
-      double windageDriftCm = crossWindMps * timeOfFlight * 10.0;
-
-      if (dropCorrectionCm.isNaN || dropCorrectionCm.isInfinite) {
-        dropCorrectionCm = 0.0;
-      }
-      if (windageDriftCm.isNaN || windageDriftCm.isInfinite) {
-        windageDriftCm = 0.0;
-      }
-
-      grid.add(
-        TrajectoryPoint(
-          rangeMeters: x,
-          dropCm: double.parse(dropCorrectionCm.toStringAsFixed(2)),
-          windageCm: double.parse(windageDriftCm.toStringAsFixed(2)),
-          velocityMs: double.parse(velocityAtX.toStringAsFixed(1)),
-        ),
-      );
-    }
-    return grid;
+    return trajectory
+        .map((p) => TrajectoryPoint(
+              rangeMeters: p.rangeMeters,
+              dropCm: p.dropCm,
+              windageCm: p.windageCm,
+              velocityMs: p.velocityMs,
+              energyJoules: p.energyJoules,
+            ))
+        .toList();
   }
 }
 
@@ -206,6 +201,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   double _crossWindMps = 0.0;
   double _altitudeMeters = 1500.0;
   double _temperatureCelsius = 20.0;
+  // Atmospheric + drag-model enhancements (v20.0).
+  double _barometricPressureHpa = 1013.25;
+  double _relativeHumidity = 50.0; // %
+  double _powderTempCelsius = 20.0;
+  DragModel _dragModel = DragModel.g1;
   double _zeroDistanceMeters = 100.0;
 
   // Muzzle velocity and bullet weight controls (v19.0)
@@ -529,6 +529,61 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       1000,
                       (v) => setState(() => _zeroDistanceMeters = v),
                     ),
+                    const SizedBox(height: 8),
+                    _buildParameterRow(
+                      'Barometric Pressure (hPa)',
+                      _barometricPressureHpa,
+                      800,
+                      1100,
+                      (v) => setState(() => _barometricPressureHpa = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildParameterRow(
+                      'Relative Humidity (%)',
+                      _relativeHumidity,
+                      0,
+                      100,
+                      (v) => setState(() => _relativeHumidity = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildParameterRow(
+                      'Powder Temperature (°C)',
+                      _powderTempCelsius,
+                      -40,
+                      60,
+                      (v) => setState(() => _powderTempCelsius = v),
+                    ),
+                    const SizedBox(height: 12),
+                    // Drag-model selection (G1 vs G7).
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Drag Model',
+                            style: TextStyle(
+                              color: JagspoorTheme.thermalGlow,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        SegmentedButton<DragModel>(
+                          segments: const [
+                            ButtonSegment(
+                              value: DragModel.g1,
+                              label: Text('G1'),
+                            ),
+                            ButtonSegment(
+                              value: DragModel.g7,
+                              label: Text('G7'),
+                            ),
+                          ],
+                          selected: {_dragModel},
+                          onSelectionChanged: (selection) =>
+                              setState(() => _dragModel = selection.first),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -634,6 +689,20 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       pitchAngleDegrees: _barrelPitchDegrees,
       altitudeMeters: _altitudeMeters,
       temperatureCelsius: _temperatureCelsius,
+      dragModel: _dragModel,
+      barometricPressureHpa: _barometricPressureHpa,
+      relativeHumidity: _relativeHumidity,
+      powderTempCelsius: _powderTempCelsius,
+    );
+
+    // Density altitude for the current atmosphere (ICAO).
+    final densityAltitudeMeters = BallisticsEngine.instance.densityAltitude(
+      Atmosphere(
+        temperatureCelsius: _temperatureCelsius,
+        pressureHpa: _barometricPressureHpa,
+        relativeHumidity: _relativeHumidity,
+        altitudeMeters: _altitudeMeters,
+      ),
     );
 
     // Find data point at target range
@@ -706,8 +775,30 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           ),
           const SizedBox(height: 8),
           _buildSummaryRow(
+            'Remaining Velocity at Target Range:',
+            '${targetPoint?.velocityMs.toStringAsFixed(0) ?? "0"} m/s',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Remaining Energy at Target Range:',
+            '${targetPoint?.energyJoules.toStringAsFixed(0) ?? "0"} J',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Drag Model:',
+            _dragModel == DragModel.g7 ? 'G7 (boat-tail / VLD)' : 'G1 (Ingalls)',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Density Altitude (ICAO):',
+            '${densityAltitudeMeters.toStringAsFixed(0)} m',
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
             'Atmospheric Air Density Profile:',
-            '${_altitudeMeters.toStringAsFixed(0)}m AMONGST ${_temperatureCelsius.toStringAsFixed(0)}°C',
+            '${_altitudeMeters.toStringAsFixed(0)}m @ ${_temperatureCelsius.toStringAsFixed(0)}°C, '
+            '${_barometricPressureHpa.toStringAsFixed(0)}hPa, '
+            '${_relativeHumidity.toStringAsFixed(0)}% RH',
           ),
         ],
       ),

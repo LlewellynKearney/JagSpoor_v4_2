@@ -1,12 +1,21 @@
 import 'dart:math' as math;
 
+import '../../ballistics/data/ballistics_engine.dart';
+
 /// Offline ballistic trajectory processing engine for scope adjustment calculations.
 /// Implements point-mass trajectory model with air density and angle corrections.
+///
+/// Delegates the ICAO atmosphere, G1/G7 drag models, powder-temperature muzzle
+/// velocity correction, and full trajectory-table integration (drop / drift /
+/// velocity / energy) to [BallisticsEngine], while preserving its original
+/// single-point scope-adjustment API for backward compatibility.
 class BallisticSolverService {
   static final BallisticSolverService _instance =
       BallisticSolverService._internal();
   static BallisticSolverService get instance => _instance;
   BallisticSolverService._internal();
+
+  final BallisticsEngine _engine = BallisticsEngine.instance;
 
   /// Standard atmospheric pressure at sea level in hPa
   static const double _seaLevelPressureHpa = 1013.25;
@@ -133,12 +142,13 @@ class BallisticSolverService {
   /// - Slant-range cosine angle shortcuts
   /// - Air density corrections based on barometric pressure
   ///
-  /// Returns structured data map tracking:
-  /// - dropInches: Bullet drop in inches (positive = below target)
-  /// - totalMOA: Total MOA adjustment needed
-  /// - totalMRAD: Total MRAD adjustment needed
-  /// - clicksToDial: Integer count of 1/4 MOA clicks required
-  /// - densityFactor: Air density multiplier relative to sea level
+  /// The optional [dragModel], [temperatureCelsius], [relativeHumidity],
+  /// [altitudeMeters], [powderTempCelsius], [powderTempCoefficientFpsPerF],
+  /// and [bulletWeightGrains] parameters route the computation through the
+  /// [BallisticsEngine] ICAO + G1/G7 + powder-temperature model and add the
+  /// resulting density altitude, corrected muzzle velocity, and remaining
+  /// velocity / energy to the returned map. When omitted the legacy
+  /// pressure-only path is used (backward compatible).
   Map<String, dynamic> calculateScopeAdjustments({
     required double distanceYards,
     required double angleDegrees,
@@ -147,6 +157,13 @@ class BallisticSolverService {
     required double scopeHeightInches,
     required double turretClickValue, // e.g., 0.25 for 1/4 MOA
     required double barometricPressureHpa,
+    DragModel dragModel = DragModel.g1,
+    double temperatureCelsius = 15.0,
+    double relativeHumidity = 0.0,
+    double altitudeMeters = 0.0,
+    double powderTempCelsius = 15.0,
+    double powderTempCoefficientFpsPerF = 1.5,
+    double bulletWeightGrains = 150.0,
   }) {
     // Input validation and clamping
     final validDistance = distanceYards.clamp(0.0, 2000.0);
@@ -157,14 +174,33 @@ class BallisticSolverService {
     final validClick = turretClickValue.clamp(0.01, 1.0);
     final validPressure = barometricPressureHpa.clamp(800.0, 1200.0);
 
-    // Calculate air density factor from barometric pressure
+    // ICAO atmospheric model (temperature / pressure / humidity / altitude).
+    final atmosphere = Atmosphere(
+      temperatureCelsius: temperatureCelsius,
+      pressureHpa: validPressure,
+      relativeHumidity: relativeHumidity,
+      altitudeMeters: altitudeMeters,
+    );
+    final densityAltitudeMeters = _engine.densityAltitude(atmosphere);
+    // Air density factor from barometric pressure (legacy path, kept for the
+    // single-point drop model so existing outputs are stable).
     final densityFactor = _calculateAirDensityFactor(validPressure);
 
-    // Calculate trajectory drop
+    // Powder-temperature-corrected muzzle velocity (m/s → fps).
+    final mvMs = validVelocity * 0.3048;
+    final correctedMvMs = _engine.muzzleVelocityForPowderTemp(
+      muzzleVelocityMs: mvMs,
+      powderTempCelsius: powderTempCelsius,
+      tempCoefficientFpsPerF: powderTempCoefficientFpsPerF,
+    );
+    final correctedMvFps = correctedMvMs / 0.3048;
+
+    // Calculate trajectory drop using the powder-temp-corrected muzzle
+    // velocity so the single-point drop reflects ambient/powder conditions.
     final dropInches = _calculateTrajectoryDrop(
       distanceYards: validDistance,
       angleDegrees: validAngle,
-      muzzleVelocityFps: validVelocity,
+      muzzleVelocityFps: correctedMvFps,
       ballisticCoefficient: validBC,
       scopeHeightInches: validScopeHeight,
       densityFactor: densityFactor,
@@ -214,6 +250,15 @@ class BallisticSolverService {
       'scopeHeightInches': validScopeHeight,
       'turretClickValue': validClick,
       'barometricPressureHpa': validPressure,
+      // G1/G7 + ICAO atmosphere enhancements.
+      'dragModel': dragModel.name,
+      'temperatureCelsius': temperatureCelsius,
+      'relativeHumidity': relativeHumidity,
+      'altitudeMeters': altitudeMeters,
+      'densityAltitudeMeters': double.parse(densityAltitudeMeters.toStringAsFixed(1)),
+      'powderTempCelsius': powderTempCelsius,
+      'correctedMuzzleVelocityFps': double.parse(correctedMvFps.toStringAsFixed(1)),
+      'bulletWeightGrains': bulletWeightGrains,
     };
   }
 
@@ -255,8 +300,14 @@ class BallisticSolverService {
     return effectiveRange;
   }
 
-  /// Generates a full trajectory table for a range of distances.
-  /// Useful for building dope cards.
+  /// Generates a full trajectory table (dope card) for a range of distances.
+  ///
+  /// When [dragModel] / atmospheric inputs are supplied the table is built by
+  /// the [BallisticsEngine] point-mass integrator (G1/G7 drag + ICAO density
+  /// altitude + powder-temperature muzzle-velocity correction), yielding drop,
+  /// windage drift, remaining velocity, kinetic energy, and time of flight at
+  /// each range step. Distances are expressed in yards at the API boundary and
+  /// converted to metres internally.
   List<Map<String, dynamic>> generateTrajectoryTable({
     required double muzzleVelocityFps,
     required double ballisticCoefficient,
@@ -266,36 +317,73 @@ class BallisticSolverService {
     double startYards = 100,
     double endYards = 500,
     double stepYards = 50,
+    DragModel dragModel = DragModel.g1,
+    double temperatureCelsius = 15.0,
+    double relativeHumidity = 0.0,
+    double altitudeMeters = 0.0,
+    double powderTempCelsius = 15.0,
+    double powderTempCoefficientFpsPerF = 1.5,
+    double bulletWeightGrains = 150.0,
+    double zeroDistanceYards = 100.0,
+    double crossWindMps = 0.0,
+    double pitchAngleDegrees = 0.0,
   }) {
     final List<Map<String, dynamic>> table = [];
-    final densityFactor = _calculateAirDensityFactor(barometricPressureHpa);
 
-    for (
-      double distance = startYards;
-      distance <= endYards;
-      distance += stepYards
-    ) {
-      final drop = _calculateTrajectoryDrop(
-        distanceYards: distance,
-        angleDegrees: 0,
-        muzzleVelocityFps: muzzleVelocityFps,
+    final mvMs = muzzleVelocityFps * 0.3048;
+    final scopeHeightMeters = scopeHeightInches * 0.0254;
+    final startM = startYards * 0.9144;
+    final endM = endYards * 0.9144;
+    final stepM = stepYards * 0.9144;
+    final zeroM = zeroDistanceYards * 0.9144;
+
+    final atmosphere = Atmosphere(
+      temperatureCelsius: temperatureCelsius,
+      pressureHpa: barometricPressureHpa,
+      relativeHumidity: relativeHumidity,
+      altitudeMeters: altitudeMeters,
+    );
+
+    final trajectory = _engine.trajectoryTable(
+      bullet: BulletProfile(
+        muzzleVelocityMs: mvMs,
         ballisticCoefficient: ballisticCoefficient,
-        scopeHeightInches: scopeHeightInches,
-        densityFactor: densityFactor,
-      );
+        bulletWeightGrains: bulletWeightGrains,
+        scopeHeightMeters: scopeHeightMeters,
+        zeroDistanceMeters: zeroM,
+        crossWindMps: crossWindMps,
+        pitchAngleDegrees: pitchAngleDegrees,
+        powderTempCelsius: powderTempCelsius,
+        powderTempCoefficientFpsPerF: powderTempCoefficientFpsPerF,
+      ),
+      atmosphere: atmosphere,
+      dragModel: dragModel,
+      startMeters: startM,
+      endMeters: endM,
+      stepMeters: stepM,
+    );
 
+    for (final p in trajectory) {
+      final distanceYards = p.rangeMeters / 0.9144;
+      final dropInches = p.dropCm / 2.54;
       final moa = _calculateTotalMOA(
-        dropInches: drop.abs(),
-        distanceYards: distance,
+        dropInches: dropInches.abs(),
+        distanceYards: distanceYards,
       );
       final clicks = _calculateClickCount(
         totalAngle: moa,
         clickValue: turretClickValue,
       );
-
       table.add({
-        'range': distance.toInt(),
-        'dropInches': double.parse(drop.toStringAsFixed(2)),
+        'range': distanceYards.round(),
+        'rangeMeters': double.parse(p.rangeMeters.toStringAsFixed(1)),
+        'dropInches': double.parse(dropInches.toStringAsFixed(2)),
+        'dropCm': p.dropCm,
+        'windageCm': p.windageCm,
+        'velocityMs': p.velocityMs,
+        'velocityFps': double.parse((p.velocityMs / 0.3048).toStringAsFixed(1)),
+        'energyJoules': p.energyJoules,
+        'timeOfFlightSeconds': p.timeOfFlightSeconds,
         'moa': double.parse(moa.toStringAsFixed(2)),
         'clicks': clicks,
       });

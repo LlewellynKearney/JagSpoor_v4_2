@@ -816,3 +816,104 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (mock removed, rewired), `lib/features/hunter_mode/hunter_dashboard.dart`
   (dashboard card + import cleanup), `test/shot_group_analyzer_test.dart`
   (new). No Firestore/Storage/rules changes (pure on-device CV, no backend).
+
+## Phase 8 — Ballistic Engine Muzzle Velocity & BC Calculations (added 2026-08-13)
+
+- The ballistics solver had two independent, simplified trajectory models
+  and **no drag-curve selection, no ICAO atmosphere, no powder-temperature
+  muzzle-velocity correction, and no energy output**:
+  - `BallisticSolverService` (`lib/features/hunter_mode/services/ballistic_solver_service.dart`)
+    used a single hardcoded drag formula with a BC scalar and an air-density
+    factor derived from **barometric pressure only** (ρ/ρ₀ ≈ P/P₀, no
+    temperature / humidity / altitude). Its trajectory table carried only
+    drop / MOA / clicks.
+  - The inline `BallisticPhysicsEngine` (`lib/features/ballistics/presentation/ballistic_calc_screen.dart`)
+    used an ad-hoc altitude + temperature heuristic for density and an
+    exponential velocity-decay model with no windage energy, no MOA/MIL, no
+    pressure / humidity inputs.
+- Item #14 added a single, pure-dart, physically-grounded engine and routed
+  both consumers through it.
+- **New engine** `lib/features/ballistics/data/ballistics_engine.dart`
+  (`BallisticsEngine`, singleton `instance`; pure dart, no deps):
+  - **`DragModel` enum** (`g1`, `g7`) — the Ingalls G1 (flat-base) and McCoy
+    G7 (boat-tail / VLD) standard drag functions, embedded as
+    Mach→G(Mach) tables with linear interpolation. The retardation is
+    `a = -(ρ/ρ₀)·(G(M)·1e-4)·v²/BC` (the 1e-4 factor restores the published
+    drag-function's 1/ft units; v in ft/s, result converted back to m/s²).
+  - **`Atmosphere`** model + **ICAO air density**: `airDensity()` computes
+    `ρ = (P_d·M_d + P_v·M_v)/(R·T)` with water-vapour partial pressure via
+    the **Tetens saturation-vapour-pressure formula** (humidity correction).
+    `airDensityRatio()` returns ρ/ρ₀ against the ICAO sea-level standard
+    (1.225 kg/m³). Inputs: ambient temperature (°C), barometric pressure
+    (hPa), relative humidity (%), altitude (m).
+  - **Density altitude**: `densityAltitude()` — the ICAO standard-atmosphere
+    altitude that has the same density as the given (non-standard) air,
+    combining the station altitude, the temperature offset vs. the ISA
+    standard temperature at that altitude, and a humidity contribution.
+  - **Powder-temperature muzzle-velocity correction**:
+    `muzzleVelocityForPowderTemp()` — `ΔV = tempCoefficient·ΔT` where ΔT is
+    in °F and the coefficient is in fps/°F (default 1.5 fps/°F, typical
+    smokeless powder), converted to m/s. Defaults to the ICAO reference
+    temperature (15 °C).
+  - **Trajectory integration**: `trajectoryTable()` — numerical point-mass
+    integration (0.5 ms fixed time step) of the 2D equations of motion with
+    the Mach-dependent G1/G7 drag, ICAO density-ratio scaling, incline
+    (cos-pitch) gravity correction, crosswind drift, and a bore-elevation
+    zero solved from the zero range. Output per range step (50 m default,
+    0–1000 m): `TrajectoryPoint` with drop (cm, + = below LOS), windage (cm),
+    remaining velocity (m/s), **kinetic energy (Joules, ½·m·v², m from
+    grains)**, and time of flight (s). Velocity-floor guard prevents drag
+    reversal for extreme inputs.
+- **Integration**:
+  - `BallisticSolverService.calculateScopeAdjustments` gained optional named
+    params (`dragModel`, `temperatureCelsius`, `relativeHumidity`,
+    `altitudeMeters`, `powderTempCelsius`, `powderTempCoefficientFpsPerF`,
+    `bulletWeightGrains`) — all defaulted so existing call sites (e.g.
+    `scope_calibration_screen.dart`) compile unchanged. The returned map now
+    also carries `dragModel`, `densityAltitudeMeters`,
+    `correctedMuzzleVelocityFps`, and the atmosphere inputs; the single-point
+    drop now uses the powder-temp-corrected muzzle velocity.
+  - `BallisticSolverService.generateTrajectoryTable` now delegates to the new
+    engine (yards↔metres at the API boundary) and each row gains `dropCm`,
+    `windageCm`, `velocityMs`, `velocityFps`, `energyJoules`,
+    `timeOfFlightSeconds`, `rangeMeters` (in addition to the legacy
+    `range`/`dropInches`/`moa`/`clicks`).
+  - The inline `BallisticPhysicsEngine` in `ballistic_calc_screen.dart` was
+    refactored to delegate `generateTrajectoryGrid` to `BallisticsEngine`
+    (preserving the legacy bullet-weight / muzzle-velocity BC heuristic on
+    top of the published BC); `calculateAirDensityRatio` now routes through
+    the ICAO atmosphere. `TrajectoryPoint` gained `energyJoules`.
+- **UI** (`ballistic_calc_screen.dart`): added a **G1/G7 `SegmentedButton`**
+  drag-model selector and sliders for **barometric pressure (hPa)**,
+  **relative humidity (%)**, and **powder temperature (°C)** alongside the
+  existing altitude / ambient-temp / zero-distance / muzzle-velocity / bullet
+  weight controls. The analytics summary card now surfaces **remaining
+  velocity at target range**, **remaining energy at target range**, the
+  selected **drag model**, the **density altitude (ICAO)**, and a full
+  atmospheric profile string (altitude / temp / pressure / humidity).
+- **Tests**: `test/ballistics_engine_test.dart` — **18 tests, all pass**:
+  - ICAO air density (standard sea level ≈ 1.225; altitude/pressure/humidity
+    effects), density altitude (standard ≈ 0 m; hot/cold/high-altitude),
+    powder-temperature MV correction (reference-temp no-op; hot powder raises
+    MV by the expected ~32.9 m/s for a 40 °C delta at 1.5 fps/°F).
+  - Trajectory table (one row per step; zero range ≈ 0 drop; monotonic
+    velocity decay; energy follows ½·m·v² and decays).
+  - **G1 vs G7 drag curves**: G7 retains more velocity and yields less drop
+    than G1 at extended range (the low-drag boat-tail curve is flatter).
+  - **Atmospheric density altitude affects trajectory**: thin air (high
+    density altitude / low pressure) yields higher retained velocity and
+    less drop than dense sea-level air.
+- **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings in all
+  changed files** (project total 295 issues, all pre-existing infos/warnings
+  in unrelated files — down 1 from the 296 baseline). New engine + service
+  + screen + test are analyzer-clean. The 4 failing pre-existing tests
+  (`saps_tracker`, `offline_sync_queue` [fake_cloud_firestore 4.1.1 mock
+  incompat], `advanced_ballistics`, `bluetooth_mesh`) are unchanged and
+  unrelated to this work.
+- Files: `lib/features/ballistics/data/ballistics_engine.dart` (new),
+  `lib/features/hunter_mode/services/ballistic_solver_service.dart`
+  (engine integration + new params + richer outputs),
+  `lib/features/ballistics/presentation/ballistic_calc_screen.dart`
+  (engine delegation + G1/G7 + pressure/humidity/powder-temp UI + energy/DA
+  summary), `test/ballistics_engine_test.dart` (new). No Firestore / Storage
+  / rules changes (pure on-device ballistics, no backend).
