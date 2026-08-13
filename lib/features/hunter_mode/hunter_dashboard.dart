@@ -22,7 +22,7 @@ import 'screens/scope_calibration_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/hunter_custom_package_builder_screen.dart';
-import 'screens/venison_permit_list_screen.dart';
+import 'screens/hunter_venison_permit_log_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
@@ -372,9 +372,8 @@ class _HunterDashboardState extends State<HunterDashboard> {
             (context, theme) => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => VenisonPermitListScreen(
+                builder: (context) => HunterVenisonPermitLogScreen(
                   theme: theme,
-                  isOutfitterMode: false,
                 ),
               ),
             ),
