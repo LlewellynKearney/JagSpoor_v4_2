@@ -30,6 +30,12 @@ class _OutfitterTrophyStockScreenState
   final _priceController = TextEditingController();
   final _measurementController = TextEditingController();
 
+  // Edit-sheet controllers (populated on open; reused across edits).
+  final _editSpeciesController = TextEditingController();
+  final _editCountController = TextEditingController();
+  final _editPriceController = TextEditingController();
+  final _editMeasurementController = TextEditingController();
+
   String? _selectedFarmId;
   String? _selectedFarmName;
   bool _isSyncing = false;
@@ -96,6 +102,10 @@ class _OutfitterTrophyStockScreenState
     _countController.dispose();
     _priceController.dispose();
     _measurementController.dispose();
+    _editSpeciesController.dispose();
+    _editCountController.dispose();
+    _editPriceController.dispose();
+    _editMeasurementController.dispose();
     super.dispose();
   }
 
@@ -117,6 +127,291 @@ class _OutfitterTrophyStockScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Opens a modal sheet pre-filled with a trophy stock entry's current
+  /// values so the outfitter can edit the species, available count, price per
+  /// trophy, and measurement. Saving calls [OutfitterEnterpriseManager
+  /// .updateTrophyStock]; the "Current Stock by Farm" `StreamBuilder`
+  /// re-renders automatically (Firestore snapshots). A destructive DELETE
+  /// action is also offered (with confirmation).
+  void _showEditTrophySheet({
+    required String trophyId,
+    required Map<String, dynamic> data,
+  }) {
+    final theme = widget.theme;
+    _editSpeciesController.text = (data['species'] ?? '').toString();
+    _editCountController.text = (data['availableCount'] ?? 0).toString();
+    _editPriceController.text = (data['pricePerTrophyRands'] ?? 0).toString();
+    final measurement = data['trophyMeasurement'] ?? data['trophyLengthInches'];
+    _editMeasurementController.text =
+        (measurement == null) ? '' : measurement.toString();
+
+    final editFormKey = GlobalKey<FormState>();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Form(
+                key: editFormKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.edit_note_rounded,
+                              color: theme.accentColor, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'EDIT TROPHY STOCK',
+                              style: TextStyle(
+                                color: theme.textColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close,
+                                color: theme.subtitleColor),
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 1),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _editSpeciesController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _editInputDecoration(
+                          'Species *', 'e.g. Kudu', theme),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Please enter species';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editCountController,
+                        style: TextStyle(color: theme.textColor),
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.next,
+                        decoration: _editInputDecoration(
+                          'Available Count *', 'e.g. 5', theme),
+                        validator: (value) {
+                          final n = int.tryParse(value ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid count (>= 0)';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editPriceController,
+                        style: TextStyle(color: theme.textColor),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        textInputAction: TextInputAction.next,
+                        decoration: _editInputDecoration(
+                          'Price per Trophy (R) *', 'e.g. 12000', theme),
+                        validator: (value) {
+                          final n = double.tryParse(value ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid price (>= 0)';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editMeasurementController,
+                        style: TextStyle(color: theme.textColor),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        textInputAction: TextInputAction.done,
+                        decoration: _editInputDecoration(
+                          'Measurement (inches)', 'optional', theme),
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: () => _submitTrophyEdit(
+                          trophyId,
+                          editFormKey,
+                          setSheetState,
+                        ),
+                        icon: const Icon(Icons.save_rounded),
+                        label: const Text('SAVE CHANGES'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () =>
+                            _confirmDeleteTrophy(trophyId, sheetContext),
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            color: Colors.red),
+                        label: const Text('DELETE ENTRY',
+                            style: TextStyle(color: Colors.red)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  InputDecoration _editInputDecoration(String label, String hint, theme) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      labelStyle: TextStyle(color: theme.accentColor),
+      hintStyle:
+          TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+      filled: true,
+      fillColor: theme.backgroundColor,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+      ),
+    );
+  }
+
+  Future<void> _submitTrophyEdit(
+    String trophyId,
+    GlobalKey<FormState> formKey,
+    void Function(void Function()) setSheetState,
+  ) async {
+    if (!formKey.currentState!.validate()) return;
+
+    setSheetState(() {});
+    try {
+      final count = int.parse(_editCountController.text.trim());
+      final price = double.parse(_editPriceController.text.trim());
+      final measurementText = _editMeasurementController.text.trim();
+      final measurement = measurementText.isEmpty
+          ? null
+          : double.tryParse(measurementText);
+      final clearMeasurement =
+          measurementText.isEmpty && measurement == null;
+
+      await OutfitterEnterpriseManager.instance.updateTrophyStock(
+        trophyId: trophyId,
+        species: _editSpeciesController.text.trim(),
+        availableCount: count,
+        pricePerTrophyRands: price,
+        trophyMeasurement: measurement,
+        clearMeasurement: clearMeasurement,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Trophy stock updated'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('❌ Failed to update: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _confirmDeleteTrophy(
+      String trophyId, BuildContext sheetContext) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: widget.theme.cardColor,
+        title: Text('Delete trophy entry?',
+            style: TextStyle(color: widget.theme.textColor)),
+        content: Text(
+            'This permanently removes the trophy stock entry. This cannot be undone.',
+            style: TextStyle(color: widget.theme.subtitleColor)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _deleteTrophy(trophyId, sheetContext);
+            },
+            child: const Text('DELETE', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteTrophy(
+      String trophyId, BuildContext sheetContext) async {
+    try {
+      await OutfitterEnterpriseManager.instance.deleteTrophyStock(trophyId);
+      if (mounted) {
+        // Close both the confirm dialog (already closed) and the edit sheet.
+        Navigator.of(sheetContext).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🗑️ Trophy entry deleted'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('❌ Failed to delete: $e'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -1038,9 +1333,13 @@ class _OutfitterTrophyStockScreenState
 
                     // Group trophies by farmId so the summary renders per-farm
                     // tallies (the section is titled "Current Stock by Farm").
+                    // Carry the document id on each entry (under a private key)
+                    // so the per-species row can open the edit sheet for that
+                    // exact trophy doc.
                     final byFarm = <String, List<Map<String, dynamic>>>{};
                     for (final doc in trophies) {
                       final data = doc.data() as Map<String, dynamic>;
+                      data['_docId'] = doc.id;
                       final farmId = (data['farmId'] ?? '') as String;
                       byFarm.putIfAbsent(farmId, () => []).add(data);
                     }
@@ -1149,6 +1448,8 @@ class _OutfitterTrophyStockScreenState
                                   ),
                                   const SizedBox(height: 8),
                                   // Per-species breakdown within this farm.
+                                  // Tap a row to edit that trophy entry
+                                  // (count, price, measurement, species).
                                   ...farmTrophies.map((data) {
                                     final species = data['species'] ?? 'Unknown';
                                     final count =
@@ -1164,36 +1465,59 @@ class _OutfitterTrophyStockScreenState
                                         (data['trophyPhotoUrls'] as List?)
                                             ?.cast<String>() ??
                                         const <String>[];
+                                    final trophyId =
+                                        data['_docId'] as String? ?? '';
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 6),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.pets_rounded,
-                                            color: theme.subtitleColor,
-                                            size: 16,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              '$species — ${count.toInt()} available'
-                                              '${measurement != null ? " · ${measurement.toStringAsFixed(1)}in" : ""}'
-                                              '${photos.isNotEmpty ? " · ${photos.length} photo${photos.length > 1 ? "s" : ""}" : ""}',
-                                              style: TextStyle(
-                                                color: theme.textColor,
-                                                fontSize: 13,
-                                              ),
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(6),
+                                          onTap: trophyId.isEmpty
+                                              ? null
+                                              : () => _showEditTrophySheet(
+                                                    trophyId: trophyId,
+                                                    data: data,
+                                                  ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 4, horizontal: 4),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.pets_rounded,
+                                                  color: theme.subtitleColor,
+                                                  size: 16,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    '$species — ${count.toInt()} available'
+                                                    '${measurement != null ? " · ${measurement.toStringAsFixed(1)}in" : ""}'
+                                                    '${photos.isNotEmpty ? " · ${photos.length} photo${photos.length > 1 ? "s" : ""}" : ""}',
+                                                    style: TextStyle(
+                                                      color: theme.textColor,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Icon(Icons.edit_rounded,
+                                                    size: 16,
+                                                    color: theme.accentColor
+                                                        .withValues(alpha: 0.7)),
+                                              ],
                                             ),
                                           ),
-                                          Text(
-                                            'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                                            style: const TextStyle(
-                                              color: Colors.green,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     );
                                   }),

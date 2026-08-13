@@ -224,6 +224,86 @@ class OutfitterEnterpriseManager {
   }
 
   // ==========================================
+  // UPDATE EXISTING TROPHY STOCK ENTRY
+  // ==========================================
+  /// Updates an existing trophy stock document. Only the supplied fields are
+  /// written (partial update); omitted fields keep their existing values.
+  ///
+  /// Parameters:
+  /// - [trophyId]: Firestore document ID of the trophy entry.
+  /// - [species]: Optional new species name.
+  /// - [availableCount]: Optional new available count (>= 0).
+  /// - [pricePerTrophyRands]: Optional new price per trophy (>= 0).
+  /// - [trophyMeasurement]: Optional new trophy length/size in inches. Written
+  ///   under both `trophyMeasurement` and `trophyLengthInches` for read
+  ///   compatibility (matches [syncTrophyStock]). Pass `null` explicitly to
+  ///   clear an existing measurement only if [clearMeasurement] is true.
+  /// - [clearMeasurement]: when true, the measurement fields are set to null.
+  ///
+  /// Throws: Exception if the user is not authenticated or [trophyId] is empty.
+  Future<void> updateTrophyStock({
+    required String trophyId,
+    String? species,
+    int? availableCount,
+    double? pricePerTrophyRands,
+    double? trophyMeasurement,
+    bool clearMeasurement = false,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to update trophy stock');
+    }
+    if (trophyId.trim().isEmpty) {
+      throw Exception('Trophy ID cannot be empty');
+    }
+
+    final updates = <String, dynamic>{};
+    if (species != null && species.trim().isNotEmpty) {
+      updates['species'] = species.trim();
+    }
+    if (availableCount != null) {
+      if (availableCount < 0) {
+        throw Exception('Available count cannot be negative');
+      }
+      updates['availableCount'] = availableCount;
+    }
+    if (pricePerTrophyRands != null) {
+      if (pricePerTrophyRands < 0) {
+        throw Exception('Price per trophy cannot be negative');
+      }
+      updates['pricePerTrophyRands'] = pricePerTrophyRands;
+    }
+    if (clearMeasurement) {
+      updates['trophyMeasurement'] = null;
+      updates['trophyLengthInches'] = null;
+    } else if (trophyMeasurement != null && trophyMeasurement > 0) {
+      updates['trophyMeasurement'] = trophyMeasurement;
+      updates['trophyLengthInches'] = trophyMeasurement;
+    }
+    if (updates.isEmpty) return;
+
+    updates['lastUpdated'] = FieldValue.serverTimestamp();
+    await _firestore.collection('trophies').doc(trophyId).update(updates);
+  }
+
+  // ==========================================
+  // DELETE TROPHY STOCK ENTRY
+  // ==========================================
+  /// Hard-deletes a trophy stock document. The on-screen "Current Stock by
+  /// Farm" stream is reactive on Firestore snapshots, so the list reloads
+  /// automatically after deletion.
+  ///
+  /// Throws: Exception if the user is not authenticated or [trophyId] is empty.
+  Future<void> deleteTrophyStock(String trophyId) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to delete trophy stock');
+    }
+    if (trophyId.trim().isEmpty) {
+      throw Exception('Trophy ID cannot be empty');
+    }
+    await _firestore.collection('trophies').doc(trophyId).delete();
+  }
+
+  // ==========================================
   // APPROVE / DECLINE BOOKING TRANSACTIONS
   // ==========================================
   /// Updates the status of a booking request (Approve or Decline).

@@ -5,7 +5,7 @@ import '../../../core/services/pdf_document_engine.dart';
 
 /// Farm-grouped trophy stock report PDF, rendered through the universal
 /// [JagSpoorPdfDocument] engine. Lists every trophy entry grouped by farm with
-/// species, quantity, price per animal, trophy measurement (inches), and the
+/// species, available count, price per trophy (ZAR), trophy measurement (inches), and the
 /// number of attached photos.
 class TrophyInventoryReportExporter {
   /// Generates and shares the trophy inventory report PDF for the signed-in
@@ -43,8 +43,8 @@ class TrophyInventoryReportExporter {
       final farmId = (data['farmId'] ?? '') as String;
       byFarm.putIfAbsent(farmId, () => []).add(data);
 
-      final qty = (data['quantity'] as num?)?.toInt() ?? 1;
-      final price = (data['pricePerAnimal'] as num?)?.toDouble() ?? 0.0;
+      final qty = (data['availableCount'] as num?)?.toInt() ?? 0;
+      final price = (data['pricePerTrophyRands'] as num?)?.toDouble() ?? 0.0;
       totalStockValue += price * qty;
       totalAnimals += qty;
       final photos = (data['trophyPhotoUrls'] as List?)?.length ?? 0;
@@ -116,8 +116,8 @@ class TrophyInventoryReportExporter {
     int farmAnimals = 0;
     int farmPhotos = 0;
     for (final t in trophies) {
-      final qty = (t['quantity'] as num?)?.toInt() ?? 1;
-      final price = (t['pricePerAnimal'] as num?)?.toDouble() ?? 0.0;
+      final qty = (t['availableCount'] as num?)?.toInt() ?? 0;
+      final price = (t['pricePerTrophyRands'] as num?)?.toDouble() ?? 0.0;
       farmValue += price * qty;
       farmAnimals += qty;
       farmPhotos += (t['trophyPhotoUrls'] as List?)?.length ?? 0;
@@ -156,9 +156,9 @@ class TrophyInventoryReportExporter {
               headers: ['Species', 'Qty', 'Price/Animal', 'Measurement (in)', 'Photos'],
               columnWidths: [150, 40, 80, 90, 50],
               rows: trophies.map((t) {
-                final qty = (t['quantity'] as num?)?.toInt() ?? 1;
+                final qty = (t['availableCount'] as num?)?.toInt() ?? 0;
                 final price =
-                    (t['pricePerAnimal'] as num?)?.toDouble() ?? 0.0;
+                    (t['pricePerTrophyRands'] as num?)?.toDouble() ?? 0.0;
                 final measurement = (t['trophyMeasurement'] ??
                         t['trophyLengthInches']) as num?;
                 final photoCount = (t['trophyPhotoUrls'] as List?)?.length ?? 0;

@@ -1586,3 +1586,65 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
   `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`.
 
+## Trophy Stock Inventory — farm stock editing & PDF zero-value fix (added 2026-08-13)
+
+### PDF zero-value bug (fixed)
+- The top-right `Icons.picture_as_pdf_rounded` AppBar button calls
+  `TrophyInventoryReportExporter().generateAndShare()`, which **re-fetched**
+  trophy docs from Firestore but read them with the WRONG field names, so every
+  value rendered as 0.00 despite valid values on the on-screen cards:
+  - Read `data['quantity']` → the screen/manager write `availableCount`.
+    Default `?? 1` inflated the count; price stayed 0.
+  - Read `data['pricePerAnimal']` → the screen/manager write
+    `pricePerTrophyRands`. Always null → `?? 0.0` → "R 0.00" everywhere.
+- Fixed in **3** read sites (the totals loop, the per-farm `_farmSection`
+  loop, and the `dataTable` rows): `quantity`→`availableCount` (default
+  `?? 0`), `pricePerAnimal`→`pricePerTrophyRands`. Now the PDF's "Estimated
+  Stock Value", per-farm totals, and per-species Price/Animal + Qty columns
+  consume the actual stock values and species pricing from the loaded
+  dataset. Measurement + photo-count fields were already correct. The
+  measurement field reads `trophyMeasurement` ?? `trophyLengthInches`
+  (matches the dual-alias write in `syncTrophyStock`).
+- File: `lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart`.
+
+### Farm stock editing (new)
+- The "Current Stock by Farm" block previously rendered read-only
+  per-species rows. Each row is now **tappable** (wrapped in
+  `Material > InkWell` with an edit hint icon) and opens a modal
+  **Edit Trophy Stock** sheet for that exact trophy document.
+- To target the right doc, the grouping loop now carries the snapshot doc id
+  on each entry under a private `_docId` key (`data['_docId'] = doc.id`).
+  This stays local to the screen's stream build — the PDF exporter fetches
+  its own snapshot, so the private key never contaminates it.
+- New **Edit Trophy Stock sheet** (`_showEditTrophySheet`): a
+  `showModalBottomSheet` + `StatefulBuilder` form pre-filled from the entry,
+  with validated fields for Species * (required), Available Count * (int ≥0),
+  Price per Trophy (R) * (double ≥0), Measurement (inches, optional/decimal).
+  `isScrollControlled` + `viewInsets.bottom` padding keeps the keyboard off
+  the SAVE button. SAVE → `_submitTrophyEdit` →
+  `OutfitterEnterpriseManager.instance.updateTrophyStock(...)`.
+- A destructive **DELETE ENTRY** `TextButton.icon` opens a confirmation
+  `AlertDialog`; confirming calls `_deleteTrophy` →
+  `OutfitterEnterpriseManager.instance.deleteTrophyStock(trophyId)`.
+- Reactive refresh: the "Current Stock by Farm" block is already a Firestore
+  `snapshots()` `StreamBuilder`, so both update and delete re-render the
+  list automatically — no manual `setState`/reload. On failure the error is
+  surfaced and the sheet stays open for retry.
+- New `OutfitterEnterpriseManager.updateTrophyStock({trophyId, species?,
+  availableCount?, pricePerTrophyRands?, trophyMeasurement?,
+  clearMeasurement})`: partial update (only supplied fields written) +
+  `lastUpdated: serverTimestamp()`. Measurement written under both
+  `trophyMeasurement` and `trophyLengthInches` (matches `syncTrophyStock`).
+  `clearMeasurement: true` nulls the measurement fields.
+- New `OutfitterEnterpriseManager.deleteTrophyStock(trophyId)`: hard-deletes
+  the trophy doc (`firestore.rules` already permits owner/admin
+  `update, delete` on `trophies/{trophyId}`).
+- `flutter analyze`: 0 errors, 13 warnings (all pre-existing, none new; the
+  `unnecessary_cast` at `outfitter_trophy_stock_screen.dart:93` is the
+  pre-existing baseline shifted by added code). `flutter test`: 201 passed,
+  4 pre-existing failures (saps_tracker, offline_sync_queue,
+  advanced_ballistics, bluetooth_mesh — none touch the changed files).
+- Files: `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart`.
+
