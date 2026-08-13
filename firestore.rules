@@ -95,13 +95,40 @@ service cloud.firestore {
     }
 
     // Packages (marketplace listings): browsable by any signed-in user;
-    // only the owning outfitter may create/update/delete.
+    // only the owning outfitter may create/update/delete. A signed-in hunter
+    // is additionally permitted to decrement `quantityAvailable` (and flip
+    // the status to `sold_out` when it reaches 0) inside the atomic booking
+    // transaction in `PackageBookingManager.bookPackage` — this is tightly
+    // scoped so a hunter can ONLY lower the slot count (never raise it) and
+    // cannot tamper with price/identity fields.
     match /packages/{packageId} {
+      function isOwner() {
+        return isSignedIn()
+          && resource.data.outfitterId == request.auth.uid;
+      }
+      // A hunter booking the package may only: lower quantityAvailable by >=1,
+      // optionally set status to 'sold_out', and bump updatedAt. Every other
+      // field (price, title, outfitter identity, commission) must be unchanged.
+      function isInventoryDecrement() {
+        return isSignedIn()
+          && request.resource.data.outfitterId == resource.data.outfitterId
+          && request.resource.data.title == resource.data.title
+          && request.resource.data.basePriceRands == resource.data.basePriceRands
+          && request.resource.data.totalPriceZAR == resource.data.totalPriceZAR
+          && request.resource.data.platformCommissionZAR
+              == resource.data.platformCommissionZAR
+          && request.resource.data.depositPercentage
+              == resource.data.depositPercentage
+          && request.resource.data.quantityAvailable
+              < resource.data.quantityAvailable
+          && (request.resource.data.status == resource.data.status
+              || request.resource.data.status == 'sold_out');
+      }
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && request.resource.data.outfitterId == request.auth.uid;
-      allow update, delete: if isSignedIn()
-        && resource.data.outfitterId == request.auth.uid;
+      allow update: if isOwner() || isInventoryDecrement();
+      allow delete: if isOwner();
     }
 
     // ── PRIVATE USER DATA (strictly owner-scoped) ───────────────────────

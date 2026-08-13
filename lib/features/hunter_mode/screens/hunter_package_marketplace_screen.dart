@@ -417,6 +417,15 @@ class _PackageCard extends StatelessWidget {
         (data['totalPriceZAR'] as num?)?.toDouble() ?? price;
     final inclusions = List<String>.from(data['inclusions'] ?? []);
 
+    // Inventory / sold-out state (Item #11). Legacy packages default to 1 slot.
+    final quantityAvailable =
+        PackageQuantity.fromData(data['quantityAvailable']);
+    final statusStr = data['status'] as String?;
+    final isSoldOut = PackageQuantity.isSoldOut(
+      quantityAvailable: quantityAvailable,
+      status: statusStr,
+    );
+
     // Pricing mode + breakdown details for the marketplace card.
     final pricing = PackagePricing.fromMap(data);
     final isItemized = pricing.mode == PackagePricingMode.itemized;
@@ -524,6 +533,28 @@ class _PackageCard extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        if (isSoldOut) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'SOLD OUT',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -577,6 +608,13 @@ class _PackageCard extends StatelessWidget {
                           ? '${startDate.day}/${startDate.month} – ${endDate.day}/${endDate.month}/${endDate.year}'
                           : 'From ${startDate.day}/${startDate.month}/${startDate.year}',
                     ),
+                  _metaChip(
+                    theme,
+                    icon: isSoldOut
+                        ? Icons.do_not_disturb_on_rounded
+                        : Icons.confirmation_number_rounded,
+                    label: PackageQuantity.remainingLabel(quantityAvailable),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -624,27 +662,34 @@ class _PackageCard extends StatelessWidget {
               ],
               const SizedBox(height: 12),
 
-              // Book Button
+              // Book Button (disabled + relabelled when sold out).
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: onTap,
+                  onPressed: isSoldOut ? null : onTap,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1565C0),
+                    backgroundColor: isSoldOut
+                        ? Colors.grey
+                        : const Color(0xFF1565C0),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.book_online_rounded, size: 20),
-                      SizedBox(width: 8),
+                      Icon(
+                        isSoldOut
+                            ? Icons.do_not_disturb_rounded
+                            : Icons.book_online_rounded,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
                       Text(
-                        'VIEW DETAILS & BOOK',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        isSoldOut ? 'SOLD OUT' : 'VIEW DETAILS & BOOK',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -758,6 +803,14 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
     final pricing = PackagePricing.fromMap(widget.data);
     final inclusions = List<String>.from(widget.data['inclusions'] ?? []);
+
+    // Inventory / sold-out state for the booking sheet.
+    final quantityAvailable =
+        PackageQuantity.fromData(widget.data['quantityAvailable']);
+    final isSoldOut = PackageQuantity.isSoldOut(
+      quantityAvailable: quantityAvailable,
+      status: widget.data['status'] as String?,
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -887,6 +940,38 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             ),
             const SizedBox(height: 24),
 
+            // Sold-out banner (only when no slots remain).
+            if (isSoldOut)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.do_not_disturb_on_rounded,
+                        color: Colors.red, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'This package is sold out and can no longer be booked. '
+                        'Please choose another package or contact the outfitter '
+                        'about future availability.',
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Action Buttons
             Row(
               children: [
@@ -910,9 +995,13 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _confirmBooking,
+                    onPressed: (_isLoading || isSoldOut)
+                        ? null
+                        : _confirmBooking,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1565C0),
+                      backgroundColor: isSoldOut
+                          ? Colors.grey
+                          : const Color(0xFF1565C0),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1217,9 +1306,14 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
       }
     } catch (e) {
       if (mounted) {
+        // Surface a clear "sold out" message when the transaction rejected
+        // the booking due to no remaining slots.
+        final soldOut = e is PackageSoldOutException;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Booking failed: $e'),
+            content: Text(soldOut
+                ? '❌ This package is sold out and can no longer be booked.'
+                : '❌ Booking failed: $e'),
             backgroundColor: Colors.red,
           ),
         );

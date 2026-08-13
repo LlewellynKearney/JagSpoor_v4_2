@@ -1116,3 +1116,140 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `test/offline_stream_guard_test.dart` (new).
 - No Firestore rules / index / Storage changes (this is a client-side
   persistence + resilience hardening pass).
+
+## Phase 11 — Package Quantity Tracking & Automatic Sold-Out Status (added 2026-08-13)
+
+- New inventory model for hunting packages: every package now carries a
+  `quantityAvailable` slot count (default 1 for legacy docs) that decrements
+  atomically on each booking, and a `soldOut` `PackageStatus` that flips on
+  automatically when the count hits 0. This is Item #11 / the User Context of
+  the master to-do (continuing the Item #10 Package CRUD Polish track).
+- **`PackageStatus` enum** (`lib/features/hunter_mode/models/package_pricing.dart`):
+  - Added `soldOut` variant; `fromString`/`label` round-trip `"sold_out"`.
+    `fromString` falls back to `active` for null/unknown.
+  - Added `bool isListed` getter (`active` → true; `draft`/`archived`/
+    `deleted`/`soldOut` → false) so analytics/marketplace can branch on
+    "is this a bookable listing".
+- **`PackageQuantity` helper** (same file): type-safe parsing of the raw
+  Firestore `quantityAvailable` value.
+  - `fromData(dynamic)` — accepts int/double; returns `defaultQuantity` (1)
+    for legacy docs (null), invalid types (String), and negatives; **0 is a
+    real 0** (not masked back to 1) so the sold-out state renders correctly.
+  - `isSoldOut({quantityAvailable, status})` — true when qty ≤ 0 OR status is
+    `sold_out` (defends against stale reads where qty hasn't caught up to the
+    transactional flip).
+  - `remainingLabel(qty)` — "Sold Out" / "1 slot left!" / "N slots left!"
+    for the marketplace + manager cards.
+  - `defaultQuantity = 1` — legacy packages (pre-Phase-11) behave as
+    single-slot: one booking decrements them to 0 → sold_out.
+- **`PackageSoldOutException`** (same file): carries `packageId` + `message`,
+    implements `Exception`. Thrown by the booking transaction when a
+    hunter tries to book a package with no remaining slots; the marketplace
+    catches it and surfaces a clear "sold out" snackbar instead of a generic
+    failure message.
+- **`PackageBookingManager`** (`lib/features/hunter_mode/services/package_booking_manager.dart`):
+  - `publishPackage` — new required `int quantityAvailable` param (written to
+    the doc as `quantityAvailable`).
+  - `updatePackage` — new optional `int? quantityAvailable` param (omitted →
+    field not touched, preserving existing inventory on an edit).
+  - `bookPackage` — **rewritten as `FirebaseFirestore.instance.runTransaction`**
+    for atomic inventory + status safety:
+    1. Reads the package snapshot inside the transaction.
+    2. Guard: throws `PackageSoldOutException` if `status != active` OR
+       `quantityAvailable <= 0` (rejects concurrent / late bookings).
+    3. Decrements `quantityAvailable` by 1; if the result is ≤ 0, atomically
+       sets `status = 'sold_out'` in the same transaction.update so the
+       marketplace flips to SOLD OUT the instant the last slot is taken
+       (no race window between decrement and the status flip).
+    4. Writes the booking doc + (deposit split) as before (the booking write
+       itself is the transaction's post-commit side effect; the decrement is
+       the transactional part).
+  - `restockPackage({packageId, quantityAvailable})` — NEW. Sets the slot
+    count back to a positive value AND re-activates a `sold_out` listing back
+    to `active` in a single update (so the outfitter can reopen a sold-out
+    package without editing each field). Wired to the manager's "Restock"
+    action chip.
+- **Marketplace stream filters**:
+  - `OutfitterAnalyticsService.getFilteredPackagesStream` changed from
+    `.where('status', isEqualTo: 'active')` →
+    `.where('status', whereIn: ['active', 'sold_out'])` so hunters still SEE
+    sold-out packages (with a SOLD OUT badge + disabled book button) rather
+    than having them vanish mid-browse. `getAllPackages` updated the same way
+    for consistency.
+  - `getTotalPackagesCountStream` (outfitter analytics) still counts
+    `status == 'active'` only — a sold-out package is correctly NOT counted
+    as an available listing (it's no longer bookable). This is the intended
+    semantic, not a bug.
+- **Firestore rules** (`firestore.rules`, `packages/{packageId}` match block):
+  the hunter-initiated `bookPackage` transaction calls `transaction.update` on
+  the `packages` doc (to decrement `quantityAvailable` + flip status), which
+  is a write by the hunter — normally only the owning outfitter can write
+  packages. The rule was widened to allow a signed-in hunter to update the
+  `quantityAvailable` and `status` fields only (field-level allowance); other
+  fields remain outfitter-only. This is the minimal permission needed for the
+  transactional decrement to succeed server-side.
+- **Outfitter package creator/editor form**
+  (`outfitter_package_creator_screen.dart`): added a `_quantityController`
+  (integer input, "slots" suffix, ≥1 validation), with edit-mode prefill from
+  the existing `quantityAvailable` field. Passed through to both
+  `publishPackage` (required) and `updatePackage` (optional). Field placed
+  after the deposit-percentage field.
+- **Marketplace card** (`hunter_package_marketplace_screen.dart`,
+  `_PackageCard`):
+  - Computes `quantityAvailable` + `isSoldOut` from the doc data.
+  - Price chip shows a red "SOLD OUT" badge below the total when sold out.
+  - Meta chip row gains a `confirmation_number` / `do_not_disturb` icon chip
+    with the `remainingLabel` ("5 slots left!" / "Sold Out").
+  - "VIEW DETAILS & BOOK" button: when sold out, `onPressed` is `null`
+    (disabled), background greyed, icon → `do_not_disturb`, label → "SOLD OUT".
+- **Booking confirmation sheet** (same file, `_BookingConfirmationSheet`):
+  - Shows a red sold-out banner ("This package is sold out…") above the
+    action buttons when `isSoldOut`.
+  - "BOOK THIS PACKAGE" button disabled (`onPressed: null`) + greyed when
+    sold out.
+  - `_confirmBooking` catch block detects `PackageSoldOutException` and shows
+    a tailored "sold out" snackbar instead of the generic "Booking failed".
+- **Outfitter package manager** (`outfitter_package_manager_screen.dart`):
+  - Card meta line now includes the remaining-slots label.
+  - `_statusBadge` switch gained the `soldOut → (Colors.red, 'SOLD OUT')` case.
+  - New `_restock(packageId, currentQty)` method: prompts for a new slot count
+    (≥1) and calls `restockPackage`, shown as a "Restock"
+    (`add_shopping_cart`) action chip ONLY when the package is sold out or
+    has ≤0 slots.
+- **Tests** (`test/package_quantity_test.dart`, NEW — 24 tests, all pass):
+  `PackageStatus.soldOut` label/fromString round-trip + isListed;
+  `PackageQuantity.fromData` parsing (int/double/0-is-real-0/legacy-null/
+  invalid-string/negative); `isSoldOut` (qty-0, stale-positive-with-sold_out-
+  status, active-while-slots-remain, legacy-default); `remainingLabel`
+  (sold-out/singular/plural); `PackageSoldOutException` (packageId/message/
+  generic-catch); and a structural group encoding the exact
+  decrement + sold-out-at-0 + rejection rules that the `bookPackage`
+  transaction applies (multi-slot stays active, last slot flips to sold_out,
+  0-slot rejects new bookings, legacy single-slot behavior) — runnable
+  without the Firestore emulator (which can't run in this sandbox, see the
+  environment-constraints note) by exercising the shared helpers the
+  transaction reads through.
+- **`flutter analyze`**: 0 errors, 13 warnings (all pre-existing, NONE in any
+  modified file), 283 infos. New test file is analyzer-clean.
+- **`flutter test`**: `package_quantity_test.dart` 24/24 pass; the previously-
+  passing suites (`offline_stream_guard_test`, `theme_controller_test`,
+  `outfitter_client_roster_test`, `financial_engine_test`, etc.) still green.
+  The only failing suite is `test/features/sync/bluetooth_mesh_test.dart`
+  (4 failures on `mockStorage.insertLog.length` assertions) — pre-existing,
+  unrelated (zero references to package/booking code; the file is unmodified
+  in this session; tests the offline bluetooth mesh sync subsystem).
+- Deploy reminder: the `packages` Firestore rule change (hunter field-level
+  decrement allowance) needs `npx firebase-tools deploy --only firestore:rules`
+  in a credentialed env. No new indexes required (the `whereIn` on `status`
+  is a single-field equality-range query that uses the automatic index).
+  Until the rule deploys, `bookPackage`'s transactional update will be
+  rejected server-side with a permission error (surfaced as the generic
+  "Booking failed" snackbar); the client-side sold-out guard still prevents
+  double-booking in the happy path.
+- Files: `lib/features/hunter_mode/models/package_pricing.dart`,
+  `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`,
+  `firestore.rules`, `test/package_quantity_test.dart` (new).

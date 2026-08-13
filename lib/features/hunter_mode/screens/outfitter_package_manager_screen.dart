@@ -63,6 +63,92 @@ class _OutfitterPackageManagerScreenState
     }
   }
 
+  /// Restocks a sold-out / low-stock package. Prompts the outfitter for a new
+  /// slot count, then calls [PackageBookingManager.restockPackage] (which also
+  /// re-activates a `sold_out` listing back to `active`).
+  Future<void> _restock(String packageId, int currentQty) async {
+    final controller =
+        TextEditingController(text: currentQty <= 0 ? '1' : currentQty.toString());
+    final qty = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: widget.theme.cardColor,
+        title: Text('Restock Package',
+            style: TextStyle(
+                color: widget.theme.textColor, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Set the new number of bookable slots. The package will be '
+              're-activated if it was sold out.',
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: TextStyle(color: widget.theme.textColor),
+              decoration: InputDecoration(
+                labelText: 'Available slots',
+                labelStyle: TextStyle(color: widget.theme.subtitleColor),
+                suffixText: 'slots',
+                suffixStyle: TextStyle(color: widget.theme.subtitleColor),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final v = int.tryParse(controller.text.trim());
+              Navigator.pop(dialogContext, v);
+            },
+            child: const Text('Restock'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (qty == null || !mounted) return;
+    if (qty < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Restock quantity must be at least 1 slot'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    try {
+      await PackageBookingManager.instance
+          .restockPackage(packageId: packageId, quantityAvailable: qty);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Package restocked to $qty slot${qty == 1 ? '' : 's'}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to restock: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _confirmDelete(String packageId, String title) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -258,6 +344,8 @@ class _OutfitterPackageManagerScreenState
     final total = (data['totalPriceZAR'] as num?)?.toDouble() ??
         basePrice * (1 + PackageBookingManager.platformCommissionRate);
     final depositPct = (data['depositPercentage'] as num?)?.toDouble() ?? 25;
+    final quantityAvailable =
+        PackageQuantity.fromData(data['quantityAvailable']);
     final imageUrls = data['imageUrls'];
     final firstImage = imageUrls is List && imageUrls.isNotEmpty
         ? imageUrls.first as String
@@ -339,7 +427,8 @@ class _OutfitterPackageManagerScreenState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '$speciesCount species • $depositPct% deposit',
+                        '$speciesCount species • $depositPct% deposit\n'
+                        '${PackageQuantity.remainingLabel(quantityAvailable)}',
                         style: TextStyle(
                             color: theme.subtitleColor, fontSize: 12),
                       ),
@@ -370,6 +459,17 @@ class _OutfitterPackageManagerScreenState
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Restock action — shown for sold-out or low-stock packages.
+                  if (status == PackageStatus.soldOut ||
+                      quantityAvailable <= 0) ...[
+                    _actionChip(
+                      theme,
+                      icon: Icons.add_shopping_cart_rounded,
+                      label: 'Restock',
+                      onTap: () => _restock(packageId, quantityAvailable),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   _actionChip(
                     theme,
                     icon: Icons.archive_outlined,
@@ -434,6 +534,7 @@ class _OutfitterPackageManagerScreenState
       PackageStatus.draft => (Colors.orange, 'DRAFT'),
       PackageStatus.archived => (Colors.grey, 'ARCHIVED'),
       PackageStatus.deleted => (Colors.red, 'DELETED'),
+      PackageStatus.soldOut => (Colors.red, 'SOLD OUT'),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

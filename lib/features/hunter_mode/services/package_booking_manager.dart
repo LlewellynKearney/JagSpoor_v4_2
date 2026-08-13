@@ -62,6 +62,7 @@ class PackageBookingManager {
     PackageStatus status = PackageStatus.active,
     List<String> imageUrls = const [],
     double depositPercentage = 25,
+    int quantityAvailable = PackageQuantity.defaultQuantity,
   }) async {
     // Validate authentication
     if (_currentUserId == null) {
@@ -91,6 +92,10 @@ class PackageBookingManager {
     // Per-package deposit percentage, clamped to [0, 100].
     final clampedDeposit = depositPercentage.clamp(0, 100);
 
+    // Bookable slot count, clamped to >= 1. A package must offer at least one
+    // slot to be bookable.
+    final clampedQty = quantityAvailable < 1 ? 1 : quantityAvailable;
+
     // Calculate commission metrics (7.5%)
     final double fee = basePriceRands * platformCommissionRate;
     final double total = basePriceRands + fee;
@@ -108,6 +113,7 @@ class PackageBookingManager {
       'imageUrls': imageUrls,
       'depositPercentage': clampedDeposit,
       'depositFraction': clampedDeposit / 100,
+      'quantityAvailable': clampedQty,
       ...pricing.toMap(),
       'status': status.label,
       'createdAt': FieldValue.serverTimestamp(),
@@ -136,6 +142,7 @@ class PackageBookingManager {
     String? farmId,
     List<String>? imageUrls,
     double? depositPercentage,
+    int? quantityAvailable,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to update a package');
@@ -154,6 +161,13 @@ class PackageBookingManager {
       final clamped = depositPercentage.clamp(0, 100);
       update['depositPercentage'] = clamped;
       update['depositFraction'] = clamped / 100;
+    }
+    if (quantityAvailable != null) {
+      // Clamp to >= 1; the outfitter may restock a sold-out package by
+      // raising the count back above 0 (the sold-out → active transition is
+      // applied via setPackageStatus when restocking).
+      update['quantityAvailable'] =
+          quantityAvailable < 1 ? 1 : quantityAvailable;
     }
 
     if (pricing != null) {
@@ -207,6 +221,14 @@ class PackageBookingManager {
   /// Books a hunting package with automatic 7.5% platform commission
   /// calculation.
   ///
+  /// Executes as an **atomic Firestore transaction**: it reads the package,
+  /// verifies at least one slot remains (`quantityAvailable > 0`), creates the
+  /// booking, and decrements `quantityAvailable` by 1. If the count reaches 0
+  /// the package status is flipped to [PackageStatus.soldOut] so it can no
+  /// longer be booked. This is race-safe — concurrent booking attempts are
+  /// serialized by the transaction, and a hunter that hits a 0-slot package has
+  /// its booking cancelled with a clear "Package Sold Out" error.
+  ///
   /// Parameters:
   /// - [packageId]: Firestore document ID of the package being booked
   /// - [outfitterId]: UID of the outfitter who owns the package
@@ -217,9 +239,12 @@ class PackageBookingManager {
   /// - Commission Fee = basePriceRands × 0.075 (7.5%)
   /// - Total Hunter Price = basePriceRands + commissionFee
   ///
-  /// Returns: void (saves to Firestore 'bookings' collection)
+  /// Returns: void (saves to Firestore 'bookings' collection + updates package)
   ///
-  /// Throws: Exception if user is not authenticated or save fails
+  /// Throws:
+  /// - Exception if user is not authenticated.
+  /// - `PackageSoldOutException` if the package has no remaining slots.
+  /// - Exception if the package is missing or the save fails.
   Future<void> bookPackage({
     required String packageId,
     required String outfitterId,
@@ -248,25 +273,101 @@ class PackageBookingManager {
     final double commissionFee = basePriceRands * platformCommissionRate;
     final double totalHunterPrice = basePriceRands + commissionFee;
 
-    final bookingData = {
-      'packageId': packageId.trim(),
-      'outfitterId': outfitterId.trim(),
-      'hunterId': _currentUserId,
-      if (packageName != null) 'packageName': packageName,
-      'basePriceRands': basePriceRands,
-      'platformCommissionRands': commissionFee,
-      'platformCommissionRate': platformCommissionRate,
-      'totalHunterPriceRands': totalHunterPrice,
-      'depositFraction': depositFraction,
-      'depositAmountRands': totalHunterPrice * depositFraction,
-      'balanceAmountRands': totalHunterPrice * (1 - depositFraction),
-      'status': 'Pending Approval',
-      'bookingTimestamp': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+    final packageRef = _firestore.collection('packages').doc(packageId.trim());
+
+    // Atomic booking + inventory decrement. The transaction guarantees that
+    // the slot-count check and the decrement are consistent under concurrent
+    // bookings — two hunters cannot both grab the last slot.
+    await _firestore.runTransaction((transaction) async {
+      final packageSnap = await transaction.get(packageRef);
+
+      if (!packageSnap.exists) {
+        throw Exception('Package not found');
+      }
+
+      final pkgData = packageSnap.data() as Map<String, dynamic>;
+      final currentQty =
+          PackageQuantity.fromData(pkgData['quantityAvailable']);
+      final currentStatus =
+          PackageStatus.fromString(pkgData['status'] as String?);
+
+      // Reject the booking if no slots remain or the package is already sold
+      // out / not actively listed (draft, archived, deleted).
+      if (currentStatus != PackageStatus.active ||
+          currentQty <= 0) {
+        throw PackageSoldOutException(packageId: packageId);
+      }
+
+      // Create the booking inside the same transaction.
+      final bookingRef = _firestore.collection('bookings').doc();
+      transaction.set(bookingRef, {
+        'packageId': packageId.trim(),
+        'outfitterId': outfitterId.trim(),
+        'hunterId': _currentUserId,
+        if (packageName != null) 'packageName': packageName,
+        'basePriceRands': basePriceRands,
+        'platformCommissionRands': commissionFee,
+        'platformCommissionRate': platformCommissionRate,
+        'totalHunterPriceRands': totalHunterPrice,
+        'depositFraction': depositFraction,
+        'depositAmountRands': totalHunterPrice * depositFraction,
+        'balanceAmountRands': totalHunterPrice * (1 - depositFraction),
+        'status': 'Pending Approval',
+        'bookingTimestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Decrement the slot count. When the last slot is claimed, flip the
+      // status to sold_out so the listing becomes read-only in the UI.
+      final newQty = currentQty - 1;
+      final newStatus = newQty <= 0
+          ? PackageStatus.soldOut.label
+          : currentStatus.label;
+      transaction.update(packageRef, {
+        'quantityAvailable': newQty,
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// Restocks a sold-out / low-stock package by setting [quantityAvailable]
+  /// and (optionally) re-activating the listing. Only the owning outfitter may
+  /// call this. Pass [reactivate] (default true) to flip a `sold_out` package
+  /// back to `active` once slots are available again.
+  Future<void> restockPackage({
+    required String packageId,
+    required int quantityAvailable,
+    bool reactivate = true,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to restock a package');
+    }
+    if (quantityAvailable < 1) {
+      throw Exception('Restock quantity must be at least 1');
+    }
+
+    final packageRef = _firestore.collection('packages').doc(packageId);
+    final snap = await packageRef.get();
+    if (!snap.exists) {
+      throw Exception('Package not found');
+    }
+    final data = snap.data() as Map<String, dynamic>;
+    final currentStatus =
+        PackageStatus.fromString(data['status'] as String?);
+
+    final update = <String, dynamic>{
+      'quantityAvailable': quantityAvailable,
       'updatedAt': FieldValue.serverTimestamp(),
     };
+    // Only re-activate if the package is currently sold out; never override an
+    // archived/deleted/draft lifecycle choice from a restock.
+    if (reactivate && currentStatus == PackageStatus.soldOut) {
+      update['status'] = PackageStatus.active.label;
+    }
 
-    await _firestore.collection('bookings').add(bookingData);
+    await packageRef.update(update);
   }
 
   // ==========================================
@@ -289,11 +390,12 @@ class PackageBookingManager {
     };
   }
 
-  /// Get all packages (for marketplace browsing)
+  /// Get all packages (for marketplace browsing). Includes `active` and
+  /// `sold_out` so sold-out listings render read-only in the marketplace.
   Future<QuerySnapshot> getAllPackages() async {
     return await _firestore
         .collection('packages')
-        .where('status', isEqualTo: 'active')
+        .where('status', whereIn: ['active', 'sold_out'])
         .orderBy('createdAt', descending: true)
         .get();
   }

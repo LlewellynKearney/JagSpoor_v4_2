@@ -42,6 +42,7 @@ class _OutfitterPackageCreatorScreenState
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
   final _depositController = TextEditingController(text: '25');
+  final _quantityController = TextEditingController(text: '1');
   final List<String> _inclusions = [];
   final _inclusionController = TextEditingController();
 
@@ -96,6 +97,7 @@ class _OutfitterPackageCreatorScreenState
     _descriptionController.dispose();
     _priceController.dispose();
     _depositController.dispose();
+    _quantityController.dispose();
     _inclusionController.dispose();
     super.dispose();
   }
@@ -126,6 +128,10 @@ class _OutfitterPackageCreatorScreenState
     if (depPct is num) {
       _depositController.text = depPct.toDouble().toStringAsFixed(0);
     }
+
+    // Available quantity / slots (defaults to 1 for legacy packages).
+    _quantityController.text =
+        PackageQuantity.fromData(pkg['quantityAvailable']).toString();
 
     final incl = pkg['inclusions'];
     if (incl is List) {
@@ -632,6 +638,19 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
 
+    // Available quantity / slots validation (integer, min 1).
+    final quantityAvailable =
+        int.tryParse(_quantityController.text.trim()) ?? 0;
+    if (quantityAvailable < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Available quantity must be at least 1 slot'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -662,6 +681,7 @@ class _OutfitterPackageCreatorScreenState
           farmId: _selectedFarmId,
           imageUrls: imageUrls,
           depositPercentage: depositPct,
+          quantityAvailable: quantityAvailable,
         );
         // Reflect the chosen lifecycle status (e.g. re-activate a draft).
         await PackageBookingManager.instance.setPackageStatus(
@@ -678,6 +698,7 @@ class _OutfitterPackageCreatorScreenState
           status: _saveStatus,
           imageUrls: imageUrls,
           depositPercentage: depositPct,
+          quantityAvailable: quantityAvailable,
         );
       }
 
@@ -981,6 +1002,36 @@ class _OutfitterPackageCreatorScreenState
                 }
                 if (pct < 0 || pct > 100) {
                   return 'Deposit must be between 0 and 100';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // ── AVAILABLE QUANTITY / SLOTS ───────────────────────────────
+            _buildSectionLabel('AVAILABLE QUANTITY / SLOTS', theme),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _quantityController,
+              keyboardType: TextInputType.number,
+              style: TextStyle(color: theme.textColor),
+              decoration: _inputDecoration(
+                hint: 'e.g., 5',
+                suffix: 'slots',
+                theme: theme,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(5),
+              ],
+              validator: (value) {
+                final raw = value?.trim() ?? '';
+                final qty = int.tryParse(raw);
+                if (qty == null) {
+                  return 'Enter a valid quantity (whole number)';
+                }
+                if (qty < 1) {
+                  return 'Quantity must be at least 1 slot';
                 }
                 return null;
               },

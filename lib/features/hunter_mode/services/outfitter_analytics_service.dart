@@ -89,7 +89,9 @@ class OutfitterAnalyticsService {
     return OfflineStreamGuard.offlineResilient(
       _firestore
           .collection('packages')
-          .where('status', isEqualTo: 'active')
+          // Include sold-out listings so hunters see them as read-only
+          // "Sold Out" cards rather than the offering silently disappearing.
+          .where('status', whereIn: ['active', 'sold_out'])
           .snapshots()
           .asyncMap((packageSnapshot) async {
             final List<Map<String, dynamic>> filteredPackages = [];
