@@ -298,7 +298,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
           Positioned(
             left: 24,
             right: 24,
-            bottom: 32,
+            bottom: MediaQuery.of(context).padding.bottom + 32,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

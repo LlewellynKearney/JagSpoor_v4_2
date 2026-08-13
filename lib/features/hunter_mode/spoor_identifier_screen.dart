@@ -280,7 +280,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         _buildReticleOverlay(),
         if (!_showResults)
           Positioned(
-            bottom: 40,
+            bottom: MediaQuery.of(context).padding.bottom + 40,
             left: 16,
             right: 16,
             child: Center(
