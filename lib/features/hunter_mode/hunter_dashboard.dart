@@ -23,7 +23,6 @@ import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/hunter_custom_package_builder_screen.dart';
 import 'screens/venison_permit_list_screen.dart';
-import 'screens/venison_permit_form_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
@@ -364,28 +363,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
             ),
       ),
       DashboardFeature(
-        id: 'venison_permit_form',
-        icon: Icons.receipt_long_rounded,
-        title: '🦌 Venison Transport Permit',
-        description:
-            'Complete the legal SA venison / game transport & hunt permit with dual digital signatures.',
-        onTap:
-            (context, theme) => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => VenisonPermitFormScreen(
-                  theme: theme,
-                  isOutfitterMode: false,
-                ),
-              ),
-            ),
-      ),
-      DashboardFeature(
         id: 'venison_permit_log',
         icon: Icons.list_alt_rounded,
-        title: '🦌 My Transport Permits',
+        title: '🦌 My Venison Permits',
         description:
-            'View, search, and manage your issued venison transport permits.',
+            'View and manage your issued venison transport permits, or create a new one.',
         onTap:
             (context, theme) => Navigator.push(
               context,

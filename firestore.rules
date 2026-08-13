@@ -178,21 +178,24 @@ service cloud.firestore {
     // Create: any signed-in party (either role may initiate a permit). Update /
     // delete: outfitter or admin — the outfitter is the statutory issuer.
     match /venison_permits/{permitId} {
-      function isPermitParty() {
-        return isSignedIn() && (
-          (resource != null && (
-            resource.data.outfitterId == request.auth.uid ||
-            resource.data.hunterId == request.auth.uid
-          )) ||
-          (resource == null && (
-            request.resource.data.outfitterId == request.auth.uid ||
-            request.resource.data.hunterId == request.auth.uid
-          ))
-        );
-      }
-      allow read: if isPermitParty() || isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if isOwnerOf('outfitterId') || isAdmin();
+      // Read: any signed-in user who is a party to the permit (outfitter who
+      // issued it, hunter it was issued to) or an admin. `resource == null`
+      // covers the document-not-yet-existing edge case (harmless for reads of
+      // existing docs, where resource is never null). This allows both
+      // `.where('outfitterId', isEqualTo: uid)` and
+      // `.where('hunterId', isEqualTo: uid)` list queries to succeed because
+      // the server can guarantee every returned doc satisfies the condition.
+      allow read: if isSignedIn() && (
+        resource == null ||
+        resource.data.outfitterId == request.auth.uid ||
+        resource.data.hunterId == request.auth.uid ||
+        isAdmin()
+      );
+      // Create / update: any signed-in user may write permit data (both the
+      // outfitter and the hunter co-complete the legal form + signatures).
+      allow create, update: if isSignedIn();
+      // Delete: only the issuing outfitter or an admin (least-privilege).
+      allow delete: if isOwnerOf('outfitterId') || isAdmin();
     }
 
     // Scanned pricelists (outfitterId).

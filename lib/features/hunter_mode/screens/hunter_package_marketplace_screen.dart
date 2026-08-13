@@ -516,7 +516,7 @@ class _PackageCard extends StatelessWidget {
                           ),
                         ),
                         const Text(
-                          'incl. 7.5% fee',
+                          'total price',
                           style: TextStyle(
                             color: Colors.green,
                             fontSize: 9,
@@ -788,26 +788,12 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
               ),
               child: Column(
                 children: [
-                  // Base Package Rate
+                  // Hunter-facing total only — the outfitter base price and
+                  // 7.5% platform-fee split are hidden from the hunter for
+                  // marketplace privacy. The total remains inclusive of the
+                  // 7.5% fee; only the line items are concealed.
                   _PriceRow(
-                    label: 'Outfitter Base Price',
-                    value: _formatZAR(basePrice),
-                    theme: widget.theme,
-                  ),
-                  const Divider(height: 20),
-
-                  // 7.5% Platform Fee
-                  _PriceRow(
-                    label: '7.5% Platform Fee',
-                    value: _formatZAR(commission),
-                    theme: widget.theme,
-                    isFee: true,
-                  ),
-                  const Divider(height: 20),
-
-                  // Final Booking Total
-                  _PriceRow(
-                    label: 'Total (incl. 7.5% fee)',
+                    label: 'Total Price',
                     value: _formatZAR(totalPrice),
                     theme: widget.theme,
                     isTotal: true,
@@ -901,7 +887,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                                 Icon(Icons.check_circle_outline, size: 20),
                                 SizedBox(width: 8),
                                 Text(
-                                  'CONFIRM BOOKING',
+                                  'BOOK THIS PACKAGE',
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ],
@@ -1204,14 +1190,12 @@ class _PriceRow extends StatelessWidget {
   final String label;
   final String value;
   final ThemeController theme;
-  final bool isFee;
   final bool isTotal;
 
   const _PriceRow({
     required this.label,
     required this.value,
     required this.theme,
-    this.isFee = false,
     this.isTotal = false,
   });
 
@@ -1232,9 +1216,7 @@ class _PriceRow extends StatelessWidget {
           value,
           style: TextStyle(
             color:
-                isFee
-                    ? Colors.amber.shade700
-                    : isTotal
+                isTotal
                     ? Colors.green
                     : theme.textColor,
             fontSize: isTotal ? 18 : 14,
@@ -1458,7 +1440,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 ),
                 child: Column(
                   children: [
-                    _depositRow('Total (incl. 7.5% fee)', totalPrice),
+                    _depositRow('Total Price', totalPrice),
                     const SizedBox(height: 4),
                     _depositRow(
                         '25% Non-Refundable Deposit Due', depositAmount,

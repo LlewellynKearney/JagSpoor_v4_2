@@ -491,6 +491,34 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/outfitter_mode/presentation/manual_invoice_screen.dart`,
   `context.md`.
 
+## Batch D — Permit Log Permissions, Dedup & Marketplace Hunter Privacy (added 2026-08-12)
+
+- **`firestore.rules` `venison_permits/{permitId}`** rewritten:
+  - `allow read: isSignedIn() && (resource == null || outfitterId == uid || hunterId == uid || isAdmin())` — lets both `.where('outfitterId', isEqualTo: uid)` and `.where('hunterId', isEqualTo: uid)` list queries succeed (server guarantees returned docs satisfy the rule). `resource == null` is the not-yet-existing edge case (harmless for reads of existing docs).
+  - `allow create, update: isSignedIn()` — either party may write (both co-complete the legal form + signatures).
+  - `allow delete: isOwnerOf('outfitterId') || isAdmin()` — least-privilege (unchanged from before).
+  - Removed the local `isPermitParty()` helper (now inlined). Needs `npx firebase-tools deploy --only firestore:rules` in a credentialed env.
+- **Permit manager consolidation**: the standalone "Issue Game Transport Permit"
+  (`OutfitterTransportPermitScreen`) entry and the direct "Venison Transport
+  Permit" form entry were removed from BOTH the outfitter dashboard
+  (`outfitter_dashboard.dart`) and the hunter dashboard (`hunter_dashboard.dart`).
+  All permit creation + log viewing is now consolidated into
+  `VenisonPermitListScreen` (its "New Permit" FAB opens `VenisonPermitFormScreen`).
+  Unused imports removed; `OutfitterTransportPermitScreen` file left in place
+  (no longer navigated to).
+- **Hunter "My Venison Permits" log**: hunter dashboard entry renamed from
+  "My Transport Permits" → "My Venison Permits" → `VenisonPermitListScreen(isOutfitterMode: false)`.
+- **Dedup**: `VenisonPermitManager.getMyPermitsStream` now de-duplicates the
+  snapshot by document id (`seen.add(doc.id)`) before mapping, so a permit can
+  never render twice even if a future outfitterId+hunterId stream merge returns
+  the same doc twice.
+- **Marketplace hunter privacy** (`hunter_package_marketplace_screen.dart`):
+  the "Outfitter Base Price" and "7.5% Platform Fee" `_PriceRow`s were removed
+  from the booking details sheet; the total remains inclusive of the fee but is
+  relabelled "Total Price" (also on the package-card chip "total price" and the
+  booked-hunt deposit banner). The dead `isFee` param was removed from `_PriceRow`.
+  Primary action button renamed "CONFIRM BOOKING" → "BOOK THIS PACKAGE".
+
 ## Phase 4 — AI Paper Price List Scanner Updates & History Log (added 2026-08-12)
 
 - **7.5% platform fee applied to the AI scanner pipeline** (was 5%):

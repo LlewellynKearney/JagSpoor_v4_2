@@ -130,11 +130,20 @@ class VenisonPermitManager {
         .where(field, isEqualTo: currentUser.uid)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = Map<String, dynamic>.from(doc.data());
-              data['id'] = doc.id;
-              return VenisonTransportPermit.fromMap(data);
-            }).toList());
+        // De-duplicate by document id so a permit can never render twice,
+        // even if the upstream query or a future merge of the outfitterId +
+        // hunterId streams ever returns the same doc twice.
+        .map((snapshot) {
+          final seen = <String>{};
+          return snapshot.docs
+              .where((doc) => seen.add(doc.id))
+              .map((doc) {
+                final data = Map<String, dynamic>.from(doc.data());
+                data['id'] = doc.id;
+                return VenisonTransportPermit.fromMap(data);
+              })
+              .toList();
+        });
   }
 
   /// Fetch a single permit by ID.

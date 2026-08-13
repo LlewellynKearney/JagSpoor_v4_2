@@ -8,10 +8,8 @@ import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
 import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
 import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
-import '../hunter_mode/screens/outfitter_transport_permit_screen.dart';
 import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
 import '../hunter_mode/screens/scanned_pricelist_history_screen.dart';
-import '../hunter_mode/screens/venison_permit_form_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 import '../admin/services/admin_auth_guard.dart';
@@ -257,54 +255,17 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             const SizedBox(height: 12),
                           ],
 
-                          // Issue Game Transport Permit
-                          _buildFeatureCard(
-                            icon: Icons.description_rounded,
-                            title: 'Issue Game Transport Permit',
-                            description:
-                                'Generate statutory SA game transport certificates.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder:
-                                      (_) => OutfitterTransportPermitScreen(
-                                        theme: widget.theme,
-                                      ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Venison Transport & Hunt Permit — legal SA form
-                          _buildFeatureCard(
-                            icon: Icons.receipt_long_rounded,
-                            title: 'Venison Transport Permit',
-                            description:
-                                'Legal SA venison / game transport & hunt permit with dual digital signatures.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => VenisonPermitFormScreen(
-                                    theme: widget.theme,
-                                    isOutfitterMode: true,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Venison Permit Log / Manager
+                          // Venison Permit Log & Manager — single consolidated
+                          // entry for issuing + viewing venison transport
+                          // permits. The standalone "Issue Game Transport
+                          // Permit" screen and the direct form entry have been
+                          // removed; creation now happens via the list screen's
+                          // "New Permit" action.
                           _buildFeatureCard(
                             icon: Icons.list_alt_rounded,
                             title: 'Permit Log & Manager',
                             description:
-                                'View, search, and manage issued venison transport permits.',
+                                'Issue, view, search, and manage venison transport permits in one place.',
                             theme: widget.theme,
                             onTap: () {
                               Navigator.push(
