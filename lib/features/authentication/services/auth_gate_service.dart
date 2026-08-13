@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../../admin/services/admin_auth_guard.dart';
+import '../../auth/services/user_role_provider.dart';
 
 /// AuthGateService - Advanced Authentication Shield
 /// Combines Google OAuth federated logins with SMS OTP 2FA authorization
@@ -153,6 +155,9 @@ class AuthGateService {
   Future<void> signOut() async {
     await _firebaseAuth.signOut();
     await _googleSignIn.signOut();
+    // Clear cached role state so the next sign-in re-resolves from scratch.
+    UserRoleProvider.instance.reset();
+    AdminAuthGuard.instance.reset();
   }
 
   /// Re-authenticate user with Google (for sensitive operations)

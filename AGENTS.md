@@ -1315,3 +1315,97 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   unaffected (pure UI padding change, no logic touched).
 - Files: `lib/core/widgets/safe_bottom_inset.dart` (new) + the 18 screen files
   listed above (import + one `padding:` edit each).
+
+## RBAC — role-based access control & route guards (added 2026-08-13)
+
+- Centralized the "who is the current user" question in a new
+  `lib/features/auth/services/user_role_provider.dart`:
+  - `enum AppRole { admin, outfitter, hunter, unknown }` with
+    `AppRole.fromString` (collapses null / unknown → `unknown`).
+  - `UserRoleProvider` singleton — the single cached source of truth for the
+    resolved role. `resolveRole({forceRefresh})` fetches the role on login in
+    this order: (1) not signed in → `unknown`; (2) admin email allow-list
+    (`admin@jag-spoor.co.za`) → `admin`; (3) `AdminAuthGuard` admin claim /
+    Firestore flag → `admin`; (4) `users/{uid}.role` → the stored role;
+    (5) fetch error → `unknown`. Result cached for the process lifetime.
+    `setRole(role)` lets role-selection cache the freshly chosen role
+    without a re-fetch; `reset()` clears it on sign-out. Firestore/Auth are
+    lazily resolved via getters so touching the provider in a unit test
+    (pre-Firebase-init) does not throw; `@visibleForTesting injectForTesting`
+    + `testUid`/`testEmail` override exercise the Firestore path with
+    `FakeFirebaseFirestore`.
+- Separated the "what may they do" policy into a pure, dependency-free
+  `lib/features/auth/services/role_guard.dart` (no Firebase / Flutter imports
+  → fully unit-testable):
+  - `RoleGuard.canAccess(role, route)` — admin-only routes
+    (`/admin_dashboard`) require `admin`; the Hunter / Outfitter dashboards
+    require the matching role (admin may preview any); all other routes
+    default to allowed. → Hunters cannot open the Admin Portal or Outfitter
+    Management; Outfitters default to Outfitter Mode and cannot open
+    Hunter / Admin.
+  - `RoleGuard.defaultHomeFor(role)` — where an unauthorized user is bounced
+    (`unknown` → `/role_selection`, never dropped on a dashboard).
+  - `RoleGuard.canSwitchModes(role)` — only `admin` may use the instant mode
+    switcher.
+  - `RoleGuard.accessDeniedMessage(role, route)` — route-tailored notice text.
+- New `lib/features/auth/widgets/role_guarded_route.dart` — `RoleGuardedRoute`
+  widget wraps a route `builder`. On mount it resolves the role (if not yet
+  resolved — covers deep-link cold launches), checks `RoleGuard.canAccess`,
+  and on DENIAL redirects cleanly to `defaultHomeFor(role)` via
+  `pushReplacementNamed` with a floating red "Access Denied: …" SnackBar —
+  instead of rendering a screen the user may not use. Awaiting resolution
+  shows a centered `CircularProgressIndicator`.
+- Wired route guards in `main.dart`: `/hunter_dashboard`,
+  `/outfitter_dashboard`, `/admin_dashboard` builders are each wrapped in
+  `RoleGuardedRoute(route:, builder:)`. All three dashboards are now
+  route-level protected.
+- `core/splash_screen.dart` now resolves the role ONCE via
+  `UserRoleProvider.instance.resolveRole(forceRefresh: true)` and routes by
+  `AppRole` (admin→admin, hunter→hunter, outfitter→outfitter, unknown→role
+  selection). Removed the duplicated direct Firestore read; the cached role
+  is then read by the dashboard route guards.
+- `role_selection_screen.dart` caches the chosen role:
+  - admin bypass → `setRole(AppRole.admin)` before navigating.
+  - hunter/outfitter confirm → writes `users/{uid}.role`, then
+    `setRole(outfitter|hunter)` so the destination route guard admits the
+    user immediately (the Firestore write may not be readable for a few
+    hundred ms).
+- `AdminModeSwitcher._switchTo` (admin instant switcher) gained a
+  defense-in-depth re-check: `RoleGuard.canSwitchModes(role)` before
+  navigating; a non-admin (stale render / programmatic tap) is blocked with
+  an access-denied SnackBar instead of switching modes. The switcher button
+  remains admin-gated at the dashboard level.
+- Sign-out clears cached role state: `AuthGateService.signOut()` and
+  `AdminAnalyticsService.signOut()` now call `UserRoleProvider.instance.reset()`
+  + `AdminAuthGuard.instance.reset()` so the next sign-in re-resolves from
+  scratch (no role bleed between sessions).
+- The `AdminDashboardScreen` keeps its own `AdminAuthGuard` bootstrap-check as
+  defense-in-depth, but the primary enforcement is now the route guard (which
+  redirects unauthorized users before the screen mounts).
+- **`flutter analyze`**: 0 errors, 13 warnings (all pre-existing, unchanged;
+  no new issues in the new/modified files).
+- **Tests** (all green locally, Flutter 3.44.9):
+  - `test/role_guard_test.dart` (24 tests) — `AppRole.fromString` parsing +
+    `RoleGuard.canAccess` / `defaultHomeFor` / `canSwitchModes` /
+    `accessDeniedMessage` for admin, outfitter, hunter, and unknown profiles
+    across admin-only, hunter, outfitter, and non-restricted routes.
+  - `test/user_role_provider_test.dart` (7 tests) — provider default state,
+    `setRole` caching for all three roles, `resolveRole` cache-hit contract
+    (returns cached role without touching Firebase), and `reset`.
+  - Note: the Firestore `users/{uid}.role` fetch in `resolveRole` is a
+    one-line read + `AppRole.fromString` (whose mapping is covered by the
+    role_guard tests). A `fake_cloud_firestore`-backed resolution suite is
+    not included because `fake_cloud_firestore 4.1.1` does not compile against
+    the locally-resolved `cloud_firestore 6.7.1` in this sandbox (pre-existing
+    dep skew; same reason `offline_sync_queue_test.dart` can't compile here).
+    It compiles/runs in CI under the Flutter 3.29.1 pin.
+- Files: `lib/features/auth/services/user_role_provider.dart` (new),
+  `lib/features/auth/services/role_guard.dart` (new),
+  `lib/features/auth/widgets/role_guarded_route.dart` (new),
+  `lib/main.dart`, `lib/core/splash_screen.dart`,
+  `lib/features/auth/role_selection_screen.dart`,
+  `lib/features/admin/widgets/admin_mode_switcher.dart`,
+  `lib/features/admin/services/admin_analytics_service.dart`,
+  `lib/features/authentication/services/auth_gate_service.dart`,
+  `test/role_guard_test.dart` (new), `test/user_role_provider_test.dart` (new).
+

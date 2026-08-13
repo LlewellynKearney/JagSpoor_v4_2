@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin/services/admin_auth_guard.dart';
+import 'services/user_role_provider.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
@@ -47,6 +48,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
     // Admins get seamless multi-profile access — no dialog, no role write.
     if (isAdmin) {
+      // Cache the admin role so the dashboard route guards admit them.
+      UserRoleProvider.instance.setRole(AppRole.admin);
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, routeName);
       return;
@@ -72,6 +75,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         // (e.g. offline). The selection still navigates the user onward.
       }
     }
+
+    // Cache the chosen role so the destination dashboard's route guard admits
+    // the user without a re-fetch (the Firestore write above may not be
+    // readable for a few hundred ms).
+    UserRoleProvider.instance.setRole(
+      role == 'outfitter' ? AppRole.outfitter : AppRole.hunter,
+    );
 
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, routeName);

@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
-import '../features/admin/services/admin_auth_guard.dart';
+import '../features/auth/services/user_role_provider.dart';
 import 'theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -52,6 +51,9 @@ class _SplashScreenState extends State<SplashScreen>
   /// to route directly to the correct shell, instead of forcing every signed-in
   /// user back to the role selection screen on every launch.
   ///
+  /// The resolved role is cached in [UserRoleProvider] so the route guards on
+  /// the dashboard routes read a single consistent value.
+  ///
   ///   currentUser == null                 → AuthScreen (login / register)
   ///   admin (claim / email / role==admin) → /admin_dashboard
   ///   role == 'hunter'                     → /hunter_dashboard
@@ -70,42 +72,23 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
 
-    // Admins route straight to the admin portal.
-    try {
-      final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-      if (isAdmin) {
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/admin_dashboard');
-        return;
-      }
-    } catch (_) {
-      // Fall through to role lookup; admin status may also surface there.
-    }
-
-    // Resolve the assigned role from the users/{uid} profile.
-    String? role;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      role = doc.data()?['role'] as String?;
-    } catch (_) {
-      // Offline / permission error: treat as unassigned so the user lands on
-      // role selection rather than a blank screen.
-      role = null;
-    }
+    // Resolve the role once here (cached for the route guards / dashboards).
+    final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
 
     if (!mounted) return;
     switch (role) {
-      case 'hunter':
+      case AppRole.admin:
+        Navigator.pushReplacementNamed(context, '/admin_dashboard');
+        break;
+      case AppRole.hunter:
         Navigator.pushReplacementNamed(context, '/hunter_dashboard');
         break;
-      case 'outfitter':
+      case AppRole.outfitter:
         Navigator.pushReplacementNamed(context, '/outfitter_dashboard');
         break;
-      default:
-        // No role assigned yet — let the user select their permanent role.
+      case AppRole.unknown:
+        // No role assigned yet / fetch error — let the user select their
+        // permanent role.
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),

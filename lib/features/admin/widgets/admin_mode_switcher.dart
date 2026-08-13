@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../auth/services/role_guard.dart';
+import '../../auth/services/user_role_provider.dart';
 
 /// Enum identifying the three role contexts an admin/superuser can switch
 /// between instantly.
@@ -155,6 +157,21 @@ class AdminModeSwitcher extends StatelessWidget {
       AdminMode.outfitter => '/outfitter_dashboard',
       AdminMode.admin => '/admin_dashboard',
     };
+    // Defense-in-depth: only admins may use the instant mode switcher. The
+    // switcher button is only rendered for admins in the first place, but
+    // re-checking here prevents a stale render or programmatic tap from
+    // switching a non-admin into a restricted mode.
+    if (!RoleGuard.canSwitchModes(UserRoleProvider.instance.role)) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(RoleGuard.accessDeniedMessage(
+              UserRoleProvider.instance.role, route)),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     // pushReplacementNamed rebuilds the navigation stack for the new role
     // context immediately — no sign-out or credential re-entry required.
     Navigator.pushReplacementNamed(context, route);

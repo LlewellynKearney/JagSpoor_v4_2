@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../auth/services/user_role_provider.dart';
+import 'admin_auth_guard.dart';
 
 /// Aggregated metrics for the master admin analytics dashboard.
 class AdminMetrics {
@@ -211,5 +213,8 @@ class AdminAnalyticsService {
   /// Sign out the admin (used by the dashboard sign-out action).
   Future<void> signOut() async {
     await _auth.signOut();
+    // Clear cached role state so the next sign-in re-resolves from scratch.
+    UserRoleProvider.instance.reset();
+    AdminAuthGuard.instance.reset();
   }
 }

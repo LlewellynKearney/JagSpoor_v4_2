@@ -13,6 +13,7 @@ import 'core/splash_screen.dart';
 import 'core/services/firestore_bootstrap.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/role_selection_screen.dart';
+import 'features/auth/widgets/role_guarded_route.dart';
 import 'features/hunter_mode/hunter_dashboard.dart';
 import 'features/hunter_mode/add_firearm_manual_form.dart';
 import 'features/hunter_mode/license_scanner_screen.dart';
@@ -200,12 +201,18 @@ class JagspoorApp extends StatelessWidget {
             '/splash': (context) => SplashScreen(theme: themeController),
             '/': (context) => AuthScreen(themedata: themeController),
             '/role_selection': (context) => const RoleSelectionScreen(),
-            '/hunter_dashboard':
-                (context) => HunterDashboard(theme: themeController),
-            '/outfitter_dashboard':
-                (context) => OutfitterDashboard(theme: themeController),
-            '/admin_dashboard':
-                (context) => AdminDashboardScreen(theme: themeController),
+            '/hunter_dashboard': (context) => RoleGuardedRoute(
+                route: '/hunter_dashboard',
+                builder: (_) => HunterDashboard(theme: themeController),
+              ),
+            '/outfitter_dashboard': (context) => RoleGuardedRoute(
+                route: '/outfitter_dashboard',
+                builder: (_) => OutfitterDashboard(theme: themeController),
+              ),
+            '/admin_dashboard': (context) => RoleGuardedRoute(
+                route: '/admin_dashboard',
+                builder: (_) => AdminDashboardScreen(theme: themeController),
+              ),
             '/scan_license':
                 (context) => LicenseScannerScreen(theme: themeController),
             '/add_firearm_form':
