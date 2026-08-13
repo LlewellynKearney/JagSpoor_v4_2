@@ -138,6 +138,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
         portionsRequested: List.from(_selectedPortions),
         spicePreference: _selectedSpiceProfile,
         specialInstructions: _specialInstructionsController.text.trim(),
+        allPortionOptions: _portionOptions,
       );
 
       if (mounted) {
