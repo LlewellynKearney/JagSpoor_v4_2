@@ -2,6 +2,27 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
 import '../../../core/utils/measurement_formatter.dart';
 
+/// A requested meat-processing portion with an optional target weight (kg)
+/// and a selected spice / flavour profile (may be a named SA profile or a
+/// free-text custom blend).
+class ProcessingPortion {
+  final String name;
+  final double? targetWeightKg;
+  final String spice;
+
+  const ProcessingPortion({
+    required this.name,
+    this.targetWeightKg,
+    this.spice = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (targetWeightKg != null) 'targetWeightKg': targetWeightKg,
+        if (spice.isNotEmpty) 'spice': spice,
+      };
+}
+
 class MeatProcessingExporter {
   // Compile processing requirements into a formal, printable PDF document matrix
   Future<void> generateAndShareManifest({
@@ -9,12 +30,10 @@ class MeatProcessingExporter {
     required String hunterName,
     required String species,
     required double hangingWeight,
-    required List<String>
-    portionsRequested, // e.g., ["Biltong", "Droëwors", "Steaks"]
-    required String spicePreference, // e.g., "Traditional Coriander & Vinegar"
-    required String
-    specialInstructions, // e.g., "Keep skins for taxidermy, wrap backstraps separate"
-    List<String> allPortionOptions = const [],
+    required List<ProcessingPortion>
+        portions, // per-portion target weights + spice notes
+    String spicePreference = '', // default/global spice note (optional)
+    String specialInstructions = '',
   }) async {
     final doc = await JagSpoorPdfDocument.create(
       title: 'Slaughterhouse Manifest',
@@ -28,10 +47,9 @@ class MeatProcessingExporter {
         hunterName: hunterName,
         species: species,
         hangingWeight: hangingWeight,
-        portionsRequested: portionsRequested,
+        portions: portions,
         spicePreference: spicePreference,
         specialInstructions: specialInstructions,
-        allPortionOptions: allPortionOptions,
       ),
     );
 
@@ -48,10 +66,9 @@ class MeatProcessingExporter {
     required String hunterName,
     required String species,
     required double hangingWeight,
-    required List<String> portionsRequested,
+    required List<ProcessingPortion> portions,
     required String spicePreference,
     required String specialInstructions,
-    List<String> allPortionOptions = const [],
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -61,16 +78,18 @@ class MeatProcessingExporter {
           JagSpoorPdfTheme.infoRow('Hunter Name', hunterName),
           JagSpoorPdfTheme.infoRow('Carcass Tag ID', carcassTag),
           JagSpoorPdfTheme.infoRow('Species', species),
-          JagSpoorPdfTheme.infoRow(
-              'Cold Hanging Weight', MeasurementFormatter.instance.formatWeight(hangingWeight)),
+          JagSpoorPdfTheme.infoRow('Cold Hanging Weight',
+              MeasurementFormatter.instance.formatWeight(hangingWeight)),
         ]),
 
         JagSpoorPdfTheme.sectionBar('Processing Specifications & Portions'),
-        _buildPortionChecklist(portionsRequested, allPortionOptions),
-        pw.SizedBox(height: 8),
-        JagSpoorPdfTheme.detailBox([
-          JagSpoorPdfTheme.infoRow('Spice Profile', spicePreference),
-        ]),
+        _buildPortionTable(portions),
+        if (spicePreference.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          JagSpoorPdfTheme.detailBox([
+            JagSpoorPdfTheme.infoRow('Default Spice Profile', spicePreference),
+          ]),
+        ],
 
         JagSpoorPdfTheme.sectionBar('Special Instructions / Notes'),
         pw.Container(
@@ -90,61 +109,31 @@ class MeatProcessingExporter {
     );
   }
 
-  /// Renders the requested portions as an ASCII checkbox matrix so the
-  /// slaughterhouse can verify selections at a glance. Uses `[X]` (checked)
-  /// and `[ ]` (unchecked) — plain ASCII the default PDF font (Helvetica /
-  /// WinAnsi) maps cleanly, avoiding the full-block glyph artifacts that
-  /// Unicode checkbox chars (U+2610/U+2611) produce.
-  pw.Widget _buildPortionChecklist(
-    List<String> portionsRequested,
-    List<String> allPortionOptions,
-  ) {
-    if (portionsRequested.isEmpty && allPortionOptions.isEmpty) {
+  /// Renders the requested portions as a table with each portion's target
+  /// weight and spice / flavour note displayed alongside the portion name.
+  pw.Widget _buildPortionTable(List<ProcessingPortion> portions) {
+    if (portions.isEmpty) {
       return pw.Padding(
         padding: const pw.EdgeInsets.all(10),
         child: pw.Text('No portions requested.', style: JagSpoorPdfTheme.body),
       );
     }
 
-    final selected = portionsRequested.toSet();
-    // Standard option rows, then any custom selections not in the option set.
-    final rows = <pw.Widget>[
-      ...allPortionOptions.map(
-        (option) => _checkRow(selected.contains(option), option),
-      ),
-      ...portionsRequested
-          .where((p) => !allPortionOptions.contains(p))
-          .map((p) => _checkRow(true, '$p (custom)')),
-    ];
+    final rows = portions.map((p) {
+      final weightStr = p.targetWeightKg == null
+          ? '-'
+          : MeasurementFormatter.instance.formatWeight(p.targetWeightKg);
+      return [
+        p.name,
+        weightStr,
+        p.spice.isEmpty ? '-' : p.spice,
+      ];
+    }).toList();
 
-    if (rows.isEmpty) {
-      // allPortionOptions was empty but portionsRequested had items — fall back
-      // to listing the selected portions as checked rows.
-      rows.addAll(portionsRequested.map((p) => _checkRow(true, p)));
-    }
-
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(10),
-      decoration: pw.BoxDecoration(
-        color: JagSpoorPdfTheme.band,
-        borderRadius: pw.BorderRadius.circular(6),
-        border: pw.Border.all(color: JagSpoorPdfTheme.divider, width: 0.5),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: rows,
-      ),
-    );
-  }
-
-  pw.Widget _checkRow(bool checked, String label) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-      child: pw.Text(
-        '${checked ? '[X]' : '[ ]'}  $label',
-        style: JagSpoorPdfTheme.body,
-      ),
+    return JagSpoorPdfTheme.dataTable(
+      headers: const ['Portion', 'Target Weight', 'Spice / Flavour'],
+      rows: rows,
+      columnWidths: const [150, 110, 200],
     );
   }
 }
