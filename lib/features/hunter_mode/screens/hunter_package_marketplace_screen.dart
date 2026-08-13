@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
@@ -539,6 +540,10 @@ class _PackageCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
+              // Package gallery (uploaded images, if any).
+              _buildGallery(theme),
+              const SizedBox(height: 12),
+
               // Pricing mode + species + availability meta row.
               Wrap(
                 spacing: 8,
@@ -676,6 +681,49 @@ class _PackageCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Horizontal strip of uploaded package gallery images. Returns an empty
+  /// [SizedBox] when the package has no images so the card layout is unchanged.
+  Widget _buildGallery(ThemeController theme) {
+    final raw = data['imageUrls'];
+    final urls = raw is List ? raw.whereType<String>().toList() : const <String>[];
+    if (urls.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: urls[index],
+              fit: BoxFit.cover,
+              width: 128,
+              height: 96,
+              placeholder: (_, __) => Container(
+                width: 128,
+                color: theme.backgroundColor,
+                child: const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              errorWidget: (_, __, ___) => Container(
+                width: 128,
+                color: theme.backgroundColor,
+                child: Icon(Icons.broken_image, color: theme.subtitleColor),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

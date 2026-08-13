@@ -28,7 +28,7 @@ class PackageBookingManager {
   // ==========================================
   // OUTFITTER - PUBLISH PACKAGE
   // ==========================================
-  /// Publishes a new hunting package to the marketplace.
+  /// Publishes (or saves as draft) a new hunting package to the marketplace.
   ///
   /// Parameters:
   /// - [title]: Package title/name
@@ -38,6 +38,12 @@ class PackageBookingManager {
   ///   the availability window. See [PackagePricing].
   /// - [inclusions]: List of what's included (e.g., ["Transport", "Accommodation", "Meals"])
   /// - [farmId]: Optional farm/concession ID to bind the package to
+  /// - [status]: Lifecycle status (defaults to [PackageStatus.active] so the
+  ///   package is immediately listed; pass [PackageStatus.draft] to save an
+  ///   unlisted work-in-progress).
+  /// - [imageUrls]: Download URLs of uploaded package gallery images.
+  /// - [depositPercentage]: Per-package non-refundable deposit percentage
+  ///   (0–100, default 25). Stored as the fractional [depositFraction].
   ///
   /// Commission Calculation (7.5%):
   /// - `basePriceRands` = resolved base price from [pricing]
@@ -47,12 +53,15 @@ class PackageBookingManager {
   /// Returns: void (saves to Firestore 'packages' collection)
   ///
   /// Throws: Exception if user is not authenticated or save fails
-  Future<void> publishPackage({
+  Future<String> publishPackage({
     required String title,
     required String description,
     required PackagePricing pricing,
     required List<String> inclusions,
     String? farmId,
+    PackageStatus status = PackageStatus.active,
+    List<String> imageUrls = const [],
+    double depositPercentage = 25,
   }) async {
     // Validate authentication
     if (_currentUserId == null) {
@@ -62,6 +71,9 @@ class PackageBookingManager {
     // Validate inputs
     if (title.trim().isEmpty) {
       throw Exception('Package title cannot be empty');
+    }
+    if (description.trim().isEmpty) {
+      throw Exception('Package description cannot be empty');
     }
 
     final basePriceRands = pricing.basePrice;
@@ -75,6 +87,9 @@ class PackageBookingManager {
       throw Exception(
           'Availability end date cannot be before the start date');
     }
+
+    // Per-package deposit percentage, clamped to [0, 100].
+    final clampedDeposit = depositPercentage.clamp(0, 100);
 
     // Calculate commission metrics (7.5%)
     final double fee = basePriceRands * platformCommissionRate;
@@ -90,13 +105,100 @@ class PackageBookingManager {
       'platformCommissionRate': platformCommissionRate,
       'inclusions': inclusions,
       'farmId': farmId,
+      'imageUrls': imageUrls,
+      'depositPercentage': clampedDeposit,
+      'depositFraction': clampedDeposit / 100,
       ...pricing.toMap(),
-      'status': 'active',
+      'status': status.label,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    await _firestore.collection('packages').add(packageData);
+    final docRef =
+        await _firestore.collection('packages').add(packageData);
+    return docRef.id;
+  }
+
+  /// Updates an existing package owned by the current outfitter.
+  ///
+  /// Any of the optional fields, when non-null, replace the stored value. The
+  /// 7.5% commission split is recomputed whenever [pricing] (and thus the base
+  /// price) changes. Status is left untouched here — use [setPackageStatus]
+  /// for lifecycle transitions.
+  ///
+  /// Throws: Exception if not authenticated or the update fails.
+  Future<void> updatePackage({
+    required String packageId,
+    String? title,
+    String? description,
+    PackagePricing? pricing,
+    List<String>? inclusions,
+    String? farmId,
+    List<String>? imageUrls,
+    double? depositPercentage,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to update a package');
+    }
+
+    final update = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (title != null) update['title'] = title.trim();
+    if (description != null) update['description'] = description.trim();
+    if (inclusions != null) update['inclusions'] = inclusions;
+    if (farmId != null) update['farmId'] = farmId;
+    if (imageUrls != null) update['imageUrls'] = imageUrls;
+    if (depositPercentage != null) {
+      final clamped = depositPercentage.clamp(0, 100);
+      update['depositPercentage'] = clamped;
+      update['depositFraction'] = clamped / 100;
+    }
+
+    if (pricing != null) {
+      final basePriceRands = pricing.basePrice;
+      if (basePriceRands <= 0) {
+        throw Exception('Base price must be greater than zero');
+      }
+      if (pricing.availabilityStart != null &&
+          pricing.availabilityEnd != null &&
+          pricing.availabilityEnd!.isBefore(pricing.availabilityStart!)) {
+        throw Exception(
+            'Availability end date cannot be before the start date');
+      }
+      final double fee = basePriceRands * platformCommissionRate;
+      final double total = basePriceRands + fee;
+      update
+        ..addAll({
+          'basePriceRands': basePriceRands,
+          'platformCommissionZAR': fee,
+          'totalPriceZAR': total,
+          'platformCommissionRate': platformCommissionRate,
+        })
+        ..addAll(pricing.toMap());
+    }
+
+    await _firestore.collection('packages').doc(packageId).update(update);
+  }
+
+  /// Transitions a package to a new lifecycle [status] (active / draft /
+  /// archived / deleted). Soft-deletes set [PackageStatus.deleted] rather than
+  /// removing the document, preserving booking references and audit history.
+  ///
+  /// Throws: Exception if not authenticated or the update fails.
+  Future<void> setPackageStatus({
+    required String packageId,
+    required PackageStatus status,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to change package status');
+    }
+
+    await _firestore.collection('packages').doc(packageId).update({
+      'status': status.label,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // ==========================================
@@ -196,7 +298,8 @@ class PackageBookingManager {
         .get();
   }
 
-  /// Get packages published by the current outfitter
+  /// Get packages published by the current outfitter (all statuses except
+  /// soft-deleted). Use [getMyPackagesStream] for a reactive management UI.
   Future<QuerySnapshot> getMyPackages() async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated');
@@ -207,6 +310,27 @@ class PackageBookingManager {
         .where('outfitterId', isEqualTo: _currentUserId)
         .orderBy('createdAt', descending: true)
         .get();
+  }
+
+  /// Reactive stream of packages published by the current outfitter, scoped to
+  /// a lifecycle [status] filter (defaults to all non-deleted packages). Powers
+  /// the "My Packages" management screen.
+  Stream<QuerySnapshot> getMyPackagesStream({
+    PackageStatus? status,
+  }) {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated');
+    }
+
+    var query = _firestore
+        .collection('packages')
+        .where('outfitterId', isEqualTo: _currentUserId);
+
+    if (status != null) {
+      query = query.where('status', isEqualTo: status.label);
+    }
+
+    return query.orderBy('createdAt', descending: true).snapshots();
   }
 
   /// Get bookings for the current user (as hunter or outfitter)
@@ -395,16 +519,19 @@ class PackageBookingManager {
     await bookingRef.update(update);
   }
 
-  /// Delete a package (only by the owning outfitter)
+  /// Soft-deletes a package owned by the current outfitter by marking its
+  /// status `deleted`. The document is retained so existing booking references
+  /// and audit history remain intact; deleted packages never appear in the
+  /// marketplace or the "My Packages" management list.
+  ///
+  /// Use [setPackageStatus] with [PackageStatus.active] to restore a package.
+  ///
+  /// Throws: Exception if not authenticated or the update fails.
   Future<void> deletePackage(String packageId) async {
-    if (_currentUserId == null) {
-      throw Exception('User must be authenticated');
-    }
-
-    await _firestore.collection('packages').doc(packageId).update({
-      'status': 'deleted',
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    await setPackageStatus(
+      packageId: packageId,
+      status: PackageStatus.deleted,
+    );
   }
 
   // ==========================================

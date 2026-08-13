@@ -632,3 +632,91 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/outfitter_mode/outfitter_dashboard.dart`,
   `lib/features/hunter_mode/hunter_dashboard.dart`, `firestore.rules`,
   `storage.rules`, `firestore.indexes.json`.
+
+## Outfitter Package CRUD Polish — full lifecycle + image management (added 2026-08-13)
+
+- **`PackageStatus` enum** added to `lib/features/hunter_mode/models/package_pricing.dart`:
+  `active`, `draft`, `archived`, `deleted` (with `label`, `fromString`, and
+  `isListed`). Replaces the loose `'active'`/`'deleted'` string literals.
+- **`PackageBookingManager`** (`services/package_booking_manager.dart`)
+  gained the full outfitter package CRUD surface:
+  - `publishPackage` now returns `Future<String>` (the new doc id) and takes
+    `status` (default `active`; pass `draft` to save an unlisted WIP),
+    `imageUrls` (gallery download URLs), and `depositPercentage` (per-package
+    non-refundable deposit, 0–100, default 25 — stored as both
+    `depositPercentage` and the fractional `depositFraction`). Validates
+    title AND description non-empty (description was previously unvalidated).
+  - `updatePackage({packageId, title?, description?, pricing?, inclusions?,
+    farmId?, imageUrls?, depositPercentage?})` — owner-scoped edit; recomputes
+    the 7.5% commission split whenever pricing changes.
+  - `setPackageStatus({packageId, status})` — explicit lifecycle transition.
+  - `getMyPackagesStream({status?})` — reactive `snapshots()` scoped by
+    `outfitterId` (+ optional status filter) ordered by `createdAt` desc,
+    powering the management screen.
+  - `deletePackage` now delegates to `setPackageStatus(deleted)` (soft-delete;
+    document retained so booking references + audit history stay intact).
+  - `getAllPackages`/`getMyPackages` unchanged (backwards compatible).
+- **`OutfitterPackageCreatorScreen`** polished:
+  - **Edit mode**: optional `existingPackage` + `packageId` ctor params;
+    `_prefillForEdit()` hydrates title, description, pricing mode, price,
+    farm, status, deposit %, inclusions, image URLs, line items, species,
+    and availability. Save action calls `updatePackage` + `setPackageStatus`
+    when editing, `publishPackage` when creating. AppBar + button label adapt
+    ("Edit Package" / "SAVE CHANGES" / "SAVE AS DRAFT" / "PUBLISH PACKAGE").
+  - **Image management**: `_pickedImages` (up to 5) via
+    `ImagePicker.pickMultipleMedia(imageQuality: 80, limit: remaining)`; a
+    horizontal thumbnail strip with per-image remove buttons; mixed view of
+    newly-picked local files + previously-uploaded remote URLs (rendered via
+    `cached_network_image`). `_uploadPackageImages()` compresses each file
+    through `ImageService.compressExisting` (1280px / JPEG q75) and uploads to
+    Firebase Storage at `package_images/{outfitterId}/{timestamp}_{i}.jpg`
+    with a `SettableMetadata` JPEG content type, driving a
+    `LinearProgressIndicator` + percentage label from the `UploadTask`
+    snapshot events.
+  - **Deposit percentage field**: validated `TextFormField` (0–100, `%`
+    suffix); clamped in the manager.
+  - **Listing status toggle**: Active <-> Draft segmented control sets the
+    `_saveStatus` written on publish.
+  - `_inputDecoration` gained an optional `suffix` param for the `%` label.
+- **`OutfitterPackageManagerScreen`** (NEW,
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`):
+  reactive "My Packages" management UI. Status filter chips (All / Active /
+  Draft / Archived + a Deleted toggle), each card shows thumbnail, title,
+  total price, species count, deposit %, and a status badge. Actions:
+  Activate/Deactivate, Archive/Unarchive, Edit (opens creator in edit mode),
+  and Delete (confirmation modal -> soft-delete). Deleted packages are
+  restorable. FAB publishes a new package.
+- **Marketplace rendering** (`hunter_package_marketplace_screen.dart`):
+  `_PackageCard` gained `_buildGallery` — a horizontal
+  `cached_network_image` strip of the package's `imageUrls` (renders nothing
+  when the package has no images, so legacy packages are unaffected).
+- **Outfitter dashboard** (`lib/features/outfitter_mode/outfitter_dashboard.dart`):
+  a "Manage My Packages" feature card (`inventory_2_rounded`) was added right
+  after "Publish Hunting Package" (in the `!_isManager` block) navigating to
+  `OutfitterPackageManagerScreen`.
+- **`storage.rules`**: added `match /package_images/{uid}/{fileName}` —
+  owner-scoped writes (the outfitter's uid is the path segment); reads
+  covered by the global authenticated-read rule (marketplace listings are
+  visible to signed-in hunters).
+- **`firestore.rules`**: no change required — `packages/{packageId}` already
+  allows `update, delete` by owner (`resource.data.outfitterId == auth.uid`),
+  so `updatePackage` / `setPackageStatus` / `deletePackage` are covered.
+- **`firestore.indexes.json`**: three `packages` composite indexes added —
+  `(outfitterId ASC, createdAt DESC)` for `getMyPackages`/`getMyPackagesStream`,
+  `(outfitterId ASC, status ASC, createdAt DESC)` for the status-filtered
+  management stream, and `(status ASC, createdAt DESC)` for the marketplace
+  `getAllPackages` query. Must be deployed:
+  `npx firebase-tools deploy --only firestore:indexes,storage`.
+  Until deployed the streams surface the index-missing error in-UI rather
+  than silently showing empty.
+- **`flutter analyze`** (local Flutter 3.29.1, CI pin): **0 errors, 0 warnings
+  in all changed files** (90 pre-existing infos + warnings across `lib/`,
+  all in unrelated files — unchanged from the documented baseline). The new
+  management screen + creator edits + marketplace gallery are analyzer-clean.
+- Files: `lib/features/hunter_mode/models/package_pricing.dart`,
+  `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart` (new),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `storage.rules`, `firestore.indexes.json`.

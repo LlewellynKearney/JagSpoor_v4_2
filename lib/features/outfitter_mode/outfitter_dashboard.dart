@@ -6,6 +6,7 @@ import '../auth/change_password_dialog.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
 import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
 import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
+import '../hunter_mode/screens/outfitter_package_manager_screen.dart';
 import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
@@ -162,6 +163,27 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                                         (_) => OutfitterPackageCreatorScreen(
                                           theme: widget.theme,
                                         ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Manage My Packages - lifecycle + deletion
+                            _buildFeatureCard(
+                              icon: Icons.inventory_2_rounded,
+                              title: 'Manage My Packages',
+                              description:
+                                  'Activate, draft, archive, edit, or delete your published packages.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => OutfitterPackageManagerScreen(
+                                      theme: widget.theme,
+                                    ),
                                   ),
                                 );
                               },

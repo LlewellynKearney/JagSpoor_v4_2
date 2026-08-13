@@ -1,5 +1,47 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Lifecycle status for a hunting package.
+///
+/// - [active]    — visible in the marketplace and bookable by hunters.
+/// - [draft]     — saved but hidden from the marketplace (work in progress).
+/// - [archived]  — retired from the marketplace but retained for history.
+/// - [deleted]   — soft-deleted (excluded from all listings; recoverable).
+enum PackageStatus {
+  active,
+  draft,
+  archived,
+  deleted;
+
+  String get label {
+    switch (this) {
+      case PackageStatus.active:
+        return 'active';
+      case PackageStatus.draft:
+        return 'draft';
+      case PackageStatus.archived:
+        return 'archived';
+      case PackageStatus.deleted:
+        return 'deleted';
+    }
+  }
+
+  static PackageStatus fromString(String? value) {
+    switch (value) {
+      case 'draft':
+        return PackageStatus.draft;
+      case 'archived':
+        return PackageStatus.archived;
+      case 'deleted':
+        return PackageStatus.deleted;
+      default:
+        return PackageStatus.active;
+    }
+  }
+
+  /// Whether the package should appear in the public marketplace.
+  bool get isListed => this == PackageStatus.active;
+}
+
 /// Pricing mode for a hunting package.
 enum PackagePricingMode {
   /// Outfitter inputs a single total package price.

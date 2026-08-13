@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/image_service.dart';
 import '../../../models/animal.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
@@ -10,7 +15,20 @@ import '../services/package_booking_manager.dart';
 class OutfitterPackageCreatorScreen extends StatefulWidget {
   final ThemeController theme;
 
-  const OutfitterPackageCreatorScreen({super.key, required this.theme});
+  /// Optional existing package to edit. When non-null the form is prefilled and
+  /// the save action updates the package instead of publishing a new one.
+  final Map<String, dynamic>? existingPackage;
+
+  /// Package id being edited (populated from [existingPackage]['id'] when
+  /// available; accepted explicitly for convenience).
+  final String? packageId;
+
+  const OutfitterPackageCreatorScreen({
+    super.key,
+    required this.theme,
+    this.existingPackage,
+    this.packageId,
+  });
 
   @override
   State<OutfitterPackageCreatorScreen> createState() =>
@@ -23,11 +41,27 @@ class _OutfitterPackageCreatorScreenState
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
+  final _depositController = TextEditingController(text: '25');
   final List<String> _inclusions = [];
   final _inclusionController = TextEditingController();
 
   String? _selectedFarmId;
   bool _isLoading = false;
+
+  // Image gallery (up to 5). Mix of newly-picked local files and previously
+  // uploaded remote URLs (when editing an existing package).
+  static const int _maxImages = 5;
+  final List<XFile> _pickedImages = [];
+  final List<String> _existingImageUrls = [];
+  double _uploadProgress = 0;
+  bool _isUploading = false;
+  final ImagePicker _imagePicker = ImagePicker();
+
+  // Lifecycle status to save the package as (Active vs Draft).
+  PackageStatus _saveStatus = PackageStatus.active;
+
+  // Edit-mode bookkeeping.
+  String? _editingPackageId;
 
   // Pricing mode: All-Inclusive vs Itemized.
   PackagePricingMode _pricingMode = PackagePricingMode.allInclusive;
@@ -53,6 +87,7 @@ class _OutfitterPackageCreatorScreenState
   void initState() {
     super.initState();
     _loadSpeciesCatalog();
+    _prefillForEdit();
   }
 
   @override
@@ -60,8 +95,70 @@ class _OutfitterPackageCreatorScreenState
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
+    _depositController.dispose();
     _inclusionController.dispose();
     super.dispose();
+  }
+
+  /// Prefills the form from [widget.existingPackage] when opened in edit mode.
+  void _prefillForEdit() {
+    final pkg = widget.existingPackage;
+    if (pkg == null) return;
+
+    _editingPackageId = widget.packageId ?? pkg['id'] as String?;
+    _titleController.text = (pkg['title'] ?? '').toString();
+    _descriptionController.text = (pkg['description'] ?? '').toString();
+
+    final mode = PackagePricingMode.fromString(pkg['mode'] as String?);
+    _pricingMode = mode;
+    if (mode == PackagePricingMode.allInclusive) {
+      final price = (pkg['allInclusivePrice'] as num?)?.toDouble() ??
+          (pkg['basePriceRands'] as num?)?.toDouble() ??
+          0.0;
+      _priceController.text =
+          price > 0 ? price.toStringAsFixed(2) : '';
+    }
+
+    _selectedFarmId = pkg['farmId'] as String?;
+    _saveStatus = PackageStatus.fromString(pkg['status'] as String?);
+
+    final depPct = pkg['depositPercentage'];
+    if (depPct is num) {
+      _depositController.text = depPct.toDouble().toStringAsFixed(0);
+    }
+
+    final incl = pkg['inclusions'];
+    if (incl is List) {
+      _inclusions.addAll(incl.whereType<String>());
+    }
+
+    final urls = pkg['imageUrls'];
+    if (urls is List) {
+      _existingImageUrls
+          .addAll(urls.whereType<String>().take(_maxImages));
+    }
+
+    final lineItemsRaw = pkg['lineItems'];
+    if (lineItemsRaw is List) {
+      for (final e in lineItemsRaw.whereType<Map>()) {
+        final item = ItemizedLineItem.fromMap(
+            Map<String, dynamic>.from(e));
+        _lineItems[item.key] = item;
+      }
+    }
+
+    final speciesRaw = pkg['speciesItems'];
+    if (speciesRaw is List) {
+      for (final e in speciesRaw.whereType<Map>()) {
+        _speciesItems.add(SpeciesLineItem.fromMap(
+            Map<String, dynamic>.from(e)));
+      }
+    }
+
+    final start = pkg['availabilityStart'];
+    final end = pkg['availabilityEnd'];
+    if (start is Timestamp) _availabilityStart = start.toDate();
+    if (end is Timestamp) _availabilityEnd = end.toDate();
   }
 
   Future<void> _loadSpeciesCatalog() async {
@@ -97,6 +194,100 @@ class _OutfitterPackageCreatorScreenState
     setState(() {
       _inclusions.remove(inclusion);
     });
+  }
+
+  // ── Image gallery management ───────────────────────────────────────────
+
+  int get _totalImageCount => _pickedImages.length + _existingImageUrls.length;
+  bool get _canAddImage => _totalImageCount < _maxImages;
+
+  Future<void> _pickPackageImages() async {
+    if (!_canAddImage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum $_maxImages images reached'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final remaining = _maxImages - _totalImageCount;
+    final picked = await _imagePicker.pickMultipleMedia(
+      imageQuality: 80,
+      limit: remaining,
+    );
+    if (picked.isEmpty) return;
+    setState(() {
+      final addable = picked.take(remaining);
+      _pickedImages.addAll(addable);
+      if (_pickedImages.length + _existingImageUrls.length > _maxImages) {
+        _pickedImages.removeRange(
+          _maxImages - _existingImageUrls.length,
+          _pickedImages.length,
+        );
+      }
+    });
+  }
+
+  void _removePickedImage(int index) {
+    setState(() => _pickedImages.removeAt(index));
+  }
+
+  void _removeExistingImage(int index) {
+    setState(() => _existingImageUrls.removeAt(index));
+  }
+
+  /// Uploads all newly-picked images to Firebase Storage with per-file
+  /// compression and aggregate progress feedback. Returns the full set of
+  /// image URLs to store on the package (existing + freshly uploaded).
+  Future<List<String>> _uploadPackageImages() async {
+    final outfitterId =
+        FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final allUrls = List<String>.from(_existingImageUrls);
+
+    if (_pickedImages.isEmpty) return allUrls;
+
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0;
+    });
+
+    final totalSteps = _pickedImages.length;
+    for (var i = 0; i < _pickedImages.length; i++) {
+      final raw = File(_pickedImages[i].path);
+      if (!await raw.exists()) continue;
+      // Compress before upload (downscale to 1280px, JPEG q75) — keeps
+      // Storage usage and Firestore document sizes small.
+      final file = await ImageService.compressExisting(raw);
+      final ref = FirebaseStorage.instance.ref(
+        'package_images/$outfitterId/${timestamp}_$i.jpg',
+      );
+      try {
+        final uploadTask = ref.putFile(
+          file,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        // Drive the progress indicator from the upload task events.
+        uploadTask.snapshotEvents.listen((event) {
+          if (event.totalBytes > 0) {
+            final fileProgress = (i + event.bytesTransferred / event.totalBytes) / totalSteps;
+            setState(() => _uploadProgress = fileProgress.clamp(0, 1));
+          }
+        });
+        final snapshot = await uploadTask;
+        allUrls.add(await snapshot.ref.getDownloadURL());
+      } catch (e) {
+        debugPrint('Package image $i upload failed: $e');
+      }
+    }
+
+    setState(() {
+      _isUploading = false;
+      _uploadProgress = 0;
+    });
+
+    return allUrls;
   }
 
   /// Resolved base price across both pricing modes.
@@ -427,11 +618,29 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
 
+    // Deposit percentage validation (0–100, defaults to 25%).
+    final depositPct =
+        double.tryParse(_depositController.text.trim().replaceAll('%', '')) ??
+            25;
+    if (depositPct < 0 || depositPct > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deposit percentage must be between 0 and 100'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
+      // Upload gallery images (with compression + progress feedback) before
+      // persisting the package document.
+      final imageUrls = await _uploadPackageImages();
+
       final pricing = PackagePricing(
         mode: _pricingMode,
         allInclusivePrice: _allInclusivePrice,
@@ -441,18 +650,43 @@ class _OutfitterPackageCreatorScreenState
         availabilityEnd: _availabilityEnd,
       );
 
-      await PackageBookingManager.instance.publishPackage(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        pricing: pricing,
-        inclusions: List<String>.from(_inclusions),
-        farmId: _selectedFarmId,
-      );
+      final isEditing = _editingPackageId != null;
+
+      if (isEditing) {
+        await PackageBookingManager.instance.updatePackage(
+          packageId: _editingPackageId!,
+          title: _titleController.text.trim(),
+          description: _descriptionController.text.trim(),
+          pricing: pricing,
+          inclusions: List<String>.from(_inclusions),
+          farmId: _selectedFarmId,
+          imageUrls: imageUrls,
+          depositPercentage: depositPct,
+        );
+        // Reflect the chosen lifecycle status (e.g. re-activate a draft).
+        await PackageBookingManager.instance.setPackageStatus(
+          packageId: _editingPackageId!,
+          status: _saveStatus,
+        );
+      } else {
+        await PackageBookingManager.instance.publishPackage(
+          title: _titleController.text.trim(),
+          description: _descriptionController.text.trim(),
+          pricing: pricing,
+          inclusions: List<String>.from(_inclusions),
+          farmId: _selectedFarmId,
+          status: _saveStatus,
+          imageUrls: imageUrls,
+          depositPercentage: depositPct,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Package published successfully!'),
+          SnackBar(
+            content: Text(isEditing
+                ? '✅ Package updated successfully!'
+                : '✅ Package ${_saveStatus == PackageStatus.draft ? "saved as draft" : "published"} successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -462,7 +696,7 @@ class _OutfitterPackageCreatorScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Failed to publish: $e'),
+            content: Text('❌ Failed to save: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -483,9 +717,9 @@ class _OutfitterPackageCreatorScreenState
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          '🏕️ Publish Package',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          _editingPackageId != null ? '🏕️ Edit Package' : '🏕️ Publish Package',
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: theme.backgroundColor,
         foregroundColor: theme.textColor,
@@ -496,6 +730,12 @@ class _OutfitterPackageCreatorScreenState
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // ── IMAGE GALLERY ──────────────────────────────────────────────
+            _buildSectionLabel('PACKAGE GALLERY', theme),
+            const SizedBox(height: 8),
+            _buildImageGallery(theme),
+            const SizedBox(height: 24),
+
             // Farm Selection (Mandatory)
             _buildSectionLabel('BIND TO FARM *', theme),
             const SizedBox(height: 8),
@@ -717,7 +957,43 @@ class _OutfitterPackageCreatorScreenState
             _buildPricingSummary(theme),
             const SizedBox(height: 24),
 
-            // Publish Button
+            // ── DEPOSIT PERCENTAGE (per-package, non-refundable) ─────────
+            _buildSectionLabel('DEPOSIT PERCENTAGE (%)', theme),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _depositController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(color: theme.textColor),
+              decoration: _inputDecoration(
+                hint: 'e.g., 25',
+                suffix: '%',
+                theme: theme,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+              ],
+              validator: (value) {
+                final raw = value?.trim().replaceAll('%', '') ?? '';
+                final pct = double.tryParse(raw);
+                if (pct == null) {
+                  return 'Enter a valid deposit percentage';
+                }
+                if (pct < 0 || pct > 100) {
+                  return 'Deposit must be between 0 and 100';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // ── LIFECYCLE STATUS (Active vs Draft) ────────────────────────
+            _buildSectionLabel('LISTING STATUS', theme),
+            const SizedBox(height: 8),
+            _buildStatusToggle(theme),
+            const SizedBox(height: 24),
+
+            // Publish / Save Button
             SizedBox(
               height: 56,
               child: ElevatedButton(
@@ -739,14 +1015,20 @@ class _OutfitterPackageCreatorScreenState
                             strokeWidth: 2,
                           ),
                         )
-                        : const Row(
+                        : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.publish_rounded),
-                            SizedBox(width: 8),
+                            Icon(_editingPackageId != null
+                                ? Icons.save_rounded
+                                : Icons.publish_rounded),
+                            const SizedBox(width: 8),
                             Text(
-                              'PUBLISH PACKAGE',
-                              style: TextStyle(
+                              _editingPackageId != null
+                                  ? 'SAVE CHANGES'
+                                  : (_saveStatus == PackageStatus.draft
+                                      ? 'SAVE AS DRAFT'
+                                      : 'PUBLISH PACKAGE'),
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -756,6 +1038,230 @@ class _OutfitterPackageCreatorScreenState
               ),
             ),
             const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Image gallery section ──────────────────────────────────────────────
+  Widget _buildImageGallery(ThemeController theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isUploading)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Uploading images... ${(_uploadProgress * 100).toInt()}%',
+                      style: TextStyle(
+                          color: theme.subtitleColor, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: _uploadProgress,
+                  backgroundColor: theme.cardColor,
+                  color: theme.accentColor,
+                ),
+              ],
+            ),
+          ),
+        SizedBox(
+          height: 110,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              // Existing (already-uploaded) images when editing.
+              ..._existingImageUrls.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final url = entry.value;
+                return _imageThumb(
+                  theme,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const ColoredBox(
+                      color: Colors.black26,
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) =>
+                        const Icon(Icons.broken_image, color: Colors.grey),
+                  ),
+                  onRemove: () => _removeExistingImage(idx),
+                );
+              }),
+              // Newly picked local images.
+              ..._pickedImages.asMap().entries.map((entry) {
+                final idx = entry.key;
+                return _imageThumb(
+                  theme,
+                  child: Image.file(File(entry.value.path), fit: BoxFit.cover),
+                  onRemove: () => _removePickedImage(idx),
+                );
+              }),
+              // Add-image button.
+              if (_canAddImage)
+                GestureDetector(
+                  onTap: _pickPackageImages,
+                  child: Container(
+                    width: 110,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: theme.accentColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_rounded,
+                            color: theme.accentColor, size: 28),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Add Photos',
+                          style: TextStyle(
+                              color: theme.subtitleColor, fontSize: 11),
+                        ),
+                        Text(
+                          '$_totalImageCount/$_maxImages',
+                          style: TextStyle(
+                              color: theme.subtitleColor, fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _imageThumb(ThemeController theme,
+      {required Widget child, required VoidCallback onRemove}) {
+    return Container(
+      width: 110,
+      height: 110,
+      margin: const EdgeInsets.only(right: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border:
+            Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          child,
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close,
+                    color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Lifecycle status toggle (Active vs Draft) ─────────────────────────
+  Widget _buildStatusToggle(ThemeController theme) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _statusSegment(
+              theme,
+              label: 'Active',
+              icon: Icons.visibility_rounded,
+              selected: _saveStatus == PackageStatus.active,
+              onTap: () => setState(() => _saveStatus = PackageStatus.active),
+            ),
+          ),
+          Expanded(
+            child: _statusSegment(
+              theme,
+              label: 'Draft',
+              icon: Icons.visibility_off_rounded,
+              selected: _saveStatus == PackageStatus.draft,
+              onTap: () => setState(() => _saveStatus = PackageStatus.draft),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusSegment(
+    ThemeController theme, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.accentColor.withValues(alpha: 0.2)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 18,
+                color: selected ? theme.accentColor : theme.subtitleColor),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? theme.textColor : theme.subtitleColor,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
           ],
         ),
       ),
@@ -1256,12 +1762,15 @@ class _OutfitterPackageCreatorScreenState
     required String hint,
     required ThemeController theme,
     String? prefix,
+    String? suffix,
   }) {
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
       prefixText: prefix,
       prefixStyle: TextStyle(color: theme.textColor),
+      suffixText: suffix,
+      suffixStyle: TextStyle(color: theme.textColor),
       filled: true,
       fillColor: theme.cardColor,
       border: OutlineInputBorder(
