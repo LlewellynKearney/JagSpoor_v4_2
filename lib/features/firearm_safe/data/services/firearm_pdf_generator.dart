@@ -1,184 +1,107 @@
 import 'package:pdf/widgets.dart' as pw;
-import 'package:pdf/pdf.dart' as pdf;
-import 'package:printing/printing.dart';
+import '../../../../core/services/pdf_document_engine.dart';
 
+/// Generates the Digital Firearm Safe registry PDF using the shared
+/// [JagSpoorPdfDocument] engine (branded header/footer) and [JagSpoorPdfTheme]
+/// table styles. All field labels and table cell values are normalized to
+/// ASCII via [_toAscii] so the default PDF font never renders missing-glyph
+/// blocks.
 class FirearmPdfGenerator {
   static Future<void> generateAndShowFirearmsPdf(
     List<Map<String, String>> firearms,
   ) async {
-    final doc = pw.Document();
+    final now = DateTime.now();
+    final docId =
+        'FSA-${now.year}${_two(now.month)}${_two(now.day)}-'
+        '${_two(now.hour)}${_two(now.minute)}';
+
+    final doc = await JagSpoorPdfDocument.create(
+      title: 'Digital Firearm Safe - Registry',
+      documentId: docId,
+    );
+
+    // Build the registry rows: make, model, serial, FCA licence section,
+    // caliber, barrel length. Each value is sanitized to ASCII.
+    final rows = <List<String>>[
+      for (final f in firearms)
+        [
+          _toAscii(f['make'] ?? 'Unknown'),
+          _toAscii(f['model'] ?? ''),
+          _toAscii(f['serial'] ?? ''),
+          _toAscii(f['licenceSection'] ?? f['licenseSection'] ?? ''),
+          _toAscii(f['caliber'] ?? ''),
+          _toAscii(f['barrelLength'] ?? ''),
+        ],
+    ];
 
     doc.addPage(
-      pw.MultiPage(
-        pageFormat: pdf.PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(24),
-        build: (contextPdf) {
-          final rows = <pw.TableRow>[];
-
-          rows.add(
-            pw.TableRow(
-              decoration: pw.BoxDecoration(
-                color: pdf.PdfColors.grey200,
-                border: pw.Border(bottom: pw.BorderSide(width: 2)),
-              ),
-              children: [
-                _buildHeaderCell('Firearm Make & Model', pw.TextAlign.left),
-                _buildHeaderCell('Serial Number', pw.TextAlign.left),
-                _buildHeaderCell(
-                  'Validity Status / Expiry',
-                  pw.TextAlign.center,
-                ),
-                _buildHeaderCell(
-                  'Barrel Life (Rounds Remaining)',
-                  pw.TextAlign.center,
-                ),
-                _buildHeaderCell('% Lifetime Used', pw.TextAlign.right),
-              ],
-            ),
-          );
-
-          for (final firearm in firearms) {
-            final make = firearm['make'] ?? 'Unknown';
-            final model = firearm['model'] ?? '';
-            final serial = firearm['serial'] ?? '';
-            final expiry = firearm['expiry'] ?? '';
-            final barrelLife = int.tryParse(firearm['barrelLife'] ?? '') ?? 0;
-            final roundCount = int.tryParse(firearm['roundCount'] ?? '') ?? 0;
-            final remaining = barrelLife > 0 ? (barrelLife - roundCount) : 0;
-            final usedPct =
-                barrelLife > 0
-                    ? ((roundCount / barrelLife) * 100)
-                        .clamp(0, 100)
-                        .toStringAsFixed(1)
-                    : 'N/A';
-
-            rows.add(
-              pw.TableRow(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border(
-                    bottom: pw.BorderSide(
-                      width: 0.5,
-                      color: pdf.PdfColors.grey400,
-                    ),
-                  ),
-                ),
-                children: [
-                  _buildDataCell('$make $model'.trim(), pw.TextAlign.left),
-                  _buildDataCell(serial, pw.TextAlign.left),
-                  _buildDataCell(_formatValidity(expiry), pw.TextAlign.center),
-                  _buildDataCell(
-                    barrelLife > 0 ? '$remaining rds' : 'Not set',
-                    pw.TextAlign.center,
-                  ),
-                  _buildDataCell(
-                    barrelLife > 0 ? '$usedPct%' : 'N/A',
-                    pw.TextAlign.right,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Digital Firearm Safe - Registry',
-                  style: pw.TextStyle(
-                    fontSize: 22,
-                    fontWeight: pw.FontWeight.bold,
-                    color: pdf.PdfColors.black,
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Text(
-                  'Generated: ${_formatDate(DateTime.now())}',
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    color: pdf.PdfColors.grey700,
-                  ),
-                ),
-                pw.SizedBox(height: 20),
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    width: 0.5,
-                    color: pdf.PdfColors.grey400,
-                  ),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(2.5),
-                    1: const pw.FlexColumnWidth(2.2),
-                    2: const pw.FlexColumnWidth(2.3),
-                    3: const pw.FlexColumnWidth(2.0),
-                    4: const pw.FlexColumnWidth(1.0),
-                  },
-                  defaultVerticalAlignment:
-                      pw.TableCellVerticalAlignment.middle,
-                  children: rows,
-                ),
-                pw.SizedBox(height: 30),
-                pw.Text(
-                  'Total Firearms: ${firearms.length}',
-                  style: pw.TextStyle(
-                    fontSize: 11,
-                    fontWeight: pw.FontWeight.bold,
-                    color: pdf.PdfColors.grey700,
-                  ),
-                ),
-              ],
-            ),
-          ];
-        },
+      content: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          JagSpoorPdfTheme.sectionBar('FIREARM REGISTRY'),
+          JagSpoorPdfTheme.dataTable(
+            headers: const [
+              'Make',
+              'Model',
+              'Serial Number',
+              'License Section',
+              'Caliber',
+              'Barrel Length',
+            ],
+            rows: rows,
+            columnWidths: const [95, 80, 95, 110, 70, 75],
+          ),
+          pw.SizedBox(height: 14),
+          pw.Text(
+            'Total Firearms: ${firearms.length}',
+            style: JagSpoorPdfTheme.caption,
+          ),
+        ],
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => doc.save(),
-      name: 'digital_firearm_safe_registry',
+    await doc.saveAndShare(
+      filename: 'digital_firearm_safe_registry',
+      shareSubject: 'Digital Firearm Safe - Registry',
+      shareText: 'JagSpoor Digital Firearm Safe registry (${firearms.length} '
+          'firearms).',
     );
   }
 
-  static pw.Widget _buildHeaderCell(String text, pw.TextAlign align) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontWeight: pw.FontWeight.bold,
-          fontSize: 10,
-          color: pdf.PdfColors.black,
-        ),
-        textAlign: align,
-      ),
-    );
+  /// Normalizes a string to printable ASCII so the default PDF font never
+  /// renders a missing-glyph block. Common punctuation and Latin-1
+  /// diacritics are transliterated to readable ASCII; any remaining
+  /// non-ASCII character is replaced with '?'.
+  static String _toAscii(String input) {
+    var s = input;
+    // Box-drawing / block glyphs (the very characters that render as blocks).
+    s = s.replaceAll('█', '').replaceAll('│', '|').replaceAll('─', '-');
+    // Smart punctuation to ASCII equivalents.
+    s = s
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll('‘', "'")
+        .replaceAll('’', "'")
+        .replaceAll('“', '"')
+        .replaceAll('”', '"')
+        .replaceAll('•', '*')
+        .replaceAll('…', '...');
+    // Common Latin-1 diacritics to base letters.
+    const diacritics = {
+      'À': 'A', 'Á': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A', 'Æ': 'AE',
+      'Ç': 'C', 'È': 'E', 'É': 'E', 'Ê': 'E', 'Ë': 'E', 'Ì': 'I', 'Í': 'I',
+      'Î': 'I', 'Ï': 'I', 'Ñ': 'N', 'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O',
+      'Ö': 'O', 'Ø': 'O', 'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U', 'Ý': 'Y',
+      'ß': 'ss', 'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a',
+      'æ': 'ae', 'ç': 'c', 'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e', 'ì': 'i',
+      'í': 'i', 'î': 'i', 'ï': 'i', 'ñ': 'n', 'ò': 'o', 'ó': 'o', 'ô': 'o',
+      'õ': 'o', 'ö': 'o', 'ø': 'o', 'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
+      'ý': 'y', 'ÿ': 'y',
+    };
+    diacritics.forEach((k, v) => s = s.replaceAll(k, v));
+    // Replace any remaining non-ASCII with '?'.
+    return s.replaceAll(RegExp(r'[^\x20-\x7E]'), '?');
   }
 
-  static pw.Widget _buildDataCell(String text, pw.TextAlign align) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(fontSize: 9, color: pdf.PdfColors.black),
-        textAlign: align,
-      ),
-    );
-  }
-
-  static String _formatValidity(String expiry) {
-    if (expiry.isEmpty) return 'Unknown';
-    try {
-      final dt = DateTime.parse(expiry);
-      final now = DateTime.now();
-      if (dt.isBefore(now)) {
-        return 'Expired (${dt.toIso8601String().split('T').first})';
-      }
-      return 'Valid until ${dt.toIso8601String().split('T').first}';
-    } catch (_) {
-      return expiry;
-    }
-  }
-
-  static String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
+  static String _two(int n) => n.toString().padLeft(2, '0');
 }
