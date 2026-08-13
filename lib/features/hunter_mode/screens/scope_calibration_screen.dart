@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../core/utils/measurement_formatter.dart';
 import '../../ballistics/data/inventory_bridge.dart';
 import '../../ballistics/data/models/optic_profile.dart';
@@ -343,7 +344,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 32),
+        padding: EdgeInsets.only(bottom: SafeBottomInset.of(context)),
         child: Column(
           children: [
             // Upper Row: Rifle Profile & Ballistic Parameters

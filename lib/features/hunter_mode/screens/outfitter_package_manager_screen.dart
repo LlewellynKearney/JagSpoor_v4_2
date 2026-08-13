@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import 'outfitter_package_creator_screen.dart';
@@ -300,7 +301,7 @@ class _OutfitterPackageManagerScreenState
                   );
                 }
                 return ListView.builder(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.fromLTRB(12, 12, 12, SafeBottomInset.of(context)),
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final doc = docs[index];

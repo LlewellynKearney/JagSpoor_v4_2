@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 
 class CustomHandloadsFormScreen extends StatefulWidget {
   final ThemeController theme;
@@ -129,7 +130,7 @@ class _CustomHandloadsFormScreenState extends State<CustomHandloadsFormScreen> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: EdgeInsets.fromLTRB(16.0, 16.0, 16.0, SafeBottomInset.of(context)),
         child: Form(
           key: _formKey,
           child: Column(

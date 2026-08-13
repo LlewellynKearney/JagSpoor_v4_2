@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../auth/auth_screen.dart';
 import 'manual_invoice_screen.dart';
 import 'slaghuis_matrix_screen.dart';
@@ -72,6 +73,8 @@ class OutfitterDashboard extends StatelessWidget {
             ),
             child: ListView(
               physics: const BouncingScrollPhysics(),
+              padding:
+                  EdgeInsets.only(bottom: SafeBottomInset.of(context)),
               children: [
                 _buildStatusBanner(theme),
                 const SizedBox(height: 16),

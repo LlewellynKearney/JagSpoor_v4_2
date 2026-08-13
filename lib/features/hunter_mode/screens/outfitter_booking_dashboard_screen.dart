@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/package_pricing.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
@@ -125,7 +126,7 @@ class _OutfitterBookingDashboardScreenState
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
             itemCount: bookings.length,
             itemBuilder: (context, index) {
               final booking = bookings[index];

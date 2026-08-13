@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/revenue_analytics_report_exporter.dart';
 
@@ -137,7 +138,8 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                   final pendingBookings = enterprise['pendingBookings'] ?? 0;
 
                   return ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(
+                        16, 16, 16, SafeBottomInset.of(context)),
                     children: [
                       // ═══════════════════════════════════════════
                       // TOP HEADER: Enterprise Overview Metrics

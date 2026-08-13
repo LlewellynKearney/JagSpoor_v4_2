@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/safe_bottom_inset.dart';
 import 'maintenance.dart';
 
 class FirearmMaintenanceScreen extends StatefulWidget {
@@ -104,7 +105,7 @@ class _FirearmMaintenanceScreenState extends State<FirearmMaintenanceScreen> {
           ),
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
               itemCount: schedule.length,
               itemBuilder: (context, i) => _taskTile(theme, schedule[i]),
             ),
@@ -258,7 +259,7 @@ class MaintenanceLogScreen extends StatelessWidget {
                 ),
               )
               : ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
                 itemCount: records.length,
                 itemBuilder: (context, i) {
                   final r = records[i];

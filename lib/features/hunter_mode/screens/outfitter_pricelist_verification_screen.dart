@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/pricelist_scanner_service.dart';
 
 /// Post-scan verification grid editor for reviewing and editing extracted price list items.
@@ -213,7 +214,8 @@ class _OutfitterPricelistVerificationScreenState
             child: Form(
               key: _formKey,
               child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.fromLTRB(
+                    16, 0, 16, SafeBottomInset.of(context)),
                 itemCount: _editableItems.length,
                 itemBuilder: (context, index) {
                   return _EditablePriceItem(

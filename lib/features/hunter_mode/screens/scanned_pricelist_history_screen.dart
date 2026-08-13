@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/pricelist_scanner_service.dart';
 import 'outfitter_package_creator_screen.dart';
 
@@ -60,7 +61,7 @@ class _ScannedPriceListHistoryScreenState
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
             itemCount: priceLists.length,
             itemBuilder: (context, index) {
               return _ScanHistoryCard(

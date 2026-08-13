@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
+import '../../core/widgets/safe_bottom_inset.dart';
 import '../../utils/image_helper.dart';
 import 'add_firearm_manual_form.dart';
 import 'firearm_maintenance_screen.dart';
@@ -317,7 +318,12 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16.0),
+        padding: EdgeInsets.fromLTRB(
+          16.0,
+          16.0,
+          16.0,
+          SafeBottomInset.of(context),
+        ),
         children: [
           if (maintenanceDue) _maintenanceBanner(theme, dueCount),
           _FirearmPhotoCard(

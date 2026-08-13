@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/safe_bottom_inset.dart';
 import '../auth/auth_screen.dart';
 import '../auth/change_password_dialog.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
@@ -87,6 +88,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                       ),
                       child: ListView(
                         physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.only(
+                            bottom: SafeBottomInset.of(context)),
                         children: [
                           _buildStatusBanner(widget.theme),
                           const SizedBox(height: 16),

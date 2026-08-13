@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
@@ -252,7 +253,7 @@ class _HunterPackageMarketplaceScreenState
               }
 
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
                 itemCount: packages.length,
                 itemBuilder: (context, index) {
                   final packageData = packages[index];
@@ -354,7 +355,7 @@ class _HunterPackageMarketplaceScreenState
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
           itemCount: bookings.length,
           itemBuilder: (context, index) {
             final booking = bookings[index];

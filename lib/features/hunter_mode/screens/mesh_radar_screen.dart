@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/bluetooth_mesh_sync.dart';
 
 class MeshRadarScreen extends StatefulWidget {
@@ -89,6 +90,8 @@ class _MeshRadarScreenState extends State<MeshRadarScreen> {
                       child: Text('No off-grid team members detected nearby.'),
                     )
                     : ListView.builder(
+                      padding: EdgeInsets.only(
+                          bottom: SafeBottomInset.of(context)),
                       itemCount: _discoveredPeers.length,
                       itemBuilder: (context, index) {
                         String peerKey = _discoveredPeers.keys.elementAt(index);

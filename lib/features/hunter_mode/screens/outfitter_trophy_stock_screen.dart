@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/image_service.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/trophy_inventory_report_exporter.dart';
 import '../services/user_role_resolver.dart';
@@ -376,7 +377,7 @@ class _OutfitterTrophyStockScreenState
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
         children: [
           // Trophy Stock Sync Form
           Container(

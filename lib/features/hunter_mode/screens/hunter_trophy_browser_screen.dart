@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
   final ThemeController theme;
@@ -432,7 +433,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                       ),
                     )
                     : ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
                       itemCount: _filteredTrophies.length,
                       itemBuilder: (context, index) {
                         final trophy = _filteredTrophies[index];

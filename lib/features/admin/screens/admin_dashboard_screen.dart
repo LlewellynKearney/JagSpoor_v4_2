@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
 import '../widgets/admin_mode_switcher.dart';
@@ -108,7 +109,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       onRefresh: _bootstrap,
                       child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                        padding: EdgeInsets.fromLTRB(
+                            16, 8, 16, SafeBottomInset.of(context)),
                         children: [
                           AdminModeSwitcher(
                             theme: widget.theme,

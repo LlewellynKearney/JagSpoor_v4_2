@@ -1253,3 +1253,65 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
   `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`,
   `firestore.rules`, `test/package_quantity_test.dart` (new).
+
+
+## Phase 12 — Global Bottom SafeArea & Scroll Padding Audit (added 2026-08-13)
+
+- **Problem**: on many screens the bottom-most content (cards, buttons, list
+  items) rendered under the Android 3-button nav bar / iOS home-indicator
+  gesture line because the `Scaffold.body` scrollable either lacked a
+  `SafeArea(bottom: true)` wrapper or used a fixed `padding` (e.g.
+  `EdgeInsets.all(16)` / `symmetric(horizontal: ...)`) with no bottom safe-area
+  inset, so the last child sat at the very screen edge.
+- **Reusable helper** `lib/core/widgets/safe_bottom_inset.dart` (NEW):
+  - `SafeBottomInset.of(context)` -> `MediaQuery.padding.bottom + 24.0`
+    (the +24 breathing room is the standard tail inset appended to scroll
+    content so it scrolls cleanly above the gesture bar).
+  - `SafeBottomInset.paddingFor(context, {horizontal, top})` -> ready-made
+    `EdgeInsets` for a scrollable's `padding`.
+  - All body-level scrollables now use this instead of a hard-coded bottom,
+    so the inset adapts to each device's nav-bar/gesture height (0 on
+    devices with hardware keys, up to ~48px on gesture-nav phones).
+- **Audit method**: enumerated every `body:` across `lib/` (66 Scaffolds) and
+  classified each:
+  - **SafeArea-wrapped bodies** (bottom:true is the default — verified NO
+    `SafeArea(bottom: false)` exists anywhere in `lib/`) were left as-is;
+    `SafeArea` already reserves the gesture-bar inset, satisfying the
+    "SafeArea OR padding" requirement. These include auth, role-selection,
+    animal list/detail, ballistic calc, ammunition screens, bulk CSV import,
+    create-user, privacy policy, field estimate, trophy room/detail, add/edit
+    trophy, saps tracker, meat processing, carcass matrix, etc.
+  - **Direct-body scrollables WITHOUT SafeArea** and **Column bodies with an
+    inner `Expanded` scrollable** were the real cut-off culprits and got the
+    bottom inset applied to their scrollable's `padding`.
+- **Screens fixed** (body scrollable `padding` bottom made safe-area-aware):
+  - Hunter: `firearm_detail_screen.dart` (body ListView),
+    `hunter_package_marketplace_screen.dart` (package list + my-bookings list),
+    `hunter_trophy_browser_screen.dart`, `hunter_custom_package_builder_screen.dart`,
+    `mesh_radar_screen.dart`, `scope_calibration_screen.dart`,
+    `custom_handloads_form_screen.dart`, `outfitter_trophy_stock_screen.dart`,
+    `outfitter_enterprise_panel_screen.dart`, `outfitter_revenue_screen.dart`
+    (analytics), `scanned_pricelist_history_screen.dart` (analytics),
+    `outfitter_booking_dashboard_screen.dart`, `outfitter_package_creator_screen.dart`
+    (form), `outfitter_package_manager_screen.dart`, `outfitter_pricelist_verification_screen.dart`,
+    `firearm_maintenance_screen.dart` (two tab ListViews).
+  - Outfitter: `outfitter_dashboard.dart` (Container->Padding->ListView) AND
+    `presentation/outfitter_dashboard.dart` (duplicate dashboard — both fixed
+    for consistency).
+  - Admin: `admin_dashboard_screen.dart` (RefreshIndicator->ListView; was
+    hard-coded bottom:32, now `SafeBottomInset.of(context)`).
+- **Already-safe (verified, left unchanged)**: `hunter_dashboard.dart` and
+  `hunter_profile_screen.dart` already used `+ MediaQuery.padding.bottom`;
+  the permit-log / guided-hunt-log / client-roster lists already used a
+  generous `bottom: 80-96` (FAB clearance, well above the gesture bar);
+  camera/map `Stack` bodies (blood tracker, spoor HUD, weather, license
+  scanner, offline nav) are intentionally full-bleed overlays.
+- **`flutter analyze`**: **0 errors**, 13 warnings (all pre-existing —
+  `unused_local_variable`/`unused_element`/`unnecessary_cast` in unrelated
+  files; the single `outfitter_trophy_stock_screen.dart:87 unnecessary_cast`
+  is in pre-existing code, NOT in the padding edit). 282 infos (no new issues
+  introduced; the new helper file is analyzer-clean).
+- **Tests**: `test/package_quantity_test.dart` 24/24 pass; pre-existing suites
+  unaffected (pure UI padding change, no logic touched).
+- Files: `lib/core/widgets/safe_bottom_inset.dart` (new) + the 18 screen files
+  listed above (import + one `padding:` edit each).
