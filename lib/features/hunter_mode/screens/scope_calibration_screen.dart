@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/measurement_formatter.dart';
 import '../../ballistics/data/inventory_bridge.dart';
+import '../../ballistics/data/models/optic_profile.dart';
 import '../../shared/utils/firebase_diagnostic.dart';
 import '../../ballistics/data/models/rifle_profile.dart';
 import '../services/ballistic_solver_service.dart';
@@ -51,8 +52,14 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
   dynamic _shotGroupImage;
   String _referenceScale = '5-Rand Coin';
   double _targetDistance = 100.0;
-  String _bulletCaliber = '.308';
+  final TextEditingController _bulletCaliberController =
+      TextEditingController(text: '.308');
   Map<String, dynamic>? _analysisResults;
+
+  // Guards a single auto-link of the first safe firearm on initial stream
+  // load so caliber / barrel length / scope height populate automatically
+  // without requiring an explicit dropdown tap.
+  bool _didAutoLink = false;
 
   // Animation
   late AnimationController _dialAnimationController;
@@ -73,16 +80,96 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
 
   @override
   void dispose() {
+    _bulletCaliberController.dispose();
     _dialAnimationController.dispose();
     super.dispose();
   }
 
+  /// Links the scope settings to a registered Digital Firearm Safe profile
+  /// and auto-populates caliber, barrel length, scope height (HOB) and turret
+  /// click value from the selected firearm's stored specs.
+  ///
+  /// - [RifleProfile.caliber] -> bullet caliber (AI shot-group analyzer field).
+  /// - [RifleProfile.optic]?.heightOverBoreInches -> scope height used by the
+  ///   ballistic solver (falls back to the linked optic's default when present,
+  ///   otherwise leaves the user's current value untouched).
+  /// - [RifleProfile.optic]?.clickValue (or [RifleProfile.scopeClickValue]) ->
+  ///   per-click turret value used by the solver.
+  /// - [RifleProfile.barrelLength] is surfaced via the Linked Firearm Specs
+  ///   card rendered under the selector.
   void _selectRifle(RifleProfile rifle) {
+    final optic = rifle.optic;
     setState(() {
       _selectedRifle = rifle;
+      // Auto-populate caliber from the linked firearm.
+      if (rifle.caliber.isNotEmpty) {
+        _bulletCaliberController.text = rifle.caliber;
+      }
+      // Auto-populate scope height from the linked optic's height-over-bore.
+      if (optic != null) {
+        _scopeHeightInches = optic.heightOverBoreInches;
+      }
+      // Auto-populate turret click value from the linked optic (preferred) or
+      // the firearm's stored scope click value.
+      _turretClickValue = optic?.clickValue ?? rifle.scopeClickValue;
     });
     _loadAmmunitionForRifle(rifle.id);
     _calculateTrajectory();
+  }
+
+  /// Compact card shown under the firearm selector that surfaces the
+  /// auto-populated specs from the linked Digital Firearm Safe profile:
+  /// caliber, barrel length, and scope height (height over bore).
+  Widget _linkedFirearmSpecsCard(RifleProfile rifle) {
+    final optic = rifle.optic;
+    final hob = optic?.heightOverBoreInches ?? OpticProfile.defaults.heightOverBoreInches;
+    Widget specChip(String label, String value) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141915),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: const Color(0xFFE6A15C).withValues(alpha: 0.35),
+              ),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFFE6A15C),
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          specChip('CALIBER', rifle.caliber.isNotEmpty ? rifle.caliber : '--'),
+          const SizedBox(width: 6),
+          specChip(
+            'BARREL',
+            rifle.barrelLength.isNotEmpty ? rifle.barrelLength : '--',
+          ),
+          const SizedBox(width: 6),
+          specChip('SCOPE HOB', '${hob.toStringAsFixed(2)}"'),
+        ],
+      ),
+    );
   }
 
   // Helper getters for turret direction display
@@ -495,9 +582,9 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
           ),
           const SizedBox(height: 8),
 
-          // Caliber Field
+          // Caliber Field (auto-populated from the linked firearm's caliber)
           TextFormField(
-            initialValue: _bulletCaliber,
+            controller: _bulletCaliberController,
             style: const TextStyle(color: Colors.white70, fontSize: 12),
             decoration: InputDecoration(
               labelText: 'Bullet Caliber (e.g. .308)',
@@ -518,7 +605,6 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                 borderSide: const BorderSide(color: const Color(0xFFE6A15C)),
               ),
             ),
-            onChanged: (v) => setState(() => _bulletCaliber = v),
           ),
           const SizedBox(height: 12),
 
@@ -655,7 +741,20 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                         ? _selectedRifle
                         : (rifles.isNotEmpty ? rifles.first : null);
 
-                    return Container(
+                    // Auto-link the first safe firearm on initial load so
+                    // caliber / barrel length / scope height populate without
+                    // requiring an explicit dropdown tap.
+                    if (!_didAutoLink && rifles.isNotEmpty && _selectedRifle == null) {
+                      _didAutoLink = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _selectRifle(rifles.first);
+                      });
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
                         color: const Color(0xFF141915),
@@ -707,6 +806,11 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                           }
                         },
                       ),
+                        ),
+                        if (selectedRifle != null)
+                          _linkedFirearmSpecsCard(selectedRifle),
+                        const SizedBox(height: 8),
+                      ],
                     );
                   },
                 ),

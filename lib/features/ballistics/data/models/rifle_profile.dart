@@ -11,6 +11,11 @@ class RifleProfile {
   final String serialNumber;
   final String ownerId;
 
+  /// Barrel length as stored in the Digital Firearm Safe (free-text, e.g.
+  /// '16"' or '406 mm'). Used to auto-populate scope-calibration specs when
+  /// a firearm is linked. Empty on legacy firearm documents.
+  final String barrelLength;
+
   /// Linked optic specification (tube diameter, HOB, turret units, focal
   /// plane, reticle, etc.). May be null on legacy firearm documents.
   final OpticProfile? optic;
@@ -22,6 +27,7 @@ class RifleProfile {
     this.scopeClickValue = 0.25,
     this.serialNumber = '',
     this.ownerId = '',
+    this.barrelLength = '',
     this.optic,
   });
 
@@ -52,6 +58,7 @@ class RifleProfile {
       scopeClickValue: clickValue,
       serialNumber: (json['serialNumber'] as String?) ?? '',
       ownerId: (json['ownerId'] as String?) ?? '',
+      barrelLength: (json['barrelLength'] as String?) ?? '',
       optic: optic,
     );
   }
@@ -63,6 +70,7 @@ class RifleProfile {
         'scopeClickValue': scopeClickValue,
         'serialNumber': serialNumber,
         'ownerId': ownerId,
+        'barrelLength': barrelLength,
         if (optic != null) 'optic': optic!.toJson(),
       };
 
@@ -76,13 +84,14 @@ class RifleProfile {
     return 0.25;
   }
 
-  RifleProfile copyWith({
+    RifleProfile copyWith({
     String? id,
     String? name,
     String? caliber,
     double? scopeClickValue,
     String? serialNumber,
     String? ownerId,
+    String? barrelLength,
     OpticProfile? optic,
   }) {
     return RifleProfile(
@@ -92,6 +101,7 @@ class RifleProfile {
       scopeClickValue: scopeClickValue ?? this.scopeClickValue,
       serialNumber: serialNumber ?? this.serialNumber,
       ownerId: ownerId ?? this.ownerId,
+      barrelLength: barrelLength ?? this.barrelLength,
       optic: optic ?? this.optic,
     );
   }
