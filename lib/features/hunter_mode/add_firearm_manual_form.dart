@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../utils/fca_firearm_options.dart';
 
 class AddFirearmManualForm extends StatefulWidget {
   final ThemeController theme;
@@ -215,7 +216,13 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
             padding: const EdgeInsets.all(20.0),
             children: [
               _section(theme, 'LICENCE HOLDER'),
-              _field(theme, _licenceType, 'Licence Type'),
+              _dropdownField(
+                theme,
+                _licenceType,
+                'Licence Type',
+                FcaFirearmOptions.licenceTypes,
+                allowCustom: true,
+              ),
               _field(theme, _holderName, 'Holder Name'),
               _field(
                 theme,
@@ -253,13 +260,31 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
                             : null,
               ),
               _field(theme, _licenceNumber, 'License Number'),
-              _field(theme, _licenceSection, 'License Section'),
-              _field(theme, _firearmType, 'Firearm Type'),
+              _dropdownField(
+                theme,
+                _licenceSection,
+                'License Section',
+                FcaFirearmOptions.licenceSections,
+                allowCustom: true,
+              ),
+              _dropdownField(
+                theme,
+                _firearmType,
+                'Firearm Type',
+                FcaFirearmOptions.firearmTypes,
+                allowCustom: true,
+              ),
               _field(theme, _manufacturer, 'Manufacturer / Importer'),
               _dateField(theme, _issueDate, 'Issue Date'),
               _dateField(theme, _expiryDate, 'Expiry Date'),
               _section(theme, 'SPECIFICATIONS (MANUAL)'),
-              _field(theme, _barrelLength, 'Barrel Length'),
+              _dropdownField(
+                theme,
+                _barrelLength,
+                'Barrel Length',
+                FcaFirearmOptions.barrelLengths,
+                allowCustom: true,
+              ),
               _field(theme, _barrelLife, 'Barrel Life'),
               _field(theme, _twistRate, 'Twist Rate'),
               _field(theme, _actionType, 'Action Type'),
@@ -365,6 +390,110 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
           suffixIcon: Icon(Icons.calendar_today, color: theme.accentColor),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
         ),
+      ),
+    );
+  }
+
+  /// Sentinel [DropdownMenuItem] value that represents a custom (non-list)
+  /// entry. Selecting it opens [_promptCustomValue] so the user can type a
+  /// free-text value, which is stored on the controller.
+  static const String _kCustomSentinel = '__fca_custom__';
+
+  /// A standardized dropdown backed by [options], mirroring the look of
+  /// [_field]. When [allowCustom] is true, an "Other (custom)..." entry is
+  /// appended; selecting it prompts for a free-text value — this preserves
+  /// values that fall outside the list (e.g. scanned cards, fractional barrel
+  /// lengths) instead of discarding them. The selected value is written to
+  /// [controller] so storage stays free-text and backward compatible.
+  Widget _dropdownField(
+    ThemeController theme,
+    TextEditingController controller,
+    String label,
+    List<String> options, {
+    bool allowCustom = false,
+  }) {
+    final text = controller.text.trim();
+    final bool isCustom = text.isNotEmpty && !options.contains(text);
+    String? value;
+    if (text.isEmpty) {
+      value = null;
+    } else if (options.contains(text)) {
+      value = text;
+    } else if (allowCustom) {
+      value = _kCustomSentinel;
+    } else {
+      value = null;
+    }
+
+    final items = <DropdownMenuItem<String>>[
+      for (final o in options)
+        DropdownMenuItem<String>(value: o, child: Text(o)),
+      if (allowCustom)
+        DropdownMenuItem<String>(
+          value: _kCustomSentinel,
+          child: Text(isCustom ? 'Other: $text' : 'Other (custom)...'),
+        ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(color: theme.subtitleColor),
+          fillColor: theme.cardColor,
+          filled: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            items: items,
+            hint: Text('Select $label'),
+            isExpanded: true,
+            style: TextStyle(color: theme.textColor),
+            dropdownColor: theme.cardColor,
+            iconEnabledColor: theme.accentColor,
+            onChanged: (selected) async {
+              if (selected == null) return;
+              if (selected == _kCustomSentinel) {
+                final custom = await _promptCustomValue(label, text);
+                if (custom != null && custom.isNotEmpty) {
+                  controller.text = custom;
+                  setState(() {});
+                }
+              } else {
+                controller.text = selected;
+                setState(() {});
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _promptCustomValue(String label, String initial) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Enter $label'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: 'Custom $label'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
   }
