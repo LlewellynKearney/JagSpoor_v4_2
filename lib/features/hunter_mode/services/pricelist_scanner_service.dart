@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../core/services/offline_stream_guard.dart';
+
 /// Central AI-driven price list processor and custom tracking service engine.
 /// Handles OCR-style text extraction from price list images and manages custom package bookings.
 class PricelistScannerService {
@@ -310,20 +312,26 @@ class PricelistScannerService {
   Stream<List<Map<String, dynamic>>> getMyPriceListsStream() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      throw Exception('User must be authenticated');
+      // Unauthenticated callers get a stable empty stream instead of a thrown
+      // exception that would crash the history screen's StreamBuilder.
+      return Stream.value(const <Map<String, dynamic>>[]);
     }
 
-    return _firestore
-        .collection('scanned_pricelists')
-        .where('outfitterId', isEqualTo: currentUser.uid)
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = Map<String, dynamic>.from(doc.data());
-              data['id'] = doc.id;
-              return data;
-            }).toList());
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('scanned_pricelists')
+          .where('outfitterId', isEqualTo: currentUser.uid)
+          .where('status', isEqualTo: 'active')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.map((doc) {
+                final data = Map<String, dynamic>.from(doc.data());
+                data['id'] = doc.id;
+                return data;
+              }).toList()),
+      fallback: const <Map<String, dynamic>>[],
+      debugLabel: 'scanned_pricelists',
+    );
   }
 
   /// Persists a verified/edited price list to the `scanned_pricelists`

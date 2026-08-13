@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../../../core/services/offline_stream_guard.dart';
 import '../models/venison_transport_permit.dart';
 
 /// VenisonPermitManager — central engine for the legal South African Venison /
@@ -125,31 +126,41 @@ class VenisonPermitManager {
     }
 
     final field = isOutfitter ? 'outfitterId' : 'hunterId';
-    yield* _firestore
-        .collection('venison_permits')
-        .where(field, isEqualTo: currentUser.uid)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        // De-duplicate by document id so a permit can never render twice,
-        // even if the upstream query or a future merge of the outfitterId +
-        // hunterId streams ever returns the same doc twice.
-        .map((snapshot) {
-          final seen = <String>{};
-          return snapshot.docs
-              .where((doc) => seen.add(doc.id))
-              .map((doc) {
-                final data = Map<String, dynamic>.from(doc.data());
-                data['id'] = doc.id;
-                return VenisonTransportPermit.fromMap(data);
-              })
-              .toList();
-        });
+    yield* OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('venison_permits')
+          .where(field, isEqualTo: currentUser.uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          // De-duplicate by document id so a permit can never render twice,
+          // even if the upstream query or a future merge of the outfitterId +
+          // hunterId streams ever returns the same doc twice.
+          .map((snapshot) {
+            final seen = <String>{};
+            return snapshot.docs
+                .where((doc) => seen.add(doc.id))
+                .map((doc) {
+                  final data = Map<String, dynamic>.from(doc.data());
+                  data['id'] = doc.id;
+                  return VenisonTransportPermit.fromMap(data);
+                })
+                .toList();
+          }),
+      fallback: const <VenisonTransportPermit>[],
+      debugLabel: 'venison_permits',
+    );
   }
 
-  /// Fetch a single permit by ID.
+  /// Fetch a single permit by ID. Reads cache-first so an offline lookup
+  /// still resolves a recently-viewed permit, falling back to the server.
   Future<VenisonTransportPermit?> getPermitById(String permitId) async {
-    final doc =
-        await _firestore.collection('venison_permits').doc(permitId).get();
+    final docRef = _firestore.collection('venison_permits').doc(permitId);
+    DocumentSnapshot<Map<String, dynamic>> doc;
+    try {
+      doc = await docRef.get(const GetOptions(source: Source.cache));
+    } catch (_) {
+      doc = await docRef.get();
+    }
     if (!doc.exists) return null;
     final data = Map<String, dynamic>.from(doc.data()!);
     data['id'] = doc.id;

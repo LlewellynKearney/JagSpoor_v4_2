@@ -31,11 +31,16 @@ class CarcassLogManager {
     await _firestore.collection('carcass_logs').add(carcassData);
   }
 
-  // Fetch real-time chiller inventories for the hunter
+  // Fetch real-time chiller inventories for the hunter. With offline
+  // persistence enabled the stream serves cached records when the network
+  // drops; an unauthenticated caller gets a stable empty stream rather than
+  // querying for a null hunterId.
   Stream<QuerySnapshot> getActiveChillerLogs() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
     return _firestore
         .collection('carcass_logs')
-        .where('hunterId', isEqualTo: _auth.currentUser?.uid)
+        .where('hunterId', isEqualTo: uid)
         .where('status', isEqualTo: 'Hanging')
         .snapshots();
   }

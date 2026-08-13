@@ -1023,3 +1023,96 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   an environment with Firebase credentials. Until the indexes are built the
   roster / hunt-log streams surface the index-missing error in-UI (rather
   than silently showing empty).
+
+## Phase 10 — Global Offline Firestore Persistence Audit (added 2026-08-13)
+
+- **Audit findings**: `main.dart` already set
+  `FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true)`
+  inline, but with (a) no bounded `cacheSizeBytes`, (b) no web multi-tab
+  persistence exception handling, and (c) no centralized helper. Web builds
+  ARE configured (`web/` dir + `firebase_options.dart` `web` target), so the
+  classic IndexedDB multi-tab `failed-precondition` ("multiple tabs open,
+  persistence can only be enabled in one tab at a time") was a real crash
+  risk. Most primary managers' streams also lacked a graceful error fallback
+  for the case where a stream errors outright (missing composite index /
+  offline-with-no-cache); several threw synchronously on an unauthenticated
+  caller, bypassing the consumer `StreamBuilder`'s `hasError` branch.
+- **Centralized `FirestoreBootstrap`** (`lib/core/services/firestore_bootstrap.dart`):
+  - `initialize({cacheSizeBytes: 40 MB})` — called exactly once in `main()`
+    after `Firebase.initializeApp()` and App Check, before any query. Sets
+    `Settings(persistenceEnabled: true, cacheSizeBytes: …)` so every primary
+    Firestore stream serves cached data first and keeps emitting from cache
+    when the network drops; writes queue and flush on reconnect (the existing
+    `OfflineSyncQueue` connectivity listener in `main.dart` already flushes
+    the higher-level write queue).
+  - **Web multi-tab guard**: wraps the settings assignment in try/catch. On
+    web, when a second tab already owns the IndexedDB cache, the
+    `failed-precondition` error is caught and the tab silently falls back to
+    `Settings(persistenceEnabled: false)` (in-memory persistence) so the app
+    still runs instead of crashing on startup. Native (Android/iOS) builds are
+    unaffected (local SQLite cache, no multi-tab constraint); the catch is a
+    safety net there too so a settings error never blocks startup.
+  - Replaced the inline `Settings(persistenceEnabled: true)` assignment in
+    `main.dart`; removed the now-unused `cloud_firestore` import from
+    `main.dart`.
+- **`OfflineStreamGuard`** (`lib/core/services/offline_stream_guard.dart`):
+  - `offlineResilient<T>(source, {required fallback, debugLabel})` — wraps a
+    stream so any hard error is logged and replaced with a single `fallback`
+    emission, then the stream completes. Normal emissions pass through
+    untouched. Firestore's own cache already keeps streams alive across brief
+    network drops; this is the safety net for the cases where the stream
+    errors outright (missing index, permissions change, web-no-persistence
+    unrecoverable network error) so the UI shows a defined empty/zero state
+    instead of hanging or crashing.
+- **Managers hardened** (cache-first + offline fallback applied):
+  - `VenisonPermitManager.getMyPermitsStream` — wrapped with the guard
+    (fallback `[]`); `getPermitById` now reads **cache-first**
+    (`GetOptions(source: Source.cache)`) then falls back to server, so an
+    offline lookup still resolves a recently-viewed permit.
+  - `MeatProcessingOrderManager.getMyOrdersStream` — wrapped (fallback `[]`).
+  - `PricelistScannerService.getMyPriceListsStream` — wrapped (fallback `[]`);
+    the unauthenticated `throw Exception` was replaced with a stable empty
+    stream so it no longer crashes the history screen's `StreamBuilder`.
+  - `PackageBookingManager.getMyPackagesStream` — unauthenticated `throw`
+    replaced with `Stream.empty()` (the consumer already has a `hasError`
+    branch for hard stream errors + Firestore cache keeps it alive offline).
+  - `CarcassLogManager.getActiveChillerLogs` — null-user guard added
+    (`Stream.empty()` instead of querying for a null `hunterId`).
+  - `OutfitterAnalyticsService` — all four streams wrapped:
+    `getRevenueSummaryStream` (fallback zero-metrics map),
+    `getFilteredPackagesStream` (fallback `[]`),
+    `getPendingBookingsCountStream` + `getTotalPackagesCountStream`
+    (fallback `0`).
+  - `OutfitterFirebaseService` (bookings/lodging/fleet) — already had
+    `.handleError` fallbacks; unchanged.
+  - `ClientRosterManager` + `GuidedHuntLogManager` (Phase 9) — already had
+    `.handleError` returning cached/empty; unchanged.
+- **Tests**: `test/offline_stream_guard_test.dart` — **5 tests, all pass**:
+  normal emissions pass through; stream error replaced with fallback;
+  no fallback on clean completion; typed list fallback for cache-failure
+  recovery; stream completes after fallback (no hang).
+- **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings, 0 infos in
+  all changed/new files**. The only 2 warnings in touched files
+  (`pricelist_scanner_service.dart:298` unnecessary_type_check +
+  `outfitter_pricelist_scanner_screen.dart:166` unused `_showSuccess`) are
+  **pre-existing** (verified present at commit `0a9a599` before this change,
+  in code paths I did not touch). Project total 295, unchanged baseline.
+  38 tests pass (5 new + 6 client roster + 18 ballistics + 9 theme).
+- Files: `lib/core/services/firestore_bootstrap.dart` (new),
+  `lib/core/services/offline_stream_guard.dart` (new),
+  `lib/main.dart` (FirestoreBootstrap wiring + import cleanup),
+  `lib/features/hunter_mode/services/venison_permit_manager.dart`
+  (guard + cache-first getPermitById),
+  `lib/features/hunter_mode/services/meat_processing_order_manager.dart`
+  (guard),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (guard + throw→empty stream),
+  `lib/features/hunter_mode/services/package_booking_manager.dart`
+  (throw→empty stream),
+  `lib/features/hunter_mode/services/carcass_log_manager.dart`
+  (null-user guard),
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`
+  (4 streams guarded),
+  `test/offline_stream_guard_test.dart` (new).
+- No Firestore rules / index / Storage changes (this is a client-side
+  persistence + resilience hardening pass).

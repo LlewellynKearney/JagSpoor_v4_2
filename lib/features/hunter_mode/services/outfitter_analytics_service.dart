@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/services/offline_stream_guard.dart';
+
 class OutfitterAnalyticsService {
   static final OutfitterAnalyticsService _instance =
       OutfitterAnalyticsService._internal();
@@ -26,36 +28,45 @@ class OutfitterAnalyticsService {
   ///
   /// Returns: Stream with financial metrics
   Stream<Map<String, double>> getRevenueSummaryStream(String outfitterId) {
-    return _firestore
-        .collection('bookings')
-        .where('outfitterId', isEqualTo: outfitterId)
-        .where('status', isEqualTo: 'Approved')
-        .snapshots()
-        .map((snapshot) {
-          double grossEarnings = 0.0;
-          double platformFees = 0.0;
-          int totalBookings = 0;
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('bookings')
+          .where('outfitterId', isEqualTo: outfitterId)
+          .where('status', isEqualTo: 'Approved')
+          .snapshots()
+          .map((snapshot) {
+            double grossEarnings = 0.0;
+            double platformFees = 0.0;
+            int totalBookings = 0;
 
-          for (final doc in snapshot.docs) {
-            final data = doc.data();
-            final basePrice = (data['basePriceRands'] ?? 0).toDouble();
-            final commission =
-                (data['platformCommissionRands'] ?? 0).toDouble();
+            for (final doc in snapshot.docs) {
+              final data = doc.data();
+              final basePrice = (data['basePriceRands'] ?? 0).toDouble();
+              final commission =
+                  (data['platformCommissionRands'] ?? 0).toDouble();
 
-            grossEarnings += basePrice;
-            platformFees += commission;
-            totalBookings++;
-          }
+              grossEarnings += basePrice;
+              platformFees += commission;
+              totalBookings++;
+            }
 
-          final netEarnings = grossEarnings - platformFees;
+            final netEarnings = grossEarnings - platformFees;
 
-          return {
-            'grossEarnings': grossEarnings,
-            'platformFees': platformFees,
-            'netEarnings': netEarnings,
-            'totalBookings': totalBookings.toDouble(),
-          };
-        });
+            return {
+              'grossEarnings': grossEarnings,
+              'platformFees': platformFees,
+              'netEarnings': netEarnings,
+              'totalBookings': totalBookings.toDouble(),
+            };
+          }),
+      fallback: const <String, double>{
+        'grossEarnings': 0.0,
+        'platformFees': 0.0,
+        'netEarnings': 0.0,
+        'totalBookings': 0.0,
+      },
+      debugLabel: 'bookings.revenue',
+    );
   }
 
   // ==========================================
@@ -75,67 +86,71 @@ class OutfitterAnalyticsService {
     String? province,
     String? district,
   }) {
-    return _firestore
-        .collection('packages')
-        .where('status', isEqualTo: 'active')
-        .snapshots()
-        .asyncMap((packageSnapshot) async {
-          final List<Map<String, dynamic>> filteredPackages = [];
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('packages')
+          .where('status', isEqualTo: 'active')
+          .snapshots()
+          .asyncMap((packageSnapshot) async {
+            final List<Map<String, dynamic>> filteredPackages = [];
 
-          for (final packageDoc in packageSnapshot.docs) {
-            final packageData = packageDoc.data();
-            Map<String, dynamic>? farmData;
+            for (final packageDoc in packageSnapshot.docs) {
+              final packageData = packageDoc.data();
+              Map<String, dynamic>? farmData;
 
-            // Try to fetch parent farm data if farmId exists
-            final farmId = packageData['farmId'] as String?;
-            if (farmId != null && farmId.isNotEmpty) {
-              try {
-                final farmDoc =
-                    await _firestore.collection('farms').doc(farmId).get();
-                if (farmDoc.exists) {
-                  farmData = farmDoc.data();
+              // Try to fetch parent farm data if farmId exists
+              final farmId = packageData['farmId'] as String?;
+              if (farmId != null && farmId.isNotEmpty) {
+                try {
+                  final farmDoc =
+                      await _firestore.collection('farms').doc(farmId).get();
+                  if (farmDoc.exists) {
+                    farmData = farmDoc.data();
+                  }
+                } catch (e) {
+                  // Farm document may have been deleted
+                  continue;
                 }
-              } catch (e) {
-                // Farm document may have been deleted
-                continue;
+              }
+
+              // Extract location from farm or direct package fields
+              final packageProvince =
+                  packageData['province'] as String? ??
+                  farmData?['province'] as String? ??
+                  '';
+              final packageDistrict =
+                  packageData['district'] as String? ??
+                  farmData?['district'] as String? ??
+                  '';
+
+              // Apply filters
+              bool matchesProvince =
+                  province == null ||
+                  province.isEmpty ||
+                  packageProvince.toLowerCase() == province.toLowerCase();
+              bool matchesDistrict =
+                  district == null ||
+                  district.isEmpty ||
+                  packageDistrict.toLowerCase() == district.toLowerCase();
+
+              if (matchesProvince && matchesDistrict) {
+                // Build enriched package object with farm location details
+                filteredPackages.add({
+                  'packageId': packageDoc.id,
+                  'packageData': packageData,
+                  'farmId': farmId,
+                  'farmName': farmData?['name'] ?? 'Unknown Farm',
+                  'province': packageProvince,
+                  'district': packageDistrict,
+                });
               }
             }
 
-            // Extract location from farm or direct package fields
-            final packageProvince =
-                packageData['province'] as String? ??
-                farmData?['province'] as String? ??
-                '';
-            final packageDistrict =
-                packageData['district'] as String? ??
-                farmData?['district'] as String? ??
-                '';
-
-            // Apply filters
-            bool matchesProvince =
-                province == null ||
-                province.isEmpty ||
-                packageProvince.toLowerCase() == province.toLowerCase();
-            bool matchesDistrict =
-                district == null ||
-                district.isEmpty ||
-                packageDistrict.toLowerCase() == district.toLowerCase();
-
-            if (matchesProvince && matchesDistrict) {
-              // Build enriched package object with farm location details
-              filteredPackages.add({
-                'packageId': packageDoc.id,
-                'packageData': packageData,
-                'farmId': farmId,
-                'farmName': farmData?['name'] ?? 'Unknown Farm',
-                'province': packageProvince,
-                'district': packageDistrict,
-              });
-            }
-          }
-
-          return filteredPackages;
-        });
+            return filteredPackages;
+          }),
+      fallback: const <Map<String, dynamic>>[],
+      debugLabel: 'packages.filtered',
+    );
   }
 
   // ==========================================
@@ -144,22 +159,30 @@ class OutfitterAnalyticsService {
 
   /// Get pending bookings count for an outfitter
   Stream<int> getPendingBookingsCountStream(String outfitterId) {
-    return _firestore
-        .collection('bookings')
-        .where('outfitterId', isEqualTo: outfitterId)
-        .where('status', isEqualTo: 'Pending Approval')
-        .snapshots()
-        .map((snapshot) => snapshot.size);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('bookings')
+          .where('outfitterId', isEqualTo: outfitterId)
+          .where('status', isEqualTo: 'Pending Approval')
+          .snapshots()
+          .map((snapshot) => snapshot.size),
+      fallback: 0,
+      debugLabel: 'bookings.pendingCount',
+    );
   }
 
   /// Get total packages count for an outfitter
   Stream<int> getTotalPackagesCountStream(String outfitterId) {
-    return _firestore
-        .collection('packages')
-        .where('outfitterId', isEqualTo: outfitterId)
-        .where('status', isEqualTo: 'active')
-        .snapshots()
-        .map((snapshot) => snapshot.size);
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('packages')
+          .where('outfitterId', isEqualTo: outfitterId)
+          .where('status', isEqualTo: 'active')
+          .snapshots()
+          .map((snapshot) => snapshot.size),
+      fallback: 0,
+      debugLabel: 'packages.totalCount',
+    );
   }
 
   /// Get available trophy stock summary across all farms

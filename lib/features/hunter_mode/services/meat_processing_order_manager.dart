@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../core/services/offline_stream_guard.dart';
 import 'meat_processing_exporter.dart';
 
 /// A persisted meat-processing / slaughterhouse order, stored per hunter under
@@ -119,16 +120,23 @@ class MeatProcessingOrderManager {
     return doc.id;
   }
 
-  /// Reactive stream of the hunter's orders, newest first.
+  /// Reactive stream of the hunter's orders, newest first. Wrapped so a hard
+  /// stream error (e.g. missing index / offline with no cache) serves an empty
+  /// list instead of crashing the screen — Firestore's cache keeps the stream
+  /// alive across brief network drops.
   Stream<List<MeatProcessingOrder>> getMyOrdersStream() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return const Stream.empty();
-    return _collection
-        .where('hunterId', isEqualTo: uid)
-        .orderBy('orderTimestamp', descending: true)
-        .snapshots()
-        .map((qs) =>
-            qs.docs.map(MeatProcessingOrder.fromFirestore).toList());
+    return OfflineStreamGuard.offlineResilient(
+      _collection
+          .where('hunterId', isEqualTo: uid)
+          .orderBy('orderTimestamp', descending: true)
+          .snapshots()
+          .map((qs) =>
+              qs.docs.map(MeatProcessingOrder.fromFirestore).toList()),
+      fallback: const <MeatProcessingOrder>[],
+      debugLabel: 'meat_processing_orders',
+    );
   }
 
   Future<void> updateOrderStatus(String orderId, String status) {

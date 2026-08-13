@@ -314,12 +314,17 @@ class PackageBookingManager {
 
   /// Reactive stream of packages published by the current outfitter, scoped to
   /// a lifecycle [status] filter (defaults to all non-deleted packages). Powers
-  /// the "My Packages" management screen.
+  /// the "My Packages" management screen. With offline persistence enabled the
+  /// stream serves cached packages when the network drops; a hard error (e.g.
+  /// missing composite index) is surfaced to the consumer's `snapshot.hasError`
+  /// branch rather than thrown synchronously.
   Stream<QuerySnapshot> getMyPackagesStream({
     PackageStatus? status,
   }) {
     if (_currentUserId == null) {
-      throw Exception('User must be authenticated');
+      // Unauthenticated callers get a stable empty stream instead of a thrown
+      // exception that would crash the screen's StreamBuilder.
+      return const Stream.empty();
     }
 
     var query = _firestore

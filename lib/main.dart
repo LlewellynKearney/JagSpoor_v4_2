@@ -2,7 +2,6 @@
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -11,6 +10,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/splash_screen.dart';
+import 'core/services/firestore_bootstrap.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/hunter_mode/hunter_dashboard.dart';
@@ -75,9 +75,13 @@ Future<void> main() async {
       debugPrint('App Check fallback handshake completed: $e');
     }
 
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: true,
-    );
+    // --- Global Firestore offline persistence (Item #22) ---
+    // Enables a bounded on-device/IndexedDB cache so every primary Firestore
+    // stream (Marketplace, Firearms, Permits, Processing Orders, Client
+    // Roster, Guided Hunt Logs) keeps serving cached data when the network
+    // drops, and queued writes flush on reconnect. On web, a second tab
+    // claiming IndexedDB triggers a graceful in-memory fallback (no crash).
+    await FirestoreBootstrap.initialize();
 
     // Network connectivity listener - auto-syncs offline queue when connection restored
     Connectivity().onConnectivityChanged.listen((
