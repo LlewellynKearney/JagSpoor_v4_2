@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
@@ -658,21 +659,23 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Official Google "G" logo (public-domain SVG, Google brand
+                // colors). Per Google brand guidelines the full-color G sits on
+                // a white background so the colors render correctly.
                 Container(
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Center(
-                    child: Text(
-                      'G',
-                      style: TextStyle(
-                        color: accent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: SvgPicture.asset(
+                      'assets/images/google_logo.svg',
+                      width: 20,
+                      height: 20,
+                      fit: BoxFit.contain,
                     ),
                   ),
                 ),
