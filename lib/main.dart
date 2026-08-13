@@ -23,6 +23,7 @@ import 'features/outfitter_mode/outfitter_dashboard.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
+import 'core/utils/measurement_formatter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,10 @@ Future<void> main() async {
   // Load persisted Day/Night preference before runApp so the first frame
   // uses the user's saved mode (no flash of the default on cold start).
   await themeController.init();
+
+  // Load persisted Metric/Imperial unit preference before runApp so screens
+  // format measurements with the user's saved system on the first frame.
+  await MeasurementFormatter.instance.init();
 
   try {
     await Firebase.initializeApp(

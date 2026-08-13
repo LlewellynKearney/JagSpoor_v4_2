@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/measurement_formatter.dart';
 import '../../services/location_resolver_service.dart';
 import '../../utils/image_helper.dart';
 import 'edit_trophy_screen.dart';
@@ -304,7 +305,11 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
                 '${widget.trophy['antlerCircumference']} cm',
               ),
             if (widget.trophy['weight'] != null)
-              _buildDetailRow('Weight', '${widget.trophy['weight']} kg'),
+              _buildDetailRow(
+                'Weight',
+                MeasurementFormatter.instance.formatWeight(
+                    double.tryParse('${widget.trophy['weight']}')),
+              ),
           ],
         ),
       ),

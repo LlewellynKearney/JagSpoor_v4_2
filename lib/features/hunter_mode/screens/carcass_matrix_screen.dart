@@ -7,6 +7,7 @@ import '../services/carcass_log_manager.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
 import 'meat_processing_screen.dart';
+import '../../../core/utils/measurement_formatter.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
   final ThemeController theme;
@@ -844,7 +845,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                         ),
                       ),
                       Text(
-                        '${fieldWeight.toStringAsFixed(1)} kg',
+                        MeasurementFormatter.instance.formatWeight(fieldWeight),
                         style: TextStyle(color: theme.textColor, fontSize: 11),
                       ),
                     ],
@@ -860,7 +861,8 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                         ),
                       ),
                       Text(
-                        '${hangingWeight.toStringAsFixed(1)} kg',
+                        MeasurementFormatter.instance
+                            .formatWeight(hangingWeight),
                         style: TextStyle(color: theme.textColor, fontSize: 11),
                       ),
                     ],

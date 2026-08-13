@@ -1,5 +1,6 @@
 import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
+import '../../../core/utils/measurement_formatter.dart';
 
 class MeatProcessingExporter {
   // Compile processing requirements into a formal, printable PDF document matrix
@@ -61,7 +62,7 @@ class MeatProcessingExporter {
           JagSpoorPdfTheme.infoRow('Carcass Tag ID', carcassTag),
           JagSpoorPdfTheme.infoRow('Species', species),
           JagSpoorPdfTheme.infoRow(
-              'Cold Hanging Weight', '${hangingWeight.toStringAsFixed(1)} kg'),
+              'Cold Hanging Weight', MeasurementFormatter.instance.formatWeight(hangingWeight)),
         ]),
 
         JagSpoorPdfTheme.sectionBar('Processing Specifications & Portions'),

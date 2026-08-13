@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
+import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
@@ -71,6 +72,79 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final manager = BatterySaverManager();
     await manager.toggleBatterySaver(value);
     setState(() => _isBatterySaverEnabled = value);
+  }
+
+  Widget _buildUnitPreferenceCard() {
+    final fmt = MeasurementFormatter.instance;
+    return Card(
+      color: widget.theme.cardColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: widget.theme.accentColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.straighten_rounded,
+                    color: widget.theme.accentColor, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Unit Preference',
+                  style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Measurement units shown across Hunter Mode (weights, distances, barrel lengths, temperature).',
+              style: TextStyle(
+                color: widget.theme.subtitleColor,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ListenableBuilder(
+              listenable: fmt,
+              builder: (context, _) {
+                final isMetric = fmt.isMetric;
+                return ToggleButtons(
+                  isSelected: [isMetric, !isMetric],
+                  onPressed: (index) => fmt.setSystem(
+                    index == 0 ? UnitSystem.metric : UnitSystem.imperial,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  borderColor: widget.theme.accentColor.withValues(alpha: 0.3),
+                  selectedBorderColor: widget.theme.accentColor,
+                  selectedColor: widget.theme.backgroundColor,
+                  fillColor: widget.theme.accentColor,
+                  color: widget.theme.textColor,
+                  constraints: const BoxConstraints(minHeight: 40),
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('Metric  kg · m · °C'),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('Imperial  lbs · yd · °F'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -396,6 +470,8 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  _buildUnitPreferenceCard(),
                   const SizedBox(height: 12),
                   Card(
                     color: widget.theme.cardColor,

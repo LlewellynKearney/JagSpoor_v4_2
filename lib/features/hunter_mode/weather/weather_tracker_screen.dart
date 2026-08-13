@@ -5,6 +5,7 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/measurement_formatter.dart';
 import '../../../services/location_resolver_service.dart';
 import 'weather_model.dart';
 import 'weather_repository.dart';
@@ -394,8 +395,9 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
   Widget _buildWeatherMetricsGrid(ThemeController theme) {
     final temperature =
         _weather != null
-            ? '${_weather!.temperatureC.toStringAsFixed(1)}°C'
-            : '--°C';
+            ? MeasurementFormatter.instance
+                .formatTemperature(_weather!.temperatureC)
+            : MeasurementFormatter.instance.formatTemperature(null);
     final humidity =
         _weather != null
             ? '${_weather!.humidityPercent.toStringAsFixed(0)}%'

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/measurement_formatter.dart';
 import '../../ballistics/data/inventory_bridge.dart';
 import '../../shared/utils/firebase_diagnostic.dart';
 import '../../ballistics/data/models/rifle_profile.dart';
@@ -1127,7 +1128,7 @@ class _ScopeCalibrationScreenState extends State<ScopeCalibrationScreen>
                     Icon(Icons.straighten, color: const Color(0xFFE6A15C), size: 16),
                     const SizedBox(width: 8),
                     Text(
-                      'True Slant Range: ${_calculationResults?['distanceYards']?.toStringAsFixed(0) ?? '0'}y',
+                      'True Slant Range: ${MeasurementFormatter.instance.formatDistanceFromYards((_calculationResults?['distanceYards'] as num?)?.toDouble())}',
                       style: const TextStyle(
                         color: const Color(0xFFE6A15C),
                         fontSize: 12,

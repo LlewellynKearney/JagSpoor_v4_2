@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
+import '../../core/utils/measurement_formatter.dart';
 import '../../utils/image_helper.dart';
 import 'add_firearm_manual_form.dart';
 import 'firearm_maintenance_screen.dart';
@@ -460,7 +461,8 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
             _row(theme, 'Manufacturer', f['manufacturer']),
           ]),
           _group(theme, 'SPECIFICATIONS', [
-            _row(theme, 'Barrel Length', f['barrelLength']),
+            _row(theme, 'Barrel Length',
+                MeasurementFormatter.instance.formatBarrelLength(f['barrelLength'] ?? '')),
             _row(theme, 'Barrel Life', f['barrelLife']),
             _row(theme, 'Twist Rate', f['twistRate']),
             _row(theme, 'Action Type', f['actionType']),
