@@ -178,21 +178,22 @@ service cloud.firestore {
     // Create: any signed-in party (either role may initiate a permit). Update /
     // delete: outfitter or admin — the outfitter is the statutory issuer.
     match /venison_permits/{permitId} {
-      // Read: any signed-in user who is a party to the permit (outfitter who
-      // issued it, hunter it was issued to) or an admin. `resource == null`
-      // covers the document-not-yet-existing edge case (harmless for reads of
-      // existing docs, where resource is never null). This allows both
+      // Read: any signed-in user who is a party to the permit (the
+      // outfitter who issued it via `outfitterId`, or the hunter it was
+      // issued to via `hunterId`) or an admin. Both
       // `.where('outfitterId', isEqualTo: uid)` and
-      // `.where('hunterId', isEqualTo: uid)` list queries to succeed because
-      // the server can guarantee every returned doc satisfies the condition.
+      // `.where('hunterId', isEqualTo: uid)` list/stream queries succeed
+      // because the server evaluates this rule against every returned doc
+      // and guarantees each one satisfies the field condition.
       allow read: if isSignedIn() && (
-        resource == null ||
         resource.data.outfitterId == request.auth.uid ||
         resource.data.hunterId == request.auth.uid ||
         isAdmin()
       );
       // Create / update: any signed-in user may write permit data (both the
-      // outfitter and the hunter co-complete the legal form + signatures).
+      // outfitter and the hunter co-complete the legal form + signatures),
+      // so outfitters and authorized users can generate venison transport
+      // permits without hitting PERMISSION_DENIED.
       allow create, update: if isSignedIn();
       // Delete: only the issuing outfitter or an admin (least-privilege).
       allow delete: if isOwnerOf('outfitterId') || isAdmin();
