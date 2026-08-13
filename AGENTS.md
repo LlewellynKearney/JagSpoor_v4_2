@@ -1489,3 +1489,59 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`,
   `lib/repositories/animal_repository.dart`.
 
+## Broadcast-stream audit — "Bad state: Stream has already been listened to" (added 2026-08-13)
+
+- Crash: `Bad state: Stream has already been listened to.. Error thrown
+  building Expanded(flex: 1)`. Root cause: a **single-subscription** stream
+  instance cached as a `late Stream` field in a `State` class, passed to a
+  `StreamBuilder`. Firestore `.snapshots()` (and `InventoryBridge
+  .watchSafeFirearms()`'s `.snapshots().map().handleError()` chain) return
+  single-subscription streams. If the `StreamBuilder` is ever re-mounted
+  (disposed + recreated at the same position, e.g. parent tree restructure,
+  conditional show/hide, or theme-toggle rebuild) while the `State` persists,
+  the new `StreamBuilder` calls `widget.stream.listen(...)` on the
+  already-listened single-subscription stream → throws. (Verified: a raw
+  `StreamController.stream` throws on a second `.listen()` even after the
+  first subscription is cancelled.)
+- Audit: grepped the whole `lib/` tree for cached stream fields
+  (`late Stream<...> _x`, `Stream<...> _x`, `Stream get x => _field`).
+  Exactly **three** cached single-subscription stream instances existed:
+  - `ballistic_calc_screen.dart` — `_firearmsStream` (firearms `.snapshots()`)
+    and `_factoryAmmoStream` (factory_ammunition `.snapshots()`), both
+    assigned once in `initState`, consumed by `StreamBuilder(stream: _x)`.
+  - `scope_tools_bottom_sheet.dart` — `_firearmsStream`
+    (`_inventoryBridge.watchSafeFirearms()`), same pattern.
+- **Verified safe (no change needed):**
+  - All `StreamController` fields in services are already `.broadcast()`:
+    `outfitter_sync_service` (`_syncStatusController`,
+    `_dirtyRecordsController`), `bluetooth_mesh_sync_service` (all three).
+    Their getters (`dirtyCountStream`, `dirtyRecordsStream`,
+    `ingestionStream`, `peerCountStream`) return broadcast streams.
+  - `SignalHudWidget` listens to `dirtyCountStream` (broadcast) via manual
+    `.listen()` + cancels in `dispose()` — multi-instance safe.
+  - `OfflineStreamGuard.offlineResilient()` returns a fresh
+    single-subscription `StreamController.stream` **per invocation**; every
+    manager calls it inline in its getter (fresh stream per `build`), so the
+    stream instance is never shared across `StreamBuilder`s or remounts.
+  - All other `StreamBuilder(stream: ...)` sites call a fresh getter per build
+    (`_repo.watchAnimals()`, `_manager.getMyClientsStream()`,
+    `_service.getVacantLodgingStream()`, `PackageBookingManager.instance
+    .getMyPackagesStream(status:)`, `_combinedAnalyticsStream()` `async*`,
+    inline `.snapshots()`, etc.) — fresh instance each build → no sharing.
+  - Chat `StreamBuilder`s inside expandable list-item cards use a fresh
+    `_bookingQuery.snapshots()` per card `State` → no cross-card sharing.
+- Fix applied: wrapped each cached stream in `.asBroadcastStream()` at the
+  `initState` assignment. `asBroadcastStream()` converts the single-subscription
+  source into a multi-subscription broadcast stream that tolerates (a) multiple
+  simultaneous listeners and (b) listen → cancel → re-listen without throwing
+  (empirically verified: a raw single-sub stream throws on second listen, but
+  `source.asBroadcastStream()` allows re-subscribe after cancel). The broadcast
+  wrapper listens to the underlying Firestore stream exactly once for the
+  `State`'s lifetime and re-attaches listeners as `StreamBuilder`s mount/unmount.
+- `flutter analyze`: 0 errors, 13 warnings (all pre-existing, none in changed
+  files). `flutter test`: 201 passed, 4 pre-existing failures (saps_tracker,
+  offline_sync_queue, advanced_ballistics, bluetooth_mesh — identical to the
+  prior commit; none touch the changed files).
+- Files: `lib/features/ballistics/presentation/ballistic_calc_screen.dart`,
+  `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`.
+

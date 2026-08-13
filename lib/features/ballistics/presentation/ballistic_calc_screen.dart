@@ -257,10 +257,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         FirebaseFirestore.instance
             .collection('firearms')
             .where('ownerId', isEqualTo: currentUid)
-            .snapshots();
+            .snapshots()
+            .asBroadcastStream();
 
-    _factoryAmmoStream =
-        FirebaseFirestore.instance.collection('factory_ammunition').snapshots();
+    _factoryAmmoStream = FirebaseFirestore.instance
+        .collection('factory_ammunition')
+        .snapshots()
+        .asBroadcastStream();
   }
 
   @override

@@ -71,7 +71,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _firearmsStream = _inventoryBridge.watchSafeFirearms();
+    // asBroadcastStream() so the cached stream tolerates multiple listeners
+    // and re-subscription (listen → cancel → re-listen) — a raw Firestore
+    // snapshots() stream is single-subscription and throws
+    // "Bad state: Stream has already been listened to" if its StreamBuilder
+    // is ever re-mounted while the State persists.
+    _firearmsStream = _inventoryBridge.watchSafeFirearms().asBroadcastStream();
   }
 
   @override
