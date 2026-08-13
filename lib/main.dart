@@ -1,8 +1,11 @@
 // ADDED
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // ADDED
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'firebase_options.dart';
@@ -33,6 +36,24 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // --- Firebase Crashlytics: real-time error logging ---
+    // Route all uncaught Flutter framework (fatal) errors to Crashlytics so
+    // they are reported instead of swallowed by the framework dump routine.
+    FlutterError.onError =
+        FirebaseCrashlytics.instance.recordFlutterFatalError;
+    // Route all uncaught asynchronous errors (outside the Flutter framework,
+    // e.g. thrown in isolated zones / Future error callbacks) to Crashlytics.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    // --- Firebase Analytics: user session & screen event tracking ---
+    // A single instance is created here; the navigator observer below feeds
+    // automatic screen_view events for every route push/pop.
+    final analytics = FirebaseAnalytics.instance;
+    await analytics.logAppOpen();
 
     // Initialize Firebase App Check with debug provider
     // NOTE: For production, register your debug token in Firebase Console > App Check > Debug tokens
@@ -91,7 +112,12 @@ Future<void> main() async {
       }
     });
 
-    runApp(JagspoorApp(themeController: themeController));
+    runApp(
+      JagspoorApp(
+        themeController: themeController,
+        analytics: analytics,
+      ),
+    );
   } catch (e) {
     runApp(
       MaterialApp(
@@ -139,7 +165,12 @@ Future<void> main() async {
 
 class JagspoorApp extends StatelessWidget {
   final ThemeController themeController;
-  const JagspoorApp({super.key, required this.themeController});
+  final FirebaseAnalytics? analytics;
+  const JagspoorApp({
+    super.key,
+    required this.themeController,
+    this.analytics,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -152,6 +183,9 @@ class JagspoorApp extends StatelessWidget {
           theme: themeController.lightTheme,
           darkTheme: themeController.darkTheme,
           themeMode: themeController.themeMode,
+          navigatorObservers: [
+            if (analytics != null) FirebaseAnalyticsObserver(analytics: analytics!),
+          ],
           initialRoute: '/splash',
           routes: {
             '/splash': (context) => SplashScreen(theme: themeController),
