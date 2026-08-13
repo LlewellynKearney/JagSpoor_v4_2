@@ -720,3 +720,99 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
   `lib/features/outfitter_mode/outfitter_dashboard.dart`,
   `storage.rules`, `firestore.indexes.json`.
+
+## Phase 7 — Shot Group Target Analyzer AI Calibration (added 2026-08-13)
+
+- The "AI Shot Group Analyzer" embedded in `scope_calibration_screen.dart`
+  was a **mock** — it used `math.Random()` to simulate a pixel spread and
+  only computed a single fake "max spread" MOA value, with no real shot-point
+  placement, no mean radius, no center of impact, and no actual scale
+  calibration of the reference object in the image. Item #12 replaced it
+  with a real, calibrated computer-vision + geometry pipeline.
+- **New service** `lib/features/hunter_mode/services/shot_group_analyzer_service.dart`
+  (`ShotGroupAnalyzerService`, singleton `instance`):
+  - **Real shot-hole detection** via dark-blob detection: rasterizes the
+    decoded target photo (the `image` package — already a dep, used by the
+    spoor service) to a luminance mask (`0.299R+0.587G+0.114B < 110`), runs
+    4-connected-component labelling on a sampled grid (step 4px), and keeps
+    each blob whose radius, aspect ratio, and fill ratio fall in the
+    bullet-hole range — rejecting dust specks (too small), the reference
+    coin / large shadows (too big), and text strokes (low fill). Each
+    accepted blob's centroid becomes a `ShotImpact` in full-resolution pixel
+    coords.
+  - **Scale calibration** via a user-placed two-point `ScaleReference` (coin
+    diameter or 1-inch grid line): `pxPerMm = pixelLength / knownLengthMm`.
+    The reference length is user-editable (defaults: 5-Rand coin 26mm, 1-Rand
+    23mm, 1-inch grid 25.4mm).
+  - **Group geometry** (the full statistical suite, all calibrated):
+    - **Extreme spread** — max pairwise distance between shot points
+      (records the contributing shot pair for overlay rendering).
+    - **Mean radius** — average distance of each shot from the group
+      centroid.
+    - **Center of impact (COI)** — arithmetic centroid of the shot points,
+      with offset from a user-marked point of aim (bullseye), expressed as
+      horizontal (right +) and vertical (up +) in mm and angular units.
+  - **Angular conversions** (physically exact): `inchesToMoa` uses the
+    1.047in@100yd definition; `inchesToMil` uses 3.6in@100yd (=100mm@100m);
+    distances accepted in yards OR meters (1 m = 1.0936 yd). Both MOA and MIL
+    output supported (`AngularUnit` enum).
+  - **Suggested turret correction** (`suggestedClicks`): converts the COI
+    offset to clicks at the scope's per-click value (e.g. 0.25 MOA / 0.1
+    MIL), applying the opposite-direction dial convention (COI right → dial
+    left; COI low → dial up).
+  - `ShotGroupAnalysis` exposes px / mm / inch / angular forms plus a
+    `precisionCategory` (Sub-MOA / 1 MOA / Average / Open), mapping MIL back
+    to MOA for the threshold.
+- **New interactive overlay**
+  `lib/features/hunter_mode/widgets/shot_group_target_overlay.dart`
+  (`ShotGroupTargetOverlay` + `_TargetOverlayPainter`):
+  - Renders the target photo in a `Stack` with a `CustomPainter` that draws
+    **alignment guides** (center crosshair, rule-of-thirds grid, corner
+    framing brackets — toggleable) to help frame the target paper straight.
+  - **Tap-to-place** interaction with four modes: place shot impacts,
+    calibrate scale (two taps + editable known-length), mark point of aim,
+    plus Undo / Clear. Auto-detected shots render orange, manual ones red,
+    each numbered.
+  - Draws the calibrated reference scale line (amber, labelled in mm), the
+    extreme-spread line (red, between the two farthest shots), the COI
+    marker (green) + COI→aim offset vector, and the aim point (cyan
+    crosshair).
+- **New dedicated screen**
+  `lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`
+  (`ShotGroupAnalyzerScreen`): camera capture + gallery load (image_picker,
+    maxWidth 1920, quality 90-95), auto-detect on image adopt, the overlay, a
+    config row (distance + yds/m + MOA/MIL + click value + ref length), an
+    ANALYZE button, and a results panel surfacing extreme spread
+    (mm/in/angular), mean radius, COI offset (H/V), suggested clicks,
+    precision category, and a not-calibrated warning when no reference is
+    set.
+- **Rewire**: the inline mock in `scope_calibration_screen.dart` was removed
+  (`_analyzeShotGroup` + `_pickShotGroupImage` + `_takeLiveTargetPhoto` +
+  dead `_referenceScale`/`_targetDistance`/`_bulletCaliberController`/
+  `_analysisResults` state). The inline analyzer section now renders a
+  compact explainer + an "OPEN CALIBRATED ANALYZER" button (and a
+  tap-to-load image tile) that `Navigator.push`es
+  `ShotGroupAnalyzerScreen`, passing through any already-captured image.
+  Unused `image_picker` import and `scope_calibration_screen` dashboard
+  import dropped.
+- **Dashboard wiring**: a "🎯 Shot Group Target Analyzer" `DashboardFeature`
+  card was added to `hunter_dashboard.dart` (reachable directly from the
+  hunter home, since the scope-calibration card had been commented out).
+- **Tests**: `test/shot_group_analyzer_test.dart` — 11 tests covering COI
+  centroid, extreme spread (incl. recorded shot pair), mean radius, the
+  1.047in@100yd MOA definition, the 3.6in@100yd MIL definition, meters→MOA,
+  COI offset sign convention (image-y-down → low COI is negative "up"),
+  uncalibrated (zero angular, valid px), empty list, precision category, and
+  real shot-hole blob detection on a synthetic target (3 holes found, 2 dust
+  specks rejected). **All 11 pass.**
+- **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings in all changed
+  files** (project total 296 issues, all pre-existing infos/warnings in
+  unrelated files — down from the 320 baseline since the mock removal dropped
+  several infos). New service + overlay + screen + test are analyzer-clean.
+- Files: `lib/features/hunter_mode/services/shot_group_analyzer_service.dart`
+  (new), `lib/features/hunter_mode/widgets/shot_group_target_overlay.dart`
+  (new), `lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`
+  (new), `lib/features/hunter_mode/screens/scope_calibration_screen.dart`
+  (mock removed, rewired), `lib/features/hunter_mode/hunter_dashboard.dart`
+  (dashboard card + import cleanup), `test/shot_group_analyzer_test.dart`
+  (new). No Firestore/Storage/rules changes (pure on-device CV, no backend).

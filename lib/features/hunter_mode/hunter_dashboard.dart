@@ -18,7 +18,7 @@ import 'screens/mesh_radar_screen.dart';
 import 'screens/carcass_matrix_screen.dart';
 import 'screens/offline_navigation_screen.dart';
 import 'screens/blood_tracker_screen.dart';
-import 'screens/scope_calibration_screen.dart';
+import 'screens/shot_group_analyzer_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/hunter_custom_package_builder_screen.dart';
@@ -231,6 +231,20 @@ class _HunterDashboardState extends State<HunterDashboard> {
             MaterialPageRoute(builder: (context) => const SapsTrackerScreen()),
           );
         },
+      ),
+      DashboardFeature(
+        id: 'shot_group_analyzer',
+        icon: Icons.center_focus_strong_rounded,
+        title: '🎯 Shot Group Target Analyzer',
+        description:
+            'Capture a target, calibrate scale against a coin or 1-inch grid, '
+            'and compute true extreme spread, mean radius & center of impact in MOA/MIL.',
+        onTap: (context, theme) => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ShotGroupAnalyzerScreen(theme: theme),
+          ),
+        ),
       ),
       DashboardFeature(
         id: 'offgrid_mesh_sync',
