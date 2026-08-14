@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../services/offline_map_cache.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
+import '../services/battery_saver_manager.dart';
 import '../services/chat_and_filter_service.dart';
 import '../services/advanced_tactical_service.dart';
 
@@ -47,6 +48,14 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
   // Location tracking subscription
   StreamSubscription<Position>? _locationSubscription;
+
+  // Adaptive battery throttle state — tracks the most recent fix + when the
+  // user last moved beyond the stationary threshold, so the Geolocator stream
+  // can be dynamically swapped between the active and stationary presets.
+  Position? _lastPosition;
+  DateTime? _lastMovementAt;
+  bool _isMoving = true;
+  bool _batterySaverOn = false;
 
   // GPS live tracking state
   bool _isGpsTrackingActive = false;
@@ -213,29 +222,73 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
   void initState() {
     super.initState();
     _initializeCache();
-    _startLocationTracking();
+    _initBatterySaverThenStartTracking();
     _startCompassTracking();
   }
 
+  /// Loads the persisted battery-saver toggle, then starts the location stream
+  /// with the matching preset. The toggle is read once at start; per-fix
+  /// motion state then drives the active↔stationary swap.
+  Future<void> _initBatterySaverThenStartTracking() async {
+    _batterySaverOn = await BatterySaverManager().isBatterySaverEnabled();
+    if (mounted) _startLocationTracking();
+  }
+
   void _startLocationTracking() {
-    if (MapPathTracer.instance.isTracking) {
-      _locationSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5, // Update every 5 meters
-        ),
-      ).listen((Position position) {
-        MapPathTracer.instance.appendCoordinate(
-          position.latitude,
-          position.longitude,
-        );
-        if (mounted) {
-          setState(() {
-            _currentCenter = LatLng(position.latitude, position.longitude);
-          });
+    if (!MapPathTracer.instance.isTracking) return;
+
+    final settings = BatterySaverManager.resolveTrackingSettings(
+      batterySaverOn: _batterySaverOn,
+      moving: _isMoving,
+    );
+    _locationSubscription?.cancel();
+    _locationSubscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen((Position position) {
+      MapPathTracer.instance.appendCoordinate(
+        position.latitude,
+        position.longitude,
+      );
+
+      // Adaptive throttle: compare this fix to the previous one; if the user
+      // has been stationary for the window, downgrade to the coarse preset,
+      // and restore the high-frequency preset once they move again.
+      final now = DateTime.now();
+      final moved = BatterySaverManager.isMoving(_lastPosition, position);
+      if (moved) {
+        _lastMovementAt = now;
+        _isMoving = true;
+      } else {
+        final last = _lastMovementAt ?? now;
+        if (now.difference(last).inSeconds >=
+            BatterySaverManager.stationaryWindowSeconds) {
+          _isMoving = false;
         }
-      });
-    }
+      }
+      _lastPosition = position;
+
+      // If the resolved preset differs from the one currently streaming,
+      // restart the stream on the new preset (throttle up on movement, down
+      // on stationary). Skipped while battery saver is forced on (already
+      // on the stationary preset).
+      if (!_batterySaverOn) {
+        final desired = BatterySaverManager.resolveTrackingSettings(
+          batterySaverOn: false,
+          moving: _isMoving,
+        );
+        if (desired.accuracy != settings.accuracy ||
+            desired.distanceFilter != settings.distanceFilter) {
+          _startLocationTracking();
+          return; // this fix is consumed by the restarted stream's first emit
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _currentCenter = LatLng(position.latitude, position.longitude);
+        });
+      }
+    });
   }
 
   void _startCompassTracking() {
@@ -775,35 +828,48 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
     setState(() => _isDownloadingTiles = true);
 
-    // Simulate tile download for the visible area
-    // In production, this would iterate through tile coordinates
     try {
       final bounds = _mapController.camera.visibleBounds;
       final center = bounds.center;
 
-      // Calculate tile range for current zoom
-      final zoom = _currentZoom.toInt();
-
+      // Pre-download every tile covering the visible bounds at the current zoom
+      // (plus one level above/below for a usable offline zoom range) into the
+      // on-disk cache. This replaces the prior simulated download — tiles are
+      // now genuinely persisted under map_tiles_cache/{z}/{x}/{y}.png and are
+      // served from disk by [CacheFileTileProvider] when signal drops to 0.
+      final zoom = _currentZoom.round().clamp(3, 17);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '📥 Downloading tiles for zoom level $zoom around ${center.latitude.toStringAsFixed(2)}, ${center.longitude.toStringAsFixed(2)}...',
+            '📥 Downloading topo tiles for zoom $zoom around '
+            '${center.latitude.toStringAsFixed(2)}, '
+            '${center.longitude.toStringAsFixed(2)}...',
           ),
           backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      // Add marker for downloaded area
-      _preDownloadedMarkers.add(center);
+      final written = await _offlineMapCache.downloadTileRange(
+        minLat: bounds.south,
+        minLng: bounds.west,
+        maxLat: bounds.north,
+        maxLng: bounds.east,
+        zoom: zoom,
+        extraZoomLevels: 1,
+      );
 
-      // Simulate download time
-      await Future.delayed(const Duration(seconds: 2));
+      // Record the cached area so the "downloaded" marker renders on the map.
+      _preDownloadedMarkers.add(center);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Cached tiles for offline use'),
+            content: Text(
+              written > 0
+                  ? '✅ Cached $written topo tiles for offline use'
+                  : '✅ Area already cached for offline use',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -1263,6 +1329,9 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
               userAgentPackageName: 'com.jagspoor.app',
               fallbackUrl: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
               maxZoom: 18,
+              // Serve topo tiles from the on-disk cache when offline; download +
+              // persist on miss when online. See [CacheFileTileProvider].
+              tileProvider: CacheFileTileProvider(cache: _offlineMapCache),
             ),
 
             // Trail path polyline layer - walnut HUD high-contrast path marker

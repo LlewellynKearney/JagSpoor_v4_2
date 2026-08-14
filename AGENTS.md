@@ -2560,3 +2560,140 @@ had the identical two bugs.
   selection), `firestore.rules` (`scanned_pricelists` read widened to
   signed-in), `test/custom_package_pricing_test.dart` (NEW).
 
+
+## Phase 27 — Off-grid topographic map validation (added 2026-08-14)
+
+Validated and stabilized the off-grid mapping subsystem across the three
+audit areas requested by the v4.4 to-do (Item #2): offline tile caching,
+on-device coordinate transforms, and battery/background-positioning throttle.
+
+### 1. Offline tile caching audit (fixed)
+- **Root cause found**: `OfflineMapCache.initializeCache()` computed a disk
+  `cachePath` under `getApplicationDocumentsDirectory()` but then used
+  `MemCacheStore()` — a memory-only store — so cached tiles were **never
+  persisted to disk** and vanished on every app restart / process kill. The
+  comment even framed the memory store as a "fallback if disk arrays lock
+  up", but it was actually the default; there was no disk path at all. The
+  live `TileLayer` also used a bare `urlTemplate` (network-only) with no
+  `tileProvider`, so the Dio cache was never even consulted by flutter_map.
+  Separately, `_downloadAreaTiles` was a **simulation** — it ran a 2-second
+  `Future.delayed` and added a marker; the code comment itself said "In
+  production, this would iterate through tile coordinates".
+- **Fix** (`lib/features/hunter_mode/services/offline_map_cache.dart`,
+  rewritten):
+  - The persistent offline store is now a **deterministic PNG file tree** at
+    `{appDocsDir}/map_tiles_cache/{z}/{x}/{y}.png` (created on init). Tiles
+    survive app restarts and process kills. The Dio `MemCacheStore` is kept
+    only as a short-lived in-memory HTTP-response cache for the active
+    download path (clearly documented; it is NOT the offline layer).
+  - New public helpers: `tileFile(x,y,z)` (deterministic on-disk path),
+    `hasTile(x,y,z)` (sync disk existence, no network), `writeTile(...)`
+    (best-effort persist, swallows disk errors), `cachedTileCount` (UI
+    diagnostics), `downloadTileRange({bounds, zoom, extraZoomLevels})`
+    (real batch pre-download — iterates the XYZ tile range covering the
+    visible lat/lng bounds at the chosen zoom ±1 level, downloads each via
+    the cache-backed Dio instance, writes it to the deterministic path, skips
+    already-cached tiles, and tolerates per-tile network failures so a
+    dropped tile does not abort the batch).
+  - The slippy-map projection (`lonToTileX`/`latToTileY`/`tileRangeForBounds`
+    + the `TileRange` value type) is exposed as pure `static` arithmetic
+    (the same Web Mercator formula flutter_map uses internally), so the
+    pre-download targets exactly the tiles the live `TileLayer` will request.
+- **New `CacheFileTileProvider`** (same file) — a flutter_map `TileProvider`
+  wired into the off-grid nav `TileLayer.tileProvider`. Hot path: if the
+  tile PNG exists on disk → return `FileImage(file)` with **zero network
+  I/O** (this is what makes the map render when the device reports 0
+  signal). Cold path: download the tile via the cache-backed Dio, persist
+  the bytes to the deterministic path for offline reuse, and decode for the
+  current frame via a custom `ImageProvider` (`_CacheAndRenderNetworkImage`)
+  using the correct `loadImage(key, ImageDecoderCallback decode)` override.
+- **`_downloadAreaTiles` rewritten** (`offline_navigation_screen.dart`): the
+  simulation is gone — it now calls `downloadTileRange` on the visible
+  bounds at the current zoom (clamped 3–17) ±1 level and surfaces the actual
+  count of tiles written ("Cached N topo tiles for offline use" / "Area
+  already cached"). The downloaded marker still renders on completion.
+
+### 2. On-device coordinate transforms (audit — already correct, no change)
+- Audited the full mapping path for any internet lookup dependency.
+  Finding: **all coordinate math is already fully on-device** — no
+  geocoding / reverse-geocoding / network lookup is hit when rendering
+  waypoints, fence-boundary polylines, or carcass location pins onto the
+  topo matrix.
+  - `MapPathTracer` (trail + blood-trail path): holds `List<LatLng>` and
+    appends raw GPS `LatLng` values; pure in-memory.
+  - `AdvancedTacticalService.projectTargetCoordinates` /
+    `projectTargetCoordinatesHaversine`: pure `dart:math` spherical
+    forward-projection (asin/atan2 great-circle) — no HTTP.
+  - `OfflineMapCache` projection helpers (above) are pure arithmetic.
+  - Waypoint markers / fence-boundary `PolylineLayer`s / carcass pins all
+    consume `LatLng` directly from `flutter_map`/`latlong2`; no coordinate is
+    ever resolved through an internet service. Confirmed by grep: zero
+    `http`/`dio`/`geocoding` references in the coordinate-rendering path
+    (the only network call in the mapping module is the tile PNG fetch, which
+    is gated behind the on-disk cache hit).
+- No code change was needed for this area; the audit result is recorded
+  here so future work does not reintroduce a network coordinate lookup.
+
+### 3. Battery control stabilization (fixed)
+- **Root cause found**: the GPS tracking loop
+  (`OfflineNavigationScreen._startLocationTracking`) ran
+  `Geolocator.getPositionStream` at a fixed `LocationAccuracy.high` /
+  5 m distance filter **regardless of whether the hunter was moving**. When
+  stationary in the bushveld (e.g. glassing from a hide), that
+  high-frequency fix stream drained battery for no map benefit.
+  `BatterySaverManager` was a no-op: it toggled a `SharedPreferences` bool
+  and `print()`ed a message; the "System Hooks" (throttle BLE / scale back
+  location) were comments only — nothing actually throttled.
+- **Fix** (`lib/features/hunter_mode/services/battery_saver_manager.dart`,
+  extended): centralised an adaptive, dependency-light policy.
+  - Constants: `stationaryDistanceMeters = 15.0` (displacement below this =
+    stationary), `stationaryWindowSeconds = 90` (must be stationary this long
+    before throttling).
+  - Two `LocationSettings` presets: `activePreset` (`high` accuracy, 5 m
+    filter) and `stationaryPreset` (`medium` accuracy, 50 m filter).
+  - `resolveTrackingSettings({batterySaverOn, moving})` — pure function:
+    battery saver forces the stationary preset; otherwise moving→active,
+    stationary→stationary.
+  - `isMoving(previous, current)` — pure function over `Position` values:
+    compares great-circle displacement (via `Geolocator.distanceBetween`,
+    itself pure arithmetic) to the threshold. Fully unit-testable without
+    device hardware.
+- **Wired into the nav screen** (`offline_navigation_screen.dart`): the
+  screen now reads the persisted battery-saver toggle once at start, then on
+  every fix compares the displacement to the previous fix; once the user has
+  been stationary for the window it **dynamically restarts the
+  `getPositionStream` on the coarse preset** (throttle down), and restores
+  the high-frequency preset the moment movement resumes (throttle up).
+  Battery-saver mode short-circuits straight to the stationary preset. So
+  background positioning intervals now throttle dynamically when the tracking
+  system detects the user is stationary in the bushveld.
+- Replaced the raw `print()` calls in `BatterySaverManager` with
+  `debugPrint` (drops 2 pre-existing `avoid_print` infos from that file).
+
+### 4. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings in all modified/new files**. The only issues in touched files are
+  2 pre-existing infos in `offline_navigation_screen.dart`
+  (`prefer_final_fields` on `_isRangefinderConnected`; `DropdownButtonFormField.value`
+  deprecation — only flagged on the local 3.47.0, not the CI 3.29.1 pin).
+  Project total: 324 infos + 11 warnings — all pre-existing in unrelated
+  files; the baseline **dropped by 1 warning** because this phase removed the
+  pre-existing `unused_local_variable` (`cachePath`) that the old
+  `OfflineMapCache` carried. `analysis_options.yaml` auto-touched by the
+  analyzer was reverted before commit.
+- **`flutter test`**: `off_grid_map_validation_test.dart` (13 NEW, all pass
+  — tile projection + battery throttle), `custom_package_pricing_test.dart`
+  (6), `package_quantity_test.dart` (24) → 43 pass. No regressions; the 4
+  documented pre-existing failures (`saps_tracker`, `offline_sync_queue`,
+  `advanced_ballistics`, `bluetooth_mesh`) are unchanged and unrelated.
+- Files: `lib/features/hunter_mode/services/offline_map_cache.dart`
+  (rewritten: disk tile tree + `CacheFileTileProvider` + real
+  `downloadTileRange` + public projection helpers),
+  `lib/features/hunter_mode/services/battery_saver_manager.dart`
+  (adaptive stationary throttle),
+  `lib/features/hunter_mode/screens/offline_navigation_screen.dart`
+  (`CacheFileTileProvider` wired into `TileLayer`; real pre-download;
+  adaptive GPS stream throttle),
+  `test/off_grid_map_validation_test.dart` (NEW). No Firestore / Storage /
+  rules / index / pubspec changes (pure on-device mapping + positioning).
+
