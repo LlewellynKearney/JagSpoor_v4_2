@@ -2346,3 +2346,68 @@ had the identical two bugs.
   `test/role_guard_test.dart` (new "Post-auth direct role routing
   contract" group).
 
+
+## Phase 13 — Outfitter Dashboard Cleanup & Package Creator Camera Capture (added 2026-08-14)
+
+### Outfitter Dashboard responsive cleanup
+- The outfitter dashboard (`lib/features/outfitter_mode/outfitter_dashboard.dart`)
+  was already structurally sound (Phase 12 had added `SafeBottomInset.of(context)`
+  bottom padding + `BouncingScrollPhysics`; the section label + status banner +
+  every feature-card title/description already had `maxLines`/`overflow`/`softWrap`
+  guards; cards are role-gated via `if (!_isManager)` so no redundant manager-only
+  cards render; the feature-card `Row` uses `Expanded` for the text column so
+  there is no horizontal overflow). Audit found NO overlapping `Stack`/`Positioned`
+  components, NO hardcoded layout spacers causing overflow, and NO redundant
+  action cards.
+- **Responsive width constraint added**: wrapped the body `ListView` in
+  `Center > ConstrainedBox(maxWidth: 560)`. On phones the constraint is wider
+  than the viewport so the existing `Padding(horizontal: 20)` governs (no visual
+  change); on tablets / large screens the cards now cap at 560 logical px and
+  center, so they no longer stretch edge-to-edge (readable line lengths +
+  smooth scrolling across various mobile screen ratios). The gradient
+  `RadialGradient` background is untouched.
+
+### Package Creator — native camera capture
+- `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  already had a full image-gallery block (per the "Outfitter Package CRUD
+  Polish" entry): `_captureWithCamera()` (image_picker `ImageSource.camera`,
+  `imageQuality: 85`, `maxWidth/maxHeight: 1920`), `_pickPackageImages()`
+  (`pickMultipleMedia`, `imageQuality: 80`, capped at the remaining slots up to
+  `_maxImages = 5`), `_uploadPackageImages()` (per-file compression via
+  `ImageService.compressExisting`, upload to `package_images/{outfitterId}/`,
+  `SettableMetadata` JPEG, `LinearProgressIndicator` driven by `UploadTask`
+  events), and a horizontal thumbnail strip with per-image remove buttons +
+  clear "Take Photo" / "Add Photos" tiles.
+- **Camera capture hardened**: `_captureWithCamera()` + `_pickPackageImages()`
+  now wrap the image_picker calls in `try/catch`. image_picker throws
+  `CameraException` / `UnimplementedException` when the camera is unavailable,
+  permission is denied, or the platform is unsupported (e.g. desktop without a
+  camera plugin). The catch surfaces a friendly red SnackBar
+  ("Camera unavailable: …") instead of an unhandled exception crashing the
+  creation form mid-flow. New `_friendlyPickerError(e)` maps the thrown
+  message to a concise, user-readable reason (camera permission denied / no
+  camera detected / camera not supported / could not capture photo). Both
+  catch blocks guard `mounted` before touching `ScaffoldMessenger`.
+- **Android gallery permission**: added
+  `<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />`
+  to `android/app/src/main/AndroidManifest.xml` (Android 13+ / API 33+ requires
+  this for `pickMultipleMedia` to read the photo library). `CAMERA` +
+  `android.hardware.camera` (`required="false"`) were already declared; iOS
+  `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` /
+  `NSPhotoLibraryAddUsageDescription` were already present and correctly
+  describe package-listing image capture.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 13 warnings, 284
+  infos** — unchanged baseline; the dashboard + package creator changes are
+  analyzer-clean ("No issues found" on both files). No new warnings.
+- `flutter test`: **227 passed, 4 failed** — the 4 failures are the documented
+  pre-existing baseline (`saps_tracker`, `offline_sync_queue`,
+  `advanced_ballistics`, `bluetooth_mesh`), none touch the changed files. No
+  regressions.
+- Files: `lib/features/outfitter_mode/outfitter_dashboard.dart` (responsive
+  width constraint), `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  (camera/gallery picker error handling), `android/app/src/main/AndroidManifest.xml`
+  (`READ_MEDIA_IMAGES`). No Firestore / Storage / rules / index changes
+  (pure UI + manifest hardening).
+

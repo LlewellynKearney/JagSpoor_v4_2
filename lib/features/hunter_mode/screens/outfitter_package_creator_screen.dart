@@ -211,6 +211,11 @@ class _OutfitterPackageCreatorScreenState
   /// Native camera capture flow. image_picker saves the captured JPEG to the
   /// app temp directory; the picked [XFile] is appended to [_pickedImages]
   /// and gets compressed at upload time via [ImageService.compressExisting].
+  ///
+  /// Captures surface a friendly SnackBar if the device camera is unavailable
+  /// or the user denied camera permission (image_picker throws
+  /// `CameraException` / `UnimplementedException` in those cases) so the form
+  /// never crashes mid-creation.
   Future<void> _captureWithCamera() async {
     if (!_canAddImage) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -221,14 +226,41 @@ class _OutfitterPackageCreatorScreenState
       );
       return;
     }
-    final XFile? photo = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-      maxWidth: 1920,
-      maxHeight: 1920,
-    );
-    if (photo == null) return; // user cancelled
-    setState(() => _pickedImages.add(photo));
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (photo == null) return; // user cancelled
+      setState(() => _pickedImages.add(photo));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Camera unavailable: ${_friendlyPickerError(e)}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Surfaces a concise, user-readable reason for an image_picker failure
+  /// (permission denial, no camera, or unsupported platform).
+  String _friendlyPickerError(Object e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('permission') || msg.contains('denied')) {
+      return 'camera permission denied';
+    }
+    if (msg.contains('no camera') || msg.contains('not found')) {
+      return 'no camera detected on this device';
+    }
+    if (msg.contains('unimplemented') || msg.contains('not supported')) {
+      return 'camera not supported on this device';
+    }
+    return 'could not capture photo';
   }
 
   Future<void> _pickPackageImages() async {
@@ -242,21 +274,32 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
     final remaining = _maxImages - _totalImageCount;
-    final picked = await _imagePicker.pickMultipleMedia(
-      imageQuality: 80,
-      limit: remaining,
-    );
-    if (picked.isEmpty) return;
-    setState(() {
-      final addable = picked.take(remaining);
-      _pickedImages.addAll(addable);
-      if (_pickedImages.length + _existingImageUrls.length > _maxImages) {
-        _pickedImages.removeRange(
-          _maxImages - _existingImageUrls.length,
-          _pickedImages.length,
-        );
-      }
-    });
+    try {
+      final picked = await _imagePicker.pickMultipleMedia(
+        imageQuality: 80,
+        limit: remaining,
+      );
+      if (picked.isEmpty) return;
+      setState(() {
+        final addable = picked.take(remaining);
+        _pickedImages.addAll(addable);
+        if (_pickedImages.length + _existingImageUrls.length > _maxImages) {
+          _pickedImages.removeRange(
+            _maxImages - _existingImageUrls.length,
+            _pickedImages.length,
+          );
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Photo picker unavailable: ${_friendlyPickerError(e)}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _removePickedImage(int index) {

@@ -81,18 +81,26 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                         ],
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0,
-                        vertical: 12.0,
-                      ),
-                      child: ListView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: EdgeInsets.only(
-                            bottom: SafeBottomInset.of(context)),
-                        children: [
-                          _buildStatusBanner(widget.theme),
-                          const SizedBox(height: 16),
+                    child: Center(
+                      // Constrain the feature-card column on wide / tablet
+                      // screens so cards don't stretch edge-to-edge (smooth
+                      // scrolling + readable line lengths across mobile ratios).
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 560,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20.0,
+                            vertical: 12.0,
+                          ),
+                          child: ListView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.only(
+                                bottom: SafeBottomInset.of(context)),
+                            children: [
+                              _buildStatusBanner(widget.theme),
+                              const SizedBox(height: 16),
                           // Section label wrapped to avoid overflow on narrow
                           // screens (the manager label is long + tracked-out).
                           Text(
@@ -356,8 +364,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                           ),
                         ],
                       ),
-                    ),
-                  ),
+                        ), // Padding
+                      ), // ConstrainedBox
+                    ), // Center
+                  ), // Container
         );
       },
     );
