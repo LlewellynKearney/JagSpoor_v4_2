@@ -107,23 +107,29 @@ void main() {
     });
   });
 
-  group('PayfastCheckout.buildReturnUrl (deep link handler)', () {
-    test('returns the page.link payment-return base', () {
+  group('PayfastCheckout.buildReturnUrl (custom-scheme deep link handler)', () {
+    test('returns the jagspoor://payment-return custom scheme', () {
       final url = PayfastCheckout.buildReturnUrl('booking-123');
-      expect(url, startsWith(PayfastCheckout.returnBaseUrl));
+      expect(url, startsWith(PayfastCheckout.returnScheme));
+      expect(url, startsWith('jagspoor://payment-return'));
+      // No longer uses the deprecated/unconfigured page.link domain.
+      expect(url.contains('jagspoor.page.link'), isFalse);
     });
 
     test('encodes the booking id + success status as query params', () {
       final bookingId = 'abc 123&special';
       final url = PayfastCheckout.buildReturnUrl(bookingId);
       final uri = Uri.parse(url);
+      expect(uri.scheme, 'jagspoor');
+      expect(uri.host, 'payment-return');
       expect(uri.queryParameters['booking_id'], bookingId);
       expect(uri.queryParameters['status'], 'success');
     });
 
     test('percent-encodes special characters', () {
       final url = PayfastCheckout.buildReturnUrl('a b/c');
-      // Spaces and slashes must be percent-encoded, not literal.
+      // Spaces and slashes in the booking id must be percent-encoded, not
+      // literal, so they don't break the custom-scheme URI parsing.
       expect(url.contains(' '), isFalse);
       expect(url, contains('booking_id='));
       expect(url, contains('status=success'));

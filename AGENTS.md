@@ -4702,3 +4702,86 @@ block back to the production-hardened least-privilege posture.
   SHOULD deploy to the production Firebase project.
 - Files: `firestore.rules` (bookings block restored to least-privilege),
   `AGENTS.md`.
+
+## Phase 45 -- PayFast return URL custom-scheme migration off page.link (added 2026-08-14)
+
+Migrated the PayFast `return_url` deep link off the deprecated /
+unconfigured Firebase Dynamic Links `*.page.link` domain onto a direct app
+custom scheme (`jagspoor://payment-return`) captured by an Android
+`MainActivity` intent filter. (v4.5 to-do Item #10 follow-up.)
+
+### 1. `PayfastCheckout.buildReturnUrl` custom scheme
+- `lib/core/services/payfast_checkout.dart` (note: the spec referenced
+  `lib/features/packages/services/payfast_checkout.dart`, which does not
+  exist -- the real file is `lib/core/services/payfast_checkout.dart`):
+  - `returnBaseUrl = 'https://jagspoor.page.link/payment-return'` ->
+    `returnScheme = 'jagspoor://payment-return'`.
+  - `buildReturnUrl(bookingId)` now emits the custom-scheme URI
+    `jagspoor://payment-return?booking_id=<enc>&status=success`
+    (`Uri.encodeComponent` on the booking id), exactly per the spec.
+  - `launchDeposit` continues to pass `buildReturnUrl(bookingId)` as PayFast's
+    `return_url`; the `notify_url` / `cancel_url` / sandbox host / merchant
+    credentials are unchanged.
+- The marketplace's app-resume lifecycle listener (Phase 42) is unchanged --
+    it detects the browser-checkout return on `AppLifecycleState.resumed`
+    and prompts a booking-status refresh; the return URL is now resolved by
+    the OS intent filter instead of a Dynamic Link.
+
+### 2. Android intent filter
+- `android/app/src/main/AndroidManifest.xml` `.MainActivity` gained an
+  intent filter capturing the `jagspoor://payment-return` deep link so the
+  browser checkout can redirect back into the app:
+  ```xml
+  <intent-filter>
+      <action android:name="android.intent.action.VIEW" />
+      <category android:name="android.intent.category.DEFAULT" />
+      <category android:name="android.intent.category.BROWSABLE" />
+      <data android:scheme="jagspoor" android:host="payment-return" />
+  </intent-filter>
+  ```
+  Placed alongside the existing LAUNCHER intent filter (the activity already
+  had `android:exported="true"` + `launchMode="singleTop"`). XML validated
+  well-formed.
+- iOS Universal Link / custom-scheme config (`Info.plist` LSApplicationQueries
+  / CFBundleURLTypes) for `jagspoor://` is NOT added in this phase -- the
+  spec scoped this change to the Android manifest. iOS will fall back to the
+  app-resume lifecycle listener (which still fires on resume) until a
+  matching `CFBundleURLType` is added in a follow-up.
+
+### 3. Scope note (Dynamic Links left intact elsewhere)
+- Only the PayFast return URL was migrated. The password-reset deep link
+  (`lib/features/auth/services/password_reset_action_code_settings.dart`
+  `url: 'https://jagspoor.page.link/reset-password'` + its tests) is a
+  separate Firebase Dynamic Links feature configured separately and is
+  intentionally left unchanged -- it requires the `ActionCodeSettings`
+  `handleCodeInApp` flow, which has no custom-scheme equivalent. The
+  password-reset deep-link domain still must be authorized in the Firebase
+  Console (per Phase 33's deploy reminder).
+
+### 4. Tests
+- `test/deposit_payment_simulator_test.dart`
+  (`PayfastCheckout.buildReturnUrl` group) updated:
+  - returns the `jagspoor://payment-return` custom scheme (startsWith
+    `returnScheme`; explicitly asserts NO `jagspoor.page.link`).
+  - encodes booking_id + status=success as query params; `Uri.parse` yields
+    `scheme == 'jagspoor'`, `host == 'payment-return'`.
+  - percent-encodes special characters in the booking id.
+  - different ids -> different urls.
+- All 24 tests in the suite pass (the other 20 -- simulator constants /
+  canSimulate / simulateUpdateMap / booking-status-transition contract --
+  are unchanged).
+
+### 5. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **No issues found**
+  in `lib/core/services/payfast_checkout.dart` +
+  `test/deposit_payment_simulator_test.dart`. No Dart `lib/` baseline change.
+- **`flutter test test/deposit_payment_simulator_test.dart`**: 24/24 pass.
+- **`android/app/src/main/AndroidManifest.xml`**: well-formed XML; intent
+  filter present with `scheme="jagspoor"` + `host="payment-return"`.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  URL builder + Android manifest intent filter).
+- Files: `lib/core/services/payfast_checkout.dart`
+  (`returnScheme` + custom-scheme `buildReturnUrl`),
+  `android/app/src/main/AndroidManifest.xml` (`jagspoor://payment-return`
+  intent filter), `test/deposit_payment_simulator_test.dart` (return-URL
+  assertions updated), `AGENTS.md`.

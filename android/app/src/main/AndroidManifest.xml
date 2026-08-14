@@ -34,6 +34,16 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Capture the PayFast `return_url` custom-scheme deep link
+                 (`jagspoor://payment-return?booking_id=...&status=success`)
+                 so the browser checkout can redirect back into the app.
+                 (v4.5 to-do Item #10; migrated off page.link in Phase 45.) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="jagspoor" android:host="payment-return" />
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"

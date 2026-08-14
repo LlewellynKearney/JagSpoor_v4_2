@@ -16,30 +16,27 @@ class PayfastCheckout {
   static const String notifyUrl =
       'https://us-central1-jagspoor.cloudfunctions.net/payfastITNHandler';
 
-  /// Base deep-link host for the PayFast return flow (a Firebase Dynamic Links
-  /// `*.page.link` domain). The per-booking return URL is built via
-  /// [buildReturnUrl] so the app can detect a return from the browser checkout
-  /// and prompt to refresh the booking status. (v4.5 to-do Item #10.)
-  static const String returnBaseUrl = 'https://jagspoor.page.link/payment-return';
+  /// Base custom-scheme return URI for the PayFast return flow. Uses a direct
+  /// app deep-link custom scheme (`jagspoor://`) instead of a Firebase
+  /// Dynamic Links `*.page.link` domain (Dynamic Links is deprecated /
+  /// unconfigured for this project), so the per-booking return URL is resolved
+  /// by the OS intent filter on `MainActivity` (`jagspoor://payment-return`)
+  /// and the app-resume lifecycle listener detects the browser-checkout
+  /// return. (v4.5 to-do Item #10; migrated off page.link in Phase 45.)
+  static const String returnScheme = 'jagspoor://payment-return';
   static const String cancelUrl = 'https://jagspoor.web.app/booking-cancelled';
 
-  /// Builds the per-booking PayFast `return_url` deep link carrying the booking
-  /// id and a success flag, e.g.
-  /// `https://jagspoor.page.link/payment-return?booking_id=<id>&status=success`.
+  /// Builds the per-booking PayFast `return_url` custom-scheme deep link
+  /// carrying the booking id and a success flag, e.g.
+  /// `jagspoor://payment-return?booking_id=<id>&status=success`.
   ///
-  /// The marketplace's app-resume lifecycle listener checks for this link shape
-  /// to detect that the user returned from the browser checkout and prompts a
-  /// booking-status refresh.
+  /// The Android `MainActivity` intent filter (`android:scheme="jagspoor"`
+  /// `android:host="payment-return"`) captures this URI when the browser
+  /// redirects back to the app, and the marketplace's app-resume lifecycle
+  /// listener prompts a booking-status refresh.
   static String buildReturnUrl(String bookingId) {
-    final params = <String, String>{
-      'booking_id': bookingId,
-      'status': 'success',
-    };
-    final query = params.entries
-        .map((e) =>
-            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-        .join('&');
-    return '$returnBaseUrl?$query';
+    final encodedId = Uri.encodeComponent(bookingId);
+    return '$returnScheme?booking_id=$encodedId&status=success';
   }
 
   /// Builds the PayFast sandbox payment URL from [bookingId] + [amount] and
