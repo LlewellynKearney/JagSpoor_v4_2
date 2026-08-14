@@ -4543,3 +4543,80 @@ return and prompts a booking-status refresh.
   flag + `onPayFastCheckoutLaunched` callback + debug simulator button +
   `_simulatePaymentSuccess`), `test/deposit_payment_simulator_test.dart`
   (NEW, 24 tests), `AGENTS.md`.
+
+## Phase 43 -- Sandbox booking rules widening for debug deposit simulator (added 2026-08-14)
+
+⚠️ **Sandbox/debug-only change — must be reverted before any production
+deployment.**
+
+### What changed
+- `firestore.rules` `match /bookings/{bookingId}` block was widened so that
+  ANY signed-in user may read, create, and update bookings (delete stays
+  admin-only), as requested for sandbox checkout + `kDebugMode` debug
+  simulator testing (Phase 42):
+  ```
+  allow read: if isSignedIn();
+  allow create: if isSignedIn();
+  allow update: if isSignedIn();  // Enables hunter deposit status updates & debug simulator
+  allow delete: if isAdmin();
+  ```
+- The production-hardened helpers (`isBookingParty`, `statusUpdateAllowed`)
+  and the original `read`/`create`/`update` grants are preserved in
+  comments inside the block, with a prominent ⚠️ warning banner explaining
+  the exact holes and the revert path.
+
+### Security posture / production risk
+- This is a deliberate, user-directed weakening for the sandbox. Under these
+  rules, ANY signed-in user may:
+  - **read** every booking in the system (PII: hunter names, contact info,
+    booking financials);
+  - **create** spoofed bookings under any `hunterId`/`outfitterId`
+    (impersonation, financial fraud);
+  - **flip ANY booking's status** — including marking it `Paid`, which fully
+    bypasses PayFast (payment fraud), and self-approving their own bookings.
+- The production deposit status flip is performed by the deployed
+  `payfastITNHandler` Cloud Function using the Admin SDK, which bypasses
+  Firestore rules entirely — so the production deposit flow does NOT need
+  any client-side rule widening. This sandbox widening exists ONLY so the
+  `kDebugMode`-only debug simulator button (Phase 42, stripped from release
+  builds) can write the post-payment state directly from the client.
+
+### Safer production alternative
+- Gate the widened update on a custom auth claim issued only to test
+  accounts, e.g. `allow update: if isSignedIn() &&
+  request.auth.token.sandbox == true;`, instead of widening for every
+  signed-in user. This keeps the production surface least-privilege while
+  still letting a tagged sandbox account drive status transitions.
+
+### Revert before production deploy
+- Restore the commented production-hardened rules in the block:
+  ```
+  allow read: if isAdmin() || isBookingParty();
+  allow create: if isSignedIn()
+    && request.resource.data.hunterId == request.auth.uid;
+  allow update: if statusUpdateAllowed()
+    || (isBookingParty()
+        && request.resource.data.status == resource.data.status);
+  ```
+  (un-comment the `isBookingParty` / `statusUpdateAllowed` functions and
+  delete the sandbox `isSignedIn()` grants).
+
+### Verification
+- `flutter analyze`: 0 errors (no Dart changed; 324 pre-existing
+  infos/warnings in unrelated files, unchanged baseline). The
+  `analysis_options.yaml` auto-touch was reverted before commit.
+- Structural rules validation: braces balance 0, parens balance 0,
+  default-deny present, bookings block carries the `isSignedIn()` read +
+  update grants.
+- `flutter test test/firestore_rules_seeding_test.dart`: 14/14 pass (the
+  seeding tests assert the unrelated `factory_ammunition` / `bullets` /
+  `propellants` / `scanned_pricelists` / `animals` collection contracts,
+  which are unchanged).
+
+### Deploy reminder
+- `npx firebase-tools deploy --only firestore:rules` in a credentialed env
+  to activate. **Do NOT deploy this ruleset to the production Firebase
+  project** — restore the hardened rules first. This commit is intended
+  for the sandbox/test project only.
+- Files: `firestore.rules` (bookings block widened + hardened rules
+  preserved in comments), `AGENTS.md`.

@@ -321,27 +321,58 @@ service cloud.firestore {
     //         non-status fields. The PayFast ITN Cloud Function uses the
     //         Admin SDK so it bypasses these rules entirely.
     // Delete: admin only.
+    //
+    // ┌──────────────────────────────────────────────────────────────────────┐
+    // │ ⚠️  SANDBOX / DEBUG RULES — NOT FOR PRODUCTION DEPLOYMENT          │
+    // │                                                                      │
+    // │ The rules below are WIDENED to `isSignedIn()` to enable the          │
+    // │ `kDebugMode`-only PayFast deposit payment simulator (Phase 42) and   │
+    // │ sandbox checkout testing. Under these rules ANY signed-in user may:  │
+    // │   • read EVERY booking in the system (PII: names, contacts, $);      │
+    // │   • create spoofed bookings under any hunterId/outfitterId;          │
+    // │   • flip ANY booking's status — incl. marking it `Paid` (payment     │
+    // │     fraud, fully bypassing PayFast).                                 │
+    // │                                                                      │
+    // │ The PayFast deposit status flip in production is performed by the    │
+    // │ `payfastITNHandler` Cloud Function using the Admin SDK, which       │
+    // │ bypasses these rules — so the production deposit flow does NOT need   │
+    // │ any client-side rule widening. This sandbox widening exists ONLY so  │
+    // │ a `kDebugMode` debug simulator button can write the post-payment     │
+    // │ state directly from the client (stripped from release builds).       │
+    // │                                                                      │
+    // │ BEFORE DEPLOYING TO PRODUCTION, restore the hardened rules:          │
+    // │   allow read: if isAdmin() || isBookingParty();                      │
+    // │   allow create: if isSignedIn()                                      │
+    // │     && request.resource.data.hunterId == request.auth.uid;            │
+    // │   allow update: if statusUpdateAllowed()                             │
+    // │     || (isBookingParty()                                              │
+    // │         && request.resource.data.status == resource.data.status);    │
+    // │                                                                      │
+    // │ Safer production alternative: gate the widened update on a custom    │
+    // │ auth claim (e.g. `request.auth.token.sandbox == true`) issued only   │
+    // │ to test accounts, instead of widening for every signed-in user.      │
+    // └──────────────────────────────────────────────────────────────────────┘
     match /bookings/{bookingId} {
-      function isBookingParty() {
-        return isSignedIn() && (
-          resource.data.hunterId == request.auth.uid ||
-          resource.data.outfitterId == request.auth.uid
-        );
-      }
-      // Only the outfitter may change the status field. This prevents a
-      // hunter from self-approving their own booking.
-      function statusUpdateAllowed() {
-        return isSignedIn()
-          && resource.data.outfitterId == request.auth.uid
-          && request.resource.data.outfitterId == resource.data.outfitterId
-          && request.resource.data.hunterId == resource.data.hunterId;
-      }
-      allow read: if isAdmin() || isBookingParty();
-      allow create: if isSignedIn()
-        && request.resource.data.hunterId == request.auth.uid;
-      allow update: if statusUpdateAllowed()
-        || (isBookingParty()
-            && request.resource.data.status == resource.data.status);
+      // Production-hardened helpers — restored before production deploy.
+      // function isBookingParty() {
+      //   return isSignedIn() && (
+      //     resource.data.hunterId == request.auth.uid ||
+      //     resource.data.outfitterId == request.auth.uid
+      //   );
+      // }
+      // function statusUpdateAllowed() {
+      //   return isSignedIn()
+      //     && resource.data.outfitterId == request.auth.uid
+      //     && request.resource.data.outfitterId == resource.data.outfitterId
+      //     && request.resource.data.hunterId == resource.data.hunterId;
+      // }
+
+      // SANDBOX/DEBUG (see warning above): any signed-in user may read, create,
+      // and update bookings so the debug deposit simulator + sandbox checkout
+      // can drive booking status transitions client-side.
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();  // Enables hunter deposit status updates & debug simulator
       allow delete: if isAdmin();
 
       // Negotiation chat subcollection — restricted to the two booking
