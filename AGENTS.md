@@ -1990,3 +1990,106 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - No Firestore rules / index / Storage / pubspec changes (pure UI +
   navigation fix + a version-string bump).
 
+
+## Phase 16 — Client Roster info icon, Firestore permission write fix & loading-loop fix (added 2026-08-14)
+
+### Info icon + feature explanation sheet
+- Added a `ContextualInfoIcon` (`Icons.info_outline`) to the Client Roster
+  `AppBar.actions` (top-right). Tapping it opens the reusable
+  `ExplanationDialog` (modal bottom sheet) describing the feature, with four
+  KEY CONCEPTS rows: **Hunter details** (name/ID/nationality/cell/email/
+  address), **Booking history** (the package/booking each client is attached
+  to), **Permit records** (running list of venison transport permit ids),
+  and **Account balances** (notes + assigned package → per-client view of
+  outstanding bookings/deposits/harvests). Reuses `lib/core/widgets/
+  contextual_info_icon.dart` (no new widget code) so it matches the rest of
+  the app's self-documenting info icons.
+
+### Firestore permission-denied on `client_roster` writes (fixed)
+- **Root cause of the raw crash**: the editor sheet's `onSave` callback
+  popped the sheet *first* (`Navigator.pop` before `await addClient`), then
+  awaited the Firestore write. When the write threw
+  `FirebaseException(permission-denied)` — which happens while the Phase 9
+  `client_roster` rules are not yet deployed and the default-deny applies —
+  the exception propagated from the `onSave` future up to the button's
+  `onPressed` async callback as an **unhandled** error, and the success
+  snackbar never showed. Net symptom: tapping ADD TO ROSTER crashed / showed
+  a red error screen, and the user lost their input.
+- **Fix**: rewrote `onSave` to (1) capture `ScaffoldMessenger` + `Navigator`
+  *before* the async gap, (2) `await` the write, (3) `pop()` + success
+  snackbar **only on success**, and (4) on `catch (e)` show a floating red
+  `⚠️ Failed to save client: …` snackbar and **keep the editor sheet open**
+  so the user can retry without losing their typed fields. The same
+  try/catch + snackbar pattern was applied to the `_confirmDelete` REMOVE
+  action (which likewise popped before awaiting and had no error handling).
+- **Firestore rules verified + made explicit**: the `client_roster` match
+  block was split from `allow read, write: if ownerOrAdmin('outfitterId')`
+  into explicit `read` / `create` / `update,delete`:
+  - `read: ownerOrAdmin('outfitterId')` — outfitter sees only their own
+    roster; admin full access.
+  - `create: isSignedIn() && request.resource.data.outfitterId == auth.uid
+    || isAdmin()` — a signed-in outfitter may create a doc whose
+    `outfitterId` is their own uid (which `addClient` stamps), or an admin
+    may create for any outfitter.
+  - `update, delete: ownerOrAdmin('outfitterId')` — only the owning
+    outfitter (or admin) may mutate.
+  This is functionally equivalent to the previous `ownerOrAdmin` write
+  allowance for the legitimate path (the create still requires
+  `outfitterId == auth.uid`), but is now unambiguous and survives the
+  default-deny fallback once deployed.
+  - **Deploy reminder**: until `firestore:rules` is deployed in a
+    credentialed env, the default-deny still rejects `client_roster` writes
+    — but now the app surfaces a graceful snackbar instead of crashing.
+- **Composite index** `client_roster (outfitterId ASC, createdAt DESC)` is
+  present in `firestore.indexes.json` (added Phase 9), so the stream query
+  doesn't error on a missing index.
+
+### Loading-state indefinite loop on stream error (fixed)
+- **Root cause of the infinite spinner**: `getMyClientsStream` ended with
+  `.handleError((e) { debugPrint(...); return const <ClientProfile>[]; })`.
+  `Stream.handleError`'s callback **return value is ignored** — it only
+  *discards* the error and continues the subscription; it does NOT emit the
+  returned `[]`. So when the Firestore `.snapshots()` stream errored
+  (permission-denied / missing index), the error was silently swallowed and
+  the stream never emitted data or a done event → the `StreamBuilder` stayed
+  in `ConnectionState.waiting` **forever** → the `CircularProgressIndicator`
+  spun indefinitely. (The `snapshot.hasError` branch was dead code — the
+  error never reached it.)
+- **Fix**:
+  - Removed the buggy `.handleError` from `getMyClientsStream` so hard
+    errors **propagate** to the consuming `StreamBuilder`. The null-uid →
+    `Stream.value([])` guard is retained. Errors are no longer swallowed
+    (documented in the method dartdoc). The unused `package:flutter/
+    foundation.dart` import (only there for `debugPrint`) was removed.
+  - The screen now caches the stream in a `Stream<List<ClientProfile>>?
+    _clientsStream` field (assigned in `initState`). A `_retry()` method
+    rebuilds a **fresh** stream (`getMyClientsStream()` returns a new
+    `.snapshots()` instance) and `setState`s, so the `StreamBuilder`
+    re-subscribes on demand.
+  - The `StreamBuilder`'s `snapshot.hasError` branch now renders a dedicated
+    `_ErrorState` widget (cloud-off icon + message + the error detail +
+    a **RETRY** `FilledButton` calling `_retry`) instead of an `error_outline`
+    empty-state. So on a permission/index error the spinner stops and the
+    user gets an actionable retry surface — no more indefinite loop and no
+    silent "no clients" masquerade.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0): **0 errors, 0 warnings, 0
+  infos** in all changed files. Project total 316 infos + 13 warnings — all
+  pre-existing in unrelated files (unchanged baseline). `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- **`flutter test`**: `outfitter_client_roster_test` (6) + `offline_stream_guard_test`
+  (5) + `role_guard_test` (31) all pass. Full suite **223 passed, 4 failed**
+  — the 4 failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
+  the changed files, identical to the prior commit.
+- Files: `lib/features/outfitter_mode/presentation/client_roster_screen.dart`
+  (info icon, cached stream + retry, `_ErrorState`, save/delete try/catch,
+  removed `_snack`), `lib/features/outfitter_mode/data/services/
+  client_roster_manager.dart` (removed `.handleError` + unused import),
+  `firestore.rules` (`client_roster` explicit split). No index / Storage /
+  pubspec changes (index already present; pure UI + rules-explicitness +
+  error-handling pass).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate the (already-correct) `client_roster` rules.
+

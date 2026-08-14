@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/contextual_info_icon.dart';
 import '../data/models/client_profile.dart';
 import '../data/services/client_roster_manager.dart';
 
@@ -24,10 +25,28 @@ class _ClientRosterScreenState extends State<ClientRosterScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
+  /// Cached clients stream. Rebuilt on retry so the [StreamBuilder]
+  /// re-subscribes (a fresh `.snapshots()` instance) — this is what stops the
+  /// indefinite loading loop on a hard stream error: tapping RETRY creates a
+  /// new stream and re-evaluates the subscription.
+  Stream<List<ClientProfile>>? _clientsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _clientsStream = _manager.getMyClientsStream();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _retry() {
+    setState(() {
+      _clientsStream = _manager.getMyClientsStream();
+    });
   }
 
   List<ClientProfile> _filter(List<ClientProfile> clients) {
@@ -52,6 +71,47 @@ class _ClientRosterScreenState extends State<ClientRosterScreen> {
         foregroundColor: theme.textColor,
         title: const Text('Client Roster'),
         elevation: 0,
+        actions: [
+          ContextualInfoIcon(
+            title: 'Client Roster',
+            description:
+                'Your client hunter book. The Client Roster tracks every '
+                'hunter you guide — their identity & contact details, the '
+                'package or booking they are attached to, the venison/game '
+                'transport permits issued for them, and a running list of '
+                'their harvest records. It is the rosetta stone that links '
+                'guided hunt logs to permit generation and the '
+                'slaughterhouse manifest, giving you end-to-end traceability '
+                'per client.',
+            concepts: const [
+              ExplanationConcept(
+                label: 'Hunter details',
+                detail:
+                    'Full name, passport/ID, nationality, cell, email and '
+                    'address for every guided client.',
+              ),
+              ExplanationConcept(
+                label: 'Booking history',
+                detail:
+                    'The package / booking each client is attached to, so '
+                    'you can match a hunter to a paid hunt.',
+              ),
+              ExplanationConcept(
+                label: 'Permit records',
+                detail:
+                    'A running list of venison transport permit ids issued '
+                    'for the client — opened straight from a guided hunt log.',
+              ),
+              ExplanationConcept(
+                label: 'Account balances',
+                detail:
+                    'Notes + assigned package give you a per-client view of '
+                    'outstanding bookings, deposits and harvests.',
+              ),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: theme.accentColor,
@@ -82,17 +142,19 @@ class _ClientRosterScreenState extends State<ClientRosterScreen> {
           ),
           Expanded(
             child: StreamBuilder<List<ClientProfile>>(
-              stream: _manager.getMyClientsStream(),
+              stream: _clientsStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return _EmptyState(
+                  return _ErrorState(
                     theme: theme,
-                    icon: Icons.error_outline_rounded,
-                    title: 'Could not load clients',
-                    message: snapshot.error.toString(),
+                    message:
+                        'Could not load your client roster. This is usually '
+                        'a permission or connection issue.',
+                    detail: snapshot.error.toString(),
+                    onRetry: _retry,
                   );
                 }
                 final all = snapshot.data ?? const <ClientProfile>[];
@@ -143,15 +205,43 @@ class _ClientRosterScreenState extends State<ClientRosterScreen> {
         theme: widget.theme,
         existing: existing,
         onSave: (client) async {
-          Navigator.of(context).pop();
-          if (existing == null) {
-            await _manager.addClient(client);
-            _snack('Client added to roster');
-          } else {
-            await _manager.updateClient(
-              client.copyWith(updatedAt: DateTime.now()),
+          final messenger = ScaffoldMessenger.of(context);
+          final navigator = Navigator.of(context);
+          try {
+            if (existing == null) {
+              await _manager.addClient(client);
+              navigator.pop();
+              messenger.showSnackBar(
+                SnackBar(
+                  content: const Text('Client added to roster'),
+                  backgroundColor: widget.theme.accentColor,
+                ),
+              );
+            } else {
+              await _manager.updateClient(
+                client.copyWith(updatedAt: DateTime.now()),
+              );
+              navigator.pop();
+              messenger.showSnackBar(
+                SnackBar(
+                  content: const Text('Client updated'),
+                  backgroundColor: widget.theme.accentColor,
+                ),
+              );
+            }
+          } catch (e) {
+            // Permission-denied (rules not deployed) or network failure:
+            // surface a user-facing snackbar and KEEP the editor sheet open so
+            // the user can retry instead of losing their input to a raw
+            // unhandled crash.
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('⚠️ Failed to save client: $e'),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 5),
+              ),
             );
-            _snack('Client updated');
           }
         },
       ),
@@ -178,20 +268,31 @@ class _ClientRosterScreenState extends State<ClientRosterScreen> {
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.of(context).pop();
-              await _manager.deleteClient(client.id);
-              _snack('${client.fullName} removed');
+              try {
+                await _manager.deleteClient(client.id);
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('${client.fullName} removed'),
+                    backgroundColor: widget.theme.accentColor,
+                  ),
+                );
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('⚠️ Failed to remove client: $e'),
+                    backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
             },
             child: const Text('REMOVE'),
           ),
         ],
       ),
-    );
-  }
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: widget.theme.accentColor),
     );
   }
 }
@@ -544,6 +645,69 @@ class _EmptyState extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: theme.subtitleColor, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Error state for the client roster stream. Rendered (instead of the
+/// indefinite spinner) when `getMyClientsStream` errors — e.g. a
+/// permission-denied because the `client_roster` Firestore rules have not
+/// been deployed, or a missing composite index. The RETRY button rebuilds
+/// the stream so the [StreamBuilder] re-subscribes.
+class _ErrorState extends StatelessWidget {
+  final ThemeController theme;
+  final String message;
+  final String detail;
+  final VoidCallback onRetry;
+
+  const _ErrorState({
+    required this.theme,
+    required this.message,
+    required this.detail,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded,
+                size: 64, color: theme.subtitleColor.withAlpha(120)),
+            const SizedBox(height: 16),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.accentColor,
+                foregroundColor: theme.backgroundColor,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('RETRY'),
+              onPressed: onRetry,
+            ),
           ],
         ),
       ),

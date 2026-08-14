@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 
 import '../models/client_profile.dart';
 
@@ -22,6 +21,15 @@ class ClientRosterManager {
   String? get _currentUid => _auth.currentUser?.uid;
 
   /// Reactive list of clients for the signed-in outfitter.
+  ///
+  /// Errors are deliberately NOT swallowed here: a hard failure (e.g.
+  /// permission-denied when the `client_roster` rules have not yet been
+  /// deployed, or a missing composite index) is propagated to the consuming
+  /// `StreamBuilder` so the screen can render an explicit error state with a
+  /// retry button instead of an infinite spinner. (The previous
+  /// `.handleError` callback returned a value that `handleError` ignores —
+  /// silently dropping the error and leaving the stream emitting nothing,
+  /// which froze the UI on the loading spinner forever.)
   Stream<List<ClientProfile>> getMyClientsStream() {
     final uid = _currentUid;
     if (uid == null) {
@@ -41,10 +49,6 @@ class ClientRosterManager {
             }
           }
           return out;
-        })
-        .handleError((e) {
-          debugPrint('ClientRosterManager.getMyClientsStream error: $e');
-          return const <ClientProfile>[];
         });
   }
 
