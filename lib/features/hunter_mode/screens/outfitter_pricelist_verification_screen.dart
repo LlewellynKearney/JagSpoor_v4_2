@@ -115,11 +115,20 @@ class _OutfitterPricelistVerificationScreenState
         _showSuccess(
           'Price list saved successfully! ${processedItems.length} items uploaded.',
         );
-        // Pop back to previous screen after short delay
+        // Return the user deterministically to the outfitter dashboard (where
+        // the Scan History Log card lives) so the freshly-saved scan is
+        // visible. Previously this used `popUntil((route) => route.isFirst)`,
+        // which is a fragile navigation-stack reset: depending on how the
+        // scanner was reached, `isFirst` could resolve to the splash/auth
+        // screen, kicking the user back to login after a successful save.
+        // `pushNamedAndRemoveUntil('/outfitter_dashboard', (_) => false)`
+        // guarantees a clean, authenticated landing on the dashboard — never
+        // splash/role-selection/login — and remounts the dashboard so its
+        // scan-history StreamBuilder re-subscribes and shows the new scan.
         Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          }
+          if (!mounted) return;
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/outfitter_dashboard', (_) => false);
         });
       }
     } catch (e) {

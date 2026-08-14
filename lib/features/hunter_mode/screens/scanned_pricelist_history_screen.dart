@@ -739,7 +739,7 @@ class _ScanDetailsSheet extends StatelessWidget {
             Expanded(
               child: ListView.builder(
                 controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
                 itemCount: items.length,
                 itemBuilder: (context, index) {
                   final item = items[index];
@@ -762,47 +762,54 @@ class _ScanDetailsSheet extends StatelessWidget {
               ),
             ),
 
-            // Action buttons
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onReExport,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.accentColor,
-                        side: BorderSide(
-                            color: theme.accentColor.withValues(alpha: 0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+            // Action buttons — wrapped in SafeArea(bottom: true) so the
+            // sticky RE-EXPORT / APPLY TO PACKAGE bar clears the Android
+            // 3-button / gesture navigation bar cleanly.
+            SafeArea(
+              top: false,
+              bottom: true,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onReExport,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.accentColor,
+                          side: BorderSide(
+                              color:
+                                  theme.accentColor.withValues(alpha: 0.5)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
+                        icon: const Icon(Icons.ios_share_rounded, size: 18),
+                        label: const Text('RE-EXPORT',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                      icon: const Icon(Icons.ios_share_rounded, size: 18),
-                      label: const Text('RE-EXPORT',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: onApplyToPackage,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.accentColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: onApplyToPackage,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
+                        icon: const Icon(Icons.storefront_rounded, size: 18),
+                        label: const Text('APPLY TO PACKAGE',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                      icon: const Icon(Icons.storefront_rounded, size: 18),
-                      label: const Text('APPLY TO PACKAGE',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

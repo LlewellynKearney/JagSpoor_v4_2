@@ -1889,3 +1889,104 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `pubspec.yaml` / `pubspec.lock` (`google_generative_ai` dep). No Firestore
   rules / index / Storage changes.
 
+
+## Phase 15 — Scan save auth-kickout fix, scan-history audit & details-sheet safe-area (added 2026-08-14)
+
+### Auth kickout during price-list save (fixed)
+- **Root cause**: `OutfitterPricelistVerificationScreen._saveToFirestore`
+  navigated after a successful save with
+  `Navigator.of(context).popUntil((route) => route.isFirst)`. `popUntil(isFirst)`
+  is a **fragile navigation-stack reset**: the route that satisfies
+  `isFirst` depends entirely on how the scanner was reached. The app's
+  `initialRoute` is `/splash`, and splash / auth / role-selection screens are
+  reached via `pushReplacement` — so in most flows the outfitter dashboard IS
+  the first route (pop lands on the dashboard, the intended behaviour). BUT in
+  several real flows (deep-link entry, admin mode-switcher that pushed the
+  outfitter dashboard on top of another shell, a scanner reached before the
+  role fully resolved, or a stale stack from a prior session) `isFirst` can
+  resolve to the `SplashScreen` — whose `_navigateToNextScreen` re-runs on
+  becoming the active route and, on any role-resolution hiccup, falls through
+  to `AuthScreen` / `RoleSelectionScreen`. The net observable symptom was
+  "saving a price list kicks me back to the login screen."
+- **Fix**: replaced the `popUntil(isFirst)` with a **deterministic**
+  `Navigator.of(context).pushNamedAndRemoveUntil('/outfitter_dashboard', (_) => false)`.
+  This clears the entire nav stack and remounts a fresh outfitter dashboard —
+  guaranteeing an authenticated landing on the dashboard (never splash /
+  role-selection / login) regardless of how the scanner was opened. It also
+  remounts the dashboard's scan-history `StreamBuilder`, so the freshly-saved
+  scan appears immediately. The outfitter dashboard route is `RoleGuardedRoute`
+  -wrapped, so an outfitter (or an admin in outfitter mode) is admitted; an
+  unauthorized caller is bounced to their `defaultHomeFor(role)` by the guard
+  — never to `/login`.
+- **No sign-out path exists in the scan flow** (audited): grepped the whole
+  `lib/` tree — the only `signOut()` calls live in `AuthGateService`,
+  `AdminAnalyticsService`, and the 2FA-cancel handler in `AuthScreen`; none
+  are reachable from the scanner / verification / service code. There is no
+  global `FirebaseAuth.authStateChanges()` listener that redirects to login
+  on auth changes. So the kickout was purely the nav-stack reset, now fixed.
+- File: `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`.
+
+### Scan-history persistence & streaming audit (verified + tightened)
+- **Persistence path** (single write): scanner →
+  `PricelistScannerService.extractPricelistItems` (Gemini Vision + Afrikaans
+  parser, NO Firestore write) → verification screen →
+  `saveVerifiedPricelist` (the ONLY Firestore `scanned_pricelists.add`).
+  `processAndUploadPricelistImage` (the legacy direct-upload path) has zero
+  callers — confirmed via grep — so there's no double-write / divergent nav.
+- **Firestore rule**: `match /scanned_pricelists/{listId} { allow read,
+  write: if ownerOrAdmin('outfitterId'); }`. For a CREATE `resource` is null,
+  so `isOwnerOf('outfitterId')` evaluates
+  `resource == null && request.resource.data.outfitterId == request.auth.uid`
+  — and `saveVerifiedPricelist` stamps `outfitterId: currentUser.uid`, so the
+  create is permitted. No rule change needed.
+- **Composite index**: `scanned_pricelists (outfitterId ASC, status ASC,
+  createdAt DESC)` is present in `firestore.indexes.json` (added in Phase 4),
+  so `getMyPriceListsStream`'s equality+equality+orderBy query doesn't error.
+- **Stream resilience**: `getMyPriceListsStream` already wraps the
+  `snapshots()` in `OfflineStreamGuard.offlineResilient(..., fallback: [])`
+  and returns a stable empty stream for an unauthenticated caller — so the
+  history screen's `StreamBuilder` never crashes (it has explicit
+  `ConnectionState.waiting` / `snapshot.hasError` / empty branches). No
+  silent state-wipe: a hard stream error surfaces the in-UI error state
+  (`_buildErrorState`), and a genuine empty result shows `_buildEmptyState`.
+- **Version consistency**: `saveVerifiedPricelist` now writes
+  `processingVersion: '2.0.0'` (was `'1.0.0'`) to match the dynamic Gemini +
+  Afrikaans-parser pipeline introduced in Phase 14 (`processAndUploadPricelistImage`
+  already wrote 2.0.0). Saved scans are now stamped with the version that
+  actually produced them.
+- File: `lib/features/hunter_mode/services/pricelist_scanner_service.dart`.
+
+### Scan-details bottom-sheet safe-area + scroll padding (fixed)
+- **Problem**: the `_ScanDetailsSheet` (`DraggableScrollableSheet`) sticky
+  action bar (RE-EXPORT / APPLY TO PACKAGE) was a bare `Padding(EdgeInsets.all(20))`
+  with no `SafeArea` — so on gesture-nav phones the buttons sat under the
+  Android 3-button / home-indicator bar. The inner items `ListView.builder`
+  had only horizontal padding (`EdgeInsets.symmetric(horizontal: 20)`), so the
+  last priced line was covered by the sticky action bar.
+- **Fix**:
+  - Wrapped the action bar in `SafeArea(top: false, bottom: true)` + tuned
+    padding (`EdgeInsets.fromLTRB(20, 8, 20, 12)`) so the buttons clear the
+    system nav bar on every device (the inset is 0 on hardware-key devices,
+    up to ~48px on gesture-nav phones).
+  - Added bottom content padding to the items `ListView.builder`
+    (`EdgeInsets.fromLTRB(20, 0, 20, 90)`) so the last item scrolls fully
+    into view above the sticky action bar.
+- File: `lib/features/hunter_mode/screens/scanned_pricelist_history_screen.dart`.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 13
+  warnings (unchanged baseline)**, 316 infos. The only issues in touched files
+  are the pre-existing `print` debug calls + the `unnecessary_type_check` in
+  unchanged `getPriceListsForFarm`/`getMyPriceLists` code (documented since
+  Phase 4) — none introduced by this change. `analysis_options.yaml` was
+  auto-touched by the analyzer run and reverted before commit.
+- **`flutter test`**: scanner + auth suites green — `pricelist_text_parser_test`
+  (22), `role_guard_test` (31), `user_role_provider_test` (7),
+  `offline_stream_guard_test` (5) all pass. Full suite: **223 passed, 4
+  failed** — the 4 failures are the documented pre-existing baseline
+  (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+  `bluetooth_mesh`), none touch the changed files, identical to the prior
+  commit.
+- No Firestore rules / index / Storage / pubspec changes (pure UI +
+  navigation fix + a version-string bump).
+

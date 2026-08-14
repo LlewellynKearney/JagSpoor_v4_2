@@ -338,7 +338,7 @@ class PricelistScannerService {
       'sourceImage': imageFileName ?? 'unknown',
       'items': items,
       'totalItems': items.length,
-      'processingVersion': '1.0.0',
+      'processingVersion': '2.0.0',
     };
 
     final docRef =
