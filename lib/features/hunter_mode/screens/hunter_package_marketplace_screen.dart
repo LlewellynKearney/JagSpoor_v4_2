@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +11,7 @@ import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
 import '../services/pricing_math.dart';
+import '../services/deposit_payment_simulator.dart';
 
 // PayFast sandbox configuration now lives in a single source:
 // `lib/core/services/payfast_checkout.dart` (`PayfastCheckout`), which both
@@ -27,9 +29,14 @@ class HunterPackageMarketplaceScreen extends StatefulWidget {
 
 class _HunterPackageMarketplaceScreenState
     extends State<HunterPackageMarketplaceScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   String? _selectedProvince;
   late TabController _tabController;
+
+  /// Set `true` when a PayFast browser checkout is launched so the app-resume
+  /// lifecycle listener can detect that the user returned from the external
+  /// browser and prompt a booking-status refresh. (v4.5 to-do Item #10.)
+  bool _awaitingPayfastReturn = false;
 
   // South African provinces
   static const List<String> _provinces = [
@@ -49,12 +56,37 @@ class _HunterPackageMarketplaceScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App-resume PayFast return detection (v4.5 to-do Item #10): when the app
+    // resumes from the background (the user returned from the external
+    // PayFast browser checkout) and a checkout was launched, prompt the user
+    // to refresh/fetch the latest booking status. The bookings list is
+    // already a reactive Firestore `snapshots()` stream, so the data auto-
+    // updates on resume; this SnackBar is the explicit prompt the spec wants.
+    if (state == AppLifecycleState.resumed && _awaitingPayfastReturn) {
+      _awaitingPayfastReturn = false;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Welcome back! Verifying your latest booking status from the '
+            'PayFast checkout...',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
@@ -358,6 +390,8 @@ class _HunterPackageMarketplaceScreenState
               bookingId: bookingId,
               data: data,
               theme: theme,
+              onPayFastCheckoutLaunched: () =>
+                  _awaitingPayfastReturn = true,
             );
           },
         );
@@ -1379,10 +1413,17 @@ class _HunterBookingCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final ThemeController theme;
 
+  /// Invoked when a PayFast browser checkout is launched from this card so the
+  /// marketplace screen's app-resume lifecycle listener can detect the user's
+  /// return from the external browser and prompt a booking-status refresh.
+  /// (v4.5 to-do Item #10.)
+  final VoidCallback? onPayFastCheckoutLaunched;
+
   const _HunterBookingCard({
     required this.bookingId,
     required this.data,
     required this.theme,
+    this.onPayFastCheckoutLaunched,
   });
 
   @override
@@ -1392,6 +1433,7 @@ class _HunterBookingCard extends StatefulWidget {
 class _HunterBookingCardState extends State<_HunterBookingCard> {
   bool _isChatExpanded = false;
   bool _isPaying = false;
+  bool _isSimulating = false;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
 
@@ -1663,6 +1705,47 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                             amount: payfastAmount,
                             itemName: packageName,
                           ),
+                ),
+              ),
+            ),
+
+          // 🐛 DEBUG PayFast payment simulator — a secondary debug action
+          // rendered ONLY in `kDebugMode` for bookings awaiting the deposit.
+          // On tap it calls `_simulatePaymentSuccess`, which writes the
+          // booking document directly to the post-payment state (status ->
+          // `Paid`, `depositPaidAt` server timestamp) — exactly the state the
+          // deployed PayFast ITN handler writes on a COMPLETE payment. This
+          // lets a sandbox tester exercise the full booking-status transition
+          // without going through the browser checkout. (v4.5 to-do Item #10.)
+          if (kDebugMode &&
+              DepositPaymentSimulator.canSimulate(status) &&
+              depositAmount > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: _isSimulating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.bug_report, size: 20),
+                  label: const Text('Simulate PayFast Deposit (Debug)'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.deepOrange,
+                    side: BorderSide(color: Colors.deepOrange.withValues(alpha: 0.6)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _isSimulating
+                      ? null
+                      : () => _simulatePaymentSuccess(widget.bookingId),
                 ),
               ),
             ),
@@ -2083,6 +2166,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
   }) async {
     if (_isPaying) return;
     setState(() => _isPaying = true);
+    // Signal the marketplace screen's app-resume listener that a browser
+    // checkout is in flight so it can detect the user's return. (v4.5 to-do
+    // Item #10.)
+    widget.onPayFastCheckoutLaunched?.call();
     // Capture the messenger before the async gap (the widget may unmount
     // while the browser hand-off is in flight).
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -2127,6 +2214,54 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     } finally {
       if (mounted) {
         setState(() => _isPaying = false);
+      }
+    }
+  }
+
+  /// **Debug-only** PayFast deposit payment simulator (v4.5 to-do Item #10).
+  ///
+  /// Invoked by the "Simulate PayFast Deposit (Debug)" card button
+  /// (`kDebugMode` only, deposit-due bookings). Calls
+  /// `PackageBookingManager.simulateDepositPaid`, which writes the booking
+  /// document directly to the post-payment state (`status` -> `Paid`,
+  /// `depositPaidAt` server timestamp) — exactly the state the deployed PayFast
+  /// ITN handler writes on a COMPLETE payment. The reactive `bookings` stream
+  /// then re-renders the card in the `Paid` state automatically.
+  Future<void> _simulatePaymentSuccess(String bookingId) async {
+    if (_isSimulating) return;
+    setState(() => _isSimulating = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await PackageBookingManager.instance
+          .simulateDepositPaid(bookingId: bookingId);
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            '✅ [DEBUG] Deposit payment simulated — booking marked Paid.',
+          ),
+          backgroundColor: Colors.teal,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              '⚠️ [DEBUG] Simulation failed: $e\n'
+              'Note: the bookings rule only permits the outfitter to flip '
+              'the status field — run as the outfitter/admin or relax rules '
+              'in your sandbox.',
+            ),
+            backgroundColor: Colors.deepOrange,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSimulating = false);
       }
     }
   }

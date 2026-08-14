@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/package_pricing.dart';
+import 'deposit_payment_simulator.dart';
 
 class PackageBookingManager {
   static final PackageBookingManager _instance =
@@ -535,6 +537,47 @@ class PackageBookingManager {
       'approvedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  // ==========================================
+  // DEBUG PAYMENT SIMULATOR (kDebugMode only)
+  // ==========================================
+  /// **Debug-only** simulator that flips a booking's status directly to `Paid`
+  /// and stamps `depositPaidAt`, mirroring the state the deployed PayFast ITN
+  /// handler writes when a `payment_status==COMPLETE` ITN is reconciled.
+  ///
+  /// Gated behind `kDebugMode` (stripped from release builds) so it can never
+  /// ship. The pure decision logic lives in `DepositPaymentSimulator`; this
+  /// method appends the server-timestamp fields (which require
+  /// `FieldValue.serverTimestamp()` and so are not pure) and performs the
+  /// Firestore write.
+  ///
+  /// **Production security note**: the `bookings` Firestore rule only permits
+  /// the outfitter (or the Admin-SDK-backed ITN Cloud Function, which bypasses
+  /// rules entirely) to flip the `status` field. A hunter-triggered debug
+  /// write that flips `status` to `Paid` is therefore permission-denied under
+  /// the production rules. Use as the outfitter/admin sandbox tester or in a
+  /// locally-relaxed rules env. (v4.5 to-do Item #10.)
+  Future<void> simulateDepositPaid({required String bookingId}) async {
+    assert(kDebugMode,
+        'DepositPaymentSimulator is a debug-only feature and must not run in release builds.');
+    if (!kDebugMode) {
+      throw StateError(
+          'DepositPaymentSimulator is disabled outside debug mode.');
+    }
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated');
+    }
+
+    final update = <String, dynamic>{
+      ...DepositPaymentSimulator.simulateUpdateMap(),
+      DepositPaymentSimulator.depositPaidAtField:
+          FieldValue.serverTimestamp(),
+      'paymentTimestamp': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await _firestore.collection('bookings').doc(bookingId).update(update);
   }
 
   // ==========================================

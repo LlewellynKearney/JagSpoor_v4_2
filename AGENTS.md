@@ -4404,3 +4404,142 @@ waypoint drops) and all associated UI shortcuts, services, models, and tests.
   `lib/features/hunter_mode/screens/offline_navigation_screen.dart`
   (crimson bloodPath polyline removed), `AGENTS.md`.
 
+
+## Phase 42 -- PayFast Debug Payment Simulator & Return Deep Link Handler (added 2026-08-14)
+
+Item #10 of the v4.5 to-do: add a `kDebugMode`-only PayFast deposit payment
+simulator button to the hunter's `Pending Deposit` booking cards so a sandbox
+tester can exercise the full booking-status transition without going through
+the browser checkout, and wire the PayFast `return_url` to a per-booking deep
+link with an app-resume lifecycle listener that detects the browser-checkout
+return and prompts a booking-status refresh.
+
+### 1. Pure simulator helper
+  (`lib/features/hunter_mode/services/deposit_payment_simulator.dart`, NEW)
+- `DepositPaymentSimulator` (private ctor -- pure static API; only Flutter
+  import is `kDebugMode` so fully unit-testable, no Firestore).
+  - Constants: `paidStatus = 'Paid'` (the canonical post-payment booking
+    status set by the deployed ITN handler on `payment_status==COMPLETE`),
+    `payfastPaymentStatusComplete = 'COMPLETE'`, `depositPaidAtField =
+    'depositPaidAt'`, `depositPaidField = 'depositPaid'`.
+  - `depositDueStatuses` -- the statuses awaiting the 25% deposit
+    (`Pending Deposit`, `Approved`, `pending_payment`, `pending_deposit`).
+  - `canSimulate(String? status)` -- `true` only when `kDebugMode` AND the
+    status (case-insensitive) is deposit-due. Release builds always return
+    `false` so the simulator can never ship.
+  - `simulateUpdateMap()` -- pure `Map<String, dynamic>` carrying the
+    post-payment state that mirrors the ITN handler's write: `status ->
+    'Paid'`, `paymentStatus -> 'COMPLETE'`, `depositPaid -> true`. The
+    server-timestamp fields (`depositPaidAt`, `paymentTimestamp`,
+    `updatedAt`) are NOT pure (they need `FieldValue.serverTimestamp()`)
+    so they are appended by the service wrapper, not the helper.
+
+### 2. Service method -- `PackageBookingManager.simulateDepositPaid`
+- New `simulateDepositPaid({required String bookingId})` on
+  `PackageBookingManager`. Gated behind an `assert(kDebugMode, ...)` AND a
+  runtime `if (!kDebugMode) throw StateError(...)` (defense-in-depth -- the
+  assert is stripped in release but the runtime guard still throws). Requires
+  authentication. Resolves the pure `simulateUpdateMap()` and appends the
+  three server-timestamp fields, then performs the Firestore `update` on
+  `bookings/{bookingId}`.
+- **Production security note**: the `bookings` Firestore rule only permits
+  the **outfitter** (or the Admin-SDK-backed ITN Cloud Function, which
+  bypasses rules entirely) to flip the `status` field. A hunter-triggered
+  debug write that flips `status` to `Paid` is therefore permission-denied
+  under the production rules. The simulator is `kDebugMode`-only (stripped
+  from release builds) and is intended for the outfitter/admin sandbox tester
+  or a locally-relaxed rules env -- it is NOT a shipped production code path.
+  The card surfaces the permission error as a clear orange snackbar
+  ("Simulation failed: ... run as the outfitter/admin or relax rules in your
+  sandbox") rather than crashing.
+
+### 3. PayFast return URL / deep link (`PayfastCheckout`)
+- `PayfastCheckout` (`lib/core/services/payfast_checkout.dart`) gained
+  `buildReturnUrl(String bookingId)` -> the per-booking return deep link
+  `https://jagspoor.page.link/payment-return?booking_id=<enc>&status=success`
+  (percent-encoded via `Uri.encodeQueryComponent`). The base
+  `returnBaseUrl = 'https://jagspoor.page.link/payment-return'` (a Firebase
+  Dynamic Links `*.page.link` domain, matching the password-reset deep-link
+  pattern from Phase 33).
+- `launchDeposit` now passes the per-booking return URL as PayFast's
+  `return_url` (was a static `booking-success` web URL), so the app can detect
+  a return from the browser checkout carrying the booking id + success flag.
+- The `notify_url` / `cancel_url` / sandbox host / merchant credentials are
+  unchanged.
+
+### 4. App-resume lifecycle listener (marketplace screen)
+- `_HunterPackageMarketplaceScreenState` is now a `WidgetsBindingObserver`
+  (`addObserver` in `initState`, `removeObserver` in `dispose`) and tracks an
+  `_awaitingPayfastReturn` flag.
+- `_HunterBookingCard` gained an optional `onPayFastCheckoutLaunched`
+  callback; the card invokes it at the start of `_initiatePayFastCheckout`
+  (before the browser hand-off) so the parent screen sets
+  `_awaitingPayfastReturn = true`.
+- `didChangeAppLifecycleState(AppLifecycleState.resumed)` checks the flag:
+  if a checkout was in flight, clears the flag and shows a "Welcome back!
+  Verifying your latest booking status from the PayFast checkout..." snackbar.
+  The bookings list is already a reactive Firestore `snapshots()` stream, so
+  the data auto-updates on resume; the snackbar is the explicit prompt the
+  spec wants. (A spurious resume with no checkout in flight shows nothing.)
+
+### 5. Debug simulator button (booking card)
+- `_HunterBookingCard` renders a secondary debug `OutlinedButton.icon` below
+  the real PayFast deposit button ONLY when `kDebugMode &&
+  DepositPaymentSimulator.canSimulate(status) && depositAmount > 0`.
+  - Label: `Simulate PayFast Deposit (Debug)`, icon `Icons.bug_report`,
+    deep-orange accent.
+  - `onPressed`: `_simulatePaymentSuccess(bookingId)` (disabled + spinner
+    while `_isSimulating`).
+- `_simulatePaymentSuccess(String bookingId)`: guards re-entry, captures the
+  `ScaffoldMessenger` before the async gap, calls
+  `PackageBookingManager.instance.simulateDepositPaid`, shows a teal
+  success snackbar on completion, and a deep-orange failure snackbar
+  (carrying the rules-permission guidance) on error. All post-async-gap
+  context use is `mounted`-guarded.
+
+### 6. Tests
+- `test/deposit_payment_simulator_test.dart` (NEW, 24 tests, all pass):
+  - Constants (5): `paidStatus`, `payfastPaymentStatusComplete`,
+    `depositPaidAtField`, `depositPaidField`, `depositDueStatuses`
+    (canonical + legacy spellings).
+  - `canSimulate` (6): canonical `Pending Deposit`, `Approved`, snake-case
+    legacy, case-insensitive, false for non-deposit-due (`Paid` /
+    `Pending Approval` / `Declined` / `Completed` / `Cancelled`), false for
+    null.
+  - `simulateUpdateMap` (5): writes `status`/`paymentStatus`/`depositPaid`;
+    does NOT contain the server-timestamp fields (added by the service);
+    fresh map per call (no shared mutable state).
+  - `PayfastCheckout.buildReturnUrl` (4): page.link base, encodes
+    booking_id + status=success, percent-encodes special chars, different
+    ids -> different urls.
+  - Booking status transition contract (4): a `Pending Deposit` booking
+    transitions to `Paid`; a `Paid` / `Pending Approval` booking cannot be
+    simulated forward; the simulated `Paid` status is not deposit-due (a
+    second simulation attempt is rejected).
+- The Flutter test runner executes in debug mode, so `kDebugMode` is true
+  in the tests and `canSimulate` reflects the status check only (the
+  intended contract).
+
+### 7. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **No issues found**
+  in all changed/new files (`deposit_payment_simulator.dart`,
+  `payfast_checkout.dart`, `package_booking_manager.dart`,
+  `hunter_package_marketplace_screen.dart`,
+  `deposit_payment_simulator_test.dart`). Project baseline unchanged.
+  `analysis_options.yaml` auto-touched by the analyzer / pub get was
+  reverted before commit.
+- **`flutter test test/deposit_payment_simulator_test.dart`**: 24/24 pass.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  debug UI + a deep-link URL shape; the bookings rule already permits the
+  outfitter / ITN handler to flip `status`, and the debug simulator surfaces
+  the permission error gracefully when a hunter triggers it under prod
+  rules).
+- Files: `lib/features/hunter_mode/services/deposit_payment_simulator.dart`
+  (NEW), `lib/core/services/payfast_checkout.dart` (per-booking return deep
+  link + `buildReturnUrl`), `lib/features/hunter_mode/services/
+  package_booking_manager.dart` (`simulateDepositPaid` + imports),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (`WidgetsBindingObserver` + app-resume listener + `_awaitingPayfastReturn`
+  flag + `onPayFastCheckoutLaunched` callback + debug simulator button +
+  `_simulatePaymentSuccess`), `test/deposit_payment_simulator_test.dart`
+  (NEW, 24 tests), `AGENTS.md`.
