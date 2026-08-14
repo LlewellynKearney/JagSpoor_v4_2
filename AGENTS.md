@@ -3807,3 +3807,112 @@ unavailable" banner.
   `lib/main.dart` (`GeminiConfigService.instance.init()` + import),
   `test/gemini_config_service_test.dart` (NEW, 20 tests).
 
+
+## Phase 37 ‚Äî Firestore Security Rules & Permission Audit (startup seeding) (added 2026-08-14)
+
+Item #5 of the v4.5 to-do: audit `firestore.rules` for the collections
+populated or read during startup seeding and eliminate
+`PERMISSION_DENIED: Missing or insufficient permissions` during startup.
+
+### 1. Audit findings
+- **Root cause of startup `PERMISSION_DENIED`**: `BallisticsSeeder.seedAll()`
+  (invoked from `main.dart` for EVERY signed-in user on first launch, gated
+  only by a `SharedPreferences` `ballistics_seeded` flag) writes the app's
+  bundled CSV reference data into three Firestore collections:
+  `factory_ammunition`, `bullets`, `propellants`. The previous rules gated all
+  three with `allow write: if isAdmin()` ‚Äî so the one-time reference-data
+  seed was rejected server-side for every non-admin (hunter / outfitter) on
+  first launch. The seeder uses `batch.set(..., SetOptions(merge: true))`
+  with deterministic doc ids derived from `brand_caliber_grain`, so seeding
+  is idempotent and concurrent seeds never clobber each other.
+- **`game_guide`**: NOT a Firestore collection ‚Äî it is a Hunter Dashboard
+  feature-card `id` (navigates to `AnimalListScreen`). No rule needed.
+- **`app_config` / `system_benchmarks`**: do NOT exist anywhere in the
+  codebase (no reads, no writes, no rules). The to-do listed them as
+  examples ("e.g."); the catch-all default-deny (`match /{document=**}
+  allow read, write: if false`) covers them defensively. No rule added.
+- **`scanned_pricelists`**: already `allow read: if isSignedIn()` (widened
+  in Phase 26 so hunters can browse the custom-package catalog); writes
+  remain owner-scoped (`ownerOrAdmin('outfitterId')`). Not seeded at
+  startup; no change needed.
+- **`animals`** (SA Game Guide): `allow read: if true` (public), `allow
+  write: if isAdmin()`. `seedAnimalsFromCSV()` writes to `animals` but is a
+  MANUAL admin utility (NOT called at startup ‚Äî no caller in `main.dart` or
+  anywhere except its own definition), so it does not cause startup
+  `PERMISSION_DENIED`. No change needed.
+- **`users/{uid}`**: `allow read: if isSignedIn()` ‚Äî covers the
+  `UserRoleProvider` / splash role-resolution read at startup. No change.
+
+### 2. Rule adjustments (the fix)
+`firestore.rules` ‚Äî the three catalog reference collections were split
+from a bare `allow write: if isAdmin()` into explicit read / create+update
+/ delete grants:
+```
+match /factory_ammunition/{docId} {
+  allow read: if isSignedIn();
+  allow create, update: if isSignedIn();
+  allow delete: if isAdmin();
+}
+```
+- **Read** (`isSignedIn()`): unchanged ‚ÄĒ ballistic-calc pickers + marketplace
+  read these as reference data.
+- **Create / update** (`isSignedIn()`): the fix. Any signed-in user may run
+  the one-time seed. This eliminates the `PERMISSION_DENIED` during startup
+  seeding for non-admin users. These collections hold static read-only
+  catalog reference data (no PII, no financial data), there is no UI path
+  that writes to them outside the seeder, and the seeder's `merge: true`
+  + deterministic doc ids make the seed idempotent and conflict-free, so
+  authenticated create/update is the **minimal** permission needed to seed
+  them (the to-do's "allow authenticated users to perform initial seeding
+  operations where appropriate"). This mirrors the codebase precedent
+  (`venison_permits` create: `isSignedIn()`).
+- **Delete** (`isAdmin()`): tightened vs. the old bare `write` (which also
+  allowed admin delete). A non-admin must NEVER be able to wipe the shared
+  ballistics catalog, so delete remains admin-only while create/update is
+  opened for seeding.
+All six auth helper functions (`isSignedIn`, `isAdmin`, `isOutfitter`,
+`isOwnerOf`, `ownerOrAdmin`, `isBookingPartyViaParent`) verified intact;
+the catch-all default-deny (`allow read, write: if false`) retained.
+
+### 3. Structural rules tests (NEW)
+`test/firestore_rules_seeding_test.dart` (14 tests, all pass) ‚ÄĒ the
+Firestore emulator (`@firebase/rules-unit-testing`) cannot run in this
+sandbox (no Java/JVM, no Firebase credentials; see AGENTS.md environment
+constraints), so these tests encode the **rule contract** structurally by
+parsing `firestore.rules` and asserting the allow clauses (mirrors the
+`package_quantity_test` / `custom_package_pricing_test` pattern of encoding
+the contract the rules enforce). Groups:
+- **Structural integrity** (3): all four core helpers present;
+  default-deny present; braces + parentheses balanced.
+- **Startup-seeding collections permission contract** (9, 3 per
+  collection): for `factory_ammunition` / `bullets` / `propellants` ‚ÄĒ
+  read = `isSignedIn()`; create,update = `isSignedIn()` (and the old bare
+  `allow write: if isAdmin()` is NOT present); delete = `isAdmin()`.
+- **Other startup-read collections** (2): `scanned_pricelists` read =
+  `isSignedIn()`; `animals` read = `true` + write = `isAdmin()` (public
+  game guide, not seeded at startup).
+
+### 4. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in the new test file. No Dart `lib/` changes, so the
+  `lib/` baseline is **113 issues** (unchanged from Phase 36 ‚ÄĒ all
+  pre-existing). `analysis_options.yaml` auto-touched by the analyzer was
+  reverted before commit.
+- **`flutter test`**: new `firestore_rules_seeding_test` 14/14 pass.
+  Full suite **402 passed, 4 failed** ‚ÄĒ the 4 failures are the documented
+  pre-existing baseline (`saps_tracker`, `offline_sync_queue`,
+  `advanced_ballistics`, `bluetooth_mesh`), none touch the changed files;
+  +14 vs the Phase-36 388-pass baseline (exactly the new rules tests).
+- Structural validation: brace balance 0; 39 match blocks; default-deny
+  present; all helpers intact (Python parse).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate the seed/permission changes. Until
+  deployed, the old `write: isAdmin()` gate still rejects the first-launch
+  seed for non-admins (surfaced as a `debugPrint` error in the seeder's
+  per-collection try/catch ‚ÄĒ non-fatal, but the ballistics reference data
+  won't populate for that user until the rules deploy).
+- Files: `firestore.rules` (three catalog collections split into
+  read / create+update / delete), `test/firestore_rules_seeding_test.dart`
+  (NEW, 14 tests), `AGENTS.md`. No Dart `lib/` / Storage / index / pubspec
+  changes (pure rules + structural test).
+

@@ -80,18 +80,39 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || isOwnerOf('uid');
     }
 
-    // Catalog reference data (read by any signed-in user, admin write).
+    // Catalog reference data — ballistics ammunition / bullet / propellant
+    // databases seeded once at first launch by `BallisticsSeeder.seedAll()`
+    // (invoked from `main.dart` for every signed-in user, gated by a
+    // SharedPreferences `ballistics_seeded` flag). The seeder writes the
+    // app's bundled CSV reference data with `set(merge: true)` using
+    // deterministic doc ids derived from brand+caliber+grain, so seeding is
+    // idempotent and concurrent seeds never clobber each other.
+    //
+    // Read: any signed-in user (ballistic calculator pickers, marketplace).
+    // Create / update: any signed-in user — this is what eliminates the
+    // `PERMISSION_DENIED: Missing or insufficient permissions` error during
+    // startup seeding for non-admin users (the previous `write: isAdmin()`
+    // gate blocked the one-time reference-data seed for every hunter /
+    // outfitter on first launch). These collections hold static read-only
+    // catalog reference data (no PII, no financial data), and there is no
+    // UI path that writes to them outside the seeder, so authenticated
+    // create/update is the minimal permission needed to seed them.
+    // Delete: admin only — a non-admin must never be able to wipe the
+    // shared ballistics catalog.
     match /factory_ammunition/{docId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
     match /bullets/{docId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
     match /propellants/{docId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
     // Packages (marketplace listings): browsable by any signed-in user;
