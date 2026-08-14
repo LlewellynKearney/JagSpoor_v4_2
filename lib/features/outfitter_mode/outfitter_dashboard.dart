@@ -93,15 +93,20 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                         children: [
                           _buildStatusBanner(widget.theme),
                           const SizedBox(height: 16),
+                          // Section label wrapped to avoid overflow on narrow
+                          // screens (the manager label is long + tracked-out).
                           Text(
                             _isManager
                                 ? 'FARM MANAGEMENT HUD (MANAGER ACCESS)'
                                 : 'OUTFITTER OPERATIONS',
+                            softWrap: true,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: widget.theme.textColor.withAlpha(180),
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              letterSpacing: 2.0,
+                              letterSpacing: 1.2,
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -380,6 +385,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         children: [
           Text(
             _isManager ? 'Farm Manager' : 'Jagspoor Outfitter',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: theme.textColor,
               fontWeight: FontWeight.w700,
@@ -389,6 +396,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
           ),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: theme.accentColor,
               fontWeight: FontWeight.w500,
@@ -439,13 +448,17 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             children: [
               Icon(Icons.villa_rounded, color: theme.accentColor, size: 32),
               const SizedBox(width: 16),
-              Text(
-                _isManager ? 'FARM GATEWAY ONLINE' : 'LODGE GATEWAY ONLINE',
-                style: TextStyle(
-                  color: theme.textColor,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  letterSpacing: 1.0,
+              Expanded(
+                child: Text(
+                  _isManager ? 'FARM GATEWAY ONLINE' : 'LODGE GATEWAY ONLINE',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
             ],
@@ -455,6 +468,9 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             _isManager
                 ? 'Farm Manager access active. Restricted to ${_assignedFarmId ?? 'N/A'}.'
                 : 'Outfitter Control Center loaded. Dashboard sync active.',
+            softWrap: true,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: theme.textColor.withAlpha(160),
               fontSize: 13,
@@ -505,6 +521,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   children: [
                     Text(
                       title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: theme.textColor,
                         fontWeight: FontWeight.bold,
@@ -515,6 +533,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                     const SizedBox(height: 4),
                     Text(
                       description,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: theme.textColor.withAlpha(180),
                         fontSize: 13,

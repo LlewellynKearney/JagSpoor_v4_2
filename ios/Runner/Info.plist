@@ -47,5 +47,11 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>JagSpoor needs camera access to capture trophy photos, package listing images, paper price lists, and hunt permit signatures.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>JagSpoor needs photo library access to select existing trophy photos, package images, and scanned price lists.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>JagSpoor saves captured photos and exported PDF reports to your photo library.</string>
 	</dict>
 </plist>

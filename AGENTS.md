@@ -1648,3 +1648,87 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
   `lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart`.
 
+
+## Phase 13 — Outfitter Dashboard Cleanup & Package Creator Camera Capture (added 2026-08-14)
+
+- **Outfitter dashboard cleanup**:
+  - Removed the **unused duplicate** `lib/features/outfitter_mode/presentation/outfitter_dashboard.dart`
+    (a `StatelessWidget` `OutfitterDashboard` that was never imported anywhere —
+    `main.dart` imports the real `lib/features/outfitter_mode/outfitter_dashboard.dart`
+    `StatefulWidget`). The duplicate had drifted to a 2-card stub (Price Catalog
+    + Slaghuis Matrix) and was an overlapping/redundant component.
+  - Hardened the **live dashboard** (`lib/features/outfitter_mode/outfitter_dashboard.dart`)
+    against overflow on narrow / small-ratio screens (the long tracked-out
+    section label "FARM MANAGEMENT HUD (MANAGER ACCESS)" + the multi-line card
+    descriptions + the two-line AppBar title could overflow on a 360dp phone):
+    - Section header `Text` → `softWrap: true`, `maxLines: 2`,
+      `overflow: ellipsis`, letterSpacing reduced 2.0 → 1.2, fontSize 16 → 15.
+    - `_buildFeatureCard` title → `maxLines: 2, overflow: ellipsis`; description
+      → `maxLines: 3, overflow: ellipsis` (the description Column is already in
+      an `Expanded`, so wrapping is safe).
+    - `_buildStatusBanner` header Row → header `Text` wrapped in `Expanded` with
+      `maxLines: 1, overflow: ellipsis`; status body → `softWrap: true,
+      maxLines: 3, overflow: ellipsis`.
+    - `_buildAppBar` two-line title → both `Text`s get
+      `maxLines: 1, overflow: ellipsis`.
+  - Smooth scrolling was already in place (`ListView` + `BouncingScrollPhysics` +
+    `SafeBottomInset.of(context)` bottom padding from Phase 12); the cleanup
+    keeps that and only fixes the overflow-prone text nodes.
+- **Package creator — native camera capture**
+  (`lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`):
+  - Previously the gallery only offered `pickMultipleMedia` (gallery multi-pick)
+    via a single "Add Photos" tile — there was no way to capture a photo with
+    the device camera from inside the package creator.
+  - New `_captureWithCamera()`: opens the native camera via
+    `ImagePicker.pickImage(source: ImageSource.camera, imageQuality: 85,
+    maxWidth: 1920, maxHeight: 1920)`. image_picker saves the captured JPEG to
+    the app temp directory; the returned `XFile` is appended to `_pickedImages`
+    and is compressed (downscale 1280px, JPEG q75) at upload time via the
+    existing `ImageService.compressExisting` step inside `_uploadPackageImages`.
+    A max-images guard (`_canAddImage`) + "Maximum N images reached" snackbar
+    mirrors the gallery path.
+  - The gallery strip now renders **two** explicit add tiles (both gated by
+    `_canAddImage`): a **"Take Photo"** tile (`photo_camera_rounded`) wired to
+    `_captureWithCamera`, and the original **"Add Photos"** tile
+    (`add_photo_alternate_rounded`) wired to the multi-pick gallery flow. A new
+    reusable `_addTile(...)` helper renders both. The camera action is now a
+    first-class, clearly-labelled entry point — tapping it brings up the native
+    capture sheet immediately.
+  - The full capture → preview → upload pipeline already existed for
+    gallery-picked images and now applies equally to camera captures: each
+    picked `XFile` renders as an `Image.file` preview thumbnail (with a remove
+    button) in the horizontal strip, and on package submission
+    `_uploadPackageImages` compresses + uploads each to Firebase Storage at
+    `package_images/{outfitterId}/{timestamp}_{i}.jpg` with a per-file progress
+    indicator, returning the download URLs stored on the `packages` doc as
+    `imageUrls`. No backend / rules change (the `package_images` Storage match
+    from the Package CRUD Polish phase already covers owner-scoped writes).
+- **iOS camera/photo permission strings**
+  (`ios/Runner/Info.plist`): the plist previously had NO
+  `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` /
+  `NSPhotoLibraryAddUsageDescription` keys, so any `image_picker` camera or
+  gallery call would crash on iOS with a missing-usage-description termination.
+  Added all three (camera, photo-library read, photo-library add) with
+  JagSpoor-specific copy. Android already declared `CAMERA` permission +
+  `camera` feature (`required=false`) in `AndroidManifest.xml`. Validated the
+  plist parses with `plistlib`.
+- **Verification**: `flutter analyze` (local Flutter 3.47.0 stable) → **0
+  errors, 13 warnings, 316 infos**. The 13 warnings are all pre-existing and
+  NONE are in either changed file (`outfitter_dashboard.dart` /
+  `outfitter_package_creator_screen.dart`) — identical warning set to the prior
+  baseline. The 2 `info`s in the package creator are the pre-existing
+  `DropdownButtonFormField.value` deprecations (only flagged on Flutter ≥3.33;
+  CI's 3.29.1 pin does not flag them). `flutter test` of the RBAC + package +
+  theme suites (64 tests) → all pass.
+- **Flutter SDK note**: the local SDK at `/home/openhands/flutter` was
+  re-installed this session (3.47.0 stable, Dart 3.13) after the documented
+  `/home/openhands/flutter` checkout was absent. Add to PATH:
+  `export PATH="$HOME/flutter/bin:$PATH"`. It is newer than the CI pin of
+  3.29.1 — the only observable difference for this work is the
+  `DropdownButtonFormField.value` deprecation infos (documented baseline).
+- Files: `lib/features/outfitter_mode/outfitter_dashboard.dart` (hardened),
+  `lib/features/outfitter_mode/presentation/outfitter_dashboard.dart` (deleted),
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  (camera capture + dual add tiles), `ios/Runner/Info.plist` (permission
+  strings). No Firestore / Storage / rules changes.
+

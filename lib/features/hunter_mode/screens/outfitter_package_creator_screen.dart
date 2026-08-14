@@ -208,6 +208,29 @@ class _OutfitterPackageCreatorScreenState
   int get _totalImageCount => _pickedImages.length + _existingImageUrls.length;
   bool get _canAddImage => _totalImageCount < _maxImages;
 
+  /// Native camera capture flow. image_picker saves the captured JPEG to the
+  /// app temp directory; the picked [XFile] is appended to [_pickedImages]
+  /// and gets compressed at upload time via [ImageService.compressExisting].
+  Future<void> _captureWithCamera() async {
+    if (!_canAddImage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum $_maxImages images reached'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final XFile? photo = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (photo == null) return; // user cancelled
+    setState(() => _pickedImages.add(photo));
+  }
+
   Future<void> _pickPackageImages() async {
     if (!_canAddImage) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1170,44 +1193,66 @@ class _OutfitterPackageCreatorScreenState
                   onRemove: () => _removePickedImage(idx),
                 );
               }),
-              // Add-image button.
-              if (_canAddImage)
-                GestureDetector(
-                  onTap: _pickPackageImages,
-                  child: Container(
-                    width: 110,
-                    margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: theme.accentColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_photo_alternate_rounded,
-                            color: theme.accentColor, size: 28),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Add Photos',
-                          style: TextStyle(
-                              color: theme.subtitleColor, fontSize: 11),
-                        ),
-                        Text(
-                          '$_totalImageCount/$_maxImages',
-                          style: TextStyle(
-                              color: theme.subtitleColor, fontSize: 10),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              // Native camera capture tile — opens the device camera via
+              // image_picker and appends the captured JPEG to the gallery.
+              if (_canAddImage) _addTile(
+                theme,
+                icon: Icons.photo_camera_rounded,
+                label: 'Take Photo',
+                onTap: _captureWithCamera,
+              ),
+              // Gallery multi-pick tile.
+              if (_canAddImage) _addTile(
+                theme,
+                icon: Icons.add_photo_alternate_rounded,
+                label: 'Add Photos',
+                showCount: true,
+                onTap: _pickPackageImages,
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// Reusable "add image" tile for the gallery strip.
+  Widget _addTile(
+    ThemeController theme, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool showCount = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 110,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: theme.accentColor.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: theme.accentColor, size: 28),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+            ),
+            if (showCount)
+              Text(
+                '$_totalImageCount/$_maxImages',
+                style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
