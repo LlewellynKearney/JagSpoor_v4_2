@@ -3401,3 +3401,175 @@ link and re-queues an email delivery ‚Äî the root cause of the delay).
   `invalid-continue-uri` "domain not authorized" error rather than failing
   silently.
 
+
+## Phase 34 ‚Äî Hunter 7.5% Markup & Outfitter Revenue Protection + PayFast Sandbox Alignment (added 2026-08-14)
+
+Item #9 of the v4.4 to-do: guarantee the 7.5% platform markup is fully
+**absorbed** into every hunter-facing price (with the 25% deposit computed
+off the marked-up total and **no** explicit "Platform Fee" line shown to
+hunters), protect the outfitter financial dashboards so every outfitter
+revenue figure reflects the **base amount net of fees** (e.g. R10,000, not
+R10,750 and not R9,250), and align the PayFast sandbox charge to the 25%
+marked-up deposit via a single-source sandbox launcher.
+
+### 1. Single-source `PricingMath` helper (NEW)
+- New `lib/features/hunter_mode/services/pricing_math.dart` — pure,
+  dependency-free pricing arithmetic (no Flutter / Firebase imports ‚Üí fully
+  unit-testable). The single source of truth for the markup, deposit, and
+  net-earnings math so hunter-facing and outfitter-facing surfaces can never
+  drift.
+  - Constants: `platformCommissionRate` (0.075), `depositFraction` (0.25),
+    `markupMultiplier` (1.075).
+  - `markedUpTotal(base)` = `base √ó 1.075` (absorbed fee).
+  - `commissionFromBase(base)` = `base √ó 0.075`.
+  - `depositFromBase(base)` = `markedUpTotal(base) √ó 0.25` (25% **off the
+    marked-up total**, not the base).
+  - `depositFromMarkedUpTotal(total)` / `balanceFromMarkedUpTotal(total)`.
+  - `netEarnings({grossRevenue, platformFee})` = `gross ‚àí fee` = the
+    outfitter's base earnings (the protected net-revenue figure).
+  - `resolveHunterTotal({totalHunterPrice, basePrice})` ‚Äî prefers the stored
+    marked-up total; for **legacy documents** without `totalHunterPriceRands`
+    / `totalPriceZAR`, derives `base √ó 1.075` so a hunter never sees the
+    unmarked-up outfitter base price (or R0).
+  - `resolveDeposit({storedDeposit, markedUpTotalValue})` ‚Äî prefers the stored
+    deposit; derives 25% of the marked-up total for legacy docs.
+  - `aggregateRevenueSummary(bookings)` ‚Äî pure aggregation of a booking-record
+    iterable into `{grossRevenue, platformFees, netEarnings, totalBookings}`,
+    applying the net-revenue protection rules (gross = sum of marked-up
+    totals; fee = 7.5% of base, derived when missing; net = gross ‚àí fee =
+    base). Unit-testable without the Firestore emulator.
+
+### 2. Hunter-facing markup presentation (fixed)
+- **`hunter_package_marketplace_screen.dart`** ‚Äî the marketplace is the
+  primary hunter checkout surface. Three pricing sites rewired to
+  `PricingMath`:
+  - **Package card** (`_PackageCard`): the displayed price previously fell
+    back to the bare `basePriceRands` when `totalPriceZAR` was missing
+    (legacy packages) ‚Äî showing the unmarked-up outfitter base to hunters.
+    Now uses `PricingMath.resolveHunterTotal` so the card always shows the
+    marked-up total (`base √ó 1.075`), even for legacy packages.
+  - **Booking confirmation sheet** (`_BookingConfirmationSheet`): the
+    inline `commission = base √ó 0.075; total = base + commission; deposit =
+    total √ó 0.25` math replaced with `PricingMath.resolveHunterTotal` +
+    `PricingMath.depositFromMarkedUpTotal`. The sheet renders only
+    "Total Price" + "25% Deposit (due on approval ¬∑ non-refundable)" ‚Äî
+    **no explicit "Platform Fee" line** is shown to the hunter (the 7.5% is
+    fully absorbed into the total). This was already the case; the change
+    centralizes the arithmetic so it cannot drift.
+  - **Booked-hunts card** (`_BookedHuntCard`): `totalHunterPriceRands ??
+    0.0` (which rendered R0 for legacy bookings) replaced with
+    `PricingMath.resolveHunterTotal`; the deposit replaced with
+    `PricingMath.resolveDeposit`; the balance with
+    `PricingMath.balanceFromMarkedUpTotal`. The PayFast charge amount is now
+    `depositAmount` directly (resolved off the marked-up total).
+- **Custom package builder** (`hunter_custom_package_builder_screen.dart`):
+  already correct from Phase 26 ‚Äî per-line `hunterDisplayPriceZAR`
+  (base √ó 1.075, written at scan-save time) + `_deposit = _grandTotal √ó
+  0.25` + `PayfastCheckout.launchDeposit`. Verified unchanged and aligned.
+
+### 3. Outfitter revenue summary protection (fixed)
+Two latent bugs in the outfitter financial dashboard corrected:
+- **`OutfitterAnalyticsService.getRevenueSummaryStream`**:
+  - **Status filter bug**: previously queried `.where('status',
+    isEqualTo: 'Approved')` only. After the outfitter approves a booking its
+    status transitions `Approved ‚Üí Pending Deposit ‚Üí Paid ‚Üí Completed`, so
+    the summary only ever counted bookings stuck at the transient `Approved`
+    state ‚Äî missing every paid / deposit-pending / completed booking. Now
+    uses `.where('status', whereIn: earnedBookingStatuses)` where
+    `earnedBookingStatuses = ['Approved','Pending Deposit','Paid',
+    'Completed']` (excludes `Pending Approval`, `Declined`, `Cancelled`).
+  - **Net-revenue double-count bug**: previously `grossEarnings` = sum of
+    `basePriceRands` (already net of fee) and `netEarnings = grossEarnings
+    ‚àí platformFees` = base ‚àí fee = base √ó 0.925. For a R10,000 base listing
+    this displayed "Net Earnings" = R9,250 ‚Äî **understating** the outfitter's
+    actual earnings by the fee. The spec requires the outfitter to see
+    R10,000. Rewired through `PricingMath.aggregateRevenueSummary`:
+    `grossEarnings` = sum of `totalHunterPriceRands` (total collected from
+    hunters, incl. the 7.5% fee; derived `base √ó 1.075` for legacy docs);
+    `platformFees` = sum of `platformCommissionRands` (derived `base √ó
+    0.075` for legacy docs); `netEarnings = gross ‚àí fee = base` = the
+    outfitter's actual R10,000 earnings. Now gross = R10,750, fee = R750,
+    net = R10,000 (the exact spec figure).
+- **`outfitter_revenue_screen._getMonthlyStatsData`**: the monthly revenue
+  chart previously summed `totalHunterPriceRands` (the marked-up total) as
+  "revenue" ‚Äî **overstating** outfitter monthly revenue by the 7.5% fee. Now
+  sums `basePriceRands` (net of fees) and uses the same `earnedBookingStatuses`
+  `whereIn` filter so the chart agrees with the summary card.
+- **Info dialog copy** (`outfitter_revenue_screen` "Gross Revenue vs Platform
+  Commission"): corrected to reflect the new semantics ‚Äî "Gross Revenue =
+  total paid by hunters (incl. 7.5% fee)", "Platform Fee = 7.5% of the
+  outfitter base price", "Net Earnings = gross ‚àí fee = the outfitter's base
+  price (net of fees)"; and notes only earned bookings are counted.
+- **Outfitter booking dashboard** (`outfitter_booking_dashboard_screen`):
+  audited ‚Äî the per-booking financial breakdown correctly shows
+  "Outfitter Base Price" (net) + "7.5% Platform Fee" + "Total (incl. 7.5%
+  fee)" + deposit/balance. This is the appropriate outfitter view (they see
+  their base net earnings AND the fee split per booking); left unchanged.
+
+### 4. PayFast sandbox alignment (consolidated)
+- The marketplace previously carried a **duplicate inline PayFast
+  implementation** (its own `_kPayfastSandboxHost` /
+  `_kPayfastSandboxMerchantId` / `_kPayfastSandboxMerchantKey` /
+  `_kPayfastNotifyUrl` / `_kPayfastReturnUrl` / `_kPayfastCancelUrl`
+  constants + its own URL-building + `url_launcher` call), parallel to the
+  shared `lib/core/services/payfast_checkout.dart` (`PayfastCheckout`).
+  Consolidated: the marketplace's `_initiatePayFastCheckout` now routes
+  through `PayfastCheckout.launchDeposit(bookingId:, amount:)` (the same
+  launcher the custom-package builder uses), so the sandbox configuration
+  (`https://sandbox.payfast.co.za`, merchant `10000100`, ITN endpoint
+  `payfastITNHandler`) lives in exactly one place. The duplicate constants
+  and the now-unused `url_launcher` import were removed. The amount charged
+  is the 25% marked-up deposit (`depositAmount`, resolved off
+  `totalHunterPriceRands √ó 0.25`) ‚Äî matching the hunter-facing "25% Deposit"
+  row exactly. The sandbox config (`isSandbox` semantics ‚Äî sandbox host +
+  published test credentials) remains fully operational for test checkout
+  runs.
+
+### 5. Tests
+- `test/pricing_math_test.dart` (NEW, 24 tests, all pass):
+  - constants (3); `markedUpTotal` (2); `commissionFromBase` (1);
+    `depositFromBase` (2 ‚Äî confirms 25% off the marked-up total, NOT the
+    base); `depositFromMarkedUpTotal` (1); `balanceFromMarkedUpTotal` (1);
+    `netEarnings` (2 ‚Äî R10,000 not R10,750 and not R9,250, across a base
+    range); `resolveHunterTotal` (4 ‚Äî legacy fallback never returns the bare
+    base); `resolveDeposit` (2); PayFast deposit alignment (2 ‚Äî charge ==
+    displayed 25% marked-up deposit, never off the unmarked-up base);
+    end-to-end booking contract (1); `aggregateRevenueSummary` (4 ‚Äî stored
+    totals, legacy derivation, net-never-includes-fee, empty).
+- `test/outfitter_revenue_summary_test.dart` (NEW, 5 tests, all pass):
+  `earnedBookingStatuses` includes every earned state, excludes
+  pre-approval + dead-ends, exactly four statuses, and the filter predicate
+  admits/rejects the right statuses.
+- Existing `custom_package_pricing_test` (6) still green.
+
+### 6. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in all changed/new files
+  (`pricing_math.dart`, `outfitter_analytics_service.dart`,
+  `hunter_package_marketplace_screen.dart`, `outfitter_revenue_screen.dart`,
+  and both test files). Project total: **0 errors, 114 issues** (lib/ only)
+  ‚Äî identical to the pre-change baseline (all pre-existing infos in
+  unrelated files; the consolidation actually removed the marketplace's
+  duplicate constants + `url_launcher` import, so no new issues).
+  `analysis_options.yaml` auto-touched by the analyzer / pub get was
+  reverted before commit.
+- **`flutter test`** (full suite): **368 passed, 4 failed** ‚Äî the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
+  the changed files; +29 vs the Phase-33 339-pass baseline (24 pricing +
+  5 earned-status tests).
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  pricing + UI + PayFast consolidation; the `whereIn` on `status` is a
+  single-field equality-range query that uses the automatic index).
+- Files: `lib/features/hunter_mode/services/pricing_math.dart` (NEW),
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`
+  (earned-statuses filter + `aggregateRevenueSummary` delegation),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (3 pricing sites rewired to `PricingMath` + PayFast consolidated to
+  `PayfastCheckout.launchDeposit` + duplicate constants / `url_launcher`
+  import removed),
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`
+  (monthly revenue net-of-fee + earned-statuses filter + info-dialog copy),
+  `test/pricing_math_test.dart` (NEW, 24 tests),
+  `test/outfitter_revenue_summary_test.dart` (NEW, 5 tests).
+

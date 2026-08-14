@@ -1,27 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../core/services/payfast_checkout.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
+import '../services/pricing_math.dart';
 
-// ── PayFast SANDBOX configuration ──────────────────────────────────────────
-// PayFast's published sandbox test credentials (NOT production secrets).
-// Replace merchant_id/merchant_key/host with live values before launch.
-const String _kPayfastSandboxHost = 'https://sandbox.payfast.co.za';
-const String _kPayfastSandboxMerchantId = '10000100';
-const String _kPayfastSandboxMerchantKey = '46f0cd694581a';
-// Instant Transaction Notification endpoint — deployed payfastITNHandler
-// Cloud Function. Update region/host after deploy.
-const String _kPayfastNotifyUrl =
-    'https://us-central1-jagspoor.cloudfunctions.net/payfastITNHandler';
-const String _kPayfastReturnUrl = 'https://jagspoor.web.app/booking-success';
-const String _kPayfastCancelUrl = 'https://jagspoor.web.app/booking-cancelled';
+// PayFast sandbox configuration now lives in a single source:
+// `lib/core/services/payfast_checkout.dart` (`PayfastCheckout`), which both
+// the marketplace checkout and the custom-package builder route through.
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -414,8 +406,13 @@ class _PackageCard extends StatelessWidget {
     final title = data['title'] as String? ?? 'Untitled Package';
     final description = data['description'] as String? ?? '';
     final price = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    final totalPrice =
-        (data['totalPriceZAR'] as num?)?.toDouble() ?? price;
+    // Hunter-facing total: prefer the stored marked-up total; for legacy
+    // documents without `totalPriceZAR`, apply the 7.5% markup to the base so
+    // the card never shows the unmarked-up outfitter base price to a hunter.
+    final totalPrice = PricingMath.resolveHunterTotal(
+      totalHunterPrice: (data['totalPriceZAR'] as num?)?.toDouble(),
+      basePrice: price,
+    );
     final inclusions = List<String>.from(data['inclusions'] ?? []);
 
     // Inventory / sold-out state (Item #11). Legacy packages default to 1 slot.
@@ -798,9 +795,15 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
     final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    final commission = basePrice * PackageBookingManager.platformCommissionRate;
-    final totalPrice = basePrice + commission;
-    final depositAmount = totalPrice * PackageBookingManager.depositFraction;
+    // Hunter-facing total + 25% deposit — both derived from the marked-up
+    // total via the single-source PricingMath helper. The 7.5% platform fee
+    // is fully absorbed; no explicit "Platform Fee" line is rendered to the
+    // hunter.
+    final totalPrice = PricingMath.resolveHunterTotal(
+      totalHunterPrice: (widget.data['totalPriceZAR'] as num?)?.toDouble(),
+      basePrice: basePrice,
+    );
+    final depositAmount = PricingMath.depositFromMarkedUpTotal(totalPrice);
 
     final pricing = PackagePricing.fromMap(widget.data);
     final inclusions = List<String>.from(widget.data['inclusions'] ?? []);
@@ -1452,25 +1455,36 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     final status = widget.data['status'] as String? ?? 'Pending Approval';
     final packageName =
         widget.data['packageName'] as String? ?? 'Custom Package';
-    final totalPrice = (widget.data['totalHunterPriceRands'] as num?)?.toDouble() ?? 0.0;
+    final basePrice =
+        (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+    // Hunter-facing total: prefer the stored marked-up total; for legacy
+    // bookings without `totalHunterPriceRands`, apply the 7.5% markup to the
+    // base so the card never renders the unmarked-up outfitter base price
+    // (or R0) to a hunter.
+    final totalPrice = PricingMath.resolveHunterTotal(
+      totalHunterPrice: (widget.data['totalHunterPriceRands'] as num?)?.toDouble(),
+      basePrice: basePrice,
+    );
 
     // Deposit flow: when the outfitter approves, the booking moves to
     // `Pending Deposit` and the hunter pays the 25% non-refundable deposit
-    // via PayFast. The deposit amount is stored on the booking; fall back to
-    // the full total if it is missing (legacy bookings).
-    final depositAmount =
-        (widget.data['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
-    final balanceAmount =
-        (widget.data['balanceAmountRands'] as num?)?.toDouble() ?? 0.0;
+    // via PayFast. The deposit amount is stored on the booking; if it is
+    // missing (legacy bookings), derive it off the marked-up total.
+    final depositAmount = PricingMath.resolveDeposit(
+      storedDeposit: (widget.data['depositAmountRands'] as num?)?.toDouble(),
+      markedUpTotalValue: totalPrice,
+    );
+    final balanceAmount = (widget.data['balanceAmountRands'] as num?)?.toDouble() ??
+        PricingMath.balanceFromMarkedUpTotal(totalPrice);
     final statusLower = status.toLowerCase();
 
     // PayFast checkout eligibility: render the Pay button when the booking is
     // awaiting the deposit (case-insensitive). The charge amount is the 25%
-    // deposit; if that is not stored we fall back to the full total.
+    // deposit (off the marked-up total).
     final isDepositDueStatus = statusLower == 'pending_deposit' ||
         statusLower == 'approved' ||
         statusLower == 'pending_payment';
-    final payfastAmount = depositAmount > 0 ? depositAmount : totalPrice;
+    final payfastAmount = depositAmount;
     final showPayButton = isDepositDueStatus && payfastAmount > 0;
 
     // Date-change request visibility: hunter may request a date change once
@@ -2032,31 +2046,19 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     required String bookingId,
     required double amount,
   }) async {
-    final params = <String, String>{
-      'merchant_id': _kPayfastSandboxMerchantId,
-      'merchant_key': _kPayfastSandboxMerchantKey,
-      'return_url': _kPayfastReturnUrl,
-      'cancel_url': _kPayfastCancelUrl,
-      'notify_url': _kPayfastNotifyUrl,
-      'm_payment_id': bookingId,
-      'amount': amount.toStringAsFixed(2),
-      'item_name': 'JagSpoor Booking $bookingId',
-    };
-    final query = params.entries
-        .map((e) =>
-            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-        .join('&');
-    final urlString = '$_kPayfastSandboxHost/eng/process?$query';
-    final uri = Uri.parse(urlString);
-
-    if (!await canLaunchUrl(uri)) {
-      if (!mounted) return;
+    // Route through the single-source PayFast sandbox launcher so the sandbox
+    // configuration (host / merchant id / key / ITN endpoint) lives in exactly
+    // one place (`PayfastCheckout`). The amount charged is the 25% marked-up
+    // deposit (already resolved off `totalHunterPriceRands × 0.25`).
+    final launched = await PayfastCheckout.launchDeposit(
+      bookingId: bookingId,
+      amount: amount,
+    );
+    if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to open PayFast checkout')),
       );
-      return;
     }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Widget _buildChatDrawer() {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/offline_stream_guard.dart';
+import 'pricing_math.dart';
 
 class OutfitterAnalyticsService {
   static final OutfitterAnalyticsService _instance =
@@ -12,16 +13,37 @@ class OutfitterAnalyticsService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// Booking statuses that represent an **earned** outfitter booking — i.e.
+  /// one where the outfitter has a confirmed claim on the base price. This
+  /// excludes the pre-approval (`Pending Approval`) and dead-end
+  /// (`Declined`, `Cancelled`) states. After the outfitter approves a booking
+  /// its status transitions `Approved → Pending Deposit → Paid → Completed`,
+  /// all of which count as earned revenue.
+  static const List<String> earnedBookingStatuses = [
+    'Approved',
+    'Pending Deposit',
+    'Paid',
+    'Completed',
+  ];
+
   // ==========================================
   // OUTFITTER FINANCIAL SUMMARY AGGREGATION
   // ==========================================
-  /// Streams real-time financial summary for an outfitter based on approved bookings.
+  /// Streams real-time financial summary for an outfitter based on earned
+  /// bookings ([earnedBookingStatuses]).
   ///
   /// Calculates:
-  /// - grossEarnings: Sum of all basePriceRands from approved bookings
-  /// - platformFees: Sum of all platformCommissionRands (7.5% split)
-  /// - netEarnings: grossEarnings minus platformFees
-  /// - totalBookings: Count of approved bookings
+  /// - grossEarnings: Sum of `totalHunterPriceRands` (the marked-up total
+  ///   collected from hunters, incl. the 7.5% platform fee) across earned
+  ///   bookings. For legacy documents without `totalHunterPriceRands`, the
+  ///   marked-up total is derived from `basePriceRands × 1.075`.
+  /// - platformFees: Sum of `platformCommissionRands` (the 7.5% JagSpoor
+  ///   administration commission). Derived from `basePriceRands × 0.075`
+  ///   for legacy documents.
+  /// - netEarnings: `grossEarnings − platformFees` — the outfitter's actual
+  ///   earnings (the base price, net of fees). For a R10,000 base listing
+  ///   this is R10,000 (NOT R10,750 and NOT R9,250).
+  /// - totalBookings: Count of earned bookings.
   ///
   /// Parameters:
   /// - outfitterId: The UID of the outfitter
@@ -32,31 +54,17 @@ class OutfitterAnalyticsService {
       _firestore
           .collection('bookings')
           .where('outfitterId', isEqualTo: outfitterId)
-          .where('status', isEqualTo: 'Approved')
+          .where('status', whereIn: earnedBookingStatuses)
           .snapshots()
           .map((snapshot) {
-            double grossEarnings = 0.0;
-            double platformFees = 0.0;
-            int totalBookings = 0;
-
-            for (final doc in snapshot.docs) {
-              final data = doc.data();
-              final basePrice = (data['basePriceRands'] ?? 0).toDouble();
-              final commission =
-                  (data['platformCommissionRands'] ?? 0).toDouble();
-
-              grossEarnings += basePrice;
-              platformFees += commission;
-              totalBookings++;
-            }
-
-            final netEarnings = grossEarnings - platformFees;
-
+            final summary = PricingMath.aggregateRevenueSummary(
+              snapshot.docs.map((d) => d.data()),
+            );
             return {
-              'grossEarnings': grossEarnings,
-              'platformFees': platformFees,
-              'netEarnings': netEarnings,
-              'totalBookings': totalBookings.toDouble(),
+              'grossEarnings': summary.grossRevenue,
+              'platformFees': summary.platformFees,
+              'netEarnings': summary.netEarnings,
+              'totalBookings': summary.totalBookings.toDouble(),
             };
           }),
       fallback: const <String, double>{

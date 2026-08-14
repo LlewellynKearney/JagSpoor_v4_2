@@ -278,19 +278,19 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             title: 'Gross Revenue vs Platform Commission',
                             iconColor: widget.theme.accentColor,
                             description:
-                                'JagSpoor charges a flat 7.5% platform administration fee on every approved booking. The figures below break down how gross booking revenue becomes the outfitter\'s net earnings.',
+                                'JagSpoor charges a flat 7.5% platform administration fee on every earned booking. The figures below break down how the total collected from hunters becomes the outfitter\'s net earnings. Only approved, deposit-pending, paid and completed bookings are counted.',
                             concepts: const [
                               ExplanationConcept(
                                 label: 'Gross Revenue',
-                                detail: 'Sum paid by hunters across all approved bookings before any fees are deducted.',
+                                detail: 'Total paid by hunters across all earned bookings (inclusive of the 7.5% platform fee).',
                               ),
                               ExplanationConcept(
                                 label: 'Platform Fee',
-                                detail: 'gross × 0.075 — the 7.5% JagSpoor administration commission collected per booking.',
+                                detail: '7.5% of each booking\'s outfitter base price — the JagSpoor administration commission retained per booking.',
                               ),
                               ExplanationConcept(
                                 label: 'Net Earnings',
-                                detail: 'gross − platformFee — the amount the outfitter actually receives.',
+                                detail: 'gross − platformFee — the amount the outfitter actually receives (the base listing price, net of fees).',
                               ),
                             ],
                           ),
@@ -630,7 +630,10 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         await FirebaseFirestore.instance
             .collection('bookings')
             .where('outfitterId', isEqualTo: _currentUserId)
-            .where('status', isEqualTo: 'Approved')
+            // Earned bookings only (excludes Pending Approval / Declined /
+            // Cancelled). Mirrors the analytics-service earned-status set so
+            // the monthly chart and the summary card agree.
+            .where('status', whereIn: OutfitterAnalyticsService.earnedBookingStatuses)
             .get();
 
     final Map<String, Map<String, dynamic>> monthlyData = {};
@@ -653,9 +656,14 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         }
         monthlyData[monthKey]!['bookings'] =
             (monthlyData[monthKey]!['bookings'] as int) + 1;
+        // Outfitter revenue = base price NET of the 7.5% platform fee (the
+        // outfitter's actual earnings), NOT the hunter-facing marked-up total.
+        // This protects the outfitter revenue summary from overstating
+        // earnings by the platform commission.
+        final basePrice =
+            (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
         monthlyData[monthKey]!['revenue'] =
-            (monthlyData[monthKey]!['revenue'] as double) +
-            ((data['totalHunterPriceRands'] ?? 0).toDouble());
+            (monthlyData[monthKey]!['revenue'] as double) + basePrice;
       }
     }
 
