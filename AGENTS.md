@@ -4785,3 +4785,58 @@ custom scheme (`jagspoor://payment-return`) captured by an Android
   `android/app/src/main/AndroidManifest.xml` (`jagspoor://payment-return`
   intent filter), `test/deposit_payment_simulator_test.dart` (return-URL
   assertions updated), `AGENTS.md`.
+
+## Phase 46 -- My Packages card action-bar horizontal overflow fix (added 2026-08-14)
+
+Fixed the yellow-stripes horizontal overflow on the "My Packages" package
+card action bar that appeared on narrow screens / large font scaling.
+
+### 1. Root cause
+- The package card in
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`
+  (note: the spec referenced
+  `lib/features/outfitter_mode/presentation/widgets/outfitter_package_card.dart`,
+  which does not exist -- the actual card is `_PackageCard` in the manager
+  screen) rendered the action buttons in a bare `Row` with a trailing
+  `Spacer()` + a delete `IconButton`:
+  `[Activate/Deactivate] [Restock?] [Archive/Unarchive] [Edit] + Spacer +
+  [Delete IconButton]`.
+- The `Spacer` only distributes leftover space; it does NOT shrink the
+  chips when their combined intrinsic width exceeds the available width.
+  On a narrow phone (or with large text-scale / sold-out adding the extra
+  Restock chip), the four `_actionChip` `ActionChip`s + the delete button
+  overflowed the card width by ~57px -> the red/yellow "RenderFlex overflow"
+  stripe. There was no horizontal scroll or wrap.
+
+### 2. Fix
+- Wrapped the chip group in a horizontal `SingleChildScrollView`
+  (`scrollDirection: Axis.horizontal`,
+  `physics: const BouncingScrollPhysics()`) inside an `Expanded`, so the
+  chips stay fully visible + reachable via a smooth swipe regardless of
+  screen width, font scale, or how many chips render (sold-out adds Restock)
+  -- no overflow, no clipping.
+- The destructive delete `IconButton` is kept OUTSIDE the scroller (after
+  the `Expanded`) so it stays pinned at the trailing edge and is always
+  reachable without scrolling. The trailing `SizedBox(width: 8)` separates
+  it from the scroller's last chip.
+- For `PackageStatus.deleted` packages, the scroller renders just the
+  `Restore` chip and no delete button (unchanged behaviour), so the deleted
+  state stays clean.
+- Option A (`SingleChildScrollView` with `Row`) from the spec was chosen
+  over `Wrap` because the chips are a single logical action group that
+  reads left-to-right; a horizontal scroller keeps them on one line (no
+  ambiguity about which row a chip landed on) while `Wrap` would reorder
+  the visual grouping on narrow screens.
+
+### 3. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable) on
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`:
+  **No issues found** (0 errors, 0 warnings, 0 infos introduced). Project
+  baseline unchanged. `analysis_options.yaml` auto-touched by the analyzer
+  was reverted before commit.
+- Pure UI layout change -- no logic, no Firestore / rules / index / Storage
+  / pubspec changes. The existing package-quantity tests (24) +
+  deposit-payment-simulator tests (24) still pass (no test logic touched).
+- Files: `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`
+  (action `Row` -> `Expanded(SingleChildScrollView(Row(chips)))` + delete
+  IconButton hoisted out), `AGENTS.md`.

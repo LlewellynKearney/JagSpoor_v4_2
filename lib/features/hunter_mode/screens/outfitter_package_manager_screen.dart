@@ -440,68 +440,85 @@ class _OutfitterPackageManagerScreenState
               ],
             ),
             const SizedBox(height: 12),
-            // Action row
+            // Action row. The chip group is wrapped in a horizontal
+            // SingleChildScrollView so the chips stay fully visible + reachable
+            // (no yellow-stripes overflow) regardless of screen width, font
+            // scale, or how many chips render (e.g. sold-out adds Restock).
+            // The destructive delete IconButton is kept outside the scroller so
+            // it stays pinned at the trailing edge and is always reachable.
             Row(
               children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: [
+                        if (status != PackageStatus.deleted) ...[
+                          _actionChip(
+                            theme,
+                            icon: status == PackageStatus.active
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                            label: status == PackageStatus.active
+                                ? 'Deactivate'
+                                : 'Activate',
+                            onTap: () => _setStatus(
+                              packageId,
+                              status == PackageStatus.active
+                                  ? PackageStatus.draft
+                                  : PackageStatus.active,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Restock action — shown for sold-out or low-stock packages.
+                          if (status == PackageStatus.soldOut ||
+                              quantityAvailable <= 0) ...[
+                            _actionChip(
+                              theme,
+                              icon: Icons.add_shopping_cart_rounded,
+                              label: 'Restock',
+                              onTap: () => _restock(packageId, quantityAvailable),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          _actionChip(
+                            theme,
+                            icon: Icons.archive_outlined,
+                            label: status == PackageStatus.archived
+                                ? 'Unarchive'
+                                : 'Archive',
+                            onTap: () => _setStatus(
+                              packageId,
+                              status == PackageStatus.archived
+                                  ? PackageStatus.draft
+                                  : PackageStatus.archived,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _actionChip(
+                            theme,
+                            icon: Icons.edit_rounded,
+                            label: 'Edit',
+                            onTap: () => _editPackage(data, packageId),
+                          ),
+                        ] else ...[
+                          _actionChip(
+                            theme,
+                            icon: Icons.restore_rounded,
+                            label: 'Restore',
+                            onTap: () => _setStatus(packageId, PackageStatus.draft),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 if (status != PackageStatus.deleted) ...[
-                  _actionChip(
-                    theme,
-                    icon: status == PackageStatus.active
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    label: status == PackageStatus.active
-                        ? 'Deactivate'
-                        : 'Activate',
-                    onTap: () => _setStatus(
-                      packageId,
-                      status == PackageStatus.active
-                          ? PackageStatus.draft
-                          : PackageStatus.active,
-                    ),
-                  ),
                   const SizedBox(width: 8),
-                  // Restock action — shown for sold-out or low-stock packages.
-                  if (status == PackageStatus.soldOut ||
-                      quantityAvailable <= 0) ...[
-                    _actionChip(
-                      theme,
-                      icon: Icons.add_shopping_cart_rounded,
-                      label: 'Restock',
-                      onTap: () => _restock(packageId, quantityAvailable),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  _actionChip(
-                    theme,
-                    icon: Icons.archive_outlined,
-                    label: status == PackageStatus.archived
-                        ? 'Unarchive'
-                        : 'Archive',
-                    onTap: () => _setStatus(
-                      packageId,
-                      status == PackageStatus.archived
-                          ? PackageStatus.draft
-                          : PackageStatus.archived,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _actionChip(
-                    theme,
-                    icon: Icons.edit_rounded,
-                    label: 'Edit',
-                    onTap: () => _editPackage(data, packageId),
-                  ),
-                  const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
                     onPressed: () => _confirmDelete(packageId, title),
-                  ),
-                ] else ...[
-                  _actionChip(
-                    theme,
-                    icon: Icons.restore_rounded,
-                    label: 'Restore',
-                    onTap: () => _setStatus(packageId, PackageStatus.draft),
                   ),
                 ],
               ],
