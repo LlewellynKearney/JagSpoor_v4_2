@@ -3,9 +3,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/services/offline_stream_guard.dart';
+import 'gemini_vision_extractor.dart';
+import 'pricelist_text_parser.dart';
 
 /// Central AI-driven price list processor and custom tracking service engine.
-/// Handles OCR-style text extraction from price list images and manages custom package bookings.
+///
+/// Extraction is **dynamic**: the scanned document is sent to Google Gemini
+/// Vision (when `GEMINI_API_KEY` is configured) which returns a structured
+/// JSON list of species/sex/size/price rows, then routed through the
+/// Afrikaans-aware [PricelistTextParser] so South African English + Afrikaans
+/// terms map to the project's canonical species IDs while the original
+/// scanned display label is preserved. No hardcoded mock species list is
+/// returned — output is always a function of the actual document content.
 class PricelistScannerService {
   static final PricelistScannerService instance =
       PricelistScannerService._internal();
@@ -17,65 +26,73 @@ class PricelistScannerService {
   /// Platform commission rate (7.5%)
   static const double platformCommissionRate = 0.075;
 
-  /// Simulates high-fidelity text extraction from price list images.
+  /// Gemini Vision extractor (no-op when `GEMINI_API_KEY` is absent).
+  final GeminiVisionExtractor _gemini = GeminiVisionExtractor();
+
+  /// Whether AI (Gemini Vision) extraction is available in this environment.
+  bool get isAiExtractionAvailable => _gemini.isAvailable;
+
+  /// Dynamically extracts price-list line items from the scanned [imageFile]
+  /// (image or PDF).
   ///
-  /// In production, this would integrate with Google ML Kit, AWS Textract,
-  /// or similar OCR services to extract text from the uploaded image.
+  /// Pipeline:
+  /// 1. Send the file to Gemini Vision → structured JSON rows.
+  /// 2. Normalise the JSON through [PricelistTextParser] (Afrikaans → system
+  ///    species IDs, sex/class bucketing, trophy size ranges, ZAR prices).
+  /// 3. Return structured items for the verification screen.
   ///
-  /// For demo purposes, this simulates extraction of common trophy species
-  /// and daily rates commonly found in South African hunting price lists.
-  ///
-  /// Parameters:
-  /// - [farmId]: The farm/concession ID this price list belongs to
-  /// - [imageFile]: The image file containing the price list (for future OCR integration)
-  ///
-  /// Processing steps:
-  /// 1. Simulate text extraction from image
-  /// 2. Parse raw strings into structured data
-  /// 3. Return extracted items for verification
+  /// Throws [StateError] when AI extraction is not configured (no API key),
+  /// so the caller can surface a clear "configure GEMINI_API_KEY" message
+  /// instead of returning fabricated data.
   Future<List<Map<String, dynamic>>> extractPricelistItems({
     required String farmId,
     required File imageFile,
   }) async {
-    // Simulate high-fidelity text extraction
-    // In production, replace with actual OCR integration (ML Kit, AWS Textract, etc.)
-    final List<Map<String, dynamic>> simulatedLines = _simulateTextExtraction();
+    final List<PricelistItem> items = await _gemini.extract(imageFile);
 
-    // Process and clean extracted data
-    final List<Map<String, dynamic>> processedItems = [];
-
-    for (final line in simulatedLines) {
-      final speciesName = line['species'] as String;
-      final basePrice = (line['basePrice'] as num).toDouble();
-
-      // Store base price (display price will be calculated on save)
-      processedItems.add({
-        'name': speciesName,
-        'outfitterBasePrice': basePrice,
-      });
-    }
+    final processedItems = items.map(_itemToExtractedMap).toList();
 
     print(
-      '✅ Pricelist extracted: ${processedItems.length} items ready for verification',
+      '✅ Pricelist dynamically extracted: ${processedItems.length} items '
+      'ready for verification',
     );
     return processedItems;
   }
 
+  /// Parses raw price-list text (e.g. from an on-device OCR engine or a PDF
+  /// text layer) into structured items. Exposed so the parser pipeline can be
+  /// reused/tested independently of the Gemini Vision call.
+  List<Map<String, dynamic>> parseRawText(String rawText) {
+    final parser = PricelistTextParser();
+    return parser.parse(rawText).map(_itemToExtractedMap).toList();
+  }
+
+  Map<String, dynamic> _itemToExtractedMap(PricelistItem item) {
+    final basePrice = item.priceZAR;
+    final hunterPrice = basePrice * (1 + platformCommissionRate);
+    return {
+      'name': item.displayLabel,
+      'displayLabel': item.displayLabel,
+      'speciesName': item.speciesName,
+      'speciesId': item.speciesId,
+      'sex': item.sex,
+      'sexLabel': item.sexLabel,
+      'trophySizeRange': item.trophySizeRange,
+      'itemType': item.itemType,
+      'feeType': item.feeType,
+      'outfitterBasePrice': basePrice,
+      'hunterDisplayPriceZAR': hunterPrice,
+      'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
+      'hunterPriceFormatted': 'R${hunterPrice.toStringAsFixed(0)}',
+      'commissionZAR': hunterPrice - basePrice,
+    };
+  }
+
   /// Processes and uploads a price list image to Firestore.
   ///
-  /// This method is kept for backward compatibility.
-  /// New code should use extractPricelistItems() followed by
-  /// OutfitterPricelistVerificationScreen for proper workflow.
-  ///
-  /// Parameters:
-  /// - [farmId]: The farm/concession ID this price list belongs to
-  /// - [imageFile]: The image file containing the price list (for future OCR integration)
-  ///
-  /// Processing steps:
-  /// 1. Simulate text extraction from image
-  /// 2. Parse raw strings into structured data
-  /// 3. Calculate 7.5% platform fee for each item
-  /// 4. Upload structured document to Firestore
+  /// This method is kept for backward compatibility. New code should use
+  /// [extractPricelistItems] followed by
+  /// [OutfitterPricelistVerificationScreen] for the proper workflow.
   Future<void> processAndUploadPricelistImage({
     required String farmId,
     required File imageFile,
@@ -85,29 +102,29 @@ class PricelistScannerService {
       throw Exception('User must be authenticated to upload price lists');
     }
 
-    // Simulate high-fidelity text extraction
-    // In production, replace with actual OCR integration (ML Kit, AWS Textract, etc.)
-    final List<Map<String, dynamic>> simulatedLines = _simulateTextExtraction();
+    // Dynamic extraction (Gemini Vision) — no hardcoded mock.
+    final List<PricelistItem> items = await _gemini.extract(imageFile);
 
-    // Process and clean extracted data
-    final List<Map<String, dynamic>> processedItems = [];
-
-    for (final line in simulatedLines) {
-      final speciesName = line['species'] as String;
-      final basePrice = (line['basePrice'] as num).toDouble();
-
-      // Calculate hunter display price with 7.5% platform fee
-      final double hunterPrice = basePrice * (1 + platformCommissionRate);
-
-      processedItems.add({
-        'name': speciesName,
+    final processedItems = items.map((item) {
+      final basePrice = item.priceZAR;
+      final hunterPrice = basePrice * (1 + platformCommissionRate);
+      return {
+        'name': item.displayLabel,
+        'displayLabel': item.displayLabel,
+        'speciesName': item.speciesName,
+        'speciesId': item.speciesId,
+        'sex': item.sex,
+        'sexLabel': item.sexLabel,
+        'trophySizeRange': item.trophySizeRange,
+        'itemType': item.itemType,
+        'feeType': item.feeType,
         'outfitterBasePrice': basePrice,
         'hunterDisplayPriceZAR': hunterPrice,
         'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
         'hunterPriceFormatted': 'R${hunterPrice.toStringAsFixed(0)}',
         'commissionZAR': hunterPrice - basePrice,
-      });
-    }
+      };
+    }).toList();
 
     // Create structured document for Firestore
     final pricelistData = {
@@ -120,55 +137,13 @@ class PricelistScannerService {
           imageFile.path.split('/').last, // Store filename for reference
       'items': processedItems,
       'totalItems': processedItems.length,
-      'processingVersion': '1.0.0',
+      'processingVersion': '2.0.0',
     };
 
     // Upload to scanned_pricelists collection
     await _firestore.collection('scanned_pricelists').add(pricelistData);
 
     print('✅ Pricelist processed and uploaded: ${processedItems.length} items');
-  }
-
-  /// Simulates OCR text extraction from a price list image.
-  /// Returns a list of raw price entries that would be extracted from the image.
-  ///
-  /// Production implementation would:
-  /// 1. Upload image to cloud storage
-  /// 2. Call OCR service (Google ML Kit, AWS Textract, etc.)
-  /// 3. Parse returned text blocks into structured data
-  List<Map<String, dynamic>> _simulateTextExtraction() {
-    // Simulated extracted lines from OCR processing
-    // These would normally come from actual OCR results
-    return [
-      // Trophy Species Pricing
-      {'species': 'African Elephant', 'basePrice': 85000.0},
-      {'species': 'Cape Buffalo', 'basePrice': 45000.0},
-      {'species': 'White Rhino', 'basePrice': 65000.0},
-      {'species': 'Lion', 'basePrice': 35000.0},
-      {'species': 'Leopard', 'basePrice': 18000.0},
-      {'species': 'Kudu', 'basePrice': 15000.0},
-      {'species': 'Sable Antelope', 'basePrice': 22000.0},
-      {'species': 'Eland', 'basePrice': 12000.0},
-      {'species': 'Gemsbok', 'basePrice': 8500.0},
-      {'species': 'Blue Wildebeest', 'basePrice': 5500.0},
-      {'species': 'Zebra', 'basePrice': 4500.0},
-      {'species': 'Warthog', 'basePrice': 2500.0},
-      {'species': 'Impala', 'basePrice': 3500.0},
-      {'species': 'Springbok', 'basePrice': 2800.0},
-      {'species': 'Waterbuck', 'basePrice': 7500.0},
-      {'species': 'Red Hartebeest', 'basePrice': 6500.0},
-      {'species': 'Blesbok', 'basePrice': 4200.0},
-      {'species': 'Black Wildebeest', 'basePrice': 5800.0},
-      {'species': 'Nyala', 'basePrice': 9500.0},
-      {'species': 'Bushpig', 'basePrice': 3200.0},
-      // Daily Rates & Services
-      {'species': 'Daily Rate (PH Included)', 'basePrice': 2000.0},
-      {'species': 'Daily Rate (Self-Guided)', 'basePrice': 1200.0},
-      {'species': 'Trophy Fees (Per Animal)', 'basePrice': 0.0}, // Variable
-      {'species': 'Accommodation (Per Night)', 'basePrice': 1500.0},
-      {'species': 'Meals (Per Day)', 'basePrice': 450.0},
-      {'species': 'Transport (Airport Transfer)', 'basePrice': 2500.0},
-    ];
   }
 
   /// Submits a custom-built package booking request.

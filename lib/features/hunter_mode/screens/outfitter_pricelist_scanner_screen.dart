@@ -123,7 +123,9 @@ class _OutfitterPricelistScannerScreenState
     setState(() => _isLoading = true);
 
     try {
-      // Extract items for verification instead of directly saving
+      // Dynamic AI extraction (Gemini Vision) — when no API key is configured
+      // the service surfaces a clear, actionable error rather than returning
+      // fabricated mock data.
       final extractedItems = await _pricelistService.extractPricelistItems(
         farmId: _selectedFarmId!,
         imageFile: file,
@@ -144,7 +146,14 @@ class _OutfitterPricelistScannerScreenState
           ),
         );
       } else if (mounted) {
-        _showError('No items could be extracted from the image');
+        _showError(
+          'No items could be extracted from the document. '
+          'Ensure the photo is sharp and the price list is legible.',
+        );
+      }
+    } on StateError catch (e) {
+      if (mounted) {
+        _showError(e.message);
       }
     } catch (e) {
       if (mounted) {
@@ -413,7 +422,9 @@ class _OutfitterPricelistScannerScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '7.5% platform commission will be automatically applied to all extracted prices.',
+                    'AI extracts species, sex/class, trophy size tiers & ZAR '
+                    'prices from English or Afrikaans price lists, then a 7.5% '
+                    'platform commission is applied. Requires GEMINI_API_KEY.',
                     style: TextStyle(
                       color: widget.theme.subtitleColor,
                       fontSize: 13,

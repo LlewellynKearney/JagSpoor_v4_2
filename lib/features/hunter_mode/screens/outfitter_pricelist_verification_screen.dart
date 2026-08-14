@@ -87,6 +87,14 @@ class _OutfitterPricelistVerificationScreenState
 
         processedItems.add({
           'name': speciesName,
+          'displayLabel': item['displayLabel'] ?? speciesName,
+          'speciesName': item['speciesName'] ?? '',
+          'speciesId': item['speciesId'] ?? '',
+          'sex': item['sex'] ?? '',
+          'sexLabel': item['sexLabel'] ?? '',
+          'trophySizeRange': item['trophySizeRange'] ?? '',
+          'itemType': item['itemType'] ?? 'species',
+          'feeType': item['feeType'] ?? '',
           'outfitterBasePrice': basePrice,
           'hunterDisplayPriceZAR': displayPrice,
           'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
@@ -340,6 +348,66 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
     widget.onUpdate(null, price);
   }
 
+  Widget _badge(String label, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> get _metaBadges {
+    final badges = <Widget>[];
+    final itemType = (widget.item['itemType'] ?? 'species').toString();
+    final sexLabel = (widget.item['sexLabel'] ?? '').toString();
+    final sex = (widget.item['sex'] ?? '').toString();
+    final sizeRange = (widget.item['trophySizeRange'] ?? '').toString();
+    final speciesId = (widget.item['speciesId'] ?? '').toString();
+    final feeType = (widget.item['feeType'] ?? '').toString();
+
+    if (itemType == 'fee') {
+      badges.add(_badge(
+        feeType.isEmpty ? 'FEE' : feeType.toUpperCase(),
+        Icons.payments_outlined,
+        Colors.indigo,
+      ));
+    } else {
+      badges.add(_badge('SPECIES', Icons.pets, widget.theme.accentColor));
+    }
+    if (sexLabel.isNotEmpty || sex.isNotEmpty) {
+      badges.add(_badge(
+        sexLabel.isNotEmpty ? sexLabel.toUpperCase() : sex.toUpperCase(),
+        Icons.male,
+        Colors.blue,
+      ));
+    }
+    if (sizeRange.isNotEmpty) {
+      badges.add(_badge(sizeRange, Icons.straighten, Colors.teal));
+    }
+    if (speciesId.isNotEmpty) {
+      badges.add(_badge(speciesId, Icons.tag, widget.theme.subtitleColor));
+    }
+    return badges;
+  }
+
   @override
   Widget build(BuildContext context) {
     final basePrice =
@@ -386,6 +454,16 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
             ],
           ),
           const SizedBox(height: 12),
+
+          // Extracted metadata badges (sex/class, trophy size tier, species id, type)
+          if (_metaBadges.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _metaBadges,
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Species Name Field
           Row(

@@ -1732,3 +1732,160 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (camera capture + dual add tiles), `ios/Runner/Info.plist` (permission
   strings). No Firestore / Storage / rules changes.
 
+
+## Phase 14 — AI Pricelist Scanner Dynamic Extraction & Afrikaans Game Names (added 2026-08-14)
+
+- **Root cause**: the AI Pricelist Scanner returned **static, hardcoded mock
+  data** regardless of the scanned document. `PricelistScannerService
+  ._simulateTextExtraction()` always emitted the same ~26 fake lines
+  (African Elephant, Cape Buffalo, …, Daily Rate, …) — so every scanned
+  image/PDF produced identical "extracted" species + prices. There was no
+  OCR / Vision integration and no Afrikaans recognition.
+- **New dependency**: `google_generative_ai: ^0.4.7` (pure-Dart Google Gemini
+  SDK, no native build — safe on the CI Flutter 3.29.1 pin and on the local
+  3.47.0 stable). Added to `pubspec.yaml`; resolved cleanly.
+
+- **New pure-Dart parser** `lib/features/hunter_mode/services/pricelist_text_parser.dart`
+  (`PricelistTextParser`, `PricelistItem`, `GeminiResultNormalizer`,
+  `parseGeminiTextResponse`, top-level `parsePrice`):
+  - **Dynamic extraction** — never returns a fixed list. It takes raw
+    price-list text (one line per entry) and parses each line: pops the
+    trophy size range FIRST (so size tokens aren't mistaken for a price),
+    extracts the rightmost ZAR amount, then resolves species / sex / fee from
+    the remainder. Lines without a price are skipped; duplicate
+    (speciesId + sex + sizeRange) rows are de-duplicated (first wins).
+  - **ZAR price parsing** (`parsePrice`) handles South African formatting:
+    `R 12 500` (space thousands), `12,500` (comma thousands), `12500,00`
+    (comma decimal), `1.234,56` (dot-thousands + comma-decimal),
+    `1,234.56` (comma-thousands + dot-decimal), plain integers, and strips
+    `R`/`ZAR` prefixes. Ambiguous comma resolved: comma + exactly 2 trailing
+    digits → decimal, else → thousands; when both `.` and `,` present the
+    rightmost is the decimal separator.
+  - **Afrikaans species dictionary** (`speciesAliases`) maps every required
+    Afrikaans name to a canonical system species id (matching the `animals`
+    image-catalog keys): Vlakvark→Common Warthog, Blesbok→Blesbok,
+    Springbok→Springbok, Rooibok→Impala, Koedoe→Greater Kudu,
+    Blouwildebees→Blue Wildebeest, Swartwildebees→Black Wildebeest,
+    Gemsbok→Gemsbok (Oryx), Eland→Eland, Bosbok→Southern Bushbuck,
+    Waterbok→Common Waterbuck, Rooihartbees→Red Hartebeest, Nyala→Nyala,
+    Sebra→Plains Zebra, Duiker→Common Duiker, Steenbok→Steenbok,
+    Takbok→Fallow Deer (plus English synonyms). Longest-match-wins so
+    "Greater Kudu" beats "Kudu" and "Jongbul" beats "bul". Word-boundary
+    matching so "ram" doesn't match inside "framing".
+  - **Sex/class dictionary** (`sexAliases`): Bul/Ram/Bull/Male/Trophy→Male,
+    Koei/Ooi/Ewe/Female/Cow→Female, Jongbul/Penkop/Knypkop/Young
+    Male/Juvenile/Yearling→Young Male. The **original** token is preserved
+    on `sexLabel` (e.g. `bul`, `koei`); `sex` holds the normalized bucket.
+  - **Trophy size range** parsing: `>50"`, `<20"`, `≥40"`, `40"-50"`,
+    `50"+` are captured verbatim on `trophySizeRange`.
+  - **Fee dictionary** (`feeAliases`): Dagfooi/Daily Rate→daily,
+    Slagfooi/Slaughter Fee→slaughter, Gidskoste/Guide Fee→guide,
+    Wildrit/Game Drive→gamedrive, Bakkiefooi/Vehicle Fee→vehicle,
+    Accommodation/Akkommodasie→accommodation, Meals/Kos→meals,
+    Transport→transport. Each fee row has `itemType:'fee'` + `feeType`.
+  - **Gemini normalizer**: `GeminiResultNormalizer.normalize` routes Gemini's
+    structured JSON (species/sex/sizeRange/priceZAR/type fields) through the
+    SAME Afrikaans-aware resolvers so Gemini-returned Afrikaans labels map to
+    system species IDs identically to raw-OCR text. `parseGeminiTextResponse`
+    finds the JSON array in a free-text Gemini response and falls back to
+    plain-text parsing when no array is present.
+  - `PricelistItem.toMap()` carries `displayLabel`, `name` (=displayLabel),
+    `speciesName`, `speciesId`, `sex`, `sexLabel`, `trophySizeRange`,
+    `outfitterBasePrice`, `itemType`, `feeType`.
+
+- **New Gemini Vision extractor**
+  `lib/features/hunter_mode/services/gemini_vision_extractor.dart`
+  (`GeminiVisionExtractor`):
+  - `isAvailable` is true only when `GEMINI_API_KEY` is set (env var or ctor
+    arg). `extract(File)` reads the file bytes, picks the mime type
+    (image/jpeg|png|gif|webp, application/pdf), builds a `GenerativeModel`
+    (`gemini-1.5-flash`, `responseMimeType: application/json`,
+    `temperature: 0`), sends `Content.text(instruction)` +
+    `Content.data(mimeType, bytes)`, then routes `response.text` through
+    `parseGeminiTextResponse`.
+  - The **instruction prompt** is primed with the full Afrikaans vocabulary
+    and demands a strict JSON array of `{type, species, sex, sizeRange,
+    priceZAR, feeType, displayLabel}` — preserving the original printed
+    wording (no translation) so Afrikaans labels survive into the parser.
+  - Throws `StateError` with an actionable "Set GEMINI_API_KEY" message when
+    no key is configured — so the scanner no longer fakes results; it
+    surfaces the missing-configuration state.
+
+- **`PricelistScannerService` rewired**
+  (`lib/features/hunter_mode/services/pricelist_scanner_service.dart`):
+  - `_simulateTextExtraction()` (the hardcoded mock) **deleted**.
+  - `extractPricelistItems` + `processAndUploadPricelistImage` now call
+    `_gemini.extract(imageFile)` → dynamic `PricelistItem`s → mapped to the
+    extracted-item shape via `_itemToExtractedMap` (adds `outfitterBasePrice`,
+    `hunterDisplayPriceZAR` (×1.075), formatted strings, `commissionZAR`,
+    plus the new `displayLabel`/`speciesName`/`speciesId`/`sex`/`sexLabel`/
+    `trophySizeRange`/`itemType`/`feeType`). `processingVersion` bumped
+    `1.0.0 → 2.0.0`.
+  - New `isAiExtractionAvailable` getter + `parseRawText(String)` so the
+    parser pipeline is reusable from an on-device OCR / PDF-text layer.
+  - Backward-compatible: existing `name`/`outfitterBasePrice`/
+    `hunterDisplayPriceZAR` keys are still present, so the custom-package
+    builder + history screen read unchanged.
+
+- **Scanner screen** (`outfitter_pricelist_scanner_screen.dart`):
+  - `_processImage` catches `StateError` separately and surfaces the
+    `e.message` (the no-API-key guidance) instead of a generic failure.
+  - Info panel copy updated to describe the dynamic English/Afrikaans
+    extraction + 7.5% commission and the `GEMINI_API_KEY` requirement.
+
+- **Verification screen** (`outfitter_pricelist_verification_screen.dart`):
+  - Each editable row now renders **metadata badges** (a `Wrap` of
+    `_badge`s) for: SPECIES/FEE, sex/class (original Afrikaans or English
+    token), trophy size tier, and the resolved species id — so the outfitter
+    sees exactly what was extracted from their specific document.
+  - `_saveToFirestore` now persists the full structured payload
+    (`displayLabel`, `speciesName`, `speciesId`, `sex`, `sexLabel`,
+    `trophySizeRange`, `itemType`, `feeType`) alongside the price fields, so
+    the saved `scanned_pricelists` doc carries the Afrikaans-aware structured
+    data for downstream booking + analytics.
+
+- **Tests** `test/pricelist_text_parser_test.dart` — **22 tests, all pass**:
+  - `parsePrice` (8): SA space-thousands, R-prefixed, comma-thousands,
+    comma-decimal, dot-thousands+comma-decimal, comma-thousands+dot-decimal,
+    plain integer, garbage→null.
+  - Dynamic extraction (4): full English price list → 8 structured items
+    (Kudu Bull >50" → Male + size + R18500; Impala Ram → Male; Warthog/
+    Springbok/Blue Wildebeest resolved; Daily Rate/Slaughter Fee/
+    Accommodation fee-typed); different inputs → different outputs
+    (no mock); no-price lines skipped; duplicate rows de-duplicated.
+  - Afrikaans (5): all 16 required Afrikaans species map to system ids;
+    original Afrikaans display label preserved; Afrikaans sex/class tokens
+    (Bul/Ram/Koei/Ooi/Jongbul/Penkop/Knypkop) bucketed; Afrikaans fee terms
+    (Dagfooi/Slagfooi/Gidskoste/Wildrit/Bakkiefooi) typed; trophy size
+    ranges incl. brackets; "ram"-in-"framing" word-boundary rejection.
+  - Gemini normalizer (3): Afrikaans JSON → system ids + sex + size; string
+    price parsed through SA separator logic; non-JSON → text-parsing fallback.
+  - `PricelistItem.toMap` round-trip (1).
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 13
+  warnings (unchanged baseline)**, 316 infos. The only warnings/infos in
+  touched files are pre-existing (`_showSuccess` unused from Phase 4,
+  `unnecessary_type_check` in unchanged `getPriceListsForFarm`/
+  `getMyPriceLists` code, and `print` debug calls) — none introduced by this
+  change. New parser + extractor + test files are analyzer-clean.
+- **`flutter test`**: 223 passed, 4 failed. The 4 failures are the documented
+  pre-existing baseline (`saps_tracker`, `offline_sync_queue`,
+  `advanced_ballistics`, `bluetooth_mesh`) — none touch the changed files;
+  identical to the prior commit.
+- **Runtime note**: real extraction requires `GEMINI_API_KEY` to be set in
+  the deploy environment (`firebase functions:config` / Cloud Run env /
+  `--dart-define=from-environment`). Without it the scanner surfaces a clear
+  "Set GEMINI_API_KEY" snackbar instead of fabricating a price list — the
+  intended honest fallback. The parser + normalizer are pure-Dart and
+  unit-testable independent of the API.
+- Files: `lib/features/hunter_mode/services/pricelist_text_parser.dart` (new),
+  `lib/features/hunter_mode/services/gemini_vision_extractor.dart` (new),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (mock removed, dynamic pipeline),
+  `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`
+  (error surfacing + info copy),
+  `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`
+  (metadata badges + structured save),
+  `test/pricelist_text_parser_test.dart` (new),
+  `pubspec.yaml` / `pubspec.lock` (`google_generative_ai` dep). No Firestore
+  rules / index / Storage changes.
+
