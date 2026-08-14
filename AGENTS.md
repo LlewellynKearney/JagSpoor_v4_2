@@ -2411,3 +2411,152 @@ had the identical two bugs.
   (`READ_MEDIA_IMAGES`). No Firestore / Storage / rules / index changes
   (pure UI + manifest hardening).
 
+
+## Phase 26 — Custom Package Builder refactor (added 2026-08-14)
+
+- Refactored the legacy "Custom Package Itinerary Builder" (a single screen
+  that listed every active scanned price list across all outfitters in a
+  dropdown and only toggled items on/off with no dates, no party size, no
+  lodging/catering, no chat, and no deposit checkout) into a full
+  **Custom Package Builder** flow: farm selection → form → submit →
+  PayFast deposit + chat, with the 7.5% platform markup **absorbed** into
+  the hunter-facing line-item prices (no explicit "Platform Fee" row shown
+  to the hunter).
+- **1. Rename & routing cleanup**: the hunter dashboard feature card title
+  `🦌 Custom Package Itinerary Builder` → `🦌 Custom Package Builder`
+  (description + button label `Submit Custom Itinerary Booking` →
+  `Submit Custom Package Request` updated). The card now navigates to the
+  new `CustomPackageFarmSelectionScreen` (farm-first step) instead of
+  straight into the form; the unused `hunter_custom_package_builder_screen`
+  import was removed from `hunter_dashboard.dart`.
+- **2. Farm selection filter**
+  (`lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`,
+  NEW): queries all active scanned price lists (`getAllActivePricelists`),
+  indexes the most-recent active list per farm, then resolves the matching
+  `farms` docs and renders ONLY farms that have an active price list.
+  Farms without an active price list are strictly filtered out — a hunter
+  cannot start a custom build against a farm with no pricing data. Each
+  qualifying farm card shows province/district + priced-item count; tapping
+  it pushes the builder form with the farm + its price list.
+- **3. Hunter custom package form**
+  (`lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
+  rewritten): takes a selected farm + price list and lets the hunter assemble
+  the itinerary:
+  - **Check-in / Check-out** date pickers + a derived **hunting days**
+    count.
+  - **Hunters** (≥1) and **Observers** (≥0) count steppers.
+  - **Species & Trophies**: pulled directly from the farm's price list
+    (`itemType != 'fee'` rows), each with the scanned sex/class label +
+    trophy size range and a quantity stepper.
+  - **Lodging & Catering**: the price list's `itemType == 'fee'` rows
+    (accommodation / meals / vehicle / guide / etc.), same qty stepper.
+  - **Dynamic pricing**: every line uses the price list's
+    `hunterDisplayPriceZAR` (= `basePrice × 1.075`, written at scan-save
+    time). The grand total = Σ(qty × hunterDisplayPriceZAR); per-line
+    totals update live. **No "Platform Fee" line is shown to the hunter** —
+    the 7.5% markup is absorbed into each unit price. The bottom HUD shows
+    the grand total (incl. all fees) + the 25% deposit amount due on
+    approval.
+- **4. Checkout, chat & outfitter ingestion**:
+  - `PricelistScannerService.submitCustomPackageBooking` was extended to
+    accept `farmName`, `pricelistId`, `lodgingCatering`,
+    `checkInDate`/`checkOutDate`, `huntingDays`, `hunterCount`,
+    `observerCount`, and now **returns the new booking id**. It writes the
+    `bookings` document with `isCustomPackage: true`, `packageName`
+    (`"Custom Package · {farm}"`), the species `selectedItemsList` +
+    `lodgingCateringList` (each row normalised to the `name` +
+    `hunterPrice` + `quantity` shape the existing outfitter booking
+    dashboard already renders), the absorbed-commission breakdown
+    (`basePriceRands` = total / 1.075, `platformCommissionRands` = total −
+    base — kept for outfitter financial visibility only), the 25% deposit
+    split (`depositAmountRands` = total × 0.25, `balanceAmountRands`), and
+    `status: 'Pending Approval'` (the canonical "pending" state used across
+    the booking lifecycle — see note below).
+  - **PayFast sandbox checkout**: new `lib/core/services/payfast_checkout.dart`
+    (`PayfastCheckout.launchDeposit`) builds the PayFast sandbox payment
+    URL (sandbox merchant id/key + the deployed `payfastITNHandler` ITN
+    endpoint) with `m_payment_id = bookingId` so the ITN handler reconciles
+    the payment back to the booking, and launches it in the external
+    browser. After submit, the builder switches to a confirmation view that
+    surfaces the deposit amount + a "Pay 25% Deposit via PayFast" button +
+    the embedded chat thread. (The hunter's existing "My Bookings" card in
+    the marketplace also renders the PayFast button once the outfitter
+    approves → `Pending Deposit`.)
+  - **Embedded BookingChat**: new reusable
+    `lib/features/hunter_mode/widgets/booking_chat_thread.dart`
+    (`BookingChatThread`) renders the standard
+    `bookings/{bookingId}/chats` subcollection as a stream of bubbles with
+    an inline composer (writes via `ChatAndFilterService.sendChatMessage`),
+    matching the marketplace / outfitter-dashboard chat look-and-feel. It is
+    embedded in the builder's confirmation view (expanded by default) so the
+    hunter can negotiate with the outfitter immediately after submitting.
+  - **Outfitter incoming requests**: the outfitter booking dashboard
+    (`OutfitterBookingDashboardScreen`) query is
+    `.where('outfitterId', isEqualTo: currentUserId)` with no status
+    filter, so the new custom bookings surface there automatically. Because
+    they carry `packageId: 'CUSTOM_BUILT'`, the dashboard renders the
+    existing `_buildCustomItemsSection` expandable item breakdown; and
+    because `status == 'Pending Approval'`, the APPROVE / DECLINE actions
+    appear. The outfitter dashboard's "Incoming Booking Requests" card
+    navigates to this screen.
+- **Status-string note**: the to-do specified `status: 'pending'`; the app's
+  canonical pending state used everywhere (marketplace `_getStatusColor`,
+  outfitter dashboard approve-button gate, PayFast deposit-due logic) is
+  the exact string `'Pending Approval'`. Using a lowercase `'pending'`
+  would orphan the booking (grey status badge, no APPROVE button,
+  PayFast-on-approval never appears). So `submitCustomPackageBooking`
+  writes `'Pending Approval'` — this IS the pending state in this app's
+  vocabulary, and it preserves the full approve → deposit → PayFast → Paid
+  lifecycle. `isCustomPackage: true` is the flag that marks the submission
+  origin.
+- **Firestore rules** (`firestore.rules`): the `scanned_pricelists` match
+  block was widened so any signed-in hunter may **read** active price lists
+  (they are the custom-package catalog, analogous to `packages`/`farms`
+  which are already `isSignedIn()` reads). Writes remain owner-scoped
+  (`ownerOrAdmin('outfitterId')` guards create/update/delete). Without
+  this change the farm-selection filter + species picker would be
+  permission-denied for hunters (the prior rule was `ownerOrAdmin` for
+  read too, which is why the legacy builder was broken for hunters).
+  **Deploy reminder**: `npx firebase-tools deploy --only firestore:rules`
+  in a credentialed env. (No `outfitter_pricelists` collection exists in
+  the codebase — no schema, no rules, no writes — so `scanned_pricelists`
+  is the sole price-list source; the farm filter checks it.)
+- **No new composite indexes required**: `getAllActivePricelists` is a
+  single equality query (`status == 'active'`) + orderBy, which uses the
+  automatic index. `getActivePricelistForFarm` is
+  `farmId` (equality) + `status` (equality) + `createdAt` (desc) — that
+  composite (`scanned_pricelists` `(farmId ASC, status ASC, createdAt
+  DESC)`) is NOT in `firestore.indexes.json`. To keep the farm-selection
+  screen from erroring on the per-farm lookup, the screen does NOT call
+  `getActivePricelistForFarm` per farm; it fetches all active lists once
+  (`getAllActivePricelists`, automatic-index-safe) and groups in memory.
+  `getActivePricelistForFarm` remains available for single-farm lookups
+  but will need the composite index deployed before it is used in a
+  reactive query.
+- **Verification**:
+  - `flutter analyze` (local Flutter 3.47.0 stable): **0 errors, 0
+    warnings in all modified/new files**. The only issues in touched files
+    are the 3 pre-existing `avoid_print` infos (debug `print()` calls in
+    `pricelist_scanner_service.dart`, documented baseline since Phase 4 —
+    unchanged). Project total: 327 infos + 12 warnings — all pre-existing
+    in unrelated files (the baseline dropped by 1 warning because this
+    phase cleaned up a pre-existing `unnecessary_type_check` in
+    `getPriceListsForFarm`/`getMyPriceLists`). `analysis_options.yaml`
+    auto-touched by the analyzer was reverted before commit.
+  - `flutter test`: `custom_package_pricing_test.dart` (6 NEW, all pass —
+    encodes the absorbed-markup + 25%-deposit contract),
+    `package_quantity_test.dart` (24), `role_guard_test.dart` (35) all
+    pass (65 total). No regressions; the 4 documented pre-existing
+    failures (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+    `bluetooth_mesh`) are unchanged and unrelated.
+- Files: `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (rewritten form), `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`
+  (NEW), `lib/features/hunter_mode/widgets/booking_chat_thread.dart` (NEW),
+  `lib/core/services/payfast_checkout.dart` (NEW),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (extended `submitCustomPackageBooking` + `getAllActivePricelists` +
+  `getActivePricelistForFarm` + pre-existing type-check cleanup),
+  `lib/features/hunter_mode/hunter_dashboard.dart` (rename + route to farm
+  selection), `firestore.rules` (`scanned_pricelists` read widened to
+  signed-in), `test/custom_package_pricing_test.dart` (NEW).
+

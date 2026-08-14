@@ -21,7 +21,7 @@ import 'screens/blood_tracker_screen.dart';
 import 'screens/shot_group_analyzer_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
-import 'screens/hunter_custom_package_builder_screen.dart';
+import 'screens/custom_package_farm_selection_screen.dart';
 import 'screens/hunter_venison_permit_log_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
@@ -364,15 +364,17 @@ class _HunterDashboardState extends State<HunterDashboard> {
       DashboardFeature(
         id: 'custom_package_builder',
         icon: Icons.construction_rounded,
-        title: '🦌 Custom Package Itinerary Builder',
+        title: '🦌 Custom Package Builder',
         description:
-            'Build custom hunting itineraries from scanned price lists.',
+            'Build a custom hunting package from an outfitter farm\'s active '
+            'price list — pick dates, party size, species & lodging, then '
+            'request it from the outfitter.',
         onTap:
             (context, theme) => Navigator.push(
               context,
               MaterialPageRoute(
                 builder:
-                    (context) => HunterCustomPackageBuilderScreen(theme: theme),
+                    (context) => CustomPackageFarmSelectionScreen(theme: theme),
               ),
             ),
       ),

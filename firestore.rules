@@ -231,9 +231,15 @@ service cloud.firestore {
       allow delete: if isOwnerOf('outfitterId') || isAdmin();
     }
 
-    // Scanned pricelists (outfitterId).
+    // Scanned price lists. Active lists are the catalog hunters build custom
+    // packages from (analogous to `packages`), so any signed-in hunter may
+    // READ them. Writes remain owner-scoped to the issuing outfitter (the
+    // `ownerOrAdmin('outfitterId')` check still guards create/update/delete).
+    // This unblocks the Custom Package Builder farm-selection filter and the
+    // species/line-item picker. Deploy: `firebase deploy --only firestore:rules`.
     match /scanned_pricelists/{listId} {
-      allow read, write: if ownerOrAdmin('outfitterId');
+      allow read: if isSignedIn();
+      allow create, update, delete: if ownerOrAdmin('outfitterId');
     }
 
     // Outfitter client roster (outfitterId). The PH manages their own client

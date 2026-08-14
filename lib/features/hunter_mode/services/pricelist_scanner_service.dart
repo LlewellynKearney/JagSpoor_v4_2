@@ -148,21 +148,53 @@ class PricelistScannerService {
 
   /// Submits a custom-built package booking request.
   ///
-  /// This is used when hunters select items from scanned price lists
-  /// to create a custom itinerary rather than booking a pre-defined package.
+  /// Used when hunters assemble their own itinerary from an outfitter's active
+  /// scanned price list (species/fees with quantities) instead of booking a
+  /// pre-defined marketplace package.
+  ///
+  /// Pricing model: every line item's `unitPriceHunterZAR` already carries the
+  /// **absorbed** 7.5% platform markup (it is the `hunterDisplayPriceZAR`
+  /// written at scan-save time = `basePrice * 1.075`). The hunter therefore
+  /// never sees an explicit "Platform Fee" line — only per-item prices and the
+  /// grand total. The booking document still stores the underlying
+  /// base/commission split (`basePriceRands`, `platformCommissionRands`) so the
+  /// outfitter financial dashboard retains full commission visibility.
   ///
   /// Parameters:
-  /// - [farmId]: The farm/concession where the hunt will take place
-  /// - [outfitterId]: The UID of the outfitter who owns the farm
-  /// - [selectedItems]: List of selected items with pricing from the price list
-  /// - [combinedTotalZAR]: Total price including 7.5% platform fee
+  /// - [farmId], [farmName]: the concession where the hunt will take place.
+  /// - [outfitterId]: the UID of the outfitter who owns the farm/price list.
+  /// - [pricelistId]: the scanned price list the items were drawn from.
+  /// - [selectedItems]: species/trophy lines — each map carries `name`,
+  ///   `speciesId`, `sex`, `sexLabel`, `trophySizeRange`, `quantity`,
+  ///   `unitPriceHunterZAR`, `lineTotal`.
+  /// - [lodgingCatering]: fee-type lines (lodging/catering/vehicle/etc.) in
+  ///   the same shape as [selectedItems] (may be empty).
+  /// - [checkInDate], [checkOutDate]: the requested hunt window (ISO date
+  ///   strings, optional).
+  /// - [huntingDays]: derived day count (0 when dates are absent).
+  /// - [hunterCount], [observerCount]: party size.
+  /// - [combinedTotalZAR]: grand total **incl. the absorbed 7.5% markup**
+  ///   (sum of all line totals). This is the amount the hunter is shown.
   ///
-  /// Saves to the 'bookings' collection with status 'Pending Approval'
-  Future<void> submitCustomPackageBooking({
+  /// Writes the `bookings` document with `isCustomPackage: true` and
+  /// `status: 'Pending Approval'` (the canonical "pending" state used across
+  /// the booking lifecycle), so the request surfaces in the outfitter's
+  /// Incoming Booking Requests list with APPROVE / DECLINE actions. The 25%
+  /// non-refundable deposit split is stored so the hunter can pay it via
+  /// PayFast once the outfitter approves.
+  Future<String> submitCustomPackageBooking({
     required String farmId,
     required String outfitterId,
     required List<Map<String, dynamic>> selectedItems,
     required double combinedTotalZAR,
+    String? farmName,
+    String? pricelistId,
+    List<Map<String, dynamic>> lodgingCatering = const [],
+    String? checkInDate,
+    String? checkOutDate,
+    int huntingDays = 0,
+    int hunterCount = 1,
+    int observerCount = 0,
   }) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
@@ -175,49 +207,113 @@ class PricelistScannerService {
     }
 
     // Validate inputs
-    if (selectedItems.isEmpty) {
+    if (selectedItems.isEmpty && lodgingCatering.isEmpty) {
       throw Exception('At least one item must be selected');
     }
     if (combinedTotalZAR <= 0) {
       throw Exception('Total price must be greater than zero');
     }
 
-    // Calculate commission breakdown
+    // Recover the absorbed commission breakdown for the outfitter financials.
+    // combinedTotalZAR already includes the 7.5% markup, so the base is
+    // total / 1.075 and the commission is the remainder.
     final double basePrice = combinedTotalZAR / (1 + platformCommissionRate);
     final double platformFee = combinedTotalZAR - basePrice;
+    final double depositAmount = combinedTotalZAR * 0.25;
+    final double balanceAmount = combinedTotalZAR - depositAmount;
 
-    // Build booking payload
+    // Normalise a line item into the shape the outfitter booking dashboard
+    // already renders (`name` + `hunterPrice` + `quantity`).
+    Map<String, dynamic> normalizeItem(Map<String, dynamic> item) => {
+      'name': item['name'] ?? item['displayLabel'] ?? 'Unknown',
+      'speciesId': item['speciesId'],
+      'sex': item['sex'],
+      'sexLabel': item['sexLabel'],
+      'trophySizeRange': item['trophySizeRange'],
+      'quantity': item['quantity'] ?? 1,
+      'unitPriceHunterZAR': item['unitPriceHunterZAR'] ?? item['hunterDisplayPriceZAR'] ?? 0.0,
+      'lineTotal': item['lineTotal'] ?? 0.0,
+      // Mirror keys consumed by the existing outfitter dashboard item renderer.
+      'hunterPrice': item['unitPriceHunterZAR'] ?? item['hunterDisplayPriceZAR'] ?? 0.0,
+      'basePrice': item['outfitterBasePrice'] ?? 0.0,
+    };
+
     final bookingData = {
-      'packageId': 'CUSTOM_BUILT', // Indicates custom itinerary
+      'packageId': 'CUSTOM_BUILT',
+      'isCustomPackage': true,
+      'packageName': farmName != null ? 'Custom Package · $farmName' : 'Custom Package',
       'outfitterId': outfitterId,
       'farmId': farmId,
+      if (farmName != null) 'farmName': farmName,
+      if (pricelistId != null) 'pricelistId': pricelistId,
       'hunterId': currentUser.uid,
       'bookingType': 'custom_pricelist',
-      'selectedItemsList':
-          selectedItems
-              .map(
-                (item) => {
-                  'name': item['name'] ?? 'Unknown',
-                  'basePrice': item['outfitterBasePrice'] ?? 0.0,
-                  'hunterPrice': item['hunterDisplayPriceZAR'] ?? 0.0,
-                },
-              )
-              .toList(),
+      'selectedItemsList': selectedItems.map(normalizeItem).toList(),
+      if (lodgingCatering.isNotEmpty)
+        'lodgingCateringList': lodgingCatering.map(normalizeItem).toList(),
+      if (checkInDate != null) 'checkInDate': checkInDate,
+      if (checkOutDate != null) 'checkOutDate': checkOutDate,
+      'huntingDays': huntingDays,
+      'hunterCount': hunterCount,
+      'observerCount': observerCount,
       'basePriceRands': basePrice,
       'platformCommissionRands': platformFee,
+      'platformCommissionRate': platformCommissionRate,
       'totalHunterPriceRands': combinedTotalZAR,
+      'depositFraction': 0.25,
+      'depositAmountRands': depositAmount,
+      'balanceAmountRands': balanceAmount,
       'status': 'Pending Approval',
       'bookingTimestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    // Save to bookings collection
-    await _firestore.collection('bookings').add(bookingData);
+    final docRef =
+        await _firestore.collection('bookings').add(bookingData);
 
     print(
-      '✅ Custom package booking submitted: ${selectedItems.length} items, Total: R${combinedTotalZAR.toStringAsFixed(2)}',
+      '✅ Custom package booking submitted: '
+      '${selectedItems.length + lodgingCatering.length} items, '
+      'Total: R${combinedTotalZAR.toStringAsFixed(2)}, '
+      'Deposit: R${depositAmount.toStringAsFixed(2)}',
     );
+    return docRef.id;
+  }
+
+  /// Returns every active scanned price list, most recent first. Readable by
+  /// any signed-in hunter (the price list is the custom-package catalog).
+  /// Used by the Custom Package Builder farm-selection screen to discover
+  /// which farms an outfitter has published a price list for.
+  Future<List<Map<String, dynamic>>> getAllActivePricelists() async {
+    final snapshot = await _firestore
+        .collection('scanned_pricelists')
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .get();
+
+    return snapshot.docs.map((doc) {
+      final data = Map<String, dynamic>.from(doc.data());
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+  }
+
+  /// Returns the most recent active scanned price list for [farmId], or null
+  /// when the farm has no active price list. Readable by signed-in hunters.
+  Future<Map<String, dynamic>?> getActivePricelistForFarm(String farmId) async {
+    final snapshot = await _firestore
+        .collection('scanned_pricelists')
+        .where('farmId', isEqualTo: farmId)
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) return null;
+    final data = Map<String, dynamic>.from(snapshot.docs.first.data());
+    data['id'] = snapshot.docs.first.id;
+    return data;
   }
 
   /// Retrieves all scanned price lists for a specific farm.
@@ -242,10 +338,7 @@ class PricelistScannerService {
     final snapshot = await query.orderBy('createdAt', descending: true).get();
 
     return snapshot.docs.map((doc) {
-      final rawData = doc.data();
-      final data = Map<String, dynamic>.from(
-        rawData is Map ? rawData : <String, dynamic>{},
-      );
+      final data = Map<String, dynamic>.from(doc.data() as Map);
       data['id'] = doc.id;
       return data;
     }).toList();
@@ -268,10 +361,7 @@ class PricelistScannerService {
             .get();
 
     return snapshot.docs.map((doc) {
-      final rawData = doc.data();
-      final data = Map<String, dynamic>.from(
-        rawData is Map ? rawData : <String, dynamic>{},
-      );
+      final data = Map<String, dynamic>.from(doc.data() as Map);
       data['id'] = doc.id;
       return data;
     }).toList();
