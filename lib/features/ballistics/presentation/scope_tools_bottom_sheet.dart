@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
-import 'package:jagspoor/features/hunter_mode/firearm_safe_screen.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -108,18 +106,6 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       final loaded = rifle.optic ?? OpticProfile.defaults;
       _optic = loaded.copyWith(firearmId: rifleId);
     });
-  }
-
-  /// Opens the Digital Firearm Safe so the hunter can register a rifle when
-  /// the safe is empty. The safe is a pushed `MaterialPageRoute`; on return
-  /// the cached `_firearmsStream` (a Firestore snapshots broadcast) re-emits
-  /// the newly-registered firearm automatically — no manual refresh needed.
-  void _openFirearmSafe() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const _FirearmSafeShim(),
-      ),
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -326,7 +312,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                     hint: Text(
                       isEmpty
                           ? 'No firearms in safe (Add in Firearm Safe)'
-                          : 'Link to Firearm',
+                          : 'Choose Firearm',
                       style: TextStyle(
                         color: isEmpty ? _accent : _textSecondary,
                         fontSize: 13,
@@ -349,14 +335,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                   ),
                 ),
               ),
-              if (isEmpty) ...[
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Open Digital Firearm Safe',
-                  icon: Icon(Icons.add_circle_rounded, color: _accent, size: 20),
-                  onPressed: _openFirearmSafe,
-                ),
-              ] else ...[
+              // Turret-unit context badge (read-only; not a navigation
+              // trigger). Only meaningful once a host firearm is linked.
+              if (!isEmpty) ...[
                 const SizedBox(width: 8),
                 Chip(
                   label: Text(_optic.turretUnitLabel,
@@ -1412,46 +1393,4 @@ class TurretTrackingEntry {
     required this.result,
     required this.timestamp,
   });
-}
-
-/// Shim pushed by the Optical Suite's empty-state "Link to Firearm" action so
-/// the hunter can register a rifle without leaving the scope-config flow.
-///
-/// Resolves the live [ThemeController] (the process-wide singleton constructed
-/// in `main()` and mirrored by `ThemeController.instance`) and hosts the real
-/// [FirearmSafeScreen] full-screen. On return the cached Firestore
-/// `_firearmsStream` broadcast re-emits the newly-registered firearm
-/// automatically, so the dropdown populates without a manual reload.
-class _FirearmSafeShim extends StatefulWidget {
-  const _FirearmSafeShim();
-
-  @override
-  State<_FirearmSafeShim> createState() => _FirearmSafeShimState();
-}
-
-class _FirearmSafeShimState extends State<_FirearmSafeShim> {
-  late final ThemeController _theme;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _theme = ThemeController.instance;
-    // Ensure the persisted Day/Night preference is loaded before rendering so
-    // the shim matches the app's current mode (no cold-start flash).
-    _theme.init().whenComplete(() {
-      if (mounted) setState(() => _initialized = true);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_initialized) {
-      return Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-    return FirearmSafeScreen(theme: _theme);
-  }
 }

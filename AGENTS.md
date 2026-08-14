@@ -4185,3 +4185,99 @@ checkout button directly on the hunter's "My Bookings" cards for
   success/failure snackbars, `mounted` guards),
   `test/payfast_deposit_button_test.dart` (NEW, 16 tests), `AGENTS.md`.
 
+
+## Phase 40 -- Align Optical Suite firearm dropdown with ballistic calculator selector pattern (added 2026-08-14)
+
+Item #8 of the v4.5 to-do: remove the `+` `IconButton` and the full-screen
+navigation fallback from the Optical Suite's top firearm-linking header bar
+so the section is a clean, direct `DropdownButtonFormField<String>` that
+mirrors the firearm selector in `ballistic_calc_screen.dart`.
+
+### Background (pre-fix state)
+- The Optical Suite (`lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`,
+  `_buildFirearmLink()`) had already been refactored to a
+  `DropdownButtonFormField<String>` fed by a `StreamBuilder<List<RifleProfile>>`
+  over the cached `_firearmsStream`
+  (`InventoryBridge.watchSafeFirearms().asBroadcastStream()`), with
+  `r.displayName` ("make model (calibre)") items, an empty-state hint, and
+  reactive `OpticProfile.firearmId` binding via `_onRifleSelected` (Phase 30).
+  BUT the header bar still carried two non-selector controls that the to-do
+  flagged for removal:
+  - A trailing `IconButton(Icons.add_circle_rounded, onPressed: _openFirearmSafe)`
+    rendered when the safe was empty (the `+` button) -- a full-screen
+    navigation trigger.
+  - The `_openFirearmSafe` method + the `_FirearmSafeShim` widget it pushed
+    (a `StatefulWidget` that resolved `ThemeController.instance`, awaited
+    `init()`, and hosted `FirearmSafeScreen` full-screen) -- the full-screen
+    navigation fallback.
+- The non-empty hint read `'Link to Firearm'`; the to-do spec and the
+  ballistic calculator's own selector use a `Choose Firearm`/`'CHOOSE FIREARM'`
+  label, so the hint was inconsistent with the pattern being mirrored.
+
+### 1. Removed the `+` IconButton + full-screen navigation fallback
+- Removed the trailing `if (isEmpty) ... IconButton(Icons.add_circle_rounded,
+  onPressed: _openFirearmSafe)` block from `_buildFirearmLink()`. The
+  dropdown is now the sole header control (the to-do's "clean, direct
+  `DropdownButtonFormField<String>`").
+- Removed the `_openFirearmSafe()` method (the `Navigator.push` of the shim).
+- Removed the `_FirearmSafeShim` widget class + its `_FirearmSafeShimState`
+  (the full-screen `FirearmSafeScreen` host) and the preceding docstring --
+  the entire tail-of-file navigation-fallback component.
+- Removed the two now-unused imports that only the shim consumed:
+  `package:jagspoor/core/theme/app_theme.dart` (`ThemeController`) and
+  `package:jagspoor/features/hunter_mode/firearm_safe_screen.dart`
+  (`FirearmSafeScreen`). (Verified both symbols had no other references in
+  the file.)
+
+### 2. Hint aligned with the ballistic calculator selector pattern
+- The non-empty hint changed from `'Link to Firearm'` to `'Choose Firearm'`,
+  matching the to-do's spec and the ballistic calculator's `'CHOOSE FIREARM'`
+  selector label. The empty-state hint stays
+  `'No firearms in safe (Add in Firearm Safe)'` (guidance text only -- not a
+  navigation trigger; the to-do explicitly wants this text displayed when the
+  safe is empty, and the hunter registers firearms via the dashboard's Digital
+  Firearm Safe card rather than an in-sheet redirect).
+
+### 3. Turret-unit badge retained (read-only, not a navigation trigger)
+- The `Chip` showing `_optic.turretUnitLabel` is retained but now only
+  renders `if (!isEmpty)` (it was previously inside an `else` branch that
+  also gated the `+` button). It is a read-only context badge, not a
+  navigation trigger, so it does not violate the to-do's "clean, direct
+  dropdown" requirement; it surfaces the active turret unit (MOA/MIL) next
+  to the linked rifle, which is meaningful only once a host firearm is
+  selected.
+
+### 4. Reactive profile binding (unchanged, verified)
+- Selecting a rifle from the dropdown calls `_onRifleSelected(rifles, id)`,
+  which resolves the loaded `RifleProfile`, stamps the optic's `firearmId`
+  (`_optic = loaded.copyWith(firearmId: rifleId)`), and `setState`s -- so the
+  active `OpticProfile.firearmId` updates in real-time without closing the
+  sheet or forcing any page redirect (the to-do's reactive-binding
+  requirement, already satisfied by Phase 30 and now the only control on
+  the header).
+
+### 5. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings** in `scope_tools_bottom_sheet.dart`. The single remaining issue
+  is the documented pre-existing `DropdownButtonFormField.value`
+  deprecation info (only flagged on Flutter >=3.33, NOT the CI 3.29.1 pin;
+  Phase 30 baseline). `lib/` total **113 issues** -- unchanged baseline
+  (removing the shim + 2 imports introduced zero new issues and dropped no
+  flagged issues, confirming the removal is clean). `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- **`flutter test`**: `optic_tools_test` (22) + `ballistics_engine_test`
+  (18) + `shot_group_analyzer_test` (11) all pass (51 total). Full suite
+  **425 passed, 4 failed** -- the 4 failures are the documented
+  pre-existing baseline (`saps_tracker`, `offline_sync_queue`,
+  `advanced_ballistics`, `bluetooth_mesh`), none touch the changed file;
+  identical pass count to the Phase-39 baseline (no new tests needed -- this
+  is a UI cleanup removing dead navigation code; the existing optic/ballistics
+  suites already cover the `OpticProfile.firearmId` binding +
+  `RifleProfile.displayName` models the dropdown reads through).
+- No Firestore / Storage / rules / index / pubspec changes (pure UI
+  cleanup).
+- Files: `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`
+  (removed `_FirearmSafeShim` + `_openFirearmSafe` + `+` IconButton + 2
+  imports; hint `'Link to Firearm'` -> `'Choose Firearm'`; turret-unit chip
+  gated on `!isEmpty`), `AGENTS.md`.
+
