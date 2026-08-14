@@ -3573,3 +3573,87 @@ Two latent bugs in the outfitter financial dashboard corrected:
   `test/pricing_math_test.dart` (NEW, 24 tests),
   `test/outfitter_revenue_summary_test.dart` (NEW, 5 tests).
 
+
+## Phase 35 ‚Äî .vscode Gitignore & API Key Security Setup (added 2026-08-14)
+
+Item #10 of the v4.4 to-do: stop VS Code launch configurations (which carry
+live API keys / credentials, e.g. `GEMINI_API_KEY`) from leaking into version
+control, while still shipping a sanitized template so new environment setups
+have a reference config.
+
+### `.gitignore` hardening
+- The Flutter template `.gitignore` shipped with `.vscode/` **commented out**
+  (the stock comment "you may wish to be included in version control, so this
+  line is commented out by default"). For an app that injects API keys via
+  `--dart-define` in `launch.json`, that default is a credential-leak hazard.
+- Rewrote the `.vscode` block to explicitly ignore the live launch config and
+  re-include only the sanitized template:
+  ```
+  .vscode/*
+  .vscode/launch.json
+  # Keep the sanitized template (no live keys) tracked for new env setups.
+  !.vscode/launch.json.example
+  ```
+- **Why `.vscode/*` and not a bare `.vscode/`**: Git will **not** descend into
+  a directory ignored with a trailing slash, which makes the
+  `!launch.json.example` negation impossible (a negated path inside a
+  directory-ignored folder is silently dropped). `.vscode/*` ignores the
+  directory's **contents** while still letting Git descend so the template
+  can be re-included. This was verified empirically: with a bare `.vscode/`,
+  `git check-ignore .vscode/launch.json.example` returned "ignored" (negation
+  broken); with `.vscode/*` + the negation, `git add --dry-run
+  .vscode/launch.json.example` succeeds while `git add --dry-run
+  .vscode/launch.json` is rejected as ignored.
+- Both `.vscode/launch.json` and the operative `.vscode/*` are present and
+  uncommented (the spec's literal requirement); the negation is the only way
+  to keep the template tracked.
+
+### Tracked template `.vscode/launch.json.example` (NEW)
+- A sanitized VS Code launch config template committed to the repo so new
+  contributors can copy it to `.vscode/launch.json` and fill in their own
+  key. Contains only the placeholder `GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE`
+  (no live credential):
+  ```json
+  {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "JagSpoor (Debug)",
+        "request": "launch",
+        "type": "dart",
+        "program": "lib/main.dart",
+        "toolArgs": [
+          "--dart-define",
+          "GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE"
+        ]
+      }
+    ]
+  }
+  ```
+- Onboarding: `cp .vscode/launch.json.example .vscode/launch.json` then
+  replace `YOUR_GEMINI_API_KEY_HERE` with a real Gemini key. The copied
+  `launch.json` is gitignored, so the live key never enters the index.
+
+### Local dev file left intact & untracked
+- A local `.vscode/launch.json` (with a placeholder live key
+  `AIzaSyFAKE_LIVE_KEY_REPLACE_ME_...`) exists on disk for local development
+  and remains **completely untracked** by the Git index. Verified:
+  `git check-ignore -v .vscode/launch.json` ‚Üí `.gitignore:34:.vscode/launch.json`
+  (ignored); `git status --ignored` shows `!! .vscode/launch.json`; the
+  staged set contains only `.gitignore` + `.vscode/launch.json.example`.
+
+### Verification
+- `git status` after staging: **Changes to be committed** =
+  `modified: .gitignore` + `new file: .vscode/launch.json.example`.
+  `.vscode/launch.json` is NOT staged (ignored).
+- Scanned the staged diff for credential patterns
+  (`api_key=AIza`, `sk-`, `secret`, `password`, `token=`, `Bearer `,
+  `AIzaSy[A-Za-z0-9_-]{20,}`): **no live credentials** ‚Äî the only match is
+  the literal placeholder `YOUR_GEMINI_API_KEY_HERE`.
+- `git ls-files .vscode/` ‚Üí `.vscode/launch.json.example` (the only tracked
+  file under `.vscode/`).
+- No Firestore / Storage / pubspec / Dart changes (pure repo-hygiene +
+  security). No `flutter analyze` / `flutter test` impact (no code touched).
+- Files: `.gitignore` (`.vscode` block rewritten), `.vscode/launch.json.example`
+  (NEW, tracked). `.vscode/launch.json` (local, gitignored, untracked).
+

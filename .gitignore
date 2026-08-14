@@ -19,9 +19,21 @@ migrate_working_dir/
 .idea/
 
 # The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code which can carry live API keys / credentials (e.g. GEMINI_API_KEY in
+# launch.json). The live `.vscode/launch.json` MUST stay untracked. Only the
+# sanitized template `.vscode/launch.json.example` is committed so new
+# environment setups have a reference config.
+#
+# Ignore the live launch configuration and any other local VS Code files.
+# NOTE: `.vscode/*` is used as the operative ignore rather than a bare
+# `.vscode/` because Git will not descend into a directory ignored with a
+# trailing slash, which would make the `!launch.json.example` negation below
+# impossible. `.vscode/*` ignores the directory's contents while still
+# letting Git descend so the template can be re-included.
+.vscode/*
+.vscode/launch.json
+# Keep the sanitized template (no live keys) tracked for new env setups.
+!.vscode/launch.json.example
 
 # Flutter/Dart/Pub related
 **/doc/api/
