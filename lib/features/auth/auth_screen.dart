@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
 import 'services/user_role_provider.dart';
+import 'services/password_reset_action_code_settings.dart';
+import 'services/password_reset_cooldown.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -30,12 +33,29 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _hasAcceptedPrivacyPolicy = false;
   bool _isLoading = false;
 
+  // Password-reset retry cooldown: after a successful reset send (or a
+  // Firebase `too-many-requests` rejection) the "Forgot Password?" dialog
+  // disables its send button for [PasswordResetCooldown.defaultCooldownSeconds]
+  // seconds to prevent spamming duplicate reset tokens (each new token
+  // invalidates the previous link and re-queues an email delivery, which is
+  // the perceived "email delay"). `_resetCooldownUntil` is the single source
+  // of truth (an absolute timestamp); the dialog owns its own 1s countdown
+  // timer that reads this value.
+  DateTime? _resetCooldownUntil;
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _otpController.dispose();
     super.dispose();
+  }
+
+  /// Engages the password-reset retry cooldown for the default window. The
+  /// dialog's own countdown timer reads [_resetCooldownUntil] to render the
+  /// live "Resend in Ns" label.
+  void _engageResetCooldown() {
+    _resetCooldownUntil = PasswordResetCooldown.expiry(from: DateTime.now());
   }
 
   /// Handle Google Sign-In
@@ -335,108 +355,26 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// "Forgot Password?" flow: prompts for the email address (pre-filled from
   /// the login email field when present) and sends a Firebase password reset
-  /// email. Shows a confirmation on success or a clear error on failure.
+  /// email with explicit [ActionCodeSettings] (deep link + in-app handling +
+  /// package pinning) so the reset email dispatches promptly and resolves to
+  /// the installed app. On success the dialog enters a 60-second retry
+  /// cooldown (countdown shown on the send button) to prevent spamming
+  /// duplicate reset tokens. Shows a clear in-dialog confirmation on success
+  /// or a precise error on failure.
   Future<void> _showForgotPasswordDialog() async {
-    final resetController = TextEditingController(
-      text: _emailController.text.trim(),
-    );
-
-    Future<void> submit() async {
-      final email = resetController.text.trim();
-      if (email.isEmpty ||
-          !RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(email)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter a valid email address.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      Navigator.pop(context); // close the dialog before awaiting
-
-      try {
-        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Password reset link sent! Please check your inbox (and spam '
-              'folder) for instructions.',
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 5),
-          ),
-        );
-      } on FirebaseAuthException catch (e) {
-        if (!mounted) return;
-        final msg = switch (e.code) {
-          'user-not-found' =>
-            'No account found for that email. Please check the address and try again.',
-          'invalid-email' => 'That email address is not valid.',
-          'too-many-requests' =>
-            'Too many reset attempts. Please try again later.',
-          _ => 'Could not send reset email: ${e.message ?? e.code}',
-        };
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not send reset email: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    }
-
     if (!mounted) return;
-    showDialog(
+    await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reset Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter your account email and we will send you a link to reset '
-              'your password.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: resetController,
-              keyboardType: TextInputType.emailAddress,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email_outlined),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: submit,
-            child: const Text('Send Reset Link'),
-          ),
-        ],
+      builder: (dialogContext) => _PasswordResetDialog(
+        initialEmail: _emailController.text.trim(),
+        cooldownUntil: _resetCooldownUntil,
+        onSend: (email) async {
+          await FirebaseAuth.instance.sendPasswordResetEmail(
+            email: email,
+            actionCodeSettings: PasswordResetActionCodeSettings.build(),
+          );
+        },
+        onCooldownEngaged: _engageResetCooldown,
       ),
     );
   }
@@ -994,6 +932,274 @@ class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Self-contained "Forgot Password?" dialog that owns its own 1-second
+/// countdown timer for the retry cooldown.
+///
+/// The dialog sends the password reset email through [onSend] (so the actual
+/// Firebase call is injectable for testing / single-source configuration),
+/// engages the cooldown via [onCooldownEngaged] on success and via
+/// [onTooManyRequests] on a Firebase `too-many-requests` rejection, and reads
+/// the absolute cooldown expiry ([cooldownUntil], captured at open time) to
+/// render the live "Resend in Ns" countdown. The send button is disabled and
+/// the email field is locked while the cooldown is active, preventing
+/// duplicate reset-token requests that cause email delivery delays.
+class _PasswordResetDialog extends StatefulWidget {
+  final String initialEmail;
+  final DateTime? cooldownUntil;
+  final Future<void> Function(String email) onSend;
+  final VoidCallback onCooldownEngaged;
+
+  const _PasswordResetDialog({
+    required this.initialEmail,
+    required this.cooldownUntil,
+    required this.onSend,
+    required this.onCooldownEngaged,
+  });
+
+  @override
+  State<_PasswordResetDialog> createState() => _PasswordResetDialogState();
+}
+
+class _PasswordResetDialogState extends State<_PasswordResetDialog> {
+  late final TextEditingController _emailController;
+  Timer? _countdownTimer;
+  int _remaining = 0;
+  bool _sending = false;
+  bool _confirmed = false;
+  String? _errorMsg;
+
+  /// Absolute cooldown expiry. Initialized from the parent's value (so a
+  /// re-opened dialog inherits an in-progress cooldown) and updated locally
+  /// when this dialog's own send succeeds or hits a rate-limit. Owned here
+  /// (not read from the parent) so the live countdown reflects the cooldown
+  /// this dialog just engaged without depending on a parent rebuild.
+  DateTime? _cooldownUntil;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+    _cooldownUntil = widget.cooldownUntil;
+    _syncRemaining();
+    _maybeStartTimer();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  bool get _cooldownActive =>
+      _cooldownUntil != null &&
+      PasswordResetCooldown.isActive(
+        now: DateTime.now(),
+        until: _cooldownUntil!,
+      );
+
+  /// Engages the cooldown both locally (drives this dialog's countdown) and
+  /// in the parent (so a freshly re-opened dialog inherits the in-progress
+  /// cooldown and the entry button can reflect it).
+  void _engageCooldown() {
+    _cooldownUntil = PasswordResetCooldown.expiry(from: DateTime.now());
+    widget.onCooldownEngaged();
+    _syncRemaining();
+    _maybeStartTimer();
+  }
+
+  void _syncRemaining() {
+    if (_cooldownUntil == null) {
+      _remaining = 0;
+      return;
+    }
+    _remaining = PasswordResetCooldown.remainingSeconds(
+      now: DateTime.now(),
+      until: _cooldownUntil!,
+    );
+  }
+
+  void _maybeStartTimer() {
+    if (!_cooldownActive) return;
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _syncRemaining();
+      if (_remaining <= 0) {
+        _countdownTimer?.cancel();
+        if (mounted) setState(() {});
+      } else if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  String get _buttonLabel {
+    if (_cooldownActive) return 'Resend in $_remaining s';
+    return _confirmed ? 'Resend Reset Link' : 'Send Reset Link';
+  }
+
+  Future<void> _submit() async {
+    if (_sending || _cooldownActive) return;
+
+    final email = _emailController.text.trim();
+    if (email.isEmpty ||
+        !RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(email)) {
+      setState(() => _errorMsg = 'Please enter a valid email address.');
+      return;
+    }
+
+    setState(() {
+      _sending = true;
+      _errorMsg = null;
+    });
+
+    try {
+      await widget.onSend(email);
+      if (!mounted) return;
+      _engageCooldown();
+      setState(() {
+        _sending = false;
+        _confirmed = true;
+        _errorMsg = null;
+      });
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final msg = switch (e.code) {
+        'user-not-found' =>
+          'No account found for that email. Please check the address and try again.',
+        'invalid-email' => 'That email address is not valid.',
+        'too-many-requests' =>
+          'Too many reset attempts. Please wait before trying again.',
+        'invalid-continue-uri' =>
+          'Reset link domain is not authorized. Please contact support.',
+        _ => 'Could not send reset email: ${e.message ?? e.code}',
+      };
+      // On a Firebase rate-limit rejection, also engage the cooldown so the
+      // user cannot hammer the endpoint while the rate limit is in effect.
+      if (e.code == 'too-many-requests') {
+        _engageCooldown();
+      }
+      setState(() {
+        _sending = false;
+        _errorMsg = msg;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _errorMsg = 'Could not send reset email: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _cooldownActive;
+    return AlertDialog(
+      title: const Text('Reset Password'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Enter your account email and we will send you a secure link to '
+            'reset your password.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _emailController,
+            enabled: !active && !_sending,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'Email Address',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+          ),
+          if (_confirmed && !active) ...[
+            const SizedBox(height: 16),
+            _banner(
+              icon: Icons.check_circle,
+              color: Colors.green,
+              text: 'Reset link sent! Check your inbox (and spam folder) for '
+                  'instructions.',
+            ),
+          ],
+          if (active && _confirmed) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                'Please wait $_remaining s before requesting another link to '
+                'avoid duplicate reset emails.',
+                style: TextStyle(
+                  color: Colors.orange.shade800,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+          if (_errorMsg != null) ...[
+            const SizedBox(height: 12),
+            _banner(
+              icon: Icons.error_outline,
+              color: Colors.red,
+              text: _errorMsg!,
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+        FilledButton.icon(
+          onPressed: (active || _sending) ? null : _submit,
+          icon: _sending
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(active ? Icons.timer_outlined : Icons.send),
+          label: Text(_buttonLabel),
+        ),
+      ],
+    );
+  }
+
+  Widget _banner({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+          ),
+        ],
       ),
     );
   }

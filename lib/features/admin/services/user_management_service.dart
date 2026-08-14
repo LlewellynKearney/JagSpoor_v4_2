@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../auth/services/password_reset_action_code_settings.dart';
+
 /// Outcome of a single account-provisioning attempt.
 class ProvisionResult {
   final String email;
@@ -117,7 +119,10 @@ class UserManagementService {
     // 2. Trigger the password reset / account setup email.
     bool resetSent = false;
     try {
-      await _auth.sendPasswordResetEmail(email: cleanedEmail);
+      await _auth.sendPasswordResetEmail(
+        email: cleanedEmail,
+        actionCodeSettings: PasswordResetActionCodeSettings.build(),
+      );
       resetSent = true;
     } catch (e) {
       // The Auth account may not exist yet, so the reset email can fail. The

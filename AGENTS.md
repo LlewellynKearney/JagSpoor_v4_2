@@ -3245,3 +3245,159 @@ engaging composed message.
   (card share button + `_shareTrophy`),
   `test/trophy_share_composer_test.dart` (NEW, 11 tests).
 
+
+## Phase 33 ‚Äî Password Reset Email Delay & Expiration Fix (added 2026-08-14)
+
+Item #8 of the v4.4 to-do: eliminate the perceived password-reset email
+delivery delay and token-expiration problems by applying explicit Firebase
+`ActionCodeSettings` to every `sendPasswordResetEmail` call (so the reset
+code is handled in-app via a deep link instead of a slow generic web flow)
+and by adding a 60-second retry cooldown to the reset request UI so users
+cannot spam duplicate reset tokens (each new token invalidates the previous
+link and re-queues an email delivery ‚Äî the root cause of the delay).
+
+### Audit
+- Exactly **two** `sendPasswordResetEmail` call sites in the codebase:
+  - `lib/features/auth/auth_screen.dart` ‚Äî the hunter self-service
+    "Forgot Password?" dialog.
+  - `lib/features/admin/services/user_management_service.dart` ‚Äî the admin
+    account-provisioning flow (sends a reset / account-setup email to a
+    newly provisioned hunter/outfitter).
+- Active package ids resolved from the native build configs:
+  - Android `applicationId` = `com.example.jagspoor`
+    (`android/app/build.gradle.kts`).
+  - iOS `PRODUCT_BUNDLE_IDENTIFIER` = `com.example.jagspoorV42`
+    (`ios/Runner.xcodeproj/project.pbxproj`).
+
+### Centralized `ActionCodeSettings` builder
+- New `lib/features/auth/services/password_reset_action_code_settings.dart`
+  (`PasswordResetActionCodeSettings`, private ctor ‚Äî pure static API;
+  dependency-light: `firebase_auth` only). All deep-link configuration lives
+  in exactly one place so both call sites share identical behaviour.
+  - `build()` returns an `ActionCodeSettings` configured with:
+    - `url: 'https://jagspoor.page.link/reset-password'` ‚Äî the deep-link /
+      continue URL the user lands on after completing the reset (a Firebase
+      Dynamic Links `*.page.link` domain as suggested in the to-do).
+    - `handleCodeInApp: true` ‚Äî tells Firebase to deliver the action code
+      as an in-app deep link (Universal Link / Android App Link) so the
+      installed app opens directly instead of a generic web redirect. This
+      is the key setting that eliminates the email delivery delay.
+    - `androidPackageName: 'com.example.jagspoor'` ‚Äî pins the Android app
+      so the link opens the installed app.
+    - `androidInstallApp: true` ‚Äî offers the Play Store when the app is not
+      installed (the to-do's `installApp: true`).
+    - `androidMinimumVersion: '1'` ‚Äî sends an out-of-date install to the
+      Play Store to upgrade.
+    - `iOSBundleId: 'com.example.jagspoorV42'` ‚Äî pins the iOS app so the
+      universal link resolves on Apple devices.
+  - **API note**: the project pins `firebase_auth_platform_interface 9.0.5`,
+    whose `ActionCodeSettings` API uses flat fields
+    (`androidPackageName` / `androidInstallApp` / `androidMinimumVersion` /
+    `iOSBundleId` / `handleCodeInApp` / `linkDomain`) ‚Äî NOT the newer
+    `AndroidPackageName(...)` class / `canHandleCodeInApp` field introduced
+    in firebase_auth 12.x. The builder uses the 9.x flat-field shape so it
+    compiles cleanly on both the CI Flutter 3.29.1 pin and the local 3.47.0.
+  - **Deploy requirement**: the `resetDeepLinkUrl` domain MUST be listed in
+    the Firebase Console ‚Üí Authentication ‚Üí Settings ‚Üí Authorized
+    domains. If a Dynamic Links domain (`*.page.link`) is used it must also
+    be provisioned. Until the domain is authorized the reset call returns
+    `auth/invalid-continue-uri`; the auth-screen dialog surfaces that with a
+    clear "Reset link domain is not authorized. Please contact support."
+    message (added to the error-code switch).
+
+### Applied to both call sites
+- **Auth screen** (`lib/features/auth/auth_screen.dart`): the
+  `sendPasswordResetEmail` call now passes
+  `actionCodeSettings: PasswordResetActionCodeSettings.build()` (via the
+  dialog's injected `onSend` callback).
+- **Admin user management service**
+  (`lib/features/admin/services/user_management_service.dart`):
+  `provisionUser` now passes the same `ActionCodeSettings` to its reset
+  call, so admin-provisioned account-setup emails use the identical in-app
+  deep-link fast path. The existing best-effort `try/catch` (which reports a
+  reset failure but still treats provisioning as successful) is preserved.
+
+### Retry cooldown UI (60s)
+- The "Forgot Password?" dialog was rewritten from a stateless `AlertDialog`
+  into a dedicated `_PasswordResetDialog` `StatefulWidget` that owns its own
+  1-second `Timer.periodic` countdown.
+  - **On a successful send** the dialog engages a 60-second cooldown
+    (`PasswordResetCooldown.defaultCooldownSeconds = 60`): the "Send Reset
+    Link" button is disabled (`onPressed: null`) and relabels to
+    "Resend in N s" with a live countdown; the email field is locked while
+    cooling down; an orange "Please wait N s before requesting another link
+    to avoid duplicate reset emails." hint appears.
+  - **On Firebase `too-many-requests`** the cooldown is also engaged as a
+    safety net so the user cannot hammer the endpoint while the server-side
+    rate limit is in effect.
+  - **On success** an in-dialog green confirmation banner
+    ("Reset link sent! Check your inbox (and spam folder) for instructions.")
+    replaces the old transient SnackBar, so the confirmation stays visible
+    alongside the cooldown countdown (the user no longer has to re-open the
+    dialog to see whether the send worked).
+  - The cooldown expiry is held as an absolute `DateTime?` both in the
+    parent `_AuthScreenState` (`_resetCooldownUntil`) and in the dialog's own
+    State. The parent copy (updated via the `onCooldownEngaged` callback)
+    lets a freshly re-opened dialog inherit an in-progress cooldown; the
+    dialog's local copy drives the live countdown without depending on a
+    parent rebuild. The dialog's timer self-cancels on completion and is
+    cancelled in `dispose()`.
+  - **Error surfacing**: `invalid-continue-uri` now maps to a clear
+    "domain not authorized, contact support" message; `user-not-found`,
+    `invalid-email`, and `too-many-requests` keep their tailored copy; the
+    generic catch surfaces the Firebase message verbatim. Errors render in
+    an in-dialog red banner (not just a SnackBar) so they stay visible while
+    the user corrects the email.
+- New `lib/features/auth/services/password_reset_cooldown.dart`
+  (`PasswordResetCooldown`, private ctor ‚Äî pure static API, zero Flutter
+  imports so fully unit-testable): `defaultCooldownSeconds` (60), `expiry`
+  (absolute expiry timestamp), `remainingSeconds` (floored at 0), and
+  `isActive` (before-expiry check). The arithmetic is pure; the dialog owns
+  the `Timer.periodic` tick.
+
+### Security
+- No secrets / tokens introduced; the deep-link URL is a public link domain.
+- Error messages do not leak sensitive information (they restate the Firebase
+  error code / public message, never credentials).
+- The cooldown is a client-side abuse-prevention measure; Firebase's own
+  server-side rate limiting (`too-many-requests`) remains the authoritative
+  guard.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in all changed/new files
+  (`auth_screen.dart`, `password_reset_action_code_settings.dart`,
+  `password_reset_cooldown.dart`, `user_management_service.dart`, and both
+  test files). Project total: **0 errors, 114 issues** (lib/ only) ‚Äî all
+  pre-existing infos in unrelated files (unchanged baseline; identical count
+  to the pre-change baseline). `analysis_options.yaml` auto-touched by the
+  analyzer / pub get was reverted before commit.
+- **`flutter test`** (new suites): `password_reset_action_code_settings_test`
+  (9/9 pass ‚Äî deep-link URL, `handleCodeInApp`, Android package name,
+  `androidInstallApp`, minimum version, iOS bundle id, constants stability,
+  fresh-instance equivalence, `asMap()` round-trip) +
+  `password_reset_cooldown_test` (10/10 pass ‚Äî default window, expiry
+  arithmetic, remaining-seconds at start / partial / expired / exact-0,
+  `isActive` before / at / after expiry).
+- **`flutter test`** (full suite): **339 passed, 4 failed** ‚Äî the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
+  the changed files; +19 vs the Phase-32 320-pass baseline, exactly the new
+  password-reset tests.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  auth + UI hardening).
+- Files: `lib/features/auth/services/password_reset_action_code_settings.dart`
+  (NEW), `lib/features/auth/services/password_reset_cooldown.dart` (NEW),
+  `lib/features/auth/auth_screen.dart` (dialog rewrite + cooldown State +
+  ActionCodeSettings wiring + new `_PasswordResetDialog` widget),
+  `lib/features/admin/services/user_management_service.dart`
+  (ActionCodeSettings on the provisioning reset call),
+  `test/password_reset_action_code_settings_test.dart` (NEW, 9 tests),
+  `test/password_reset_cooldown_test.dart` (NEW, 10 tests).
+- **Deploy reminder**: authorize `https://jagspoor.page.link` (and provision
+  the Dynamic Links domain if used) in the Firebase Console ‚Üí
+  Authentication ‚Üí Settings ‚Üí Authorized domains, in a credentialed env.
+  Until authorized, the reset call surfaces the in-UI
+  `invalid-continue-uri` "domain not authorized" error rather than failing
+  silently.
+
