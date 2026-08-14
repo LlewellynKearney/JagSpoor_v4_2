@@ -89,9 +89,7 @@ class _OutfitterTrophyStockScreenState
             .get();
     if (farmDoc.exists && mounted) {
       setState(() {
-        _selectedFarmName =
-            (farmDoc.data() as Map<String, dynamic>?)?['name'] ??
-            'Unknown Farm';
+        _selectedFarmName = farmDoc.data()?['name'] ?? 'Unknown Farm';
       });
     }
   }
@@ -396,9 +394,10 @@ class _OutfitterTrophyStockScreenState
       String trophyId, BuildContext sheetContext) async {
     try {
       await OutfitterEnterpriseManager.instance.deleteTrophyStock(trophyId);
-      if (mounted) {
+      if (mounted && sheetContext.mounted) {
         // Close both the confirm dialog (already closed) and the edit sheet.
         Navigator.of(sheetContext).pop();
+        if (!mounted || !context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🗑️ Trophy entry deleted'),
@@ -407,7 +406,7 @@ class _OutfitterTrophyStockScreenState
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('❌ Failed to delete: $e'),

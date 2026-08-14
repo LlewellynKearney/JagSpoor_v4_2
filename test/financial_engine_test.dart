@@ -1,9 +1,8 @@
-import 'dart:math';
-
 // ============================================================================
 // Financial Engine Test Suite v8.1
 // Validates marketplace rate calculations with 5% markup scaling
 // ============================================================================
+import 'package:flutter_test/flutter_test.dart';
 
 /// Calculates the hunter price with standard 5% marketplace commission markup.
 ///
@@ -373,5 +372,9 @@ void runFinancialEngineTests() {
 // Entry Point
 // ============================================================================
 void main() {
-  runFinancialEngineTests();
+  // The suite uses raw `assert` + `print` internally; wrap in a single
+  // framework test so the runner reports a pass/fail.
+  test('Financial Engine Test Suite v8.1', () {
+    runFinancialEngineTests();
+  });
 }

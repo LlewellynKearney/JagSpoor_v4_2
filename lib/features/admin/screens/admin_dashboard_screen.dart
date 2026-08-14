@@ -95,7 +95,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 tooltip: 'Sign out',
                 onPressed: () async {
                   await AdminAnalyticsService.instance.signOut();
-                  if (!mounted) return;
+                  if (!mounted || !context.mounted) return;
                   Navigator.pushReplacementNamed(context, '/');
                 },
               ),

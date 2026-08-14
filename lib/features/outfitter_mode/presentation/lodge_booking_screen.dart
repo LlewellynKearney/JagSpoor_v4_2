@@ -323,11 +323,11 @@ class _LodgeBookingScreenState extends State<LodgeBookingScreen> {
                                             .toString();
                                     await db.insert('bookings', bookingData);
                                   }
-                                  if (!mounted) return;
+                                  if (!mounted || !sheetContext.mounted) return;
                                   Navigator.pop(sheetContext);
                                   await _loadBookings();
                                 } catch (e) {
-                                  if (!mounted) return;
+                                  if (!mounted || !context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Error saving: $e'),

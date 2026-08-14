@@ -30,8 +30,7 @@ class OutfitterSyncService {
   final _dirtyRecordsController =
       StreamController<List<SyncRecord>>.broadcast();
 
-  // Cache of dirty record counts by collection
-  Map<String, int> _dirtyCounts = {};
+  // Cache of dirty records pending sync.
   List<SyncRecord> _dirtyRecords = [];
 
   Timer? _pollTimer;

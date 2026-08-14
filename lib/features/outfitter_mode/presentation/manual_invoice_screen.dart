@@ -626,11 +626,11 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                                       packageData,
                                     );
                                   }
-                                  if (!mounted) return;
+                                  if (!mounted || !sheetContext.mounted) return;
                                   Navigator.pop(sheetContext);
                                   await _loadPackages();
                                 } catch (e) {
-                                  if (!mounted) return;
+                                  if (!mounted || !context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Error saving package: $e'),

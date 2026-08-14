@@ -146,7 +146,7 @@ void main() {
     // defaults to 'JagSpoor Booking $bookingId' when itemName is null. This
     // asserts the card's call passes the package name.
     test('a custom package name is preferred over the booking-id default', () {
-      const packageName = 'Big 5 Plains Safari';
+      final String? packageName = 'Big 5 Plains Safari';
       const bookingId = 'booking-123';
       // Mirrors launchDeposit's itemName resolution.
       final itemName = packageName ?? 'JagSpoor Booking $bookingId';

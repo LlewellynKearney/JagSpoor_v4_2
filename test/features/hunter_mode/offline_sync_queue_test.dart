@@ -1,16 +1,34 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/features/hunter_mode/services/offline_sync_queue.dart';
-
+import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   group('JagSpoor Offline Activity Sync Queue Tests', () {
     late FakeFirebaseFirestore fakeFirestore;
 
+    setUpAll(() {
+      // Point sqflite at the FFI (in-process SQLite) implementation so the
+      // real OfflineSyncQueue opens a genuine SQLite database on the desktop
+      // test runner — exercising the real queue code paths, not a mock.
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    });
 
     setUp(() async {
       fakeFirestore = FakeFirebaseFirestore();
-      // Initialize your sync queue local database configuration matrix
+      // The service opens `<databasesPath>/offline_queue.db`. Isolate each test
+      // by deleting that file before the singleton reopens it, and bind the
+      // fake Firestore so the queue flush writes to the in-memory fake, not the
+      // real backend.
+      final tempDir = await databaseFactory.getDatabasesPath();
+      final testDbPath = p.join(tempDir, 'offline_queue.db');
+      await databaseFactory.deleteDatabase(testDbPath);
+      OfflineSyncQueue.instance.resetForTest(
+        firestore: fakeFirestore,
+        // ignore: invalid_use_of_visible_for_testing_member
+      );
       await OfflineSyncQueue.instance.clearQueue();
     });
 

@@ -1,13 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jagspoor/features/hunter_mode/services/feedback_firebase_service.dart';
 
 void main() {
   group('FeedbackFirebaseService Payload Tests', () {
-    late FeedbackFirebaseService service;
-
-    setUp(() {
-      service = FeedbackFirebaseService();
-    });
 
     group('Bug Report Payload Structure', () {
       test('should handle valid bug report parameters', () {

@@ -32,7 +32,11 @@ class SapsTrackerService {
       }
 
       final data = docSnapshot.data()!;
+      // Reserved for the production Apify webhook call (currently mocked below).
+      // Read here so the production migration is a one-line swap, not a schema dig.
+      // ignore: unused_local_variable
       final idNumber = data['idNumber'] as String? ?? '';
+      // ignore: unused_local_variable
       final referenceNumber = data['referenceNumber'] as String? ?? '';
 
       // Mock response for offline development
@@ -90,67 +94,68 @@ class SapsTrackerService {
 
     final normalizedStatus = rawStatus.toLowerCase().trim();
 
-    // Stage 0 - Submitted/DFO
-    if (_matchesStatus(normalizedStatus, [
-      'submitted',
-      'received',
-      'received at dfo',
-      'application received',
-      'district firearms',
-      'pending',
-      'pending review',
-    ])) {
-      return 0;
-    }
+    // Stage -> patterns. Evaluated as a group so the LONGEST matching pattern
+    // across ALL stages wins (most-specific match), which prevents a short
+    // Stage-0 pattern like 'submitted' from shadowing a more-specific
+    // Stage-1 pattern like 'submitted to provincial' (the v4.5 audit bug).
+    const stagePatterns = <int, List<String>>{
+      0: [
+        'submitted',
+        'received',
+        'received at dfo',
+        'application received',
+        'district firearms',
+        'pending',
+        'pending review',
+      ],
+      1: [
+        'provincial',
+        'province',
+        'provincial office',
+        'at provincial',
+        'submitted to provincial',
+        'forwarded to provincial',
+      ],
+      2: [
+        'cfr',
+        'central firearms registry',
+        'registry',
+        'at cfr',
+        'forwarded to cfr',
+        'forwarded to registry',
+      ],
+      3: [
+        'printed',
+        'ready for collection',
+        'ready',
+        'approved',
+        'completed',
+        'licence printed',
+        'license printed',
+      ],
+      -1: [
+        'not found in system',
+        'not found',
+        'no record',
+        'unable to locate',
+        'invalid',
+        'error',
+      ],
+    };
 
-    // Stage 1 - Provincial Office
-    if (_matchesStatus(normalizedStatus, [
-      'provincial',
-      'province',
-      'provincial office',
-      'at provincial',
-      'submitted to provincial',
-      'forwarded to provincial',
-    ])) {
-      return 1;
-    }
+    int bestStage = 0; // default Submitted; overwritten if a pattern matches
+    int bestLen = -1;
+    stagePatterns.forEach((stage, patterns) {
+      for (final pattern in patterns) {
+        if (normalizedStatus.contains(pattern) && pattern.length > bestLen) {
+          bestStage = stage;
+          bestLen = pattern.length;
+        }
+      }
+    });
 
-    // Stage 2 - Central Firearms Registry
-    if (_matchesStatus(normalizedStatus, [
-      'cfr',
-      'central firearms registry',
-      'registry',
-      'at cfr',
-      'forwarded to cfr',
-      'forwarded to registry',
-    ])) {
-      return 2;
-    }
-
-    // Stage 3 - Printed/Ready for Collection
-    if (_matchesStatus(normalizedStatus, [
-      'printed',
-      'ready for collection',
-      'ready',
-      'approved',
-      'completed',
-      'licence printed',
-      'license printed',
-      'completed',
-    ])) {
-      return 3;
-    }
-
-    // Not Found / Error
-    if (_matchesStatus(normalizedStatus, [
-      'not found',
-      'no record',
-      'invalid',
-      'error',
-      'unable to locate',
-      'not found in system',
-    ])) {
-      return -1;
+    if (bestLen >= 0) {
+      return bestStage;
     }
 
     // Default to Submitted (0) for any unrecognized status
@@ -203,16 +208,6 @@ class SapsTrackerService {
 
     // Default fallback for any unrecognized input
     return 'Pending Review';
-  }
-
-  /// Helper method to check if normalized status matches any of the provided patterns.
-  static bool _matchesStatus(String normalizedStatus, List<String> patterns) {
-    for (final pattern in patterns) {
-      if (normalizedStatus.contains(pattern)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /// Updates an application's status in Firestore after a scraper check.

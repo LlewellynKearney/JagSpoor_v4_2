@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
 
 // ============================================================================
 // Sensor AI Integration Test Suite v10.0
@@ -538,5 +539,9 @@ void runSensorAiIntegrationTests() {
 // Entry Point
 // ============================================================================
 void main() {
-  runSensorAiIntegrationTests();
+  // The suite uses raw `assert` + `print` internally; wrap in a single
+  // framework test so the runner reports a pass/fail.
+  test('Sensor AI Integration Test Suite v10.0', () {
+    runSensorAiIntegrationTests();
+  });
 }

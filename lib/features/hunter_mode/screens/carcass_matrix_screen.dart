@@ -783,7 +783,6 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
     final position = data['coldStoragePosition'] ?? 'N/A';
     final fieldWeight = data['fieldWeightKg'] ?? 0.0;
     final hangingWeight = data['hangingWeightKg'] ?? 0.0;
-    final timestamp = data['timestamp'] as Timestamp?;
 
     return Card(
       color: theme.cardColor,

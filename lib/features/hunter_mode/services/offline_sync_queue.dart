@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -8,8 +9,28 @@ class OfflineSyncQueue {
   static OfflineSyncQueue get instance => _instance;
 
   Database? _database;
+  // Firestore instance used to flush queued actions on reconnect. Lazily
+  // resolved to the global instance on first use (so the singleton can be
+  // constructed in tests before Firebase.initializeApp() runs); injectable
+  // for tests via [resetForTest] / [forTesting] (FakeFirebaseFirestore).
+  FirebaseFirestore? _firestoreOverride;
+  FirebaseFirestore get _firestore =>
+      _firestoreOverride ?? FirebaseFirestore.instance;
 
   OfflineSyncQueue._internal();
+
+  /// Injectable constructor for tests (FakeFirebaseFirestore).
+  @visibleForTesting
+  OfflineSyncQueue.forTesting(FirebaseFirestore firestore)
+      : _firestoreOverride = firestore;
+
+  /// Test-only: reset the cached database + (optionally) rebind the Firestore
+  /// instance so each test gets a clean SQLite file and a fresh fake.
+  @visibleForTesting
+  void resetForTest({FirebaseFirestore? firestore}) {
+    _database = null;
+    _firestoreOverride = firestore;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -74,7 +95,8 @@ class OfflineSyncQueue {
   }
 
   Future<SyncResult> processQueueWithInternet() async {
-    final db = await database;
+    // Ensure the local SQLite fallback buffer is open before draining it.
+    await database;
     final actions = await getAllPendingActions();
 
     int successCount = 0;
@@ -92,27 +114,19 @@ class OfflineSyncQueue {
 
         switch (operation.toUpperCase()) {
           case 'CREATE':
-            await FirebaseFirestore.instance
-                .collection(collection)
-                .add(payload);
+            await _firestore.collection(collection).add(payload);
             break;
           case 'UPDATE':
             // For UPDATE, payload should contain docId in a special field
             final docId = payload.remove('_docId');
             if (docId != null) {
-              await FirebaseFirestore.instance
-                  .collection(collection)
-                  .doc(docId)
-                  .update(payload);
+              await _firestore.collection(collection).doc(docId).update(payload);
             }
             break;
           case 'DELETE':
             final docId = payload['_docId'] as String?;
             if (docId != null) {
-              await FirebaseFirestore.instance
-                  .collection(collection)
-                  .doc(docId)
-                  .delete();
+              await _firestore.collection(collection).doc(docId).delete();
             }
             break;
           default:

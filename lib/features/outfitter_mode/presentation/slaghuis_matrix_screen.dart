@@ -247,7 +247,7 @@ class _SlaghuisMatrixScreenState extends State<SlaghuisMatrixScreen> {
                                 );
 
                                 // Close sheet and refresh UI
-                                if (!mounted) return;
+                                if (!mounted || !sheetContext.mounted) return;
                                 Navigator.of(sheetContext).pop();
                                 await _refreshData();
                               }

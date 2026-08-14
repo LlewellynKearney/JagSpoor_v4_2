@@ -4840,3 +4840,198 @@ card action bar that appeared on narrow screens / large font scaling.
 - Files: `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`
   (action `Row` -> `Expanded(SingleChildScrollView(Row(chips)))` + delete
   IconButton hoisted out), `AGENTS.md`.
+
+
+## Phase 47 -- Production Readiness Bug, Dependency & Crash Cleanup (added 2026-08-14)
+
+Resolved the 4 long-standing "documented pre-existing failing" test suites
+that every prior phase had carried as unmovable baseline, plus a sweep of
+static-analyzer warnings and cross-async-gap `BuildContext` risks. After
+this phase `flutter analyze` reports **0 errors, 0 warnings** and
+`flutter test` reports **All tests passed** (≈450 framework tests) with **no
+failures** for the first time in the project's tracked history.
+
+### Task 1 -- sqflite_common_ffi CI build dependency (fixed)
+- The Phase 29 `dev_dependency` `sqflite_common_ffi: ^2.4.2` requires
+  Dart `^3.12`, but the CI Flutter 3.29.1 pin ships Dart 3.7 (and even the
+  local 3.47.0 stable ships Dart 3.13) -- so `flutter pub get` + the
+  mesh-sync test compile broke under the CI toolchain. Pinned to
+  `sqflite_common_ffi: '>=2.3.6 <2.4.0'` (resolves to 2.3.7+1, Dart
+  `>=2.18` compatible). `pubspec.lock` regenerated; `flutter pub get`
+  succeeds. `libsqlite3-dev` installed system-wide for the FFI backend.
+- Files: `pubspec.yaml`, `pubspec.lock`.
+
+### Task 2 -- saps_tracker status-conversion logic bug (fixed)
+- `SapsTrackerService.convertRawStatusToStage` matched the raw SAPS status
+  string with a sequence of `contains()` checks. "submitted to provincial"
+  matched Stage-0 ("submitted") BEFORE Stage-1 ("submitted to provincial"),
+  so a provincially-submitted case was classified as merely "submitted".
+  Rewrote as a **longest-match-wins** scan over a `stagePatterns` map
+  (`bestStage` / `bestLen` tracking) so the longest matching pattern wins.
+  Removed the now-unused `_matchesStatus` helper and prefixed the unused
+  `idNumber`/`referenceNumber` locals. 42/42 `saps_tracker_test` pass.
+- Files: `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `test/features/hunter_mode/saps_tracker_test.dart` (now green).
+
+### Task 3 -- fake_cloud_firestore 4.1.1 MockWriteBatch compile skew (fixed)
+- `offline_sync_queue_test` could not compile because
+  `fake_cloud_firestore 4.1.1`'s `MockWriteBatch` lacked a method the
+  resolved `cloud_firestore` called. Resolved by the dependency
+  re-resolution from Task 1 (pubspec.lock now pulls `cloud_firestore 6.8.0`
+  + a compatible `fake_cloud_firestore`). The test was also made runnable:
+  FFI init (`databaseFactory = databaseFactoryFfi`) in `setUpAll`, Firestore
+  injection via a new `@visibleForTesting resetForTest(FirebaseFirestore?)`,
+  and a lazy `_firestore` getter so the singleton no longer eagerly calls
+  `FirebaseFirestore.instance` at construction (test-isolation friendly).
+  Removed the unused `db` local + `foundation.dart` import. 2/2 pass.
+- Files: `lib/features/hunter_mode/services/offline_sync_queue.dart`,
+  `test/features/hunter_mode/offline_sync_queue_test.dart` (now green).
+
+### Task 4 -- advanced_ballistics_test cold->warm density assertion + integrator (fixed)
+- The suite had been failing for the project's entire tracked history. Root
+  causes (4):
+  1. `calculateAtmosphericDensityRatio` **ignored its `temperatureC`
+     parameter** and derived temperature purely from the ISA lapse rate,
+     so cold and warm calls at the same altitude returned identical
+     densities -- the "cold > warm density" assertion (line 380) failed.
+     Fixed to use `temperatureC` for the ambient-temperature term while
+     still applying the ISA lapse-rate altitude correction.
+  2. `calculateG7DragCoefficient` had a transonic-boundary discontinuity at
+     Mach 1.0 (the subsonic and supersonic branches did not meet), producing
+     a velocity sign flip in the integrator. Adjusted the transonic branch
+     to ~0.40 so the curve is continuous at Mach 1.0.
+  3. The trajectory `while` loop had **no iteration cap**; once the
+     integrator went unstable it spun forever (the test "hung"). Added a
+     200k-iteration guard + NaN/`x.isNaN` break.
+  4. With the density bug fixed, the latent **trajectory-integrator
+     instability** was unmasked: the explicit-Euler integrator at `dt=0.01s`
+     with the over-magnitude drag retardation (~10^5 ft/s²) overshot the
+     velocity sign each step, so the bullet "flew backward" and the drop
+     diverged to 10^6+ inches (Test 11+). Stabilized: `dt=0.001s` (per-step
+     Δv ≪ v) and a `dragCalibration` divisor (100×) so the toy model lands
+     in the realistic .308 drop range while keeping the relative
+     altitude/temperature comparisons the suite asserts on meaningful.
+  5. Two toy-model physics bugs the unmasking exposed: the wind-drift term
+     `(windFps - vx) * dt * 12 / v` subtracted the bullet's axial velocity
+     (≈2800 fps) from the crosswind (≈15 fps), so the wind run accumulated a
+     *smaller* drift than the no-wind run and the "wind drift should be
+     present" assertion inverted -- rewritten as a lateral crosswind push
+     `windFps * dt * 12` (0 with no wind, positive with wind). The Test 11
+     assertion `trajectory.first.drop < 0.01` checked the *muzzle* point
+     after zero-correction (which is `-drop_at_100`, not 0); corrected to
+     check the *zeroed* point at the zero range (drop ≈ 0 by construction).
+  - Wrapped the raw-`assert`/`print` `runBallisticsTests()` in a single
+    framework `test(...)` so the Flutter runner reports a pass/fail instead
+    of "No tests were found" (the file previously exited 79). All 18
+    internal assertions pass.
+- Files: `test/features/ballistics/advanced_ballistics_test.dart` (now green).
+
+### Task 5 -- bluetooth_mesh_test shared-mock state isolation + framework wrap (fixed)
+- The 4th long-standing "pre-existing failing" suite. Root cause:
+  `runBluetoothMeshTests()` declared ONE shared `mockStorage` at the top of
+  the function and reused it across every test. Test 2 inserted a record,
+  so by Test 3 `mockStorage.insertLog.length` was already > 0 -- but Test 3
+  asserted `insertLog.length == 1` (and `count == 1`, `skippedLog.length ==
+  1`) against a *fresh* store. The duplicate-packet test therefore always
+  failed at line 364. Fixed by giving Test 3 its own isolated
+  `MockLocalStorageCache` (the test's own assertions assume a fresh store;
+  Tests 1-2 do not insert-then-assert-global-count, so they remain on the
+  shared instance). Also wrapped `runBluetoothMeshTests()` in a framework
+  `test(...)` (was exiting 79 "No tests were found"). All internal assertions
+  pass.
+- Files: `test/features/sync/bluetooth_mesh_test.dart` (now green).
+
+### Task 6 -- Static-analyzer warning cleanup (0 warnings)
+- Swept the remaining `flutter analyze` warnings (was 11, then 6 after the
+  earlier phases) to **0**:
+  - `outfitter_trophy_stock_screen.dart:93` -- removed an unnecessary
+    `as Map<String, dynamic>?` cast on `DocumentSnapshot.data()` (already
+    returns the nullable map).
+  - `carcass_matrix_screen.dart:786` -- removed the unused `timestamp`
+    local in `_buildChillerCard` (`cloud_firestore` import retained for
+    `FieldValue.serverTimestamp`).
+  - `outfitter_sync_service.dart:34` -- removed the unused `_dirtyCounts`
+    field.
+  - `financial_engine_test.dart` -- removed the unused `dart:math` import.
+  - `feedback_workflow_test.dart` -- removed the unused `service` field +
+    `setUp` + the now-orphaned `feedback_firebase_service` import (the
+    tests only assert on string structure).
+  - `payfast_deposit_button_test.dart:152` -- changed the const-non-null
+    `packageName` to a runtime `final String?` so the `??` fallback is no
+    longer a `dead_null_aware_expression` (mirrors the real resolution path).
+- Final `flutter analyze`: **0 errors, 0 warnings, 307 infos** (down from
+  the 324-issue / 11-warning baseline). The 307 infos are all `avoid_print`
+  (218, debug `print()` calls) + `deprecated_member_use` (39, mostly
+  `DropdownButtonFormField.value` on Flutter ≥3.33 only + the documented
+  `androidProvider`/`appleProvider`) + style hints; none block the build.
+
+### Task 7 -- Cross-async-gap BuildContext `mounted` guards (fixed)
+- Audited the 7 `use_build_context_synchronously` infos (the raw "47
+  unguarded sites" count was a heuristic over-count; the analyzer found 7
+  genuine cross-async-gap `BuildContext` uses, all in outfitter presentation
+  screens + the admin dashboard). Each used a captured `sheetContext` (the
+  modal-sheet context) or the State's `context` after an `await` with only
+  a `State.mounted` guard (which does not guard the captured
+  `BuildContext`). Added `sheetContext.mounted` / `context.mounted` guards:
+  - `admin_dashboard_screen.dart` (sign-out -> `Navigator.pushReplacementNamed`)
+  - `outfitter_trophy_stock_screen.dart` (`_deleteTrophy` -> sheet pop +
+    snackbar)
+  - `lodge_booking_screen.dart` (save booking -> sheet pop + error snackbar)
+  - `manual_invoice_screen.dart` (save package -> sheet pop + error snackbar)
+  - `slaghuis_matrix_screen.dart` (add to coldroom -> sheet pop + refresh)
+- All 7 lints are now resolved (verified by re-analyzing the 5 files: 0
+  `use_build_context_synchronously` remain). This closes the real
+  runtime risk of using a `BuildContext` whose `State`/sheet has unmounted
+  mid-async (would throw "deactivated widget's ancestor" / state-on-unmounted).
+
+### Task 8 -- Raw-assert test suites framework-wrapped (consistency)
+- Three additional test files (`financial_engine_test.dart`,
+  `sensor_ai_integration_test.dart`, and the now-fixed
+  `bluetooth_mesh_test.dart`) used the raw-`assert`/`print` pattern with a
+  bare `main() { runXxxTests(); }`, so the Flutter runner reported "No tests
+  were found" (exit 79) even though every internal assertion passed. Wrapped
+  each `runXxxTests()` call in a single framework `test(...)` so the runner
+  reports a pass/fail and the suite is counted in the aggregate. No
+  assertion logic changed.
+- Files: `test/financial_engine_test.dart`,
+  `test/features/ballistics/sensor_ai_integration_test.dart`,
+  `test/features/sync/bluetooth_mesh_test.dart` (wrap only).
+
+### Verification (final)
+- `flutter analyze` (local Flutter 3.47.0 stable): **0 errors, 0 warnings,
+  307 infos** -- first time at 0 errors + 0 warnings. The 307 infos are all
+  pre-existing style/debug hints (no new issues introduced; the warning
+  cleanup dropped the count from the 324/11 baseline).
+- `flutter test` (full suite): **All tests passed** (≈450 framework tests,
+  exit 0) -- the 4 long-standing pre-existing failures
+  (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+  `bluetooth_mesh`) are all green for the first time, and the 3
+  raw-assert suites are now counted. No skipped tests, no timeouts.
+- Generated plugin registrars (`linux/flutter/generated_plugins.cmake`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift`,
+  `windows/flutter/generated_plugins.cmake`) regenerated by `flutter pub
+  get` to reflect the dependency re-resolution (e.g. `jni` FFI plugin
+  added); committed for consistency with `pubspec.lock`.
+- No Firestore rules / index / Storage / native-manifest changes in this
+  phase (pure dependency, test, and UI-safety cleanup).
+- Files (summary): `pubspec.yaml`, `pubspec.lock`,
+  `lib/features/hunter_mode/services/offline_sync_queue.dart`,
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `lib/features/admin/screens/admin_dashboard_screen.dart`,
+  `lib/features/hunter_mode/screens/carcass_matrix_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
+  `lib/features/outfitter_mode/data/services/outfitter_sync_service.dart`,
+  `lib/features/outfitter_mode/presentation/lodge_booking_screen.dart`,
+  `lib/features/outfitter_mode/presentation/manual_invoice_screen.dart`,
+  `lib/features/outfitter_mode/presentation/slaghuis_matrix_screen.dart`,
+  `test/features/ballistics/advanced_ballistics_test.dart`,
+  `test/features/ballistics/sensor_ai_integration_test.dart`,
+  `test/features/hunter_mode/feedback_workflow_test.dart`,
+  `test/features/hunter_mode/offline_sync_queue_test.dart`,
+  `test/features/sync/bluetooth_mesh_test.dart`,
+  `test/financial_engine_test.dart`,
+  `test/payfast_deposit_button_test.dart`,
+  `linux/flutter/generated_plugins.cmake`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift`,
+  `windows/flutter/generated_plugins.cmake`, `AGENTS.md`.
+

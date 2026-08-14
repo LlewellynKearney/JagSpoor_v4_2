@@ -4,6 +4,7 @@
 // ============================================================================
 
 import 'dart:convert';
+import 'package:flutter_test/flutter_test.dart';
 
 // ============================================================================
 // Mock Database Helper for Testing
@@ -321,6 +322,11 @@ void runBluetoothMeshTests() {
   {
     print('');
     print('Test 3: Duplicate historical packets are ignored gracefully');
+
+    // Isolated storage for this test — the shared [mockStorage] accumulates
+    // inserts from Tests 1-2, but this test's assertions assume a fresh
+    // store (insertLog.length == 1, count == 1, skippedLog.length == 1).
+    final mockStorage = MockLocalStorageCache();
 
     final initialPayload = TestMeshSyncPayload(
       senderDeviceId: 'peer_device_xyz_456',
@@ -664,5 +670,10 @@ void runBluetoothMeshTests() {
 // Entry Point
 // ============================================================================
 void main() {
-  runBluetoothMeshTests();
+  // The suite uses raw `assert` + `print` internally (no per-case `test()`
+  // registrations), so wrap the whole run in a single framework test so the
+  // Flutter runner reports a pass/fail rather than "No tests were found".
+  test('Bluetooth Mesh Sync Test Suite v19.0', () {
+    runBluetoothMeshTests();
+  });
 }
