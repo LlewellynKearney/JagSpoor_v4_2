@@ -4281,3 +4281,103 @@ mirrors the firearm selector in `ballistic_calc_screen.dart`.
   imports; hint `'Link to Firearm'` -> `'Choose Firearm'`; turret-unit chip
   gated on `!isEmpty`), `AGENTS.md`.
 
+
+## Phase 41 -- Complete removal of Blood Trail Tracking Radar feature (added 2026-08-14)
+
+Item #9 of the v4.5 to-do: completely remove the Blood Trail Tracking Radar
+feature (camera overlay with red-tone isolation to locate blood spoor + GPS
+waypoint drops) and all associated UI shortcuts, services, models, and tests.
+
+### 1. Audit
+- Code search for `blood_trail` / `BloodTrail` / `blood trail` /
+  `blood_tracker` / `BloodTracker` / `TrackingRadar` / `bloodPath` /
+  `appendBloodDropNode` / `blood_detection_engine` /
+  `BloodDetectionEngine` across `lib` + `test` found the feature confined
+  to a small, self-contained cluster with one shared-service bleed:
+  - `lib/features/hunter_mode/screens/blood_tracker_screen.dart` -- the
+    radar screen (`BloodTrackerScreen`), its `_BloodMaskPainter`
+    `CustomPainter` (the HSV red-isolation canvas overlay), and an inline
+    `_BloodTrailMapScreen` (the waypoint map). Self-contained -- no public
+    classes reused elsewhere.
+  - `lib/features/hunter_mode/services/blood_detection_engine.dart` --
+    `BloodDetectionEngine` (pixel luminance/YUV420 -> RGBA grid red
+    detection). Used EXCLUSIVELY by the radar screen (verified: only caller
+    was `blood_tracker_screen.dart`).
+  - `test/blood_detection_engine_test.dart` -- 6 unit tests for the engine.
+  - `lib/features/hunter_mode/hunter_dashboard.dart` -- import + a
+    `DashboardFeature` card `id:'blood_trail_tracker'`
+    ('Blood Trail Tracking Radar') navigating to `BloodTrackerScreen`.
+  - `lib/features/hunter_mode/services/map_path_tracer.dart` -- the shared
+    `MapPathTracer` singleton carried a blood-trail vector path API
+    (`_bloodTrailVectorPath`, `bloodPath` getter,
+    `appendBloodDropNode`) used exclusively by the radar screen.
+  - `lib/features/hunter_mode/screens/offline_navigation_screen.dart` --
+    rendered `MapPathTracer.instance.bloodPath` as a crimson `Polyline`
+    (the "wounded animal escape route" overlay on the off-grid map).
+- No pubspec / asset / Firestore / rules / index references to blood.
+
+### 2. Removed UI components & navigation
+- Deleted `lib/features/hunter_mode/screens/blood_tracker_screen.dart`
+  (the radar screen + `_BloodMaskPainter` + `_BloodTrailMapScreen` -- the
+  custom radar paint/canvas widget + overlay controllers).
+- `hunter_dashboard.dart`: removed `import 'screens/blood_tracker_screen.dart'`
+  and the `blood_trail_tracker` `DashboardFeature` card (the dashboard
+  button / navigation shortcut). The 'Report Bug' card now follows the
+  offline-navigation card directly.
+
+### 3. Deprecated / cleaned up services & tests
+- Deleted `lib/features/hunter_mode/services/blood_detection_engine.dart`
+  (the dedicated blood-detection service tied exclusively to the radar).
+- Deleted `test/blood_detection_engine_test.dart` (6 tests for the removed
+  engine; removed rather than left referencing a deleted service).
+- `map_path_tracer.dart`: removed the blood-trail vector path surface --
+  the `_bloodTrailVectorPath` field, the `bloodPath` getter, the
+  `appendBloodDropNode` method, and the `_bloodTrailVectorPath.clear()`
+  line in `clearAllPaths`. The remaining `MapPathTracer` surface (the
+  hunter GPS trail: `_activeHuntingPath` / `currentPath` /
+  `startNewPathTracing` / `appendCoordinate` / `stopPathTracing` /
+  `clearAllPaths` / `clearRecordedPath` / `isTracking`) is the off-grid
+  navigation feature's path primitive and is unchanged -- the only bleed
+  from the removed feature into a shared service is gone.
+- `offline_navigation_screen.dart`: removed the crimson bloodPath
+  `Polyline` (and its "Blood trail vector path" comment) from the
+  `PolylineLayer`. With the radar screen gone, `bloodPath` can never be
+  populated, so the crimson overlay was dead rendering; the orange
+  `currentPath` hunter-trail polyline (the actual off-grid mapping
+  feature) is retained.
+
+### 4. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings** in all modified/remaining files
+  (`hunter_dashboard.dart`, `map_path_tracer.dart`,
+  `offline_navigation_screen.dart`). The only remaining issues in touched
+  files are the documented pre-existing baseline
+  (`prefer_final_fields` on `_isRangefinderConnected` +
+  `DropdownButtonFormField.value` deprecation in the offline nav screen,
+  both pre-existing and only the latter flagged on Flutter >=3.33, NOT
+  the CI 3.29.1 pin). `lib/` total **113 issues** -- unchanged baseline;
+  the removal introduced zero new issues and no broken references
+  (verified: a full grep for blood-trail symbols across `lib`+`test`
+  returns NONE after the removal). `analysis_options.yaml` auto-touched
+  by the analyzer was reverted before commit.
+- **`flutter test`**: full suite **419 passed, 4 failed**. The 4 failures
+  are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`) -- none
+  touch the removed feature; identical failing set to the prior baseline.
+  The pass count dropped from 425 to 419 = exactly the 6
+  `blood_detection_engine_test` tests removed (which passed previously);
+  no new regressions. The adjacent off-grid mapping + mesh-sync + tracking
+  suites still pass -- no regressions in adjacent tracking/mapping
+  features.
+- No Firestore / Storage / rules / index / pubspec / asset changes (pure
+  code removal).
+- Files DELETED: `lib/features/hunter_mode/screens/blood_tracker_screen.dart`,
+  `lib/features/hunter_mode/services/blood_detection_engine.dart`,
+  `test/blood_detection_engine_test.dart`.
+- Files MODIFIED: `lib/features/hunter_mode/hunter_dashboard.dart`
+  (import + dashboard card removed),
+  `lib/features/hunter_mode/services/map_path_tracer.dart`
+  (blood-trail vector path API removed),
+  `lib/features/hunter_mode/screens/offline_navigation_screen.dart`
+  (crimson bloodPath polyline removed), `AGENTS.md`.
+

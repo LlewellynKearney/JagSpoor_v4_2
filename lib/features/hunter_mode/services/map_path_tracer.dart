@@ -5,12 +5,10 @@ class MapPathTracer {
   MapPathTracer._internal();
 
   final List<LatLng> _activeHuntingPath = [];
-  final List<LatLng> _bloodTrailVectorPath = [];
   bool _isTrackingActive = false;
 
   bool get isTracking => _isTrackingActive;
   List<LatLng> get currentPath => List.unmodifiable(_activeHuntingPath);
-  List<LatLng> get bloodPath => List.unmodifiable(_bloodTrailVectorPath);
 
   void startNewPathTracing() {
     _activeHuntingPath.clear();
@@ -29,17 +27,8 @@ class MapPathTracer {
     }
   }
 
-  // Appends a confirmed blood drop point to draw the animal's escape route
-  void appendBloodDropNode(double lat, double lon) {
-    final LatLng point = LatLng(lat, lon);
-    if (_bloodTrailVectorPath.isEmpty || _bloodTrailVectorPath.last != point) {
-      _bloodTrailVectorPath.add(point);
-    }
-  }
-
   void clearAllPaths() {
     _activeHuntingPath.clear();
-    _bloodTrailVectorPath.clear();
   }
 
   // Alias for clearAllPaths for backward compatibility

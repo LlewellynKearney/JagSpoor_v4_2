@@ -1342,12 +1342,6 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
                   strokeWidth: 4.0,
                   color: Colors.orangeAccent,
                 ),
-                // Blood trail vector path - dark crimson line for wounded animal escape route
-                Polyline(
-                  points: MapPathTracer.instance.bloodPath,
-                  strokeWidth: 3.0,
-                  color: const Color(0xFFDC143C), // Crimson red for visibility
-                ),
               ],
             ),
 
