@@ -2188,3 +2188,56 @@ had the identical two bugs.
   credentialed env to activate the (already-correct) `guided_hunt_logs`
   rules.
 
+
+## Phase 18 — Venison Permit Log details sheet & permit creator safe-area bottom padding (added 2026-08-14)
+
+- The two venison-permit surfaces (the draggable details sheet on the permit
+  log + the Add/Issue permit form) rendered their bottom action buttons under
+  the Android 3-button / iOS gesture nav bar because the action UI sat at the
+  very end of the scrollable body with no safe-area inset, and there was no
+  bottom content padding so the last section was hidden behind the buttons.
+- **Venison Permit details sheet**
+  (`lib/features/hunter_mode/widgets/venison_permit_details_sheet.dart`):
+  - The EXPORT PDF / VOID / DELETE buttons were previously the tail children
+    of the scroll `ListView` (inside the `Expanded`). They are now extracted
+    OUT of the scrollable into a **sticky bottom action bar** rendered after
+    the `Expanded(ListView)`, wrapped in `SafeArea(top: false, bottom: true)`
+    so the buttons clear the system nav bar / gesture line on every device.
+    The bar carries the same EXPORT PERMIT PDF (accent) + VOID (orange
+    outlined, hidden once `status == 'Voided'`) + DELETE (red) actions, gated
+    by the same `onExport`/`onVoid`/`onDelete` callbacks, so no call-site
+    changes were needed.
+  - The `ListView` gained a trailing `SizedBox(height: 90)` so the last
+    section (the signature tiles) scrolls cleanly above the sticky action bar
+    instead of being hidden behind it.
+- **Add/Issue Venison Permit form**
+  (`lib/features/hunter_mode/screens/venison_permit_form_screen.dart`):
+  - The `ISSUE & SIGN PERMIT` submit button (the last child of the body
+    `ListView`) is now wrapped in `SafeArea(top: false, bottom: true)` so it
+    clears the Android 3-button / gesture nav bar on every device.
+  - The form `ListView`'s `padding` changed from `EdgeInsets.all(16)` to
+    `EdgeInsets.only(left: 16, top: 16, right: 16, bottom: 90.0)` so the
+    signature + transport fields (and the submit button) have 90px of
+    clearance above the gesture nav bar, clearing the action bar cleanly on
+    gesture-nav devices. (90px is reserved explicitly — the SafeArea on the
+    button handles the device inset, so the list padding does not double
+    count it.)
+- **`flutter analyze`** (local Flutter 3.47.0): **0 errors, 0 warnings, 0
+  new infos** in the changed files. The single
+  `DropdownButtonFormField.value` deprecation info at
+  `venison_permit_form_screen.dart:945` is **pre-existing** (in
+  `_AddSpeciesDialog`, unrelated to this change; only flagged on the local
+  3.47.0, not the CI pin 3.29.1). Project total 316 infos + 13 warnings —
+  unchanged baseline. `analysis_options.yaml` auto-touched by the analyzer
+  was reverted before commit.
+- **`flutter test`**: `outfitter_client_roster_test` (6) +
+  `offline_stream_guard_test` (5) + `role_guard_test` (31) all pass (42
+  total). Pure UI padding/layout change — no logic touched, so no new
+  regressions; the 4 documented pre-existing failures remain unchanged and
+  unrelated.
+- Files: `lib/features/hunter_mode/widgets/venison_permit_details_sheet.dart`
+  (sticky SafeArea action bar + 90px list tail), `lib/features/hunter_mode/
+  screens/venison_permit_form_screen.dart` (SafeArea on submit button +
+  90px list bottom padding). No Firestore / Storage / rules / index / pubspec
+  changes (pure presentation-layer padding).
+

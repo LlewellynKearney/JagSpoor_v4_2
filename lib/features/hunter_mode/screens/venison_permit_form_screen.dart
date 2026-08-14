@@ -352,7 +352,17 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                // Bottom content inset reserves 90px so the signature +
+                // transport fields clear the sticky ISSUE & SIGN PERMIT
+                // button (which is itself wrapped in SafeArea(bottom: true)
+                // to clear the Android 3-button / gesture nav bar). 90px
+                // matches the sticky action bar's height + breathing room.
+                padding: const EdgeInsets.only(
+                  left: 16,
+                  top: 16,
+                  right: 16,
+                  bottom: 90.0,
+                ),
                 children: [
                   _buildBrandedHeader(theme),
                   const SizedBox(height: 20),
@@ -388,8 +398,15 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
                     controller: _outfitterSignatureController,
                   ),
                   const SizedBox(height: 28),
-                  _buildSubmitButton(theme),
-                  const SizedBox(height: 24),
+                  // Sticky ISSUE & SIGN PERMIT button — wrapped in
+                  // SafeArea(bottom: true) so it clears the Android 3-button /
+                  // gesture navigation bar on every device.
+                  SafeArea(
+                    top: false,
+                    bottom: true,
+                    child: _buildSubmitButton(theme),
+                  ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

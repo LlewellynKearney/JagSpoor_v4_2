@@ -205,69 +205,97 @@ class _DetailsContent extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                 ],
-                if (onExport != null) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: onExport,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.accentColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                      label: const Text('EXPORT PERMIT PDF',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (onVoid != null || onDelete != null)
-                  Row(
-                    children: [
-                      if (onVoid != null && permit.status != 'Voided')
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: onVoid,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.orange,
-                              side: const BorderSide(color: Colors.orange),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            icon: const Icon(Icons.block_rounded, size: 18),
-                            label: const Text('VOID',
-                                style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      if (onVoid != null && onDelete != null)
-                        const SizedBox(width: 12),
-                      if (onDelete != null)
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: onDelete,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            icon: const Icon(Icons.delete_outline_rounded,
-                                size: 18),
-                            label: const Text('DELETE',
-                                style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                    ],
-                  ),
-                const SizedBox(height: 20),
+                // Bottom content padding so the last section (signatures)
+                // clears the sticky action bar on gesture-nav devices.
+                const SizedBox(height: 90),
               ],
+            ),
+          ),
+          // Sticky action bar — wrapped in SafeArea(bottom: true) so the
+          // EXPORT PDF / VOID / DELETE buttons clear the Android 3-button /
+          // gesture navigation bar cleanly on every device.
+          SafeArea(
+            top: false,
+            bottom: true,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onExport != null) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: onExport,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.picture_as_pdf_rounded,
+                            size: 18),
+                        label: const Text('EXPORT PERMIT PDF',
+                            style:
+                                TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (onVoid != null || onDelete != null)
+                    Row(
+                      children: [
+                        if (onVoid != null && permit.status != 'Voided')
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: onVoid,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.orange,
+                                side:
+                                    const BorderSide(color: Colors.orange),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(8)),
+                              ),
+                              icon:
+                                  const Icon(Icons.block_rounded, size: 18),
+                              label: const Text('VOID',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          )
+                        else
+                          const Spacer(),
+                        if (onVoid != null && onDelete != null)
+                          const SizedBox(width: 12),
+                        if (onDelete != null)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: onDelete,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(8)),
+                              ),
+                              icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18),
+                              label: const Text('DELETE',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
         ],
