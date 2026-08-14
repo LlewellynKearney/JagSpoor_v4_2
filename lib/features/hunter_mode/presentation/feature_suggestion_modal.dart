@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/features/support/services/support_email_composer.dart';
 import '../services/feedback_firebase_service.dart';
 
 /// FeatureSuggestionModal provides a bottom sheet form for submitting
@@ -40,18 +42,29 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         benefits: _benefitsController.text.trim(),
       );
 
-      final emailBody = FeedbackFirebaseService.buildFeatureSuggestionEmailBody(
+      // Build the automated support email (User ID + description + system
+      // context) with Uri.encodeComponent-safe escaping, then hand off to the
+      // native mail client via url_launcher.
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final mailtoUri = SupportEmailComposer.buildFeatureSuggestionMailtoUri(
+        userId: userId,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         benefits: _benefitsController.text.trim(),
       );
-
-      await service.launchNativeEmail(
-        subject: '[Feature Suggestion] ${_titleController.text.trim()}',
-        body: emailBody,
-      );
+      final launched = await SupportEmailComposer.launch(mailtoUri);
 
       if (!mounted) return;
+      if (!launched) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Suggestion saved. No mail app found — please email support@jag-spoor.co.za manually.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;

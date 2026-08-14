@@ -2697,3 +2697,100 @@ on-device coordinate transforms, and battery/background-positioning throttle.
   `test/off_grid_map_validation_test.dart` (NEW). No Firestore / Storage /
   rules / index / pubspec changes (pure on-device mapping + positioning).
 
+
+## Phase 28 — Automated support emails (added 2026-08-14)
+
+Wired the bug-report and feature-suggestion submission flows to an internal
+automated string parser that builds a structured `mailto:support@jag-spoor.co.za`
+target with `Uri.encodeComponent`-safe escaping and dynamic injection of the
+reporter's User ID, the free-text description, and a System Context block.
+
+### Target widget ingestion
+- The two submission widgets are `lib/features/hunter_mode/presentation/
+  bug_report_modal.dart` and `feature_suggestion_modal.dart` (the bottom-sheet
+  forms surfaced from the Hunter Dashboard). Both previously called
+  `FeedbackFirebaseService.launchNativeEmail(subject:, body:)`, which built the
+  mailto URI via `Uri(scheme:'mailto', queryParameters:{subject, body})`.
+  That `Uri.queryParameters` path encodes spaces as `+` and emits
+  raw newlines in some clients, causing the documented line-wrap breaks and
+  literal `+` artifacts in the rendered mail body — and it did not inject any
+  system context.
+
+### Code handler — `SupportEmailComposer`
+- New `lib/features/support/services/support_email_composer.dart`
+  (`SupportEmailComposer`, private ctor — pure static API, dependency-light:
+  `dart:io Platform` + `url_launcher` only, no extra platform plugins so it
+  stays stable on the CI Flutter 3.29.1 pin).
+  - `buildBugReportMailtoUri({userId, title, steps, severity})` and
+    `buildFeatureSuggestionMailtoUri({userId, title, description, benefits})`
+    → return a ready-to-launch `Uri` whose `toString()` is a `mailto:` link
+    with every component percent-encoded.
+  - `_mailtoUri(subject, body)` builds the link explicitly as
+    `mailto:support@jag-spoor.co.za?subject=<enc>&body=<enc>` using
+    **`Uri.encodeComponent`** (not `Uri.queryParameters`), so spaces become
+    `%20` (not `+`), newlines become `%0A`, and `&`/`=` in user text cannot
+    inject a second mailto parameter. This is the encoding every major mobile
+    mail client decodes correctly — prevents the line-wrap breaks and `+`
+    artifacts the prior path produced.
+  - `buildBugReportEmailBody` / `buildFeatureSuggestionEmailBody` (pure
+    functions, no I/O — unit-testable) emit the structured tactical /
+    platform-expansion brief and inject:
+    - **User ID** (`FirebaseAuth.instance.currentUser?.uid ?? 'unknown'`,
+      rendered as `N/A` when blank).
+    - **Description / steps / benefits / severity** as bulleted lines
+      (multi-line input split on `\n`; empty input renders an `N/A` bullet so
+      no field is ever a blank line).
+    - **System Context** block (`systemContextBlock()`) — platform, OS version,
+      locale, CPU core count, app package id, and submission channel, gathered
+      from pure `dart:io Platform` (guarded with a try/catch so a web build
+      where `Platform` throws falls back to `web`/`unknown` rather than
+      crashing). No `package_info_plus`/`device_info_plus` plugin was added —
+      the context is sufficient for triage and keeps the builder unit-testable
+      on the desktop test runner.
+  - `launch(mailtoUri)` hands off to `url_launcher.launchUrl(...,
+    LaunchMode.externalApplication)`; returns whether a mail client accepted
+    the handoff so the caller can surface a "no mail app found" fallback.
+
+### Rewired submission flows
+- `BugReportModal._submitBugReport` and `FeatureSuggestionModal
+  ._submitFeatureSuggestion` now: (1) write the report to Firestore (unchanged
+  — `bug_reports` / `feature_suggestions` collections, stamped with
+  `hunterId` + server timestamp); (2) resolve the current Firebase user id;
+  (3) build the mailto URI via `SupportEmailComposer`; (4) launch the native
+  mail client; (5) on `launched == false` surface an orange "no mail app
+  found — please email support@jag-spoor.co.za manually" snackbar (the report
+  is already persisted, so the user's input is never lost) before popping the
+  sheet; (6) on any exception show the red failure snackbar. `mounted` is
+  guarded before every post-async-gap context use.
+- Removed the now-dead `FeedbackFirebaseService.launchNativeEmail`,
+  `buildBugReportEmailBody`, and `buildFeatureSuggestionEmailBody` (no callers
+  remained) plus its `url_launcher` import; `FeedbackFirebaseService` is now a
+  pure Firestore submission service, with a docstring pointing callers to
+  `SupportEmailComposer` for email generation. This avoids the deprecated
+  duplication and removes the `Uri.queryParameters` encoding path entirely.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0 warnings,
+  0 new infos** in all new/modified files. The single info in a touched file
+  is the pre-existing `DropdownButtonFormField.value` deprecation in
+  `bug_report_modal.dart:183` (only flagged on the local 3.47.0, not the CI
+  3.29.1 pin). Project total 324 infos + 11 warnings — unchanged baseline;
+  `analysis_options.yaml` auto-touched by the analyzer was reverted before
+  commit.
+- **`flutter test`**: `support_email_composer_test.dart` (9 NEW — mailto
+  target, `Uri.encodeComponent` escaping for spaces/newlines/`&`/`=`, User ID
+  + system context injection, empty-field N/A fallback, system-context
+  completeness), all pass. Full suite **255 passed, 4 failed** — the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
+  the changed files, identical to the prior commit.
+- No Firestore / Storage / rules / index / pubspec changes (pure client-side
+  email composition + the existing Firestore writes).
+- Files: `lib/features/support/services/support_email_composer.dart` (NEW),
+  `lib/features/hunter_mode/presentation/bug_report_modal.dart` (rewired),
+  `lib/features/hunter_mode/presentation/feature_suggestion_modal.dart`
+  (rewired),
+  `lib/features/hunter_mode/services/feedback_firebase_service.dart`
+  (dead email helpers removed),
+  `test/support_email_composer_test.dart` (NEW).
+

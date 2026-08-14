@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/features/support/services/support_email_composer.dart';
 import '../services/feedback_firebase_service.dart';
 
 /// BugReportModal provides a bottom sheet form for submitting bug reports.
@@ -40,18 +42,29 @@ class _BugReportModalState extends State<BugReportModal> {
         severity: _selectedSeverity,
       );
 
-      final emailBody = FeedbackFirebaseService.buildBugReportEmailBody(
+      // Build the automated support email (User ID + description + system
+      // context) with Uri.encodeComponent-safe escaping, then hand off to the
+      // native mail client via url_launcher.
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final mailtoUri = SupportEmailComposer.buildBugReportMailtoUri(
+        userId: userId,
         title: _titleController.text.trim(),
         steps: _stepsController.text.trim(),
         severity: _selectedSeverity,
       );
-
-      await service.launchNativeEmail(
-        subject: '[Bug Report] ${_titleController.text.trim()}',
-        body: emailBody,
-      );
+      final launched = await SupportEmailComposer.launch(mailtoUri);
 
       if (!mounted) return;
+      if (!launched) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Report saved. No mail app found — please email support@jag-spoor.co.za manually.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
