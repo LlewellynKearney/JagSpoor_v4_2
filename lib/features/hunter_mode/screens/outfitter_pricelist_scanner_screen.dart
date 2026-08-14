@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../core/services/gemini_config_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/image_service.dart';
 import '../services/pricelist_scanner_service.dart';
@@ -25,6 +26,9 @@ class _OutfitterPricelistScannerScreenState
   final PricelistScannerService _pricelistService =
       PricelistScannerService.instance;
 
+  /// Reactive Gemini key configuration (drives the availability banner).
+  final GeminiConfigService _geminiConfig = GeminiConfigService.instance;
+
   String? _selectedFarmId;
   String? _selectedFarmName;
   bool _isLoading = false;
@@ -38,7 +42,19 @@ class _OutfitterPricelistScannerScreenState
     if (_isManager && UserRoleResolver.instance.assignedFarmId != null) {
       _selectedFarmId = UserRoleResolver.instance.assignedFarmId;
     }
+    // Rebuild the availability banner when a key is set / cleared at runtime.
+    _geminiConfig.addListener(_onGeminiConfigChanged);
     _loadFarms();
+  }
+
+  @override
+  void dispose() {
+    _geminiConfig.removeListener(_onGeminiConfigChanged);
+    super.dispose();
+  }
+
+  void _onGeminiConfigChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadFarms() async {
@@ -172,12 +188,6 @@ class _OutfitterPricelistScannerScreenState
     );
   }
 
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('✅ $message'), backgroundColor: Colors.green),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -221,6 +231,82 @@ class _OutfitterPricelistScannerScreenState
           Text(
             'Extracting... Applying 7.5% Platform Fees...',
             style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Reactive AI-extraction availability banner.
+  ///
+  /// Driven by `GeminiConfigService` (a [ChangeNotifier]); the screen listens
+  /// and rebuilds when a key is set / cleared at runtime. When the key is
+  /// configured from any source (dart-define / env / local storage) the banner
+  /// confirms availability; when no key is configured it surfaces a clear
+  /// "set GEMINI_API_KEY" notice so the outfitter knows why AI extraction is
+  /// unavailable instead of discovering it via a failed scan.
+  Widget _buildAiAvailabilityBanner() {
+    final resolution = _geminiConfig.resolveKey();
+    final configured = resolution.isConfigured;
+    final sourceLabel = switch (resolution.source) {
+      GeminiKeySource.dartDefine => 'compile-time --dart-define',
+      GeminiKeySource.processEnv => 'runtime environment',
+      GeminiKeySource.localStorage => 'local storage',
+      GeminiKeySource.none => 'not configured',
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: configured
+            ? widget.theme.accentColor.withValues(alpha: 0.10)
+            : Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: configured
+              ? widget.theme.accentColor.withValues(alpha: 0.4)
+              : Colors.orange.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            configured ? Icons.check_circle : Icons.key_off_rounded,
+            color: configured ? widget.theme.accentColor : Colors.orange,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  configured
+                      ? 'AI Extraction Ready'
+                      : 'Gemini API Key Not Configured',
+                  style: TextStyle(
+                    color: configured
+                        ? widget.theme.textColor
+                        : Colors.orange.shade800,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  configured
+                      ? 'Source: $sourceLabel. Scans will use Google Gemini Vision.'
+                      : 'Set GEMINI_API_KEY via --dart-define, the runtime env, '
+                            'or local storage to enable AI price-list extraction.',
+                  style: TextStyle(
+                    color: widget.theme.subtitleColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -278,6 +364,9 @@ class _OutfitterPricelistScannerScreenState
             ),
           ),
           const SizedBox(height: 24),
+
+          // Reactive AI-availability banner (driven by GeminiConfigService).
+          _buildAiAvailabilityBanner(),
 
           // Farm Selection
           Text(

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../core/services/gemini_config_service.dart';
 import '../../../core/services/offline_stream_guard.dart';
 import 'gemini_vision_extractor.dart';
 import 'pricelist_text_parser.dart';
@@ -26,11 +27,18 @@ class PricelistScannerService {
   /// Platform commission rate (7.5%)
   static const double platformCommissionRate = 0.075;
 
-  /// Gemini Vision extractor (no-op when `GEMINI_API_KEY` is absent).
+  /// The centralized Gemini API-key resolver (dart-define → env → local
+  /// storage). The extractor reads its key from here.
+  final GeminiConfigService geminiConfig = GeminiConfigService.instance;
+
+  /// Gemini Vision extractor (no-op when `GEMINI_API_KEY` is absent from
+  /// every source). Backed by [geminiConfig].
   final GeminiVisionExtractor _gemini = GeminiVisionExtractor();
 
   /// Whether AI (Gemini Vision) extraction is available in this environment.
-  bool get isAiExtractionAvailable => _gemini.isAvailable;
+  /// Delegates to the centralized [GeminiConfigService] so the scanner screen
+  /// banner and this service agree on availability.
+  bool get isAiExtractionAvailable => geminiConfig.isGeminiApiKeyConfigured;
 
   /// Dynamically extracts price-list line items from the scanned [imageFile]
   /// (image or PDF).

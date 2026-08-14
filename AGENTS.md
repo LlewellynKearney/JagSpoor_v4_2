@@ -3657,3 +3657,153 @@ have a reference config.
 - Files: `.gitignore` (`.vscode` block rewritten), `.vscode/launch.json.example`
   (NEW, tracked). `.vscode/launch.json` (local, gitignored, untracked).
 
+
+## Phase 36 ‚Äî Gemini API Key Configuration & Resolution Fallback (added 2026-08-14)
+
+Items #1 and #2 of the v4.5 to-do: verify the local VS Code launch
+configuration passes `--dart-define=GEMINI_API_KEY=...` correctly, and harden
+the Gemini Vision API key lookup with a three-tier fallback chain plus a
+reactive key-state helper that drives the scanner's "AI extraction
+unavailable" banner.
+
+### 1. Local launch configuration (verified)
+- `.vscode/launch.json` exists locally (created in Phase 35) and is
+  gitignored (`.gitignore:34 .vscode/launch.json`). Its `toolArgs` use the
+  correct VS Code Dart-extension syntax for `--dart-define`:
+  ```json
+  "toolArgs": [ "--dart-define", "GEMINI_API_KEY=..." ]
+  ```
+  (two array elements: the flag, then the `KEY=value` pair). The Flutter
+  tooling concatenates these into `--dart-define=GEMINI_API_KEY=...` at
+  launch, which the new resolver reads via
+  `const String.fromEnvironment('GEMINI_API_KEY')`. The tracked
+  `.vscode/launch.json.example` template carries the sanitized
+  `YOUR_GEMINI_API_KEY_HERE` placeholder so new environment setups have a
+  copy-paste reference.
+
+### 2. Centralized `GeminiConfigService` (NEW)
+- New `lib/core/services/gemini_config_service.dart` ‚Äî the single source of
+  truth for the Gemini API key, implementing the spec's three-tier fallback
+  chain in priority order:
+  1. **`const String.fromEnvironment('GEMINI_API_KEY')`** ‚Äî the
+     `--dart-define` value baked in at **compile** time (highest priority;
+     the canonical way to ship a key in a release build).
+  2. **`Platform.environment['GEMINI_API_KEY']`** ‚Äî the runtime process env,
+     used by desktop / CI runners (`flutter test`, `flutter run -d
+     linux/windows`) and by `flutter run --dart-define=...` on mobile. The
+     accessor is guarded with try/catch so it is safe on web (where
+     `Platform.environment` throws).
+  3. **Local storage (SharedPreferences key `jagspoor_gemini_api_key`)** ‚Äî
+     the runtime fallback when `--dart-define` was omitted at compile time.
+     An admin / the user can set it at runtime via `setApiKey`; it persists
+     across launches. (Firebase Remote Config was NOT added as a dependency
+     ‚Äî it is not in `pubspec.yaml` and adding it risks the iOS SPM/CocoaPods
+     build skew documented in the CI section; `shared_preferences` is already
+     a dependency and already used for theme + battery-saver persistence, so
+     the local-storage fallback is dependency-light and CI-safe.)
+- **Reactive state**: `GeminiConfigService extends ChangeNotifier` (process-
+  wide singleton via `GeminiConfigService.instance`, mirroring
+  `ThemeController.instance`). `setApiKey` / `clearApiKey` / `reset` call
+  `notifyListeners()`, so the scanner banner rebuilds the instant a key is
+  set or cleared at runtime.
+- **Helper**: `bool get isGeminiApiKeyConfigured` (returns whether a
+  non-empty key was resolved from any source) drives the banner state
+  reactively. `resolveKey()` returns a `GeminiKeyResolution` carrying the
+  key + a `GeminiKeySource` enum (`dartDefine` / `processEnv` /
+  `localStorage` / `none`) so the banner can show the *source* too.
+- **Testability**: `resolveKey()` is pure given the injected env accessor +
+  the cached stored key (no I/O), so it is fully unit-testable without a
+  live SharedPreferences / platform environment. `String.fromEnvironment`
+  is a `const` that cannot be toggled per-test, so `injectForTesting`
+  accepts a `compiledKey` override to exercise the dartDefine branch
+  deterministically. The cached resolution is invalidated on
+  `setApiKey`/`reset`. `GeminiKeyResolution.toString()` **redacts** the key
+  (logs `<redacted>` / `<empty>`) so diagnostics never leak the secret.
+- `init()` loads the persisted local-storage key once at startup (called in
+  `main()` before `runApp`, alongside `ThemeController.init` /
+  `MeasurementFormatter.init`), so the banner reflects the saved key on the
+  first frame.
+
+### 3. Wiring
+- **`GeminiVisionExtractor`** (`gemini_vision_extractor.dart`): the ctor
+  previously read `Platform.environment['GEMINI_API_KEY'] ?? ''` directly.
+  Rewired: an explicit ctor `apiKey` still wins (for tests), otherwise the
+  key is resolved from `GeminiConfigService` (an injectable
+  `configService` param defaults to the singleton). `isAvailable` /
+  `_apiKey` now reflect the centralized resolver, so the dart-define + env +
+  local-storage fallbacks all apply. The `StateError` "key not configured"
+  guard on `extract()` is unchanged (callers still surface a clear message
+  instead of faking results).
+- **`PricelistScannerService`** (`pricelist_scanner_service.dart`):
+  `isAiExtractionAvailable` now delegates to
+  `geminiConfig.isGeminiApiKeyConfigured` (exposes the `GeminiConfigService`
+  instance as `geminiConfig` so the screen can listen to it), so the
+  service and the banner agree on availability.
+- **`outfitter_pricelist_scanner_screen.dart`**: the screen State is now a
+  `GeminiConfigService` listener (`addListener` in `initState`,
+  `removeListener` in `dispose`, `setState` on change). A new
+  `_buildAiAvailabilityBanner()` renders a reactive card above the farm
+  selector:
+  - **Configured** (any source) ‚Üí green/accent card: "AI Extraction Ready"
+    + the source label ("compile-time --dart-define" / "runtime
+    environment" / "local storage").
+  - **Not configured** ‚Üí orange card: "Gemini API Key Not Configured" +
+    guidance to set `GEMINI_API_KEY` via `--dart-define`, the runtime env,
+    or local storage.
+  So the outfitter knows *why* AI extraction is unavailable before
+  attempting a scan, instead of discovering it via a failed scan. The dead
+  `_showSuccess` helper (pre-existing `unused_element` warning since
+  Phase 4) was removed while editing the file.
+- **`main.dart`**: `await GeminiConfigService.instance.init()` added to the
+  startup sequence (after `MeasurementFormatter.init()`, before Firebase
+  init) + the import.
+
+### 4. Tests
+- `test/gemini_config_service_test.dart` (NEW, 20 tests, all pass):
+  - **Fallback priority** (4): dart-define wins over env+local; env wins
+    when dart-define absent; local storage wins when dart-define+env
+    absent; none when all absent.
+  - **Empty/whitespace handling** (3): empty env falls through to local
+    storage; null env falls through; whitespace env pins the contract.
+  - **`isGeminiApiKeyConfigured`** (4): true for each of the three sources,
+    false when none.
+  - **ChangeNotifier reactivity** (5): `notifyListeners` fires on
+    `setApiKey` / `clearApiKey` / `reset`; `setApiKey` trims whitespace;
+    empty-string `setApiKey` clears.
+  - **Resolution caching** (2): `resolveKey` returns the same instance
+    (cached); `setApiKey` invalidates the cache.
+  - **Redaction** (2): `toString` redacts a configured key, shows `<empty>`
+    for an unconfigured one.
+
+### 5. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings** in all changed/new files
+  (`gemini_config_service.dart`, `gemini_vision_extractor.dart`,
+  `pricelist_scanner_service.dart`,
+  `outfitter_pricelist_scanner_screen.dart`, `main.dart`, the test file).
+  The only remaining issues in touched files are the **pre-existing**
+  `avoid_print` infos (debug `print()` calls in
+  `pricelist_scanner_service.dart`, documented since Phase 4) and the
+  pre-existing `deprecated_member_use` infos (`androidProvider` /
+  `appleProvider` in `main.dart`). Project total: **0 errors, 113 issues**
+  (lib/ only) ‚Äî down 1 from the Phase-35 114-issue baseline because the
+  dead `_showSuccess` removal dropped one `unused_element` warning.
+  `analysis_options.yaml` auto-touched by the analyzer / pub get was
+  reverted before commit.
+- **`flutter test`** (full suite): **388 passed, 4 failed** ‚Äî the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; +20 vs the Phase-34 368-pass baseline (exactly
+  the new Gemini config tests).
+- No Firestore / Storage / rules / index / pubspec changes (pure client-side
+  configuration + UI; `shared_preferences` was already a dependency).
+- Files: `lib/core/services/gemini_config_service.dart` (NEW),
+  `lib/features/hunter_mode/services/gemini_vision_extractor.dart`
+  (resolves key via `GeminiConfigService`),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (`isAiExtractionAvailable` delegates to `geminiConfig`),
+  `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`
+  (reactive availability banner + listener + dead helper removed),
+  `lib/main.dart` (`GeminiConfigService.instance.init()` + import),
+  `test/gemini_config_service_test.dart` (NEW, 20 tests).
+

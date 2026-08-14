@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:google_generative_ai/google_generative_ai.dart';
 
+import '../../../core/services/gemini_config_service.dart';
 import 'pricelist_text_parser.dart';
 
 /// Gemini Vision-backed extractor for South African hunting price lists.
@@ -15,17 +16,33 @@ import 'pricelist_text_parser.dart';
 /// [PricelistTextParser] so Afrikaans names map to the project's canonical
 /// system species IDs while the original scanned label is preserved.
 ///
-/// Requires the `GEMINI_API_KEY` environment variable (or a key passed to
-/// [GeminiVisionExtractor]). When no key is configured the extractor is
-/// considered unavailable ([isAvailable] returns false) and callers should
-/// surface a clear message instead of faking results.
+/// The API key is resolved through the centralized [GeminiConfigService]
+/// three-tier fallback chain:
+///  1. `--dart-define=GEMINI_API_KEY=...` (compile-time).
+///  2. `Platform.environment['GEMINI_API_KEY']` (desktop / CI runtime env).
+///  3. Local storage (SharedPreferences `jagspoor_gemini_api_key`) runtime
+///     fallback when `--dart-define` was omitted at compile time.
+/// When no key is configured from any source the extractor is considered
+/// unavailable ([isAvailable] returns false) and callers should surface a
+/// clear message instead of faking results.
 class GeminiVisionExtractor {
-  GeminiVisionExtractor({String? apiKey, String model = 'gemini-1.5-flash'})
-      : _apiKey = apiKey ?? Platform.environment['GEMINI_API_KEY'] ?? '',
-        _model = model;
+  /// Optional explicit key (overrides the resolver, used by tests). When
+  /// null the key is resolved from [GeminiConfigService].
+  GeminiVisionExtractor({
+    String? apiKey,
+    String model = 'gemini-1.5-flash',
+    GeminiConfigService? configService,
+  })  : _explicitKey = apiKey,
+        _model = model,
+        _configService = configService;
 
-  final String _apiKey;
+  final String? _explicitKey;
   final String _model;
+  final GeminiConfigService? _configService;
+
+  /// The resolved API key: an explicit ctor key wins, otherwise the
+  /// [GeminiConfigService] resolver (dart-define → env → local storage).
+  String get _apiKey => _explicitKey ?? (_configService ?? GeminiConfigService.instance).apiKey;
 
   bool get isAvailable => _apiKey.isNotEmpty;
 

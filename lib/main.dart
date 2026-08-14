@@ -11,6 +11,7 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/splash_screen.dart';
 import 'core/services/firestore_bootstrap.dart';
+import 'core/services/gemini_config_service.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/auth/widgets/role_guarded_route.dart';
@@ -40,6 +41,12 @@ Future<void> main() async {
   // Load persisted Metric/Imperial unit preference before runApp so screens
   // format measurements with the user's saved system on the first frame.
   await MeasurementFormatter.instance.init();
+
+  // Load the persisted runtime Gemini API key (local-storage fallback) before
+  // runApp so the AI scanner's availability banner reflects the saved key on
+  // the first frame. The compile-time `--dart-define` and process-env sources
+  // are read lazily; this only seeds the SharedPreferences fallback.
+  await GeminiConfigService.instance.init();
 
   try {
     await Firebase.initializeApp(
