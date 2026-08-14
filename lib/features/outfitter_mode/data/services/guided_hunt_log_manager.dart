@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../../shared/data/services/local_database_service.dart';
 import '../models/carcass_record.dart';
@@ -33,6 +32,15 @@ class GuidedHuntLogManager {
   String? get _currentUid => _auth.currentUser?.uid;
 
   /// Reactive list of hunt logs for the signed-in outfitter.
+  ///
+  /// Errors are deliberately NOT swallowed here: a hard failure (e.g.
+  /// permission-denied when the `guided_hunt_logs` rules have not yet been
+  /// deployed, or a missing composite index) is propagated to the consuming
+  /// `StreamBuilder` so the screen can render an explicit error state with a
+  /// retry button instead of an infinite spinner. (The previous
+  /// `.handleError` callback returned a value that `handleError` ignores —
+  /// silently dropping the error and leaving the stream emitting nothing,
+  /// which froze the UI on the loading spinner forever.)
   Stream<List<GuidedHuntLog>> getMyHuntLogsStream() {
     final uid = _currentUid;
     if (uid == null) return Stream.value(const <GuidedHuntLog>[]);
@@ -49,10 +57,6 @@ class GuidedHuntLogManager {
             }
           }
           return out;
-        })
-        .handleError((e) {
-          debugPrint('GuidedHuntLogManager.getMyHuntLogsStream error: $e');
-          return const <GuidedHuntLog>[];
         });
   }
 

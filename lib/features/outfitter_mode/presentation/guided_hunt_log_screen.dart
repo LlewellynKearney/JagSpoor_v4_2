@@ -30,10 +30,28 @@ class _GuidedHuntLogScreenState extends State<GuidedHuntLogScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
+  /// Cached hunt-logs stream. Rebuilt on retry so the [StreamBuilder]
+  /// re-subscribes (a fresh `.snapshots()` instance) — this is what stops the
+  /// indefinite loading loop on a hard stream error: tapping RETRY creates a
+  /// new stream and re-evaluates the subscription.
+  Stream<List<GuidedHuntLog>>? _logsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _logsStream = _manager.getMyHuntLogsStream();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _retry() {
+    setState(() {
+      _logsStream = _manager.getMyHuntLogsStream();
+    });
   }
 
   List<GuidedHuntLog> _filter(List<GuidedHuntLog> logs) {
@@ -87,17 +105,19 @@ class _GuidedHuntLogScreenState extends State<GuidedHuntLogScreen> {
           ),
           Expanded(
             child: StreamBuilder<List<GuidedHuntLog>>(
-              stream: _manager.getMyHuntLogsStream(),
+              stream: _logsStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return _EmptyState(
+                  return _ErrorState(
                     theme: theme,
-                    icon: Icons.error_outline_rounded,
-                    title: 'Could not load hunt logs',
-                    message: snapshot.error.toString(),
+                    message:
+                        'Could not load your guided hunt logs. This is '
+                        'usually a permission or connection issue.',
+                    detail: snapshot.error.toString(),
+                    onRetry: _retry,
                   );
                 }
                 final all = snapshot.data ?? const <GuidedHuntLog>[];
@@ -160,13 +180,31 @@ class _GuidedHuntLogScreenState extends State<GuidedHuntLogScreen> {
         existing: existing,
         clients: clients,
         onSave: (log) async {
-          Navigator.of(context).pop();
-          if (existing == null) {
-            await _manager.addHuntLog(log);
-            _snack('Hunt log recorded');
-          } else {
-            await _manager.updateHuntLog(log);
-            _snack('Hunt log updated');
+          final messenger = ScaffoldMessenger.of(context);
+          final navigator = Navigator.of(context);
+          try {
+            if (existing == null) {
+              await _manager.addHuntLog(log);
+              navigator.pop();
+              _snack('Hunt log recorded');
+            } else {
+              await _manager.updateHuntLog(log);
+              navigator.pop();
+              _snack('Hunt log updated');
+            }
+          } catch (e) {
+            // Permission-denied (rules not deployed) or network failure:
+            // surface a user-facing snackbar and KEEP the editor sheet open so
+            // the user can retry instead of losing their input to a raw
+            // unhandled crash.
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('⚠️ Failed to save hunt log: $e'),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 5),
+              ),
+            );
           }
         },
       ),
@@ -236,9 +274,21 @@ class _GuidedHuntLogScreenState extends State<GuidedHuntLogScreen> {
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.of(context).pop();
-              await _manager.deleteHuntLog(log.id);
-              _snack('Hunt log deleted');
+              try {
+                await _manager.deleteHuntLog(log.id);
+                _snack('Hunt log deleted');
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('⚠️ Failed to delete hunt log: $e'),
+                    backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
             },
             child: const Text('DELETE'),
           ),
@@ -777,6 +827,70 @@ class _EmptyState extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: theme.subtitleColor, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Error state for the guided hunt logs stream. Rendered (instead of the
+/// indefinite spinner) when `getMyHuntLogsStream` errors — e.g. a
+/// permission-denied because the `guided_hunt_logs` Firestore rules have not
+/// been deployed, or a missing composite index. The RETRY button rebuilds
+/// the stream so the [StreamBuilder] re-subscribes.
+class _ErrorState extends StatelessWidget {
+  final ThemeController theme;
+  final String message;
+  final String detail;
+  final VoidCallback onRetry;
+
+  const _ErrorState({
+    required this.theme,
+    required this.message,
+    required this.detail,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded,
+                size: 64, color: theme.subtitleColor.withAlpha(120)),
+            const SizedBox(height: 16),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.accentColor,
+                foregroundColor: theme.backgroundColor,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('RETRY'),
+              onPressed: onRetry,
+            ),
           ],
         ),
       ),

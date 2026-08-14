@@ -253,9 +253,19 @@ service cloud.firestore {
     }
 
     // Guided hunt logs (outfitterId). Each harvest log is scoped to the
-    // issuing outfitter and assigned to a client from the roster.
+    // issuing outfitter and assigned to a client from the roster. Access
+    // control is owner-scoped: the outfitter named in `outfitterId` (== the
+    // signed-in caller for creates, since `addHuntLog` stamps
+    // `outfitterId = auth.uid`) may read + write their own logs; admins
+    // retain full access for support/oversight. Split into explicit
+    // read/create/update/delete so the policy is unambiguous and survives
+    // the default-deny fallback before these rules are deployed.
     match /guided_hunt_logs/{logId} {
-      allow read, write: if ownerOrAdmin('outfitterId');
+      allow read: if ownerOrAdmin('outfitterId');
+      allow create: if isSignedIn()
+        && request.resource.data.outfitterId == request.auth.uid
+        || isAdmin();
+      allow update, delete: if ownerOrAdmin('outfitterId');
     }
 
     // Spoor scans (userId). Private to the scanning hunter.

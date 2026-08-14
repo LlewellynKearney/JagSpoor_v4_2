@@ -2093,3 +2093,98 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
   credentialed env to activate the (already-correct) `client_roster` rules.
 
+
+## Phase 17 — Guided Hunt Logs: Firestore permission rules + stream error recovery UI (added 2026-08-14)
+
+Applies the same hardening pattern as Phase 16 (Client Roster) to the
+`guided_hunt_logs` collection — the parallel outfitter harvest-log screen
+had the identical two bugs.
+
+### Firestore security rules alignment
+- Split the `guided_hunt_logs` match block from
+  `allow read, write: if ownerOrAdmin('outfitterId')` into explicit
+  `read` / `create` / `update, delete`:
+  - `read: ownerOrAdmin('outfitterId')` — outfitter sees only their own
+    logs; admin full access.
+  - `create: isSignedIn() && request.resource.data.outfitterId == auth.uid
+    || isAdmin()` — a signed-in outfitter may create a doc whose
+    `outfitterId` is their own uid (which `addHuntLog` stamps), or an admin
+    may create for any outfitter.
+  - `update, delete: ownerOrAdmin('outfitterId')` — only the owning
+    outfitter (or admin) may mutate.
+  Functionally equivalent to the previous allowance for the legitimate
+  create path, but now unambiguous and survives the default-deny fallback
+  once deployed.
+- **Composite index** `guided_hunt_logs (outfitterId ASC, huntDate DESC)` is
+  present in `firestore.indexes.json` (added Phase 9), so the stream query
+  doesn't error on a missing index.
+- Deploy reminder: until `firestore:rules` is deployed in a credentialed
+  env, the default-deny still rejects `guided_hunt_logs` writes — but now
+  the app surfaces a graceful snackbar instead of crashing.
+
+### Stream hardening & error handling (manager)
+- **Root cause of the infinite spinner**: `GuidedHuntLogManager
+  .getMyHuntLogsStream` ended with `.handleError((e) { debugPrint(...);
+  return const <GuidedHuntLog>[]; })`. `Stream.handleError`'s callback
+  **return value is ignored** — it only *discards* the error and continues
+  the subscription; it does NOT emit the returned `[]`. So when the
+  Firestore `.snapshots()` stream errored (permission-denied / missing
+  index), the error was silently swallowed and the stream never emitted
+  data or a done event → the `StreamBuilder` stayed in
+  `ConnectionState.waiting` **forever** → the `CircularProgressIndicator`
+  spun indefinitely. (The `snapshot.hasError` branch was dead code — the
+  error never reached it.)
+- **Fix**: removed the buggy `.handleError` so hard errors **propagate** to
+  the consuming `StreamBuilder`. The null-uid → `Stream.value([])` guard is
+  retained. Errors are no longer swallowed (documented in the method
+  dartdoc). The unused `package:flutter/foundation.dart` import (only there
+  for `debugPrint`) was removed.
+
+### UI error state & retry surface (screen)
+- The screen now caches the stream in a `Stream<List<GuidedHuntLog>>?
+  _logsStream` field (assigned in `initState`). A `_retry()` method rebuilds
+  a **fresh** stream (`getMyHuntLogsStream()` returns a new `.snapshots()`
+  instance) and `setState`s, so the `StreamBuilder` re-subscribes on demand.
+- The `StreamBuilder`'s `snapshot.hasError` branch now renders a dedicated
+  `_ErrorState` widget (cloud-off icon + message + the error detail + a
+  **RETRY** `FilledButton` calling `_retry`) instead of an `error_outline`
+  empty-state. So on a permission/index error the spinner stops and the user
+  gets an actionable retry surface — no more indefinite loop and no silent
+  "no logs" masquerade.
+- **Write-error handling**: the editor sheet's `onSave` callback previously
+  popped the sheet *before* `await addHuntLog`/`updateHuntLog`, so a
+  permission-denied `FirebaseException` propagated unhandled and crashed.
+  Rewrote `onSave` to capture `ScaffoldMessenger` + `Navigator` before the
+  async gap, `await` the write, `pop()` + success snackbar only on success,
+  and on `catch` show a floating red `⚠️ Failed to save hunt log: …`
+  snackbar while keeping the editor sheet open so the user can retry without
+  losing input. The same try/catch + snackbar was applied to the
+  `_confirmDelete` DELETE action (which likewise popped before awaiting with
+  no error handling).
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0): **0 errors, 0 warnings, 0
+  infos introduced** in changed files. The 2 `deprecated_member_use` infos
+  (`DropdownButtonFormField.value`) in the editor sheet are **pre-existing**
+  (unrelated to this change; only flagged on the local 3.47.0, not the CI
+  pin 3.29.1). Project total 316 infos + 13 warnings — unchanged baseline.
+  `analysis_options.yaml` auto-touched by the analyzer was reverted before
+  commit.
+- **`flutter test`**: `outfitter_client_roster_test` (6 — covers both
+  `ClientProfile` and `GuidedHuntLog` model round-trips) +
+  `offline_stream_guard_test` (5) all pass. Full suite **223 passed, 4
+  failed** — the 4 failures are the documented pre-existing baseline
+  (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+  `bluetooth_mesh`), none touch the changed files, identical to the prior
+  commit.
+- Files: `lib/features/outfitter_mode/presentation/guided_hunt_log_screen.dart`
+  (cached stream + retry, `_ErrorState`, save/delete try/catch),
+  `lib/features/outfitter_mode/data/services/guided_hunt_log_manager.dart`
+  (removed `.handleError` + unused import), `firestore.rules`
+  (`guided_hunt_logs` explicit split). No index / Storage / pubspec changes
+  (index already present; pure UI + rules-explicitness + error-handling
+  pass).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate the (already-correct) `guided_hunt_logs`
+  rules.
+
