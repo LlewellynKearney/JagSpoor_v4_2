@@ -1,4 +1,4 @@
-# JagSpoor ‚Äî Agent Memory
+# JagSpoor -- Agent Memory
 
 ## Canonical project context (added 2026-08-12)
 
@@ -14,14 +14,14 @@
 ## Backend / Firebase infrastructure (added 2026-08-11)
 
 - A `functions/` Cloud Functions source tree now exists (TypeScript, `firebase-functions` v2 API,
-  Node 22 runtime). Build: `cd functions && npx tsc` ‚Üí emits `functions/lib/`.
+  Node 22 runtime). Build: `cd functions && npx tsc` -> emits `functions/lib/`.
 - Two exported functions in `functions/src/index.ts`:
-  - `payfastITNHandler` ‚Äî HTTPS `onRequest`, public invoker, region `us-central1`.
+  - `payfastITNHandler` -- HTTPS `onRequest`, public invoker, region `us-central1`.
     Validates PayFast ITN md5 signature (constant-time compare), calls PayFast's
     `validate` endpoint server-to-server, then on `payment_status==COMPLETE` updates
-    `bookings/{m_payment_id}` ‚Üí `status:'Paid'`, `paymentTimestamp`, `payfastpfPaymentId`.
+    `bookings/{m_payment_id}` -> `status:'Paid'`, `paymentTimestamp`, `payfastpfPaymentId`.
     Reads `PAYFAST_PASSPHRASE` env var for signature generation.
-  - `adminCreateOutfitter` ‚Äî `onCall`, region `us-central1`. Requires caller
+  - `adminCreateOutfitter` -- `onCall`, region `us-central1`. Requires caller
     `auth.token.admin == true`. Creates a new Auth user (Admin SDK, does NOT log out
     caller), writes `/outfitters/{uid}` doc, sets `{ role:'outfitter' }` custom claims.
     Rolls back Auth user on doc/claims failure.
@@ -49,10 +49,10 @@
 ## Environment constraints (this sandbox)
 
 - `firebase-tools` v15.26.0 installed locally (`npx firebase-tools`); NOT global.
-- **No Firebase credentials available** ‚Äî `FIREBASE_TOKEN`/service account absent;
+- **No Firebase credentials available** -- `FIREBASE_TOKEN`/service account absent;
   `firebase projects:list` returns 401 "No OAuth tokens found". Deployment must be run
   in an environment with `firebase login` or `FIREBASE_TOKEN` set.
-- **No Java/JVM** ‚Äî Firestore emulator cannot run here, so `@firebase/rules-unit-testing`
+- **No Java/JVM** -- Firestore emulator cannot run here, so `@firebase/rules-unit-testing`
   cannot execute; rules were validated structurally (JSON valid, default-deny present,
   `tsc` clean) but not via emulator integration tests.
 - PayFast signature logic was unit-tested in isolation (round-trip + tamper detection pass).
@@ -66,11 +66,11 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 # Set PayFast passphrase: npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
 ```
 
-## Trophy Inventory ‚Äî measurements, photos, stock-by-farm (added 2026-08-12)
+## Trophy Inventory -- measurements, photos, stock-by-farm (added 2026-08-12)
 
 - Trophy Inventory form (`outfitter_trophy_stock_screen.dart`) gained:
   - **Trophy Measurement** field (`_measurementController`, decimal, `in` suffix)
-    ‚Üí passed as `trophyMeasurement` (double?) to
+    -> passed as `trophyMeasurement` (double?) to
     `OutfitterEnterpriseManager.syncTrophyStock`, which stores it under BOTH
     `trophyMeasurement` and `trophyLengthInches` aliases for read compatibility.
   - **Multi-photo attachments (up to 3)**: `List<XFile> _pickedPhotos` filled via
@@ -90,12 +90,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     synced".
   - Rewrote the list to actually GROUP by `farmId` (the section is titled
     "Current Stock by Farm"): nested `FutureBuilder` fetches the outfitter's
-    farms once into a `farmId ‚Üí name` map; each farm card shows a per-farm total
+    farms once into a `farmId -> name` map; each farm card shows a per-farm total
     badge + per-species breakdown rows (count, price, measurement, photo count).
     The trophy stream is already reactive (`snapshots()`), so the grouped tally
     updates immediately when a new trophy is added.
 - `syncTrophyStock` got new optional params `trophyMeasurement` and
-  `trophyPhotoUrls` (both omitted ‚Üí no field written). Docstring updated.
+  `trophyPhotoUrls` (both omitted -> no field written). Docstring updated.
 - Deploy reminder: new `trophies` index + `storage.rules` change need deployment
   (`npx firebase-tools deploy --only firestore:indexes,storage`). Until the
   index is deployed the stock query falls back to the now-surfaced error UI.
@@ -103,14 +103,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
   `firestore.indexes.json`, `storage.rules`.
 
-## Enterprise Control Panel ‚Äî farms & managers (fixed 2026-08-12)
+## Enterprise Control Panel -- farms & managers (fixed 2026-08-12)
 
 - "No farms registered" bug on the Enterprise Control Panel was caused by the
   `Registered Farms` stream query using
   `.where('outfitterId', isEqualTo: uid).orderBy('createdAt', descending: true)`
   with **no matching composite index** in `firestore.indexes.json`. The equality
   + orderBy combo requires a composite index in Firestore; without it the query
-  errors ‚Äî and the `StreamBuilder` only handled `ConnectionState.waiting`,
+  errors -- and the `StreamBuilder` only handled `ConnectionState.waiting`,
   silently treating the errored snapshot as empty and rendering "No farms
   registered" even when farms existed.
 - Fixes:
@@ -123,7 +123,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Manager cell number: `Assign Farm Manager` block now has a dedicated
   `Cell Phone Number` (`_managerCellController`) `TextFormField` (phone
   keyboard, validator stripping `+ - ( )` and requiring ‚â•9 digits). The value is
-  passed through `_assignManager` ‚Üí `OutfitterEnterpriseManager.assignManager()`
+  passed through `_assignManager` -> `OutfitterEnterpriseManager.assignManager()`
   (new required `managerCell` param) and persisted to the `farm_managers` doc as
   BOTH `managerCell` and `cellNr` fields (covers either read convention).
 - Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
@@ -139,36 +139,36 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Black-preview bug on Blood Trail Tracker Radar was caused by capture-session
   contention: `CameraController.dispose()` was called without first stopping
   the image stream, the controller reference wasn't nullified, and there was
-  no delay between sessions ‚Äî so Android's Camera2 driver couldn't finish
+  no delay between sessions -- so Android's Camera2 driver couldn't finish
   `waitUntilIdle()` / free the `SurfaceTexture` before the next screen opened
   a fresh session against a half-released surface.
 - Both camera screens now follow the same release contract:
-  - `_releaseCamera()` helper: `await _stopImageStream()` ‚Üí nullify the
-    controller ref ‚Üí `await controller.dispose()` in a try/catch. Safe to
+  - `_releaseCamera()` helper: `await _stopImageStream()` -> nullify the
+    controller ref -> `await controller.dispose()` in a try/catch. Safe to
     call repeatedly.
   - `dispose()` calls `_releaseCamera()` (fire-and-forget) so the session is
     torn down before the State is destroyed.
   - `didChangeAppLifecycleState` (both states are now `WidgetsBindingObserver`):
-    on `inactive`/`paused` ‚Üí `_releaseCamera()` + clear `_isInitialized`;
-    on `resumed` ‚Üí `_initializeCamera(withHardwareDelay: true)`.
+    on `inactive`/`paused` -> `_releaseCamera()` + clear `_isInitialized`;
+    on `resumed` -> `_initializeCamera(withHardwareDelay: true)`.
   - `_initializeCamera({withHardwareDelay})`: 300ms `Future.delayed` before
     re-init so Camera2 can release the surface; `_releaseCamera()` before
     creating a fresh controller; inner try-catch around `initialize()` that
     releases + waits 300ms + retries once on failure; outer catch clears the
     error state; `_isInitializing` re-entrancy guard.
 - Files: `lib/features/hunter_mode/screens/blood_tracker_screen.dart`
-  (image-stream screen ‚Äî stream stop is essential), `lib/features/track/
-  presentation/spoor_detection_hud_screen.dart` (takePicture screen ‚Äî was
+  (image-stream screen -- stream stop is essential), `lib/features/track/
+  presentation/spoor_detection_hud_screen.dart` (takePicture screen -- was
   missing observer/lifecycle entirely; now has them).
 
 ## Contextual info icons (added 2026-08-12)
 
 - Reusable `lib/core/widgets/contextual_info_icon.dart`:
-  - `ContextualInfoIcon` ‚Äî compact `IconButton` showing `info_outline` tinted
+  - `ContextualInfoIcon` -- compact `IconButton` showing `info_outline` tinted
     with the theme accent (override via `iconColor`); taps open an
     `ExplanationDialog`. Props: `title`, `description`,
     `concepts: List<ExplanationConcept>`, optional `iconColor`/`iconSize`.
-  - `ExplanationDialog` ‚Äî `showModalBottomSheet` (scrollable, theme-coloured)
+  - `ExplanationDialog` -- `showModalBottomSheet` (scrollable, theme-coloured)
     rendering Title, Description, a KEY CONCEPTS breakdown of
     `(label, detail)` rows, and a "GOT IT" dismiss action.
     Call via `ExplanationDialog.show(context, title:, description:, concepts:)`.
@@ -186,19 +186,19 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     Thresholding (Hue Tolerance, Min Saturation, Min Value for haemoglobin
     contrast in bush light).
   - **Admin Portal & Analytics**: `outfitter_revenue_screen.dart` (Gross Revenue
-    vs Platform Commission ‚Äî gross √ó 0.05 fee, net = gross ‚àí fee),
+    vs Platform Commission -- gross √ó 0.05 fee, net = gross ‚àí fee),
     `bulk_csv_import_screen.dart` (CSV column spec: email, fullName, role,
     phoneNumber).
 
 ## Universal PDF Document Engine (added 2026-08-12, Phase 6)
 
 - Central reusable PDF template service: `lib/core/services/pdf_document_engine.dart`.
-  - `JagSpoorPdfTheme` ‚Äî static tactical Earth/Gold palette matching the app:
+  - `JagSpoorPdfTheme` -- static tactical Earth/Gold palette matching the app:
     `accent` `#C68B59` (Warm Gold/Bronze), `accentGold` `#D4AF37` (Brushed Gold),
     `deepBrown` `#795548`, `darkSlate` text, `band`/`cream` backgrounds,
     `divider`, `white`. Text styles: `body`, `caption`, `label`, `value`,
     `sectionTitle`.
-  - `JagSpoorPdfDocument` ‚Äî async builder wrapper. `create(title:, documentId:)`
+  - `JagSpoorPdfDocument` -- async builder wrapper. `create(title:, documentId:)`
     loads the branded logo asset (`assets/app logo/logo1.png`) once via root
     bundle and caches it on the instance so every page reuses the same bytes.
     `addPage(margin:, content:)` appends a `pw.MultiPage` with the standard
@@ -211,33 +211,33 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `sectionBar(title)`, `detailBox(rows)`, `infoRow(label, value)`,
     `currencyRow(label, amount, {emphasis, bold})`, `dataTable(headers,
     columnWidths, rows)`, `signatureBlock(label, imageBytes, width, height)`,
-    `formatZAR(double)` ‚Üí "R 1 234.56", `formatDate(DateTime?)` ‚Üí "YYYY-MM-DD".
+    `formatZAR(double)` -> "R 1 234.56", `formatDate(DateTime?)` -> "YYYY-MM-DD".
 - Exporters using the engine (consistent branded header/footer across the
   whole document line):
-  - **Venison Transport & Hunt Permit** ‚Äî `lib/features/hunter_mode/services/
+  - **Venison Transport & Hunt Permit** -- `lib/features/hunter_mode/services/
     venison_permit_pdf_exporter.dart` (NEW). Fetches hunter + outfitter
     signature images from Firebase Storage URLs via `http` and embeds them.
     Wired via `onExport` callback into the permit list details sheet.
-  - **Booking Invoice / Confirmation** ‚Äî `lib/features/hunter_mode/services/
+  - **Booking Invoice / Confirmation** -- `lib/features/hunter_mode/services/
     outfitter_invoice_exporter.dart` (REFACTORED). Now takes the raw booking
     map + bookingId; fetches the linked `packages` doc to recover the
     itemized line-item / species / all-inclusive breakdown, prints the 7.5%
     platform commission row, the 25% non-refundable deposit status + balance,
     and any date-change request history. Call site in
     `outfitter_booking_dashboard_screen.dart` updated to pass `bookingData`.
-  - **Trophy Inventory Report** ‚Äî `lib/features/hunter_mode/services/
+  - **Trophy Inventory Report** -- `lib/features/hunter_mode/services/
     trophy_inventory_report_exporter.dart` (NEW). Farm-grouped trophy stock
     (species, qty, price/animal, measurement in inches, photo count) +
     inventory summary. Wired via AppBar PDF icon in
     `outfitter_trophy_stock_screen.dart`.
-  - **Revenue & Farm Analytics Report** ‚Äî `lib/features/hunter_mode/services/
+  - **Revenue & Farm Analytics Report** -- `lib/features/hunter_mode/services/
     revenue_analytics_report_exporter.dart` (NEW). Gross revenue, 7.5%
     platform fees, net earnings, enterprise metrics, and a farm-manager
     directory. Wired via AppBar PDF icon in `outfitter_revenue_screen.dart`.
-  - **SA Game Transport Permit** ‚Äî `lib/features/hunter_mode/services/
+  - **SA Game Transport Permit** -- `lib/features/hunter_mode/services/
     transport_permit_pdf_exporter.dart` (REFACTORED to engine; Sections A‚ÄìE
     + signature blocks).
-  - **Slaughterhouse / Meat Processing Manifest** ‚Äî `lib/features/hunter_mode/
+  - **Slaughterhouse / Meat Processing Manifest** -- `lib/features/hunter_mode/
     services/meat_processing_exporter.dart` (REFACTORED to engine).
 - Remaining exporters NOT yet migrated to the engine (still use legacy
   per-page layout): `SapsPdfGenerator`, `FirearmPdfGenerator`,
@@ -246,20 +246,20 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Asset note: the header logo path `assets/app logo/logo1.png` is already
   declared under `flutter.assets` in `pubspec.yaml` (and used for the app icon).
 - `flutter analyze`: 0 errors, 14 warnings, 319 infos (unchanged from Phase 5
-  baseline ‚Äî no new issues introduced).
+  baseline -- no new issues introduced).
 
 ## Superuser 3-mode instant switcher (added 2026-08-12)
 
 - Reusable widget `lib/features/admin/widgets/admin_mode_switcher.dart`:
   - `AdminMode` enum: `hunter`, `outfitter`, `admin`.
-  - `AdminModeSwitcher` ‚Äî three-segment control bar (Hunter / Outfitter /
+  - `AdminModeSwitcher` -- three-segment control bar (Hunter / Outfitter /
     Admin). Active segment is highlighted with the theme accent; tapping an
     inactive segment issues `Navigator.pushReplacementNamed` to
     `/hunter_dashboard`, `/outfitter_dashboard`, or `/admin_dashboard`,
     rebuilding the navigation stack for the new role context **immediately
     without sign-out or credential re-entry** (mirrors the existing admin
     bypass in `role_selection_screen.dart`).
-  - `AdminModeSwitcherButton` ‚Äî AppBar `IconButton` (swap icon) that opens the
+  - `AdminModeSwitcherButton` -- AppBar `IconButton` (swap icon) that opens the
     same selector as a modal bottom sheet. `activeMode` marks the current
     context.
 - Wiring:
@@ -281,7 +281,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 
 - Codebase audited for Dixon / Dixon Batteries / Dixon logo references: **none
   found** (source, assets, pubspec, PDFs). Only `BatterySaverManager` (the
-  off-grid battery-saver feature) matches the "battery" substring ‚Äî unrelated
+  off-grid battery-saver feature) matches the "battery" substring -- unrelated
   to any Dixon branding.
 - All admin/support email references already point to
   `support@jag-spoor.co.za` / `admin@jag-spoor.co.za` (and `privacy@` for the
@@ -308,27 +308,27 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   Hunter Profile switch (`setDarkMode(v)`), Outfitter Dashboard switch
   (`setDarkMode(v)`).
 - Standardized screens: `scope_tools_bottom_sheet.dart` (converted hardcoded
-  `_tacticalBlack`/`_panelBlack`/`_accent` const ‚Üí Theme.of getters; all
-  `Colors.white`/`black` text ‚Üí `_textPrimary`/`_textSecondary`/`_textHint`),
+  `_tacticalBlack`/`_panelBlack`/`_accent` const -> Theme.of getters; all
+  `Colors.white`/`black` text -> `_textPrimary`/`_textSecondary`/`_textHint`),
   `auth_screen.dart` (Google sign-in button + 2FA sheet use theme colors).
   Dashboards + legacy spoor screen already use `theme.*`/`Theme.of`.
 - Camera-overlay screens (spoor HUD, blood tracker) intentionally use
   high-contrast `Colors.white`/`black` for HUD text over the live camera
-  preview ‚Äî that contrast is by design, not a theme violation.
+  preview -- that contrast is by design, not a theme violation.
 - Tests: `test/theme_controller_test.dart` (9 tests: persistence load/default,
   setDarkMode/toggle persist, idempotency, notify, brightness, exact palette).
 
 ## Flutter SDK & analyze (this sandbox)
 
 - Flutter SDK installed at `/home/openhands/flutter`. The local checkout is
-  **3.44.9 stable** (Dart 3.9, 2026-08-05) ‚Äî NEWER than the **CI pin of 3.29.1**
+  **3.44.9 stable** (Dart 3.9, 2026-08-05) -- NEWER than the **CI pin of 3.29.1**
   in `.github/workflows/build-and-deploy.yml`. This version skew matters (see
   below). Add to PATH: `export PATH="$HOME/flutter/bin:$PATH"`.
   - **Why CI stays on 3.29.1, not 3.44.9**: the project's iOS Firebase plugins
     resolve cleanly under CocoaPods (the iOS dependency manager Flutter uses
     on 3.29.1) but hit a Swift Package Manager transitive conflict on newer
-    Flutter (3.44.9 defaults iOS to SPM): `firebase_core` ‚Üí firebase-ios-sdk
-    12.17.0 vs `firebase_storage` ‚Üí 12.15.0. Coordinating every `firebase_*`
+    Flutter (3.44.9 defaults iOS to SPM): `firebase_core` -> firebase-ios-sdk
+    12.17.0 vs `firebase_storage` -> 12.15.0. Coordinating every `firebase_*`
     package to one firebase-ios-sdk is a deep dependency rabbit hole, so we
     keep the proven 3.29.1 pin (CocoaPods) and instead revert the iOS native
     template to the classic form that compiles on 3.29.1. See the CI section.
@@ -337,7 +337,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     deprecation info in favor of `initialValue:`. We use `value:` everywhere
     (works on both; matches the other 9 dropdowns). The local deprecation
     infos are accepted baseline.
-- `flutter pub get` succeeds (148 outdated but constraint-incompatible packages ‚Äî expected).
+- `flutter pub get` succeeds (148 outdated but constraint-incompatible packages -- expected).
 - `flutter analyze` result (local 3.44.9): **0 errors, 14 warnings, 320 infos**.
   No analyzer errors block the build.
   - Warnings: `unused_local_variable` (9), `invalid_null_aware_operator` (1 in
@@ -351,7 +351,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `DropdownButtonFormField.value` on 3.44.9 only).
   - Production `lib/` ‚âà 94 issues; `test/` ‚âà 209 issues. No analyzer errors block the build.
 
-## CI workflow ‚Äî Build & Deploy (fixed 2026-08-12)
+## CI workflow -- Build & Deploy (fixed 2026-08-12)
 
 - `.github/workflows/build-and-deploy.yml` runs: `build-android` (ubuntu),
   `build-ios` (macOS), then `deploy-firebase` (needs build-android) and
@@ -361,14 +361,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   iOS build failure). The project's iOS code had been regenerated by a modern
   Flutter template that adds scene/implicit-engine APIs:
   - `ios/Runner/SceneDelegate.swift` subclassed `FlutterSceneDelegate` (not in
-    3.29.1's framework ‚Üí "Cannot find type 'FlutterSceneDelegate' in scope").
+    3.29.1's framework -> "Cannot find type 'FlutterSceneDelegate' in scope").
   - `ios/Runner/AppDelegate.swift` conformed to `FlutterImplicitEngineDelegate`
     + used `FlutterImplicitEngineBridge` / `didInitializeImplicitFlutterEngine`
-    (not in 3.29.1 ‚Üí "Cannot find type 'FlutterImplicitEngineDelegate'").
+    (not in 3.29.1 -> "Cannot find type 'FlutterImplicitEngineDelegate'").
   - `Info.plist` carried a `UIApplicationSceneManifest` wiring the scene
     delegate.
   Fix applied (classic pre-scene template, works on 3.29.1 through 3.44+):
-  - `AppDelegate.swift` ‚Üí canonical `FlutterAppDelegate` subclass that calls
+  - `AppDelegate.swift` -> canonical `FlutterAppDelegate` subclass that calls
     `GeneratedPluginRegistrant.register(with: self)` in
     `application(_:didFinishLaunchingWithOptions:)`.
   - Deleted `SceneDelegate.swift` and removed its 4 `project.pbxproj`
@@ -387,12 +387,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `initialValue:` usages are on `FormField<T>` / `TextFormField` (legit) and
   left unchanged.
 - **Build incompatibilities verified/aligned**:
-  - Java 17 (Temurin) ‚Äî correct for AGP 8.11.1 / Gradle 8.14 / Kotlin 2.2.20.
+  - Java 17 (Temurin) -- correct for AGP 8.11.1 / Gradle 8.14 / Kotlin 2.2.20.
   - Android: `flutter build apk --debug`; `ndkVersion = flutter.ndkVersion`
-    (CI auto-installs the NDK plugins request ‚Äî a 26.3-vs-27.0 version warning
+    (CI auto-installs the NDK plugins request -- a 26.3-vs-27.0 version warning
     is emitted but non-fatal). Confirmed green on CI after the compile fix
     (run 31628707429, `Build Android APK` ‚úì in ~10 min).
-  - iOS: `flutter build ios --simulator --no-codesign` ‚Äî `--no-codesign`
+  - iOS: `flutter build ios --simulator --no-codesign` -- `--no-codesign`
     skips signing (no provisioning profile on the hosted runner); `pod install`
     runs inside the Flutter build (~8 min; resolves cleanly on 3.29.1 via
     CocoaPods). Confirmed `pod install` + `Xcode build` both run on CI
@@ -400,7 +400,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   - **mobile_scanner arm64-simulator fix**: on Apple-Silicon runners
     (`macos-latest`, arm64) the iphonesimulator build targets arm64, but
     `mobile_scanner` 6.0.11's prebuilt ML xcframework ships no arm64-sim
-    slice ‚Üí Xcode "User-Defined Issue: Unsupported Swift architecture" at
+    slice -> Xcode "User-Defined Issue: Unsupported Swift architecture" at
     `mobile_scanner-Swift.h`. Fix: `EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64`
     added BOTH in `ios/Podfile` post_install (pod targets) AND the Runner
     target's 3 build configs in `project.pbxproj` (Profile/Debug/Release,
@@ -410,27 +410,27 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     (acceptable, intentional CI parity).
   - One prior run failed on a transient `java.net.SocketException: Unexpected
     end of file from server` during `flutter pub get` (runner network glitch),
-    not a code issue ‚Äî re-runs clear it.
+    not a code issue -- re-runs clear it.
 - **Secret handling**: `deploy-firebase` gates ALL deploy steps behind a
   `Check Firebase secrets` step (`steps.secrets.outputs.deploy` true/false).
   When `FIREBASE_SERVICE_ACCOUNT` is unset it emits a `::warning::` with a
   clear "configure the repo secret" message and skips deploy (every later
-  step is `if: deploy == 'true'`) ‚Äî so missing secrets no longer fail the job.
+  step is `if: deploy == 'true'`) -- so missing secrets no longer fail the job.
   Replaced the old broad `continue-on-error: true` (which masked real deploy
   errors) with explicit per-step gating. Confirmed: the deploy job now reports
   `success` (correctly skipped) instead of `failure` when secrets are absent.
   `notify` runs (`if: always()`) and only pings Discord if
   `vars.DISCORD_WEBHOOK` is set (note: the `aristidp/discord-action` step can
-  still error when the webhook var is unset ‚Äî non-essential, does not gate
+  still error when the webhook var is unset -- non-essential, does not gate
   build/deploy).
 - **permissions**: top-level `permissions: { contents: read }` (least-privilege;
   deploy uses its own Firebase service-account secret, not GITHUB_TOKEN).
 - No `environment:` directive (referencing a non-existent GitHub environment
   would block the job).
 
-## Phase 3 ‚Äî Hunting Package Publisher & Marketplace Pipeline (added 2026-08-12)
+## Phase 3 -- Hunting Package Publisher & Marketplace Pipeline (added 2026-08-12)
 
-- **Platform fee revised 5% ‚Üí 7.5%** everywhere:
+- **Platform fee revised 5% -> 7.5%** everywhere:
   `PackageBookingManager.platformCommissionRate` is now `0.075`; the manual
   invoice / carcass butchery `markup` is now `1.075`
   (`invoice_pdf_service.dart`, `manual_invoice_screen.dart`,
@@ -441,7 +441,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   slaughtering, coldroom, hunter daily, non-hunter observer daily, overnight
   accommodation, catering), and `DateChangeRequest`.
 - **Outfitter Package Publisher** (`outfitter_package_creator_screen.dart`)
-  rewritten with an All-Inclusive ‚Üî Itemized segmented toggle, the 7 itemized
+  rewritten with an All-Inclusive ->î Itemized segmented toggle, the 7 itemized
   line-item editors (qty √ó price each), a SA Game Guide multi-species selector
   (loads `animals` collection), Start/End date availability pickers, and a live
   "Outfitter Base Price + 7.5% Platform Fee = Total Package Value" summary.
@@ -451,14 +451,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **25% non-refundable deposit**: `PackageBookingManager.depositFraction =
   0.25`. `bookPackage` writes `depositAmountRands`/`balanceAmountRands`.
   New `approveBookingAndRequestDeposit()` transitions an approved booking to
-  `Pending Deposit` and stores the deposit split ‚Äî the outfitter "APPROVE &
+  `Pending Deposit` and stores the deposit split -- the outfitter "APPROVE &
   REQUEST DEPOSIT" button calls it. The hunter PayFast button charges the 25%
   deposit amount (falls back to full total for legacy bookings). `Paid` is a
   new status (set by the PayFast ITN handler on COMPLETE payment).
 - **Date-change requests**: `requestDateChange()` (hunter) writes
   `dateChangeRequest` + `dateChangeRequestPending:true`;
   `resolveDateChange(approved)` (outfitter) clears the flag, sets the request
-  status, and on approval copies requested ‚Üí `confirmedStartDate/EndDate`.
+  status, and on approval copies requested -> `confirmedStartDate/EndDate`.
   Hunter booking card has a "Request Date Change" button + sheet (date pickers
   + reason); outfitter dashboard renders a date-change section with
   APPROVE NEW DATES / DECLINE actions.
@@ -469,7 +469,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (mode, species count, availability window).
 - **Firestore**: bookings now carry `status` ‚àà `Pending Approval`,
   `Approved`, `Pending Deposit`, `Paid`, `Declined`, `Completed`, `Cancelled`.
-  The status-update rule (`statusUpdateAllowed()`) is unaffected ‚Äî only the
+  The status-update rule (`statusUpdateAllowed()`) is unaffected -- only the
   outfitter may flip status. Date-change fields are non-status fields so either
   party can write them; resolution (status flip inside the map + the
   `dateChangeRequestPending` flag) is done via the manager methods which the
@@ -491,12 +491,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/outfitter_mode/presentation/manual_invoice_screen.dart`,
   `context.md`.
 
-## Batch D ‚Äî Permit Log Permissions, Dedup & Marketplace Hunter Privacy (added 2026-08-12)
+## Batch D -- Permit Log Permissions, Dedup & Marketplace Hunter Privacy (added 2026-08-12)
 
 - **`firestore.rules` `venison_permits/{permitId}`** rewritten:
-  - `allow read: isSignedIn() && (resource == null || outfitterId == uid || hunterId == uid || isAdmin())` ‚Äî lets both `.where('outfitterId', isEqualTo: uid)` and `.where('hunterId', isEqualTo: uid)` list queries succeed (server guarantees returned docs satisfy the rule). `resource == null` is the not-yet-existing edge case (harmless for reads of existing docs).
-  - `allow create, update: isSignedIn()` ‚Äî either party may write (both co-complete the legal form + signatures).
-  - `allow delete: isOwnerOf('outfitterId') || isAdmin()` ‚Äî least-privilege (unchanged from before).
+  - `allow read: isSignedIn() && (resource == null || outfitterId == uid || hunterId == uid || isAdmin())` -- lets both `.where('outfitterId', isEqualTo: uid)` and `.where('hunterId', isEqualTo: uid)` list queries succeed (server guarantees returned docs satisfy the rule). `resource == null` is the not-yet-existing edge case (harmless for reads of existing docs).
+  - `allow create, update: isSignedIn()` -- either party may write (both co-complete the legal form + signatures).
+  - `allow delete: isOwnerOf('outfitterId') || isAdmin()` -- least-privilege (unchanged from before).
   - Removed the local `isPermitParty()` helper (now inlined). Needs `npx firebase-tools deploy --only firestore:rules` in a credentialed env.
 - **Permit manager consolidation**: the standalone "Issue Game Transport Permit"
   (`OutfitterTransportPermitScreen`) entry and the direct "Venison Transport
@@ -507,7 +507,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   Unused imports removed; `OutfitterTransportPermitScreen` file left in place
   (no longer navigated to).
 - **Hunter "My Venison Permits" log**: hunter dashboard entry renamed from
-  "My Transport Permits" ‚Üí "My Venison Permits" ‚Üí `VenisonPermitListScreen(isOutfitterMode: false)`.
+  "My Transport Permits" -> "My Venison Permits" -> `VenisonPermitListScreen(isOutfitterMode: false)`.
 - **Dedup**: `VenisonPermitManager.getMyPermitsStream` now de-duplicates the
   snapshot by document id (`seen.add(doc.id)`) before mapping, so a permit can
   never render twice even if a future outfitterId+hunterId stream merge returns
@@ -517,9 +517,9 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   from the booking details sheet; the total remains inclusive of the fee but is
   relabelled "Total Price" (also on the package-card chip "total price" and the
   booked-hunt deposit banner). The dead `isFee` param was removed from `_PriceRow`.
-  Primary action button renamed "CONFIRM BOOKING" ‚Üí "BOOK THIS PACKAGE".
+  Primary action button renamed "CONFIRM BOOKING" -> "BOOK THIS PACKAGE".
 
-## Phase 4 ‚Äî AI Paper Price List Scanner Updates & History Log (added 2026-08-12)
+## Phase 4 -- AI Paper Price List Scanner Updates & History Log (added 2026-08-12)
 
 - **7.5% platform fee applied to the AI scanner pipeline** (was 5%):
   - `PricelistScannerService.platformCommissionRate` now `0.075`; the legacy
@@ -533,7 +533,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     to "7.5% Platform Fees" / "7.5% platform commission".
   - The custom-package builder (`hunter_custom_package_builder_screen.dart`)
     reads `hunterDisplayPriceZAR` from stored items, so it automatically
-    reflects the 7.5% split applied at save time ‚Äî no hardcoded fee there.
+    reflects the 7.5% split applied at save time -- no hardcoded fee there.
 - **Verification screen refactored** to persist via a new centralized
   `PricelistScannerService.saveVerifiedPricelist()` method (drops its direct
   Firestore/Auth fields), so both the verification flow and the history
@@ -571,7 +571,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `firestore.indexes.json`.
 
 
-## Phase 5 ‚Äî Legal SA Game Transport & Venison Permit (added 2026-08-12)
+## Phase 5 -- Legal SA Game Transport & Venison Permit (added 2026-08-12)
 
 - New **`venison_permits`** collection models the official South African
   Venison / Game Transport & Hunt Permit. The `VenisonTransportPermit`
@@ -633,7 +633,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/hunter_dashboard.dart`, `firestore.rules`,
   `storage.rules`, `firestore.indexes.json`.
 
-## Outfitter Package CRUD Polish ‚Äî full lifecycle + image management (added 2026-08-13)
+## Outfitter Package CRUD Polish -- full lifecycle + image management (added 2026-08-13)
 
 - **`PackageStatus` enum** added to `lib/features/hunter_mode/models/package_pricing.dart`:
   `active`, `draft`, `archived`, `deleted` (with `label`, `fromString`, and
@@ -643,14 +643,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   - `publishPackage` now returns `Future<String>` (the new doc id) and takes
     `status` (default `active`; pass `draft` to save an unlisted WIP),
     `imageUrls` (gallery download URLs), and `depositPercentage` (per-package
-    non-refundable deposit, 0‚Äì100, default 25 ‚Äî stored as both
+    non-refundable deposit, 0‚Äì100, default 25 -- stored as both
     `depositPercentage` and the fractional `depositFraction`). Validates
     title AND description non-empty (description was previously unvalidated).
   - `updatePackage({packageId, title?, description?, pricing?, inclusions?,
-    farmId?, imageUrls?, depositPercentage?})` ‚Äî owner-scoped edit; recomputes
+    farmId?, imageUrls?, depositPercentage?})` -- owner-scoped edit; recomputes
     the 7.5% commission split whenever pricing changes.
-  - `setPackageStatus({packageId, status})` ‚Äî explicit lifecycle transition.
-  - `getMyPackagesStream({status?})` ‚Äî reactive `snapshots()` scoped by
+  - `setPackageStatus({packageId, status})` -- explicit lifecycle transition.
+  - `getMyPackagesStream({status?})` -- reactive `snapshots()` scoped by
     `outfitterId` (+ optional status filter) ordered by `createdAt` desc,
     powering the management screen.
   - `deletePackage` now delegates to `setPackageStatus(deleted)` (soft-delete;
@@ -687,21 +687,21 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   and Delete (confirmation modal -> soft-delete). Deleted packages are
   restorable. FAB publishes a new package.
 - **Marketplace rendering** (`hunter_package_marketplace_screen.dart`):
-  `_PackageCard` gained `_buildGallery` ‚Äî a horizontal
+  `_PackageCard` gained `_buildGallery` -- a horizontal
   `cached_network_image` strip of the package's `imageUrls` (renders nothing
   when the package has no images, so legacy packages are unaffected).
 - **Outfitter dashboard** (`lib/features/outfitter_mode/outfitter_dashboard.dart`):
   a "Manage My Packages" feature card (`inventory_2_rounded`) was added right
   after "Publish Hunting Package" (in the `!_isManager` block) navigating to
   `OutfitterPackageManagerScreen`.
-- **`storage.rules`**: added `match /package_images/{uid}/{fileName}` ‚Äî
+- **`storage.rules`**: added `match /package_images/{uid}/{fileName}` --
   owner-scoped writes (the outfitter's uid is the path segment); reads
   covered by the global authenticated-read rule (marketplace listings are
   visible to signed-in hunters).
-- **`firestore.rules`**: no change required ‚Äî `packages/{packageId}` already
+- **`firestore.rules`**: no change required -- `packages/{packageId}` already
   allows `update, delete` by owner (`resource.data.outfitterId == auth.uid`),
   so `updatePackage` / `setPackageStatus` / `deletePackage` are covered.
-- **`firestore.indexes.json`**: three `packages` composite indexes added ‚Äî
+- **`firestore.indexes.json`**: three `packages` composite indexes added --
   `(outfitterId ASC, createdAt DESC)` for `getMyPackages`/`getMyPackagesStream`,
   `(outfitterId ASC, status ASC, createdAt DESC)` for the status-filtered
   management stream, and `(status ASC, createdAt DESC)` for the marketplace
@@ -711,7 +711,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   than silently showing empty.
 - **`flutter analyze`** (local Flutter 3.29.1, CI pin): **0 errors, 0 warnings
   in all changed files** (90 pre-existing infos + warnings across `lib/`,
-  all in unrelated files ‚Äî unchanged from the documented baseline). The new
+  all in unrelated files -- unchanged from the documented baseline). The new
   management screen + creator edits + marketplace gallery are analyzer-clean.
 - Files: `lib/features/hunter_mode/models/package_pricing.dart`,
   `lib/features/hunter_mode/services/package_booking_manager.dart`,
@@ -721,10 +721,10 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/outfitter_mode/outfitter_dashboard.dart`,
   `storage.rules`, `firestore.indexes.json`.
 
-## Phase 7 ‚Äî Shot Group Target Analyzer AI Calibration (added 2026-08-13)
+## Phase 7 -- Shot Group Target Analyzer AI Calibration (added 2026-08-13)
 
 - The "AI Shot Group Analyzer" embedded in `scope_calibration_screen.dart`
-  was a **mock** ‚Äî it used `math.Random()` to simulate a pixel spread and
+  was a **mock** -- it used `math.Random()` to simulate a pixel spread and
   only computed a single fake "max spread" MOA value, with no real shot-point
   placement, no mean radius, no center of impact, and no actual scale
   calibration of the reference object in the image. Item #12 replaced it
@@ -732,11 +732,11 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **New service** `lib/features/hunter_mode/services/shot_group_analyzer_service.dart`
   (`ShotGroupAnalyzerService`, singleton `instance`):
   - **Real shot-hole detection** via dark-blob detection: rasterizes the
-    decoded target photo (the `image` package ‚Äî already a dep, used by the
+    decoded target photo (the `image` package -- already a dep, used by the
     spoor service) to a luminance mask (`0.299R+0.587G+0.114B < 110`), runs
     4-connected-component labelling on a sampled grid (step 4px), and keeps
     each blob whose radius, aspect ratio, and fill ratio fall in the
-    bullet-hole range ‚Äî rejecting dust specks (too small), the reference
+    bullet-hole range -- rejecting dust specks (too small), the reference
     coin / large shadows (too big), and text strokes (low fill). Each
     accepted blob's centroid becomes a `ShotImpact` in full-resolution pixel
     coords.
@@ -745,11 +745,11 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     The reference length is user-editable (defaults: 5-Rand coin 26mm, 1-Rand
     23mm, 1-inch grid 25.4mm).
   - **Group geometry** (the full statistical suite, all calibrated):
-    - **Extreme spread** ‚Äî max pairwise distance between shot points
+    - **Extreme spread** -- max pairwise distance between shot points
       (records the contributing shot pair for overlay rendering).
-    - **Mean radius** ‚Äî average distance of each shot from the group
+    - **Mean radius** -- average distance of each shot from the group
       centroid.
-    - **Center of impact (COI)** ‚Äî arithmetic centroid of the shot points,
+    - **Center of impact (COI)** -- arithmetic centroid of the shot points,
       with offset from a user-marked point of aim (bullseye), expressed as
       horizontal (right +) and vertical (up +) in mm and angular units.
   - **Angular conversions** (physically exact): `inchesToMoa` uses the
@@ -758,8 +758,8 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     output supported (`AngularUnit` enum).
   - **Suggested turret correction** (`suggestedClicks`): converts the COI
     offset to clicks at the scope's per-click value (e.g. 0.25 MOA / 0.1
-    MIL), applying the opposite-direction dial convention (COI right ‚Üí dial
-    left; COI low ‚Üí dial up).
+    MIL), applying the opposite-direction dial convention (COI right -> dial
+    left; COI low -> dial up).
   - `ShotGroupAnalysis` exposes px / mm / inch / angular forms plus a
     `precisionCategory` (Sub-MOA / 1 MOA / Average / Open), mapping MIL back
     to MOA for the threshold.
@@ -768,14 +768,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (`ShotGroupTargetOverlay` + `_TargetOverlayPainter`):
   - Renders the target photo in a `Stack` with a `CustomPainter` that draws
     **alignment guides** (center crosshair, rule-of-thirds grid, corner
-    framing brackets ‚Äî toggleable) to help frame the target paper straight.
+    framing brackets -- toggleable) to help frame the target paper straight.
   - **Tap-to-place** interaction with four modes: place shot impacts,
     calibrate scale (two taps + editable known-length), mark point of aim,
     plus Undo / Clear. Auto-detected shots render orange, manual ones red,
     each numbered.
   - Draws the calibrated reference scale line (amber, labelled in mm), the
     extreme-spread line (red, between the two farthest shots), the COI
-    marker (green) + COI‚Üíaim offset vector, and the aim point (cyan
+    marker (green) + COI->aim offset vector, and the aim point (cyan
     crosshair).
 - **New dedicated screen**
   `lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`
@@ -798,16 +798,16 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **Dashboard wiring**: a "üéØ Shot Group Target Analyzer" `DashboardFeature`
   card was added to `hunter_dashboard.dart` (reachable directly from the
   hunter home, since the scope-calibration card had been commented out).
-- **Tests**: `test/shot_group_analyzer_test.dart` ‚Äî 11 tests covering COI
+- **Tests**: `test/shot_group_analyzer_test.dart` -- 11 tests covering COI
   centroid, extreme spread (incl. recorded shot pair), mean radius, the
-  1.047in@100yd MOA definition, the 3.6in@100yd MIL definition, meters‚ÜíMOA,
-  COI offset sign convention (image-y-down ‚Üí low COI is negative "up"),
+  1.047in@100yd MOA definition, the 3.6in@100yd MIL definition, meters->MOA,
+  COI offset sign convention (image-y-down -> low COI is negative "up"),
   uncalibrated (zero angular, valid px), empty list, precision category, and
   real shot-hole blob detection on a synthetic target (3 holes found, 2 dust
   specks rejected). **All 11 pass.**
 - **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings in all changed
   files** (project total 296 issues, all pre-existing infos/warnings in
-  unrelated files ‚Äî down from the 320 baseline since the mock removal dropped
+  unrelated files -- down from the 320 baseline since the mock removal dropped
   several infos). New service + overlay + screen + test are analyzer-clean.
 - Files: `lib/features/hunter_mode/services/shot_group_analyzer_service.dart`
   (new), `lib/features/hunter_mode/widgets/shot_group_target_overlay.dart`
@@ -817,7 +817,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (dashboard card + import cleanup), `test/shot_group_analyzer_test.dart`
   (new). No Firestore/Storage/rules changes (pure on-device CV, no backend).
 
-## Phase 8 ‚Äî Ballistic Engine Muzzle Velocity & BC Calculations (added 2026-08-13)
+## Phase 8 -- Ballistic Engine Muzzle Velocity & BC Calculations (added 2026-08-13)
 
 - The ballistics solver had two independent, simplified trajectory models
   and **no drag-curve selection, no ICAO atmosphere, no powder-temperature
@@ -835,9 +835,9 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   both consumers through it.
 - **New engine** `lib/features/ballistics/data/ballistics_engine.dart`
   (`BallisticsEngine`, singleton `instance`; pure dart, no deps):
-  - **`DragModel` enum** (`g1`, `g7`) ‚Äî the Ingalls G1 (flat-base) and McCoy
+  - **`DragModel` enum** (`g1`, `g7`) -- the Ingalls G1 (flat-base) and McCoy
     G7 (boat-tail / VLD) standard drag functions, embedded as
-    Mach‚ÜíG(Mach) tables with linear interpolation. The retardation is
+    Mach->G(Mach) tables with linear interpolation. The retardation is
     `a = -(œÅ/œÅ‚ÇÄ)¬∑(G(M)¬∑1e-4)¬∑v¬≤/BC` (the 1e-4 factor restores the published
     drag-function's 1/ft units; v in ft/s, result converted back to m/s¬≤).
   - **`Atmosphere`** model + **ICAO air density**: `airDensity()` computes
@@ -846,16 +846,16 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `airDensityRatio()` returns œÅ/œÅ‚ÇÄ against the ICAO sea-level standard
     (1.225 kg/m¬≥). Inputs: ambient temperature (¬∞C), barometric pressure
     (hPa), relative humidity (%), altitude (m).
-  - **Density altitude**: `densityAltitude()` ‚Äî the ICAO standard-atmosphere
+  - **Density altitude**: `densityAltitude()` -- the ICAO standard-atmosphere
     altitude that has the same density as the given (non-standard) air,
     combining the station altitude, the temperature offset vs. the ISA
     standard temperature at that altitude, and a humidity contribution.
   - **Powder-temperature muzzle-velocity correction**:
-    `muzzleVelocityForPowderTemp()` ‚Äî `ŒîV = tempCoefficient¬∑ŒîT` where ŒîT is
+    `muzzleVelocityForPowderTemp()` -- `ŒîV = tempCoefficient¬∑ŒîT` where ŒîT is
     in ¬∞F and the coefficient is in fps/¬∞F (default 1.5 fps/¬∞F, typical
     smokeless powder), converted to m/s. Defaults to the ICAO reference
     temperature (15 ¬∞C).
-  - **Trajectory integration**: `trajectoryTable()` ‚Äî numerical point-mass
+  - **Trajectory integration**: `trajectoryTable()` -- numerical point-mass
     integration (0.5 ms fixed time step) of the 2D equations of motion with
     the Mach-dependent G1/G7 drag, ICAO density-ratio scaling, incline
     (cos-pitch) gravity correction, crosswind drift, and a bore-elevation
@@ -868,13 +868,13 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   - `BallisticSolverService.calculateScopeAdjustments` gained optional named
     params (`dragModel`, `temperatureCelsius`, `relativeHumidity`,
     `altitudeMeters`, `powderTempCelsius`, `powderTempCoefficientFpsPerF`,
-    `bulletWeightGrains`) ‚Äî all defaulted so existing call sites (e.g.
+    `bulletWeightGrains`) -- all defaulted so existing call sites (e.g.
     `scope_calibration_screen.dart`) compile unchanged. The returned map now
     also carries `dragModel`, `densityAltitudeMeters`,
     `correctedMuzzleVelocityFps`, and the atmosphere inputs; the single-point
     drop now uses the powder-temp-corrected muzzle velocity.
   - `BallisticSolverService.generateTrajectoryTable` now delegates to the new
-    engine (yards‚Üîmetres at the API boundary) and each row gains `dropCm`,
+    engine (yards->îmetres at the API boundary) and each row gains `dropCm`,
     `windageCm`, `velocityMs`, `velocityFps`, `energyJoules`,
     `timeOfFlightSeconds`, `rangeMeters` (in addition to the legacy
     `range`/`dropInches`/`moa`/`clicks`).
@@ -891,7 +891,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   velocity at target range**, **remaining energy at target range**, the
   selected **drag model**, the **density altitude (ICAO)**, and a full
   atmospheric profile string (altitude / temp / pressure / humidity).
-- **Tests**: `test/ballistics_engine_test.dart` ‚Äî **18 tests, all pass**:
+- **Tests**: `test/ballistics_engine_test.dart` -- **18 tests, all pass**:
   - ICAO air density (standard sea level ‚âà 1.225; altitude/pressure/humidity
     effects), density altitude (standard ‚âà 0 m; hot/cold/high-altitude),
     powder-temperature MV correction (reference-temp no-op; hot powder raises
@@ -905,7 +905,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     less drop than dense sea-level air.
 - **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings in all
   changed files** (project total 295 issues, all pre-existing infos/warnings
-  in unrelated files ‚Äî down 1 from the 296 baseline). New engine + service
+  in unrelated files -- down 1 from the 296 baseline). New engine + service
   + screen + test are analyzer-clean. The 4 failing pre-existing tests
   (`saps_tracker`, `offline_sync_queue` [fake_cloud_firestore 4.1.1 mock
   incompat], `advanced_ballistics`, `bluetooth_mesh`) are unchanged and
@@ -918,7 +918,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   summary), `test/ballistics_engine_test.dart` (new). No Firestore / Storage
   / rules changes (pure on-device ballistics, no backend).
 
-## Phase 9 ‚Äî Outfitter Client Roster & Guided Hunt Logs (added 2026-08-13)
+## Phase 9 -- Outfitter Client Roster & Guided Hunt Logs (added 2026-08-13)
 
 - The outfitter suite had no dedicated client roster and no guided-hunt
   harvest logging. `ClientBooking` was lodge-only (name + contact + lodging/
@@ -929,13 +929,13 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   explicitly tied each harvest to a roster client and onward to venison
   permits + the slaughterhouse manifest.
 - **New models** (`lib/features/outfitter_mode/data/models/`):
-  - `ClientProfile` ‚Äî the PH's client hunter book entry: `outfitterId`,
+  - `ClientProfile` -- the PH's client hunter book entry: `outfitterId`,
     `fullName`, `idPassportNumber`, `nationality`, `cellNumber`, `email`,
     `address`, optional `assignedPackageId`/`assignedPackageName`/
     `assignedBookingId`, a running `permitReferenceIds` list, `notes`,
     timestamps. `fromFirestore` (now delegates to a snapshot-free
     `fromMap(data, {id})`), `toMap`, `copyWith`.
-  - `GuidedHuntLog` ‚Äî a guided-hunt harvest entry: `outfitterId`,
+  - `GuidedHuntLog` -- a guided-hunt harvest entry: `outfitterId`,
     `clientId`/`clientName`/`clientIdPassport` snapshot, optional `bookingId`,
     `species`, `sex`, `carcassWeightKg`, `shotLocationDescription` +
     `shotLat`/`shotLng`, `trophyMeasurementInches`/`trophyMeasurementLabel`/
@@ -943,30 +943,30 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     cross-reference ids `permitId` + `carcassRecordId`, `notes`, `huntDate`,
     timestamps. Same `fromMap`/`toMap`/`copyWith` shape.
 - **New services** (`lib/features/outfitter_mode/data/services/`):
-  - `ClientRosterManager` (singleton) ‚Äî `client_roster` Firestore CRUD scoped
+  - `ClientRosterManager` (singleton) -- `client_roster` Firestore CRUD scoped
     by `outfitterId`: `getMyClientsStream` (reactive, ordered by `createdAt`
     desc, de-duplicated by doc id), `getClientById`, `addClient`,
     `updateClient` (merge), `deleteClient`, and `addPermitReference`
     (transactionally appends a permit id to the client's running list).
-  - `GuidedHuntLogManager` (singleton) ‚Äî `guided_hunt_logs` Firestore CRUD
+  - `GuidedHuntLogManager` (singleton) -- `guided_hunt_logs` Firestore CRUD
     scoped by `outfitterId`: `getMyHuntLogsStream` (reactive, ordered by
     `huntDate` desc, de-duplicated), `getHuntLogById`, `addHuntLog`,
     `updateHuntLog`, `deleteHuntLog`, `linkPermit`, `linkCarcassRecord`, plus
     the two downstream bridges:
-      * `buildPermitPrefill({log, client})` ‚Äî assembles the prefill map
+      * `buildPermitPrefill({log, client})` -- assembles the prefill map
         (hunter block + farm block from the `outfitters` doc + the harvested
         species seeded into `speciesHuntedAndTransported`) that seeds a
         venison transport permit straight from the hunt log.
-      * `pushToSlaughterhouseManifest(log)` ‚Äî writes a `CarcassRecord` into
+      * `pushToSlaughterhouseManifest(log)` -- writes a `CarcassRecord` into
         the local SQLite `carcass_records` table the Slaghuis Matrix reads,
         using the client's `clientId` as `hunterId`, then links the new local
         id back onto the hunt log via `linkCarcassRecord`.
 - **New screens** (`lib/features/outfitter_mode/presentation/`):
-  - `ClientRosterScreen` ‚Äî reactive, searchable roster. Tap a card to edit;
+  - `ClientRosterScreen` -- reactive, searchable roster. Tap a card to edit;
     remove with a confirmation modal (linked logs/permits are kept). "Add
     Client" sheet validates name (required) and captures passport/ID,
     nationality, cell, email, address, assigned package, notes.
-  - `GuidedHuntLogScreen` ‚Äî reactive, searchable hunt log. Each card shows
+  - `GuidedHuntLogScreen` -- reactive, searchable hunt log. Each card shows
     species, client, date, carcass weight, trophy, shot location/placement
     and status chips ("Permit issued" / "In coldroom") or action chips
     ("Generate Permit", "Push to Manifest", "Delete"). The editor sheet
@@ -985,11 +985,11 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `guidedHuntLogId`/`clientId` were supplied, the form links the new permit
   id back onto the hunt log (`GuidedHuntLogManager.linkPermit`) and appends
   it to the client's `permitReferenceIds` (`ClientRosterManager.addPermitReference`)
-  ‚Äî end-to-end traceability client ‚Üí hunt log ‚Üí permit.
+  -- end-to-end traceability client -> hunt log -> permit.
 - **Dashboard**: two new cards on the outfitter dashboard
-  (`outfitter_dashboard.dart`) ‚Äî "Client Roster" and "Guided Hunt Logs" ‚Äî
+  (`outfitter_dashboard.dart`) -- "Client Roster" and "Guided Hunt Logs" --
   placed immediately before the "Permit Log & Manager" card (the natural
-  clients ‚Üí hunt logs ‚Üí permits grouping).
+  clients -> hunt logs -> permits grouping).
 - **Firestore rules** (`firestore.rules`): new owner-scoped
   `match /client_roster/{clientId}` and `match /guided_hunt_logs/{logId}`
   blocks (`ownerOrAdmin('outfitterId')`).
@@ -997,12 +997,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `client_roster` `(outfitterId ASC, createdAt DESC)` and `guided_hunt_logs`
   `(outfitterId ASC, huntDate DESC)` for the two stream queries (must be
   deployed: `npx firebase-tools deploy --only firestore:indexes`).
-- **Tests**: `test/outfitter_client_roster_test.dart` ‚Äî **6 tests, all
+- **Tests**: `test/outfitter_client_roster_test.dart` -- **6 tests, all
   pass**: `ClientProfile` + `GuidedHuntLog` `toMap`/`fromMap` round-trips
   (all fields), missing-field tolerance, `huntDate` fallback to now, and
   `copyWith` permit/carcass linking + `updatedAt` bump.
 - **`flutter analyze`** (local 3.44.9): **0 errors, 0 warnings, 0 infos in
-  all changed/new files** (project total 295, unchanged baseline ‚Äî all
+  all changed/new files** (project total 295, unchanged baseline -- all
   remaining issues are pre-existing in unrelated files). The 4 pre-existing
   failing tests (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
   `bluetooth_mesh`) remain unchanged and unrelated.
@@ -1024,7 +1024,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   roster / hunt-log streams surface the index-missing error in-UI (rather
   than silently showing empty).
 
-## Phase 10 ‚Äî Global Offline Firestore Persistence Audit (added 2026-08-13)
+## Phase 10 -- Global Offline Firestore Persistence Audit (added 2026-08-13)
 
 - **Audit findings**: `main.dart` already set
   `FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true)`
@@ -1038,7 +1038,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   offline-with-no-cache); several threw synchronously on an unauthenticated
   caller, bypassing the consumer `StreamBuilder`'s `hasError` branch.
 - **Centralized `FirestoreBootstrap`** (`lib/core/services/firestore_bootstrap.dart`):
-  - `initialize({cacheSizeBytes: 40 MB})` ‚Äî called exactly once in `main()`
+  - `initialize({cacheSizeBytes: 40 MB})` -- called exactly once in `main()`
     after `Firebase.initializeApp()` and App Check, before any query. Sets
     `Settings(persistenceEnabled: true, cacheSizeBytes: ‚Ä¶)` so every primary
     Firestore stream serves cached data first and keeps emitting from cache
@@ -1056,7 +1056,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `main.dart`; removed the now-unused `cloud_firestore` import from
     `main.dart`.
 - **`OfflineStreamGuard`** (`lib/core/services/offline_stream_guard.dart`):
-  - `offlineResilient<T>(source, {required fallback, debugLabel})` ‚Äî wraps a
+  - `offlineResilient<T>(source, {required fallback, debugLabel})` -- wraps a
     stream so any hard error is logged and replaced with a single `fallback`
     emission, then the stream completes. Normal emissions pass through
     untouched. Firestore's own cache already keeps streams alive across brief
@@ -1065,29 +1065,29 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     unrecoverable network error) so the UI shows a defined empty/zero state
     instead of hanging or crashing.
 - **Managers hardened** (cache-first + offline fallback applied):
-  - `VenisonPermitManager.getMyPermitsStream` ‚Äî wrapped with the guard
+  - `VenisonPermitManager.getMyPermitsStream` -- wrapped with the guard
     (fallback `[]`); `getPermitById` now reads **cache-first**
     (`GetOptions(source: Source.cache)`) then falls back to server, so an
     offline lookup still resolves a recently-viewed permit.
-  - `MeatProcessingOrderManager.getMyOrdersStream` ‚Äî wrapped (fallback `[]`).
-  - `PricelistScannerService.getMyPriceListsStream` ‚Äî wrapped (fallback `[]`);
+  - `MeatProcessingOrderManager.getMyOrdersStream` -- wrapped (fallback `[]`).
+  - `PricelistScannerService.getMyPriceListsStream` -- wrapped (fallback `[]`);
     the unauthenticated `throw Exception` was replaced with a stable empty
     stream so it no longer crashes the history screen's `StreamBuilder`.
-  - `PackageBookingManager.getMyPackagesStream` ‚Äî unauthenticated `throw`
+  - `PackageBookingManager.getMyPackagesStream` -- unauthenticated `throw`
     replaced with `Stream.empty()` (the consumer already has a `hasError`
     branch for hard stream errors + Firestore cache keeps it alive offline).
-  - `CarcassLogManager.getActiveChillerLogs` ‚Äî null-user guard added
+  - `CarcassLogManager.getActiveChillerLogs` -- null-user guard added
     (`Stream.empty()` instead of querying for a null `hunterId`).
-  - `OutfitterAnalyticsService` ‚Äî all four streams wrapped:
+  - `OutfitterAnalyticsService` -- all four streams wrapped:
     `getRevenueSummaryStream` (fallback zero-metrics map),
     `getFilteredPackagesStream` (fallback `[]`),
     `getPendingBookingsCountStream` + `getTotalPackagesCountStream`
     (fallback `0`).
-  - `OutfitterFirebaseService` (bookings/lodging/fleet) ‚Äî already had
+  - `OutfitterFirebaseService` (bookings/lodging/fleet) -- already had
     `.handleError` fallbacks; unchanged.
-  - `ClientRosterManager` + `GuidedHuntLogManager` (Phase 9) ‚Äî already had
+  - `ClientRosterManager` + `GuidedHuntLogManager` (Phase 9) -- already had
     `.handleError` returning cached/empty; unchanged.
-- **Tests**: `test/offline_stream_guard_test.dart` ‚Äî **5 tests, all pass**:
+- **Tests**: `test/offline_stream_guard_test.dart` -- **5 tests, all pass**:
   normal emissions pass through; stream error replaced with fallback;
   no fallback on clean completion; typed list fallback for cache-failure
   recovery; stream completes after fallback (no hang).
@@ -1106,9 +1106,9 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/hunter_mode/services/meat_processing_order_manager.dart`
   (guard),
   `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
-  (guard + throw‚Üíempty stream),
+  (guard + throw->empty stream),
   `lib/features/hunter_mode/services/package_booking_manager.dart`
-  (throw‚Üíempty stream),
+  (throw->empty stream),
   `lib/features/hunter_mode/services/carcass_log_manager.dart`
   (null-user guard),
   `lib/features/hunter_mode/services/outfitter_analytics_service.dart`
@@ -1117,7 +1117,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - No Firestore rules / index / Storage changes (this is a client-side
   persistence + resilience hardening pass).
 
-## Phase 11 ‚Äî Package Quantity Tracking & Automatic Sold-Out Status (added 2026-08-13)
+## Phase 11 -- Package Quantity Tracking & Automatic Sold-Out Status (added 2026-08-13)
 
 - New inventory model for hunting packages: every package now carries a
   `quantityAvailable` slot count (default 1 for legacy docs) that decrements
@@ -1127,32 +1127,32 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **`PackageStatus` enum** (`lib/features/hunter_mode/models/package_pricing.dart`):
   - Added `soldOut` variant; `fromString`/`label` round-trip `"sold_out"`.
     `fromString` falls back to `active` for null/unknown.
-  - Added `bool isListed` getter (`active` ‚Üí true; `draft`/`archived`/
-    `deleted`/`soldOut` ‚Üí false) so analytics/marketplace can branch on
+  - Added `bool isListed` getter (`active` -> true; `draft`/`archived`/
+    `deleted`/`soldOut` -> false) so analytics/marketplace can branch on
     "is this a bookable listing".
 - **`PackageQuantity` helper** (same file): type-safe parsing of the raw
   Firestore `quantityAvailable` value.
-  - `fromData(dynamic)` ‚Äî accepts int/double; returns `defaultQuantity` (1)
+  - `fromData(dynamic)` -- accepts int/double; returns `defaultQuantity` (1)
     for legacy docs (null), invalid types (String), and negatives; **0 is a
     real 0** (not masked back to 1) so the sold-out state renders correctly.
-  - `isSoldOut({quantityAvailable, status})` ‚Äî true when qty ‚â§ 0 OR status is
+  - `isSoldOut({quantityAvailable, status})` -- true when qty ‚â§ 0 OR status is
     `sold_out` (defends against stale reads where qty hasn't caught up to the
     transactional flip).
-  - `remainingLabel(qty)` ‚Äî "Sold Out" / "1 slot left!" / "N slots left!"
+  - `remainingLabel(qty)` -- "Sold Out" / "1 slot left!" / "N slots left!"
     for the marketplace + manager cards.
-  - `defaultQuantity = 1` ‚Äî legacy packages (pre-Phase-11) behave as
-    single-slot: one booking decrements them to 0 ‚Üí sold_out.
+  - `defaultQuantity = 1` -- legacy packages (pre-Phase-11) behave as
+    single-slot: one booking decrements them to 0 -> sold_out.
 - **`PackageSoldOutException`** (same file): carries `packageId` + `message`,
     implements `Exception`. Thrown by the booking transaction when a
     hunter tries to book a package with no remaining slots; the marketplace
     catches it and surfaces a clear "sold out" snackbar instead of a generic
     failure message.
 - **`PackageBookingManager`** (`lib/features/hunter_mode/services/package_booking_manager.dart`):
-  - `publishPackage` ‚Äî new required `int quantityAvailable` param (written to
+  - `publishPackage` -- new required `int quantityAvailable` param (written to
     the doc as `quantityAvailable`).
-  - `updatePackage` ‚Äî new optional `int? quantityAvailable` param (omitted ‚Üí
+  - `updatePackage` -- new optional `int? quantityAvailable` param (omitted ->
     field not touched, preserving existing inventory on an edit).
-  - `bookPackage` ‚Äî **rewritten as `FirebaseFirestore.instance.runTransaction`**
+  - `bookPackage` -- **rewritten as `FirebaseFirestore.instance.runTransaction`**
     for atomic inventory + status safety:
     1. Reads the package snapshot inside the transaction.
     2. Guard: throws `PackageSoldOutException` if `status != active` OR
@@ -1164,26 +1164,26 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     4. Writes the booking doc + (deposit split) as before (the booking write
        itself is the transaction's post-commit side effect; the decrement is
        the transactional part).
-  - `restockPackage({packageId, quantityAvailable})` ‚Äî NEW. Sets the slot
+  - `restockPackage({packageId, quantityAvailable})` -- NEW. Sets the slot
     count back to a positive value AND re-activates a `sold_out` listing back
     to `active` in a single update (so the outfitter can reopen a sold-out
     package without editing each field). Wired to the manager's "Restock"
     action chip.
 - **Marketplace stream filters**:
   - `OutfitterAnalyticsService.getFilteredPackagesStream` changed from
-    `.where('status', isEqualTo: 'active')` ‚Üí
+    `.where('status', isEqualTo: 'active')` ->
     `.where('status', whereIn: ['active', 'sold_out'])` so hunters still SEE
     sold-out packages (with a SOLD OUT badge + disabled book button) rather
     than having them vanish mid-browse. `getAllPackages` updated the same way
     for consistency.
   - `getTotalPackagesCountStream` (outfitter analytics) still counts
-    `status == 'active'` only ‚Äî a sold-out package is correctly NOT counted
+    `status == 'active'` only -- a sold-out package is correctly NOT counted
     as an available listing (it's no longer bookable). This is the intended
     semantic, not a bug.
 - **Firestore rules** (`firestore.rules`, `packages/{packageId}` match block):
   the hunter-initiated `bookPackage` transaction calls `transaction.update` on
   the `packages` doc (to decrement `quantityAvailable` + flip status), which
-  is a write by the hunter ‚Äî normally only the owning outfitter can write
+  is a write by the hunter -- normally only the owning outfitter can write
   packages. The rule was widened to allow a signed-in hunter to update the
   `quantityAvailable` and `status` fields only (field-level allowance); other
   fields remain outfitter-only. This is the minimal permission needed for the
@@ -1201,7 +1201,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   - Meta chip row gains a `confirmation_number` / `do_not_disturb` icon chip
     with the `remainingLabel` ("5 slots left!" / "Sold Out").
   - "VIEW DETAILS & BOOK" button: when sold out, `onPressed` is `null`
-    (disabled), background greyed, icon ‚Üí `do_not_disturb`, label ‚Üí "SOLD OUT".
+    (disabled), background greyed, icon -> `do_not_disturb`, label -> "SOLD OUT".
 - **Booking confirmation sheet** (same file, `_BookingConfirmationSheet`):
   - Shows a red sold-out banner ("This package is sold out‚Ä¶") above the
     action buttons when `isSoldOut`.
@@ -1211,12 +1211,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     a tailored "sold out" snackbar instead of the generic "Booking failed".
 - **Outfitter package manager** (`outfitter_package_manager_screen.dart`):
   - Card meta line now includes the remaining-slots label.
-  - `_statusBadge` switch gained the `soldOut ‚Üí (Colors.red, 'SOLD OUT')` case.
+  - `_statusBadge` switch gained the `soldOut -> (Colors.red, 'SOLD OUT')` case.
   - New `_restock(packageId, currentQty)` method: prompts for a new slot count
     (‚â•1) and calls `restockPackage`, shown as a "Restock"
     (`add_shopping_cart`) action chip ONLY when the package is sold out or
     has ‚â§0 slots.
-- **Tests** (`test/package_quantity_test.dart`, NEW ‚Äî 24 tests, all pass):
+- **Tests** (`test/package_quantity_test.dart`, NEW -- 24 tests, all pass):
   `PackageStatus.soldOut` label/fromString round-trip + isListed;
   `PackageQuantity.fromData` parsing (int/double/0-is-real-0/legacy-null/
   invalid-string/negative); `isSoldOut` (qty-0, stale-positive-with-sold_out-
@@ -1225,7 +1225,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   generic-catch); and a structural group encoding the exact
   decrement + sold-out-at-0 + rejection rules that the `bookPackage`
   transaction applies (multi-slot stays active, last slot flips to sold_out,
-  0-slot rejects new bookings, legacy single-slot behavior) ‚Äî runnable
+  0-slot rejects new bookings, legacy single-slot behavior) -- runnable
   without the Firestore emulator (which can't run in this sandbox, see the
   environment-constraints note) by exercising the shared helpers the
   transaction reads through.
@@ -1235,7 +1235,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   passing suites (`offline_stream_guard_test`, `theme_controller_test`,
   `outfitter_client_roster_test`, `financial_engine_test`, etc.) still green.
   The only failing suite is `test/features/sync/bluetooth_mesh_test.dart`
-  (4 failures on `mockStorage.insertLog.length` assertions) ‚Äî pre-existing,
+  (4 failures on `mockStorage.insertLog.length` assertions) -- pre-existing,
   unrelated (zero references to package/booking code; the file is unmodified
   in this session; tests the offline bluetooth mesh sync subsystem).
 - Deploy reminder: the `packages` Firestore rule change (hunter field-level
@@ -1255,7 +1255,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `firestore.rules`, `test/package_quantity_test.dart` (new).
 
 
-## Phase 12 ‚Äî Global Bottom SafeArea & Scroll Padding Audit (added 2026-08-13)
+## Phase 12 -- Global Bottom SafeArea & Scroll Padding Audit (added 2026-08-13)
 
 - **Problem**: on many screens the bottom-most content (cards, buttons, list
   items) rendered under the Android 3-button nav bar / iOS home-indicator
@@ -1274,7 +1274,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     devices with hardware keys, up to ~48px on gesture-nav phones).
 - **Audit method**: enumerated every `body:` across `lib/` (66 Scaffolds) and
   classified each:
-  - **SafeArea-wrapped bodies** (bottom:true is the default ‚Äî verified NO
+  - **SafeArea-wrapped bodies** (bottom:true is the default -- verified NO
     `SafeArea(bottom: false)` exists anywhere in `lib/`) were left as-is;
     `SafeArea` already reserves the gesture-bar inset, satisfying the
     "SafeArea OR padding" requirement. These include auth, role-selection,
@@ -1296,7 +1296,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     (form), `outfitter_package_manager_screen.dart`, `outfitter_pricelist_verification_screen.dart`,
     `firearm_maintenance_screen.dart` (two tab ListViews).
   - Outfitter: `outfitter_dashboard.dart` (Container->Padding->ListView) AND
-    `presentation/outfitter_dashboard.dart` (duplicate dashboard ‚Äî both fixed
+    `presentation/outfitter_dashboard.dart` (duplicate dashboard -- both fixed
     for consistency).
   - Admin: `admin_dashboard_screen.dart` (RefreshIndicator->ListView; was
     hard-coded bottom:32, now `SafeBottomInset.of(context)`).
@@ -1306,7 +1306,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   generous `bottom: 80-96` (FAB clearance, well above the gesture bar);
   camera/map `Stack` bodies (blood tracker, spoor HUD, weather, license
   scanner, offline nav) are intentionally full-bleed overlays.
-- **`flutter analyze`**: **0 errors**, 13 warnings (all pre-existing ‚Äî
+- **`flutter analyze`**: **0 errors**, 13 warnings (all pre-existing --
   `unused_local_variable`/`unused_element`/`unnecessary_cast` in unrelated
   files; the single `outfitter_trophy_stock_screen.dart:87 unnecessary_cast`
   is in pre-existing code, NOT in the padding edit). 282 infos (no new issues
@@ -1316,18 +1316,18 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - Files: `lib/core/widgets/safe_bottom_inset.dart` (new) + the 18 screen files
   listed above (import + one `padding:` edit each).
 
-## RBAC ‚Äî role-based access control & route guards (added 2026-08-13)
+## RBAC -- role-based access control & route guards (added 2026-08-13)
 
 - Centralized the "who is the current user" question in a new
   `lib/features/auth/services/user_role_provider.dart`:
   - `enum AppRole { admin, outfitter, hunter, unknown }` with
-    `AppRole.fromString` (collapses null / unknown ‚Üí `unknown`).
-  - `UserRoleProvider` singleton ‚Äî the single cached source of truth for the
+    `AppRole.fromString` (collapses null / unknown -> `unknown`).
+  - `UserRoleProvider` singleton -- the single cached source of truth for the
     resolved role. `resolveRole({forceRefresh})` fetches the role on login in
-    this order: (1) not signed in ‚Üí `unknown`; (2) admin email allow-list
-    (`admin@jag-spoor.co.za`) ‚Üí `admin`; (3) `AdminAuthGuard` admin claim /
-    Firestore flag ‚Üí `admin`; (4) `users/{uid}.role` ‚Üí the stored role;
-    (5) fetch error ‚Üí `unknown`. Result cached for the process lifetime.
+    this order: (1) not signed in -> `unknown`; (2) admin email allow-list
+    (`admin@jag-spoor.co.za`) -> `admin`; (3) `AdminAuthGuard` admin claim /
+    Firestore flag -> `admin`; (4) `users/{uid}.role` -> the stored role;
+    (5) fetch error -> `unknown`. Result cached for the process lifetime.
     `setRole(role)` lets role-selection cache the freshly chosen role
     without a re-fetch; `reset()` clears it on sign-out. Firestore/Auth are
     lazily resolved via getters so touching the provider in a unit test
@@ -1336,25 +1336,25 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `FakeFirebaseFirestore`.
 - Separated the "what may they do" policy into a pure, dependency-free
   `lib/features/auth/services/role_guard.dart` (no Firebase / Flutter imports
-  ‚Üí fully unit-testable):
-  - `RoleGuard.canAccess(role, route)` ‚Äî **admins short-circuit to `true` for
+  -> fully unit-testable):
+  - `RoleGuard.canAccess(role, route)` -- **admins short-circuit to `true` for
     EVERY route** (Hunter, Outfitter, Admin Portal, plus all forms/screens),
     so an admin can never trigger an Access Denied banner. Below that:
     admin-only routes (`/admin_dashboard`) deny every non-admin; the Hunter /
     Outfitter dashboards require the matching non-admin role; all other routes
-    default to allowed. ‚Üí Hunters cannot open the Admin Portal or Outfitter
+    default to allowed. -> Hunters cannot open the Admin Portal or Outfitter
     Management; Outfitters default to Outfitter Mode and cannot open
     Hunter / Admin; Admins have full cross-mode access to all three.
-  - `RoleGuard.defaultHomeFor(role)` ‚Äî where an unauthorized user is bounced
-    (`unknown` ‚Üí `/role_selection`, never dropped on a dashboard).
-  - `RoleGuard.canSwitchModes(role)` ‚Äî only `admin` may use the instant mode
+  - `RoleGuard.defaultHomeFor(role)` -- where an unauthorized user is bounced
+    (`unknown` -> `/role_selection`, never dropped on a dashboard).
+  - `RoleGuard.canSwitchModes(role)` -- only `admin` may use the instant mode
     switcher.
-  - `RoleGuard.accessDeniedMessage(role, route)` ‚Äî route-tailored notice text.
-- New `lib/features/auth/widgets/role_guarded_route.dart` ‚Äî `RoleGuardedRoute`
+  - `RoleGuard.accessDeniedMessage(role, route)` -- route-tailored notice text.
+- New `lib/features/auth/widgets/role_guarded_route.dart` -- `RoleGuardedRoute`
   widget wraps a route `builder`. On mount it resolves the role (if not yet
-  resolved ‚Äî covers deep-link cold launches), checks `RoleGuard.canAccess`,
+  resolved -- covers deep-link cold launches), checks `RoleGuard.canAccess`,
   and on DENIAL redirects cleanly to `defaultHomeFor(role)` via
-  `pushReplacementNamed` with a floating red "Access Denied: ‚Ä¶" SnackBar ‚Äî
+  `pushReplacementNamed` with a floating red "Access Denied: ‚Ä¶" SnackBar --
   instead of rendering a screen the user may not use. Awaiting resolution
   shows a centered `CircularProgressIndicator`.
 - Wired route guards in `main.dart`: `/hunter_dashboard`,
@@ -1363,12 +1363,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   route-level protected.
 - `core/splash_screen.dart` now resolves the role ONCE via
   `UserRoleProvider.instance.resolveRole(forceRefresh: true)` and routes by
-  `AppRole` (admin‚Üíadmin, hunter‚Üíhunter, outfitter‚Üíoutfitter, unknown‚Üírole
+  `AppRole` (admin->admin, hunter->hunter, outfitter->outfitter, unknown->role
   selection). Removed the duplicated direct Firestore read; the cached role
   is then read by the dashboard route guards.
 - `role_selection_screen.dart` caches the chosen role:
-  - admin bypass ‚Üí `setRole(AppRole.admin)` before navigating.
-  - hunter/outfitter confirm ‚Üí writes `users/{uid}.role`, then
+  - admin bypass -> `setRole(AppRole.admin)` before navigating.
+  - hunter/outfitter confirm -> writes `users/{uid}.role`, then
     `setRole(outfitter|hunter)` so the destination route guard admits the
     user immediately (the Firestore write may not be readable for a few
     hundred ms).
@@ -1388,7 +1388,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   no new issues in the new/modified files).
 - **Admin cross-mode access fix (2026-08-13)**: `RoleGuard.canAccess` was
   restructured so `AppRole.admin` short-circuits to `true` at the TOP of the
-  method ‚Äî admins now have guaranteed full access to Hunter, Outfitter, AND
+  method -- admins now have guaranteed full access to Hunter, Outfitter, AND
   Admin routes (plus every other screen) and can never trigger an Access
   Denied banner. Previously admin was admitted per-branch on each dashboard
   route, which worked but was implicit and fragile against future admin-only
@@ -1397,12 +1397,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   matching non-admin role). `test/role_guard_test.dart` gained an explicit
   "admin may access <route>" sweep over 7 representative routes.
 - **Tests** (all green locally, Flutter 3.44.9):
-  - `test/role_guard_test.dart` (31 tests) ‚Äî `AppRole.fromString` parsing +
+  - `test/role_guard_test.dart` (31 tests) -- `AppRole.fromString` parsing +
     `RoleGuard.canAccess` / `defaultHomeFor` / `canSwitchModes` /
     `accessDeniedMessage` for admin, outfitter, hunter, and unknown profiles
     across admin-only, hunter, outfitter, and non-restricted routes, plus an
     explicit admin-full-cross-mode-access sweep over 7 representative routes.
-  - `test/user_role_provider_test.dart` (7 tests) ‚Äî provider default state,
+  - `test/user_role_provider_test.dart` (7 tests) -- provider default state,
     `setRole` caching for all three roles, `resolveRole` cache-hit contract
     (returns cached role without touching Firebase), and `reset`.
   - Note: the Firestore `users/{uid}.role` fetch in `resolveRole` is a
@@ -1429,7 +1429,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   that pass `null`, throw synchronously, or leak single-subscription stream
   errors to the widget. Findings + fixes:
   - **`OutfitterRevenueScreen._combinedAnalyticsStream`** (CRASH): dereferenced
-    `_currentUserId!` at the top of the `async*` generator ‚Äî a
+    `_currentUserId!` at the top of the `async*` generator -- a
     `NullCheckException` when the uid was unresolved (manager w/ no uid,
     pre-auth mount, or post-sign-out). Now guards `uid == null` and yields a
     stable empty payload `{'revenue':{}, 'enterprise':{}, 'speciesRevenue':[],
@@ -1458,14 +1458,14 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     <Animal>[])` for offline resilience + consistency. The two consumers
     (`animal_list_screen`, `add_trophy_screen`) already had `snapshot.hasError`
     branches; the guard converts hard errors to a clean empty list.
-- **Verified safe (no change needed)** ‚Äî call sites already null-safe:
+- **Verified safe (no change needed)** -- call sites already null-safe:
   - `ammunition_screen.dart` is the gold-standard pattern:
     `_currentUserId != null ? ...snapshots() : const Stream.empty()` + hasError.
   - `InventoryBridge.watchSafeFirearms`/`watchAvailableAmmunition`:
-    null-uid ‚Üí `Stream.value([])`, empty rifleId ‚Üí local fallback, `.handleError`.
-  - `ClientRosterManager`/`GuidedHuntLogManager`: null-uid ‚Üí
+    null-uid -> `Stream.value([])`, empty rifleId -> local fallback, `.handleError`.
+  - `ClientRosterManager`/`GuidedHuntLogManager`: null-uid ->
     `Stream.value(const [])` + `.handleError` + doc-id de-dup.
-  - `PackageBookingManager.getMyPackagesStream`: null-uid ‚Üí
+  - `PackageBookingManager.getMyPackagesStream`: null-uid ->
     `const Stream.empty()` (documented).
   - Chat `StreamBuilder`s inside expandable list items
     (`outfitter_booking_dashboard_screen`, `hunter_package_marketplace_screen`):
@@ -1476,9 +1476,9 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `!snapshot.hasData` first.
 - **`flutter analyze`**: 0 errors, 13 warnings (all pre-existing in unmodified
   files; none in the 4 changed files).
-- **Tests**: `flutter test` ‚Üí 201 passed, 4 failed. All 4 failures are
+- **Tests**: `flutter test` -> 201 passed, 4 failed. All 4 failures are
   **pre-existing** (verified by stashing the changes and re-running on the
-  prior commit `17af183` ‚Äî identical 4 failures): `saps_tracker_test`
+  prior commit `17af183` -- identical 4 failures): `saps_tracker_test`
   (status-string conversion), `advanced_ballistics_test` (density assertion),
   `bluetooth_mesh_test` (mesh-sync assertion), `offline_sync_queue_test`
   (fake_cloud_firestore/cloud_firestore compile skew). None touch the 4
@@ -1489,7 +1489,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`,
   `lib/repositories/animal_repository.dart`.
 
-## Broadcast-stream audit ‚Äî "Bad state: Stream has already been listened to" (added 2026-08-13)
+## Broadcast-stream audit -- "Bad state: Stream has already been listened to" (added 2026-08-13)
 
 - Crash: `Bad state: Stream has already been listened to.. Error thrown
   building Expanded(flex: 1)`. Root cause: a **single-subscription** stream
@@ -1500,16 +1500,16 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   (disposed + recreated at the same position, e.g. parent tree restructure,
   conditional show/hide, or theme-toggle rebuild) while the `State` persists,
   the new `StreamBuilder` calls `widget.stream.listen(...)` on the
-  already-listened single-subscription stream ‚Üí throws. (Verified: a raw
+  already-listened single-subscription stream -> throws. (Verified: a raw
   `StreamController.stream` throws on a second `.listen()` even after the
   first subscription is cancelled.)
 - Audit: grepped the whole `lib/` tree for cached stream fields
   (`late Stream<...> _x`, `Stream<...> _x`, `Stream get x => _field`).
   Exactly **three** cached single-subscription stream instances existed:
-  - `ballistic_calc_screen.dart` ‚Äî `_firearmsStream` (firearms `.snapshots()`)
+  - `ballistic_calc_screen.dart` -- `_firearmsStream` (firearms `.snapshots()`)
     and `_factoryAmmoStream` (factory_ammunition `.snapshots()`), both
     assigned once in `initState`, consumed by `StreamBuilder(stream: _x)`.
-  - `scope_tools_bottom_sheet.dart` ‚Äî `_firearmsStream`
+  - `scope_tools_bottom_sheet.dart` -- `_firearmsStream`
     (`_inventoryBridge.watchSafeFirearms()`), same pattern.
 - **Verified safe (no change needed):**
   - All `StreamController` fields in services are already `.broadcast()`:
@@ -1518,7 +1518,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     Their getters (`dirtyCountStream`, `dirtyRecordsStream`,
     `ingestionStream`, `peerCountStream`) return broadcast streams.
   - `SignalHudWidget` listens to `dirtyCountStream` (broadcast) via manual
-    `.listen()` + cancels in `dispose()` ‚Äî multi-instance safe.
+    `.listen()` + cancels in `dispose()` -- multi-instance safe.
   - `OfflineStreamGuard.offlineResilient()` returns a fresh
     single-subscription `StreamController.stream` **per invocation**; every
     manager calls it inline in its getter (fresh stream per `build`), so the
@@ -1527,35 +1527,35 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     (`_repo.watchAnimals()`, `_manager.getMyClientsStream()`,
     `_service.getVacantLodgingStream()`, `PackageBookingManager.instance
     .getMyPackagesStream(status:)`, `_combinedAnalyticsStream()` `async*`,
-    inline `.snapshots()`, etc.) ‚Äî fresh instance each build ‚Üí no sharing.
+    inline `.snapshots()`, etc.) -- fresh instance each build -> no sharing.
   - Chat `StreamBuilder`s inside expandable list-item cards use a fresh
-    `_bookingQuery.snapshots()` per card `State` ‚Üí no cross-card sharing.
+    `_bookingQuery.snapshots()` per card `State` -> no cross-card sharing.
 - Fix applied: wrapped each cached stream in `.asBroadcastStream()` at the
   `initState` assignment. `asBroadcastStream()` converts the single-subscription
   source into a multi-subscription broadcast stream that tolerates (a) multiple
-  simultaneous listeners and (b) listen ‚Üí cancel ‚Üí re-listen without throwing
+  simultaneous listeners and (b) listen -> cancel -> re-listen without throwing
   (empirically verified: a raw single-sub stream throws on second listen, but
   `source.asBroadcastStream()` allows re-subscribe after cancel). The broadcast
   wrapper listens to the underlying Firestore stream exactly once for the
   `State`'s lifetime and re-attaches listeners as `StreamBuilder`s mount/unmount.
 - `flutter analyze`: 0 errors, 13 warnings (all pre-existing, none in changed
   files). `flutter test`: 201 passed, 4 pre-existing failures (saps_tracker,
-  offline_sync_queue, advanced_ballistics, bluetooth_mesh ‚Äî identical to the
+  offline_sync_queue, advanced_ballistics, bluetooth_mesh -- identical to the
   prior commit; none touch the changed files).
 - Files: `lib/features/ballistics/presentation/ballistic_calc_screen.dart`,
   `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`.
 
-## Manage Farms & Managers ‚Äî farm selection & editing (added 2026-08-13)
+## Manage Farms & Managers -- farm selection & editing (added 2026-08-13)
 
 - The "Registered Farms" block in
   `outfitter_enterprise_panel_screen.dart` previously rendered static,
   non-interactive farm cards. Each card is now **tappable** (whole card
-  wrapped in `Material > InkWell` with a tap ‚Üí edit sheet) AND carries an
+  wrapped in `Material > InkWell` with a tap -> edit sheet) AND carries an
   explicit **EDIT** `TextButton.icon`.
 - New **Edit Farm sheet** (`_showEditFarmSheet(data, farmId)`): a
   `showModalBottomSheet` + `StatefulBuilder` form pre-filled from the farm
   doc, with validated fields for: Farm Name * (required), District, Province,
-  Size (hectares, decimal-validated ‚Üí `double?`), Contact Number (phone),
+  Size (hectares, decimal-validated -> `double?`), Contact Number (phone),
   Registration Number. Uses `isScrollControlled: true` + `viewInsets.bottom`
   padding so the keyboard never covers the save button. The SAVE button
   shows a spinner + `SAVING‚Ä¶` label while the update is in flight
@@ -1564,7 +1564,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   calls `OutfitterEnterpriseManager.instance.updateFarm(...)`. On success it
   pops the sheet + shows a success snackbar; on failure it surfaces the error
   and keeps the sheet open so the user can retry. The Registered Farms list
-  refreshes **automatically** ‚Äî it is already a reactive Firestore
+  refreshes **automatically** -- it is already a reactive Firestore
   `snapshots()` `StreamBuilder`, so the `updateFarm` write triggers a re-render
   with no manual `setState`/reload needed.
 - New `OutfitterEnterpriseManager.updateFarm({farmId, name, district,
@@ -1573,7 +1573,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   .update({...})` with `updatedAt: serverTimestamp()`. Optional fields are
   written as `null` when blank (clears stale values). `firestore.rules`
   already permits `update, delete` for `isAdmin() || isOwnerOf('outfitterId')`
-  on `farms/{farmId}` ‚Äî no rules/index change required.
+  on `farms/{farmId}` -- no rules/index change required.
 - Card UI extended to surface the new fields inline: a `Wrap` of detail chips
   (size `ha`, contact number, registration number) renders below a divider
   **only when at least one of those fields is set** on the document, so legacy
@@ -1581,25 +1581,25 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   chips. New `_farmDetailChip(icon, label, theme)` helper.
 - `flutter analyze`: 0 errors, 13 warnings (all pre-existing, none in changed
   files). `flutter test`: 201 passed, 4 pre-existing failures (saps_tracker,
-  offline_sync_queue, advanced_ballistics, bluetooth_mesh ‚Äî none touch the
+  offline_sync_queue, advanced_ballistics, bluetooth_mesh -- none touch the
   changed files).
 - Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
   `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`.
 
-## Trophy Stock Inventory ‚Äî farm stock editing & PDF zero-value fix (added 2026-08-13)
+## Trophy Stock Inventory -- farm stock editing & PDF zero-value fix (added 2026-08-13)
 
 ### PDF zero-value bug (fixed)
 - The top-right `Icons.picture_as_pdf_rounded` AppBar button calls
   `TrophyInventoryReportExporter().generateAndShare()`, which **re-fetched**
   trophy docs from Firestore but read them with the WRONG field names, so every
   value rendered as 0.00 despite valid values on the on-screen cards:
-  - Read `data['quantity']` ‚Üí the screen/manager write `availableCount`.
+  - Read `data['quantity']` -> the screen/manager write `availableCount`.
     Default `?? 1` inflated the count; price stayed 0.
-  - Read `data['pricePerAnimal']` ‚Üí the screen/manager write
-    `pricePerTrophyRands`. Always null ‚Üí `?? 0.0` ‚Üí "R 0.00" everywhere.
+  - Read `data['pricePerAnimal']` -> the screen/manager write
+    `pricePerTrophyRands`. Always null -> `?? 0.0` -> "R 0.00" everywhere.
 - Fixed in **3** read sites (the totals loop, the per-farm `_farmSection`
-  loop, and the `dataTable` rows): `quantity`‚Üí`availableCount` (default
-  `?? 0`), `pricePerAnimal`‚Üí`pricePerTrophyRands`. Now the PDF's "Estimated
+  loop, and the `dataTable` rows): `quantity`->`availableCount` (default
+  `?? 0`), `pricePerAnimal`->`pricePerTrophyRands`. Now the PDF's "Estimated
   Stock Value", per-farm totals, and per-species Price/Animal + Qty columns
   consume the actual stock values and species pricing from the loaded
   dataset. Measurement + photo-count fields were already correct. The
@@ -1614,21 +1614,21 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   **Edit Trophy Stock** sheet for that exact trophy document.
 - To target the right doc, the grouping loop now carries the snapshot doc id
   on each entry under a private `_docId` key (`data['_docId'] = doc.id`).
-  This stays local to the screen's stream build ‚Äî the PDF exporter fetches
+  This stays local to the screen's stream build -- the PDF exporter fetches
   its own snapshot, so the private key never contaminates it.
 - New **Edit Trophy Stock sheet** (`_showEditTrophySheet`): a
   `showModalBottomSheet` + `StatefulBuilder` form pre-filled from the entry,
   with validated fields for Species * (required), Available Count * (int ‚â•0),
   Price per Trophy (R) * (double ‚â•0), Measurement (inches, optional/decimal).
   `isScrollControlled` + `viewInsets.bottom` padding keeps the keyboard off
-  the SAVE button. SAVE ‚Üí `_submitTrophyEdit` ‚Üí
+  the SAVE button. SAVE -> `_submitTrophyEdit` ->
   `OutfitterEnterpriseManager.instance.updateTrophyStock(...)`.
 - A destructive **DELETE ENTRY** `TextButton.icon` opens a confirmation
-  `AlertDialog`; confirming calls `_deleteTrophy` ‚Üí
+  `AlertDialog`; confirming calls `_deleteTrophy` ->
   `OutfitterEnterpriseManager.instance.deleteTrophyStock(trophyId)`.
 - Reactive refresh: the "Current Stock by Farm" block is already a Firestore
   `snapshots()` `StreamBuilder`, so both update and delete re-render the
-  list automatically ‚Äî no manual `setState`/reload. On failure the error is
+  list automatically -- no manual `setState`/reload. On failure the error is
   surfaced and the sheet stays open for retry.
 - New `OutfitterEnterpriseManager.updateTrophyStock({trophyId, species?,
   availableCount?, pricePerTrophyRands?, trophyMeasurement?,
@@ -1643,17 +1643,17 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   `unnecessary_cast` at `outfitter_trophy_stock_screen.dart:93` is the
   pre-existing baseline shifted by added code). `flutter test`: 201 passed,
   4 pre-existing failures (saps_tracker, offline_sync_queue,
-  advanced_ballistics, bluetooth_mesh ‚Äî none touch the changed files).
+  advanced_ballistics, bluetooth_mesh -- none touch the changed files).
 - Files: `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
   `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
   `lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart`.
 
 
-## Phase 13 ‚Äî Outfitter Dashboard Cleanup & Package Creator Camera Capture (added 2026-08-14)
+## Phase 13 -- Outfitter Dashboard Cleanup & Package Creator Camera Capture (added 2026-08-14)
 
 - **Outfitter dashboard cleanup**:
   - Removed the **unused duplicate** `lib/features/outfitter_mode/presentation/outfitter_dashboard.dart`
-    (a `StatelessWidget` `OutfitterDashboard` that was never imported anywhere ‚Äî
+    (a `StatelessWidget` `OutfitterDashboard` that was never imported anywhere --
     `main.dart` imports the real `lib/features/outfitter_mode/outfitter_dashboard.dart`
     `StatefulWidget`). The duplicate had drifted to a 2-card stub (Price Catalog
     + Slaghuis Matrix) and was an overlapping/redundant component.
@@ -1661,23 +1661,23 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     against overflow on narrow / small-ratio screens (the long tracked-out
     section label "FARM MANAGEMENT HUD (MANAGER ACCESS)" + the multi-line card
     descriptions + the two-line AppBar title could overflow on a 360dp phone):
-    - Section header `Text` ‚Üí `softWrap: true`, `maxLines: 2`,
-      `overflow: ellipsis`, letterSpacing reduced 2.0 ‚Üí 1.2, fontSize 16 ‚Üí 15.
-    - `_buildFeatureCard` title ‚Üí `maxLines: 2, overflow: ellipsis`; description
-      ‚Üí `maxLines: 3, overflow: ellipsis` (the description Column is already in
+    - Section header `Text` -> `softWrap: true`, `maxLines: 2`,
+      `overflow: ellipsis`, letterSpacing reduced 2.0 -> 1.2, fontSize 16 -> 15.
+    - `_buildFeatureCard` title -> `maxLines: 2, overflow: ellipsis`; description
+      -> `maxLines: 3, overflow: ellipsis` (the description Column is already in
       an `Expanded`, so wrapping is safe).
-    - `_buildStatusBanner` header Row ‚Üí header `Text` wrapped in `Expanded` with
-      `maxLines: 1, overflow: ellipsis`; status body ‚Üí `softWrap: true,
+    - `_buildStatusBanner` header Row -> header `Text` wrapped in `Expanded` with
+      `maxLines: 1, overflow: ellipsis`; status body -> `softWrap: true,
       maxLines: 3, overflow: ellipsis`.
-    - `_buildAppBar` two-line title ‚Üí both `Text`s get
+    - `_buildAppBar` two-line title -> both `Text`s get
       `maxLines: 1, overflow: ellipsis`.
   - Smooth scrolling was already in place (`ListView` + `BouncingScrollPhysics` +
     `SafeBottomInset.of(context)` bottom padding from Phase 12); the cleanup
     keeps that and only fixes the overflow-prone text nodes.
-- **Package creator ‚Äî native camera capture**
+- **Package creator -- native camera capture**
   (`lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`):
   - Previously the gallery only offered `pickMultipleMedia` (gallery multi-pick)
-    via a single "Add Photos" tile ‚Äî there was no way to capture a photo with
+    via a single "Add Photos" tile -- there was no way to capture a photo with
     the device camera from inside the package creator.
   - New `_captureWithCamera()`: opens the native camera via
     `ImagePicker.pickImage(source: ImageSource.camera, imageQuality: 85,
@@ -1692,9 +1692,9 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `_captureWithCamera`, and the original **"Add Photos"** tile
     (`add_photo_alternate_rounded`) wired to the multi-pick gallery flow. A new
     reusable `_addTile(...)` helper renders both. The camera action is now a
-    first-class, clearly-labelled entry point ‚Äî tapping it brings up the native
+    first-class, clearly-labelled entry point -- tapping it brings up the native
     capture sheet immediately.
-  - The full capture ‚Üí preview ‚Üí upload pipeline already existed for
+  - The full capture -> preview -> upload pipeline already existed for
     gallery-picked images and now applies equally to camera captures: each
     picked `XFile` renders as an `Image.file` preview thumbnail (with a remove
     button) in the horizontal strip, and on package submission
@@ -1712,19 +1712,19 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   JagSpoor-specific copy. Android already declared `CAMERA` permission +
   `camera` feature (`required=false`) in `AndroidManifest.xml`. Validated the
   plist parses with `plistlib`.
-- **Verification**: `flutter analyze` (local Flutter 3.47.0 stable) ‚Üí **0
+- **Verification**: `flutter analyze` (local Flutter 3.47.0 stable) -> **0
   errors, 13 warnings, 316 infos**. The 13 warnings are all pre-existing and
   NONE are in either changed file (`outfitter_dashboard.dart` /
-  `outfitter_package_creator_screen.dart`) ‚Äî identical warning set to the prior
+  `outfitter_package_creator_screen.dart`) -- identical warning set to the prior
   baseline. The 2 `info`s in the package creator are the pre-existing
   `DropdownButtonFormField.value` deprecations (only flagged on Flutter ‚â•3.33;
   CI's 3.29.1 pin does not flag them). `flutter test` of the RBAC + package +
-  theme suites (64 tests) ‚Üí all pass.
+  theme suites (64 tests) -> all pass.
 - **Flutter SDK note**: the local SDK at `/home/openhands/flutter` was
   re-installed this session (3.47.0 stable, Dart 3.13) after the documented
   `/home/openhands/flutter` checkout was absent. Add to PATH:
   `export PATH="$HOME/flutter/bin:$PATH"`. It is newer than the CI pin of
-  3.29.1 ‚Äî the only observable difference for this work is the
+  3.29.1 -- the only observable difference for this work is the
   `DropdownButtonFormField.value` deprecation infos (documented baseline).
 - Files: `lib/features/outfitter_mode/outfitter_dashboard.dart` (hardened),
   `lib/features/outfitter_mode/presentation/outfitter_dashboard.dart` (deleted),
@@ -1733,22 +1733,22 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   strings). No Firestore / Storage / rules changes.
 
 
-## Phase 14 ‚Äî AI Pricelist Scanner Dynamic Extraction & Afrikaans Game Names (added 2026-08-14)
+## Phase 14 -- AI Pricelist Scanner Dynamic Extraction & Afrikaans Game Names (added 2026-08-14)
 
 - **Root cause**: the AI Pricelist Scanner returned **static, hardcoded mock
   data** regardless of the scanned document. `PricelistScannerService
   ._simulateTextExtraction()` always emitted the same ~26 fake lines
-  (African Elephant, Cape Buffalo, ‚Ä¶, Daily Rate, ‚Ä¶) ‚Äî so every scanned
+  (African Elephant, Cape Buffalo, ‚Ä¶, Daily Rate, ‚Ä¶) -- so every scanned
   image/PDF produced identical "extracted" species + prices. There was no
   OCR / Vision integration and no Afrikaans recognition.
 - **New dependency**: `google_generative_ai: ^0.4.7` (pure-Dart Google Gemini
-  SDK, no native build ‚Äî safe on the CI Flutter 3.29.1 pin and on the local
+  SDK, no native build -- safe on the CI Flutter 3.29.1 pin and on the local
   3.47.0 stable). Added to `pubspec.yaml`; resolved cleanly.
 
 - **New pure-Dart parser** `lib/features/hunter_mode/services/pricelist_text_parser.dart`
   (`PricelistTextParser`, `PricelistItem`, `GeminiResultNormalizer`,
   `parseGeminiTextResponse`, top-level `parsePrice`):
-  - **Dynamic extraction** ‚Äî never returns a fixed list. It takes raw
+  - **Dynamic extraction** -- never returns a fixed list. It takes raw
     price-list text (one line per entry) and parses each line: pops the
     trophy size range FIRST (so size tokens aren't mistaken for a price),
     extracts the rightmost ZAR amount, then resolves species / sex / fee from
@@ -1759,30 +1759,30 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     (comma decimal), `1.234,56` (dot-thousands + comma-decimal),
     `1,234.56` (comma-thousands + dot-decimal), plain integers, and strips
     `R`/`ZAR` prefixes. Ambiguous comma resolved: comma + exactly 2 trailing
-    digits ‚Üí decimal, else ‚Üí thousands; when both `.` and `,` present the
+    digits -> decimal, else -> thousands; when both `.` and `,` present the
     rightmost is the decimal separator.
   - **Afrikaans species dictionary** (`speciesAliases`) maps every required
     Afrikaans name to a canonical system species id (matching the `animals`
-    image-catalog keys): Vlakvark‚ÜíCommon Warthog, Blesbok‚ÜíBlesbok,
-    Springbok‚ÜíSpringbok, Rooibok‚ÜíImpala, Koedoe‚ÜíGreater Kudu,
-    Blouwildebees‚ÜíBlue Wildebeest, Swartwildebees‚ÜíBlack Wildebeest,
-    Gemsbok‚ÜíGemsbok (Oryx), Eland‚ÜíEland, Bosbok‚ÜíSouthern Bushbuck,
-    Waterbok‚ÜíCommon Waterbuck, Rooihartbees‚ÜíRed Hartebeest, Nyala‚ÜíNyala,
-    Sebra‚ÜíPlains Zebra, Duiker‚ÜíCommon Duiker, Steenbok‚ÜíSteenbok,
-    Takbok‚ÜíFallow Deer (plus English synonyms). Longest-match-wins so
+    image-catalog keys): Vlakvark->Common Warthog, Blesbok->Blesbok,
+    Springbok->Springbok, Rooibok->Impala, Koedoe->Greater Kudu,
+    Blouwildebees->Blue Wildebeest, Swartwildebees->Black Wildebeest,
+    Gemsbok->Gemsbok (Oryx), Eland->Eland, Bosbok->Southern Bushbuck,
+    Waterbok->Common Waterbuck, Rooihartbees->Red Hartebeest, Nyala->Nyala,
+    Sebra->Plains Zebra, Duiker->Common Duiker, Steenbok->Steenbok,
+    Takbok->Fallow Deer (plus English synonyms). Longest-match-wins so
     "Greater Kudu" beats "Kudu" and "Jongbul" beats "bul". Word-boundary
     matching so "ram" doesn't match inside "framing".
-  - **Sex/class dictionary** (`sexAliases`): Bul/Ram/Bull/Male/Trophy‚ÜíMale,
-    Koei/Ooi/Ewe/Female/Cow‚ÜíFemale, Jongbul/Penkop/Knypkop/Young
-    Male/Juvenile/Yearling‚ÜíYoung Male. The **original** token is preserved
+  - **Sex/class dictionary** (`sexAliases`): Bul/Ram/Bull/Male/Trophy->Male,
+    Koei/Ooi/Ewe/Female/Cow->Female, Jongbul/Penkop/Knypkop/Young
+    Male/Juvenile/Yearling->Young Male. The **original** token is preserved
     on `sexLabel` (e.g. `bul`, `koei`); `sex` holds the normalized bucket.
   - **Trophy size range** parsing: `>50"`, `<20"`, `‚â•40"`, `40"-50"`,
     `50"+` are captured verbatim on `trophySizeRange`.
-  - **Fee dictionary** (`feeAliases`): Dagfooi/Daily Rate‚Üídaily,
-    Slagfooi/Slaughter Fee‚Üíslaughter, Gidskoste/Guide Fee‚Üíguide,
-    Wildrit/Game Drive‚Üígamedrive, Bakkiefooi/Vehicle Fee‚Üívehicle,
-    Accommodation/Akkommodasie‚Üíaccommodation, Meals/Kos‚Üímeals,
-    Transport‚Üítransport. Each fee row has `itemType:'fee'` + `feeType`.
+  - **Fee dictionary** (`feeAliases`): Dagfooi/Daily Rate->daily,
+    Slagfooi/Slaughter Fee->slaughter, Gidskoste/Guide Fee->guide,
+    Wildrit/Game Drive->gamedrive, Bakkiefooi/Vehicle Fee->vehicle,
+    Accommodation/Akkommodasie->accommodation, Meals/Kos->meals,
+    Transport->transport. Each fee row has `itemType:'fee'` + `feeType`.
   - **Gemini normalizer**: `GeminiResultNormalizer.normalize` routes Gemini's
     structured JSON (species/sex/sizeRange/priceZAR/type fields) through the
     SAME Afrikaans-aware resolvers so Gemini-returned Afrikaans labels map to
@@ -1805,22 +1805,22 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `parseGeminiTextResponse`.
   - The **instruction prompt** is primed with the full Afrikaans vocabulary
     and demands a strict JSON array of `{type, species, sex, sizeRange,
-    priceZAR, feeType, displayLabel}` ‚Äî preserving the original printed
+    priceZAR, feeType, displayLabel}` -- preserving the original printed
     wording (no translation) so Afrikaans labels survive into the parser.
   - Throws `StateError` with an actionable "Set GEMINI_API_KEY" message when
-    no key is configured ‚Äî so the scanner no longer fakes results; it
+    no key is configured -- so the scanner no longer fakes results; it
     surfaces the missing-configuration state.
 
 - **`PricelistScannerService` rewired**
   (`lib/features/hunter_mode/services/pricelist_scanner_service.dart`):
   - `_simulateTextExtraction()` (the hardcoded mock) **deleted**.
   - `extractPricelistItems` + `processAndUploadPricelistImage` now call
-    `_gemini.extract(imageFile)` ‚Üí dynamic `PricelistItem`s ‚Üí mapped to the
+    `_gemini.extract(imageFile)` -> dynamic `PricelistItem`s -> mapped to the
     extracted-item shape via `_itemToExtractedMap` (adds `outfitterBasePrice`,
     `hunterDisplayPriceZAR` (√ó1.075), formatted strings, `commissionZAR`,
     plus the new `displayLabel`/`speciesName`/`speciesId`/`sex`/`sexLabel`/
     `trophySizeRange`/`itemType`/`feeType`). `processingVersion` bumped
-    `1.0.0 ‚Üí 2.0.0`.
+    `1.0.0 -> 2.0.0`.
   - New `isAiExtractionAvailable` getter + `parseRawText(String)` so the
     parser pipeline is reusable from an on-device OCR / PDF-text layer.
   - Backward-compatible: existing `name`/`outfitterBasePrice`/
@@ -1836,7 +1836,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **Verification screen** (`outfitter_pricelist_verification_screen.dart`):
   - Each editable row now renders **metadata badges** (a `Wrap` of
     `_badge`s) for: SPECIES/FEE, sex/class (original Afrikaans or English
-    token), trophy size tier, and the resolved species id ‚Äî so the outfitter
+    token), trophy size tier, and the resolved species id -- so the outfitter
     sees exactly what was extracted from their specific document.
   - `_saveToFirestore` now persists the full structured payload
     (`displayLabel`, `speciesName`, `speciesId`, `sex`, `sexLabel`,
@@ -1844,37 +1844,37 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     the saved `scanned_pricelists` doc carries the Afrikaans-aware structured
     data for downstream booking + analytics.
 
-- **Tests** `test/pricelist_text_parser_test.dart` ‚Äî **22 tests, all pass**:
+- **Tests** `test/pricelist_text_parser_test.dart` -- **22 tests, all pass**:
   - `parsePrice` (8): SA space-thousands, R-prefixed, comma-thousands,
     comma-decimal, dot-thousands+comma-decimal, comma-thousands+dot-decimal,
-    plain integer, garbage‚Üínull.
-  - Dynamic extraction (4): full English price list ‚Üí 8 structured items
-    (Kudu Bull >50" ‚Üí Male + size + R18500; Impala Ram ‚Üí Male; Warthog/
+    plain integer, garbage->null.
+  - Dynamic extraction (4): full English price list -> 8 structured items
+    (Kudu Bull >50" -> Male + size + R18500; Impala Ram -> Male; Warthog/
     Springbok/Blue Wildebeest resolved; Daily Rate/Slaughter Fee/
-    Accommodation fee-typed); different inputs ‚Üí different outputs
+    Accommodation fee-typed); different inputs -> different outputs
     (no mock); no-price lines skipped; duplicate rows de-duplicated.
   - Afrikaans (5): all 16 required Afrikaans species map to system ids;
     original Afrikaans display label preserved; Afrikaans sex/class tokens
     (Bul/Ram/Koei/Ooi/Jongbul/Penkop/Knypkop) bucketed; Afrikaans fee terms
     (Dagfooi/Slagfooi/Gidskoste/Wildrit/Bakkiefooi) typed; trophy size
     ranges incl. brackets; "ram"-in-"framing" word-boundary rejection.
-  - Gemini normalizer (3): Afrikaans JSON ‚Üí system ids + sex + size; string
-    price parsed through SA separator logic; non-JSON ‚Üí text-parsing fallback.
+  - Gemini normalizer (3): Afrikaans JSON -> system ids + sex + size; string
+    price parsed through SA separator logic; non-JSON -> text-parsing fallback.
   - `PricelistItem.toMap` round-trip (1).
 - **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 13
   warnings (unchanged baseline)**, 316 infos. The only warnings/infos in
   touched files are pre-existing (`_showSuccess` unused from Phase 4,
   `unnecessary_type_check` in unchanged `getPriceListsForFarm`/
-  `getMyPriceLists` code, and `print` debug calls) ‚Äî none introduced by this
+  `getMyPriceLists` code, and `print` debug calls) -- none introduced by this
   change. New parser + extractor + test files are analyzer-clean.
 - **`flutter test`**: 223 passed, 4 failed. The 4 failures are the documented
   pre-existing baseline (`saps_tracker`, `offline_sync_queue`,
-  `advanced_ballistics`, `bluetooth_mesh`) ‚Äî none touch the changed files;
+  `advanced_ballistics`, `bluetooth_mesh`) -- none touch the changed files;
   identical to the prior commit.
 - **Runtime note**: real extraction requires `GEMINI_API_KEY` to be set in
   the deploy environment (`firebase functions:config` / Cloud Run env /
   `--dart-define=from-environment`). Without it the scanner surfaces a clear
-  "Set GEMINI_API_KEY" snackbar instead of fabricating a price list ‚Äî the
+  "Set GEMINI_API_KEY" snackbar instead of fabricating a price list -- the
   intended honest fallback. The parser + normalizer are pure-Dart and
   unit-testable independent of the API.
 - Files: `lib/features/hunter_mode/services/pricelist_text_parser.dart` (new),
@@ -1890,7 +1890,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   rules / index / Storage changes.
 
 
-## Phase 15 ‚Äî Scan save auth-kickout fix, scan-history audit & details-sheet safe-area (added 2026-08-14)
+## Phase 15 -- Scan save auth-kickout fix, scan-history audit & details-sheet safe-area (added 2026-08-14)
 
 ### Auth kickout during price-list save (fixed)
 - **Root cause**: `OutfitterPricelistVerificationScreen._saveToFirestore`
@@ -1899,27 +1899,27 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   is a **fragile navigation-stack reset**: the route that satisfies
   `isFirst` depends entirely on how the scanner was reached. The app's
   `initialRoute` is `/splash`, and splash / auth / role-selection screens are
-  reached via `pushReplacement` ‚Äî so in most flows the outfitter dashboard IS
+  reached via `pushReplacement` -- so in most flows the outfitter dashboard IS
   the first route (pop lands on the dashboard, the intended behaviour). BUT in
   several real flows (deep-link entry, admin mode-switcher that pushed the
   outfitter dashboard on top of another shell, a scanner reached before the
   role fully resolved, or a stale stack from a prior session) `isFirst` can
-  resolve to the `SplashScreen` ‚Äî whose `_navigateToNextScreen` re-runs on
+  resolve to the `SplashScreen` -- whose `_navigateToNextScreen` re-runs on
   becoming the active route and, on any role-resolution hiccup, falls through
   to `AuthScreen` / `RoleSelectionScreen`. The net observable symptom was
   "saving a price list kicks me back to the login screen."
 - **Fix**: replaced the `popUntil(isFirst)` with a **deterministic**
   `Navigator.of(context).pushNamedAndRemoveUntil('/outfitter_dashboard', (_) => false)`.
-  This clears the entire nav stack and remounts a fresh outfitter dashboard ‚Äî
+  This clears the entire nav stack and remounts a fresh outfitter dashboard --
   guaranteeing an authenticated landing on the dashboard (never splash /
   role-selection / login) regardless of how the scanner was opened. It also
   remounts the dashboard's scan-history `StreamBuilder`, so the freshly-saved
   scan appears immediately. The outfitter dashboard route is `RoleGuardedRoute`
   -wrapped, so an outfitter (or an admin in outfitter mode) is admitted; an
   unauthorized caller is bounced to their `defaultHomeFor(role)` by the guard
-  ‚Äî never to `/login`.
+  -- never to `/login`.
 - **No sign-out path exists in the scan flow** (audited): grepped the whole
-  `lib/` tree ‚Äî the only `signOut()` calls live in `AuthGateService`,
+  `lib/` tree -- the only `signOut()` calls live in `AuthGateService`,
   `AdminAnalyticsService`, and the 2FA-cancel handler in `AuthScreen`; none
   are reachable from the scanner / verification / service code. There is no
   global `FirebaseAuth.authStateChanges()` listener that redirects to login
@@ -1927,24 +1927,24 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - File: `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`.
 
 ### Scan-history persistence & streaming audit (verified + tightened)
-- **Persistence path** (single write): scanner ‚Üí
+- **Persistence path** (single write): scanner ->
   `PricelistScannerService.extractPricelistItems` (Gemini Vision + Afrikaans
-  parser, NO Firestore write) ‚Üí verification screen ‚Üí
+  parser, NO Firestore write) -> verification screen ->
   `saveVerifiedPricelist` (the ONLY Firestore `scanned_pricelists.add`).
   `processAndUploadPricelistImage` (the legacy direct-upload path) has zero
-  callers ‚Äî confirmed via grep ‚Äî so there's no double-write / divergent nav.
+  callers -- confirmed via grep -- so there's no double-write / divergent nav.
 - **Firestore rule**: `match /scanned_pricelists/{listId} { allow read,
   write: if ownerOrAdmin('outfitterId'); }`. For a CREATE `resource` is null,
   so `isOwnerOf('outfitterId')` evaluates
   `resource == null && request.resource.data.outfitterId == request.auth.uid`
-  ‚Äî and `saveVerifiedPricelist` stamps `outfitterId: currentUser.uid`, so the
+  -- and `saveVerifiedPricelist` stamps `outfitterId: currentUser.uid`, so the
   create is permitted. No rule change needed.
 - **Composite index**: `scanned_pricelists (outfitterId ASC, status ASC,
   createdAt DESC)` is present in `firestore.indexes.json` (added in Phase 4),
   so `getMyPriceListsStream`'s equality+equality+orderBy query doesn't error.
 - **Stream resilience**: `getMyPriceListsStream` already wraps the
   `snapshots()` in `OfflineStreamGuard.offlineResilient(..., fallback: [])`
-  and returns a stable empty stream for an unauthenticated caller ‚Äî so the
+  and returns a stable empty stream for an unauthenticated caller -- so the
   history screen's `StreamBuilder` never crashes (it has explicit
   `ConnectionState.waiting` / `snapshot.hasError` / empty branches). No
   silent state-wipe: a hard stream error surfaces the in-UI error state
@@ -1959,7 +1959,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 ### Scan-details bottom-sheet safe-area + scroll padding (fixed)
 - **Problem**: the `_ScanDetailsSheet` (`DraggableScrollableSheet`) sticky
   action bar (RE-EXPORT / APPLY TO PACKAGE) was a bare `Padding(EdgeInsets.all(20))`
-  with no `SafeArea` ‚Äî so on gesture-nav phones the buttons sat under the
+  with no `SafeArea` -- so on gesture-nav phones the buttons sat under the
   Android 3-button / home-indicator bar. The inner items `ListView.builder`
   had only horizontal padding (`EdgeInsets.symmetric(horizontal: 20)`), so the
   last priced line was covered by the sticky action bar.
@@ -1978,12 +1978,12 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   warnings (unchanged baseline)**, 316 infos. The only issues in touched files
   are the pre-existing `print` debug calls + the `unnecessary_type_check` in
   unchanged `getPriceListsForFarm`/`getMyPriceLists` code (documented since
-  Phase 4) ‚Äî none introduced by this change. `analysis_options.yaml` was
+  Phase 4) -- none introduced by this change. `analysis_options.yaml` was
   auto-touched by the analyzer run and reverted before commit.
-- **`flutter test`**: scanner + auth suites green ‚Äî `pricelist_text_parser_test`
+- **`flutter test`**: scanner + auth suites green -- `pricelist_text_parser_test`
   (22), `role_guard_test` (31), `user_role_provider_test` (7),
   `offline_stream_guard_test` (5) all pass. Full suite: **223 passed, 4
-  failed** ‚Äî the 4 failures are the documented pre-existing baseline
+  failed** -- the 4 failures are the documented pre-existing baseline
   (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
   `bluetooth_mesh`), none touch the changed files, identical to the prior
   commit.
@@ -1991,7 +1991,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   navigation fix + a version-string bump).
 
 
-## Phase 16 ‚Äî Client Roster info icon, Firestore permission write fix & loading-loop fix (added 2026-08-14)
+## Phase 16 -- Client Roster info icon, Firestore permission write fix & loading-loop fix (added 2026-08-14)
 
 ### Info icon + feature explanation sheet
 - Added a `ContextualInfoIcon` (`Icons.info_outline`) to the Client Roster
@@ -2000,7 +2000,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   KEY CONCEPTS rows: **Hunter details** (name/ID/nationality/cell/email/
   address), **Booking history** (the package/booking each client is attached
   to), **Permit records** (running list of venison transport permit ids),
-  and **Account balances** (notes + assigned package ‚Üí per-client view of
+  and **Account balances** (notes + assigned package -> per-client view of
   outstanding bookings/deposits/harvests). Reuses `lib/core/widgets/
   contextual_info_icon.dart` (no new widget code) so it matches the rest of
   the app's self-documenting info icons.
@@ -2009,8 +2009,8 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **Root cause of the raw crash**: the editor sheet's `onSave` callback
   popped the sheet *first* (`Navigator.pop` before `await addClient`), then
   awaited the Firestore write. When the write threw
-  `FirebaseException(permission-denied)` ‚Äî which happens while the Phase 9
-  `client_roster` rules are not yet deployed and the default-deny applies ‚Äî
+  `FirebaseException(permission-denied)` -- which happens while the Phase 9
+  `client_roster` rules are not yet deployed and the default-deny applies --
   the exception propagated from the `onSave` future up to the button's
   `onPressed` async callback as an **unhandled** error, and the success
   snackbar never showed. Net symptom: tapping ADD TO ROSTER crashed / showed
@@ -2025,13 +2025,13 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 - **Firestore rules verified + made explicit**: the `client_roster` match
   block was split from `allow read, write: if ownerOrAdmin('outfitterId')`
   into explicit `read` / `create` / `update,delete`:
-  - `read: ownerOrAdmin('outfitterId')` ‚Äî outfitter sees only their own
+  - `read: ownerOrAdmin('outfitterId')` -- outfitter sees only their own
     roster; admin full access.
   - `create: isSignedIn() && request.resource.data.outfitterId == auth.uid
-    || isAdmin()` ‚Äî a signed-in outfitter may create a doc whose
+    || isAdmin()` -- a signed-in outfitter may create a doc whose
     `outfitterId` is their own uid (which `addClient` stamps), or an admin
     may create for any outfitter.
-  - `update, delete: ownerOrAdmin('outfitterId')` ‚Äî only the owning
+  - `update, delete: ownerOrAdmin('outfitterId')` -- only the owning
     outfitter (or admin) may mutate.
   This is functionally equivalent to the previous `ownerOrAdmin` write
   allowance for the legitimate path (the create still requires
@@ -2039,7 +2039,7 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   default-deny fallback once deployed.
   - **Deploy reminder**: until `firestore:rules` is deployed in a
     credentialed env, the default-deny still rejects `client_roster` writes
-    ‚Äî but now the app surfaces a graceful snackbar instead of crashing.
+    -- but now the app surfaces a graceful snackbar instead of crashing.
 - **Composite index** `client_roster (outfitterId ASC, createdAt DESC)` is
   present in `firestore.indexes.json` (added Phase 9), so the stream query
   doesn't error on a missing index.
@@ -2047,17 +2047,17 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
 ### Loading-state indefinite loop on stream error (fixed)
 - **Root cause of the infinite spinner**: `getMyClientsStream` ended with
   `.handleError((e) { debugPrint(...); return const <ClientProfile>[]; })`.
-  `Stream.handleError`'s callback **return value is ignored** ‚Äî it only
+  `Stream.handleError`'s callback **return value is ignored** -- it only
   *discards* the error and continues the subscription; it does NOT emit the
   returned `[]`. So when the Firestore `.snapshots()` stream errored
   (permission-denied / missing index), the error was silently swallowed and
-  the stream never emitted data or a done event ‚Üí the `StreamBuilder` stayed
-  in `ConnectionState.waiting` **forever** ‚Üí the `CircularProgressIndicator`
-  spun indefinitely. (The `snapshot.hasError` branch was dead code ‚Äî the
+  the stream never emitted data or a done event -> the `StreamBuilder` stayed
+  in `ConnectionState.waiting` **forever** -> the `CircularProgressIndicator`
+  spun indefinitely. (The `snapshot.hasError` branch was dead code -- the
   error never reached it.)
 - **Fix**:
   - Removed the buggy `.handleError` from `getMyClientsStream` so hard
-    errors **propagate** to the consuming `StreamBuilder`. The null-uid ‚Üí
+    errors **propagate** to the consuming `StreamBuilder`. The null-uid ->
     `Stream.value([])` guard is retained. Errors are no longer swallowed
     (documented in the method dartdoc). The unused `package:flutter/
     foundation.dart` import (only there for `debugPrint`) was removed.
@@ -2070,17 +2070,17 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
     `_ErrorState` widget (cloud-off icon + message + the error detail +
     a **RETRY** `FilledButton` calling `_retry`) instead of an `error_outline`
     empty-state. So on a permission/index error the spinner stops and the
-    user gets an actionable retry surface ‚Äî no more indefinite loop and no
+    user gets an actionable retry surface -- no more indefinite loop and no
     silent "no clients" masquerade.
 
 ### Verification
 - **`flutter analyze`** (local Flutter 3.47.0): **0 errors, 0 warnings, 0
-  infos** in all changed files. Project total 316 infos + 13 warnings ‚Äî all
+  infos** in all changed files. Project total 316 infos + 13 warnings -- all
   pre-existing in unrelated files (unchanged baseline). `analysis_options.yaml`
   auto-touched by the analyzer was reverted before commit.
 - **`flutter test`**: `outfitter_client_roster_test` (6) + `offline_stream_guard_test`
   (5) + `role_guard_test` (31) all pass. Full suite **223 passed, 4 failed**
-  ‚Äî the 4 failures are the documented pre-existing baseline (`saps_tracker`,
+  -- the 4 failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
   the changed files, identical to the prior commit.
 - Files: `lib/features/outfitter_mode/presentation/client_roster_screen.dart`
@@ -2094,23 +2094,23 @@ npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes
   credentialed env to activate the (already-correct) `client_roster` rules.
 
 
-## Phase 17 ‚Äî Guided Hunt Logs: Firestore permission rules + stream error recovery UI (added 2026-08-14)
+## Phase 17 -- Guided Hunt Logs: Firestore permission rules + stream error recovery UI (added 2026-08-14)
 
 Applies the same hardening pattern as Phase 16 (Client Roster) to the
-`guided_hunt_logs` collection ‚Äî the parallel outfitter harvest-log screen
+`guided_hunt_logs` collection -- the parallel outfitter harvest-log screen
 had the identical two bugs.
 
 ### Firestore security rules alignment
 - Split the `guided_hunt_logs` match block from
   `allow read, write: if ownerOrAdmin('outfitterId')` into explicit
   `read` / `create` / `update, delete`:
-  - `read: ownerOrAdmin('outfitterId')` ‚Äî outfitter sees only their own
+  - `read: ownerOrAdmin('outfitterId')` -- outfitter sees only their own
     logs; admin full access.
   - `create: isSignedIn() && request.resource.data.outfitterId == auth.uid
-    || isAdmin()` ‚Äî a signed-in outfitter may create a doc whose
+    || isAdmin()` -- a signed-in outfitter may create a doc whose
     `outfitterId` is their own uid (which `addHuntLog` stamps), or an admin
     may create for any outfitter.
-  - `update, delete: ownerOrAdmin('outfitterId')` ‚Äî only the owning
+  - `update, delete: ownerOrAdmin('outfitterId')` -- only the owning
     outfitter (or admin) may mutate.
   Functionally equivalent to the previous allowance for the legitimate
   create path, but now unambiguous and survives the default-deny fallback
@@ -2119,23 +2119,23 @@ had the identical two bugs.
   present in `firestore.indexes.json` (added Phase 9), so the stream query
   doesn't error on a missing index.
 - Deploy reminder: until `firestore:rules` is deployed in a credentialed
-  env, the default-deny still rejects `guided_hunt_logs` writes ‚Äî but now
+  env, the default-deny still rejects `guided_hunt_logs` writes -- but now
   the app surfaces a graceful snackbar instead of crashing.
 
 ### Stream hardening & error handling (manager)
 - **Root cause of the infinite spinner**: `GuidedHuntLogManager
   .getMyHuntLogsStream` ended with `.handleError((e) { debugPrint(...);
   return const <GuidedHuntLog>[]; })`. `Stream.handleError`'s callback
-  **return value is ignored** ‚Äî it only *discards* the error and continues
+  **return value is ignored** -- it only *discards* the error and continues
   the subscription; it does NOT emit the returned `[]`. So when the
   Firestore `.snapshots()` stream errored (permission-denied / missing
   index), the error was silently swallowed and the stream never emitted
-  data or a done event ‚Üí the `StreamBuilder` stayed in
-  `ConnectionState.waiting` **forever** ‚Üí the `CircularProgressIndicator`
-  spun indefinitely. (The `snapshot.hasError` branch was dead code ‚Äî the
+  data or a done event -> the `StreamBuilder` stayed in
+  `ConnectionState.waiting` **forever** -> the `CircularProgressIndicator`
+  spun indefinitely. (The `snapshot.hasError` branch was dead code -- the
   error never reached it.)
 - **Fix**: removed the buggy `.handleError` so hard errors **propagate** to
-  the consuming `StreamBuilder`. The null-uid ‚Üí `Stream.value([])` guard is
+  the consuming `StreamBuilder`. The null-uid -> `Stream.value([])` guard is
   retained. Errors are no longer swallowed (documented in the method
   dartdoc). The unused `package:flutter/foundation.dart` import (only there
   for `debugPrint`) was removed.
@@ -2149,7 +2149,7 @@ had the identical two bugs.
   `_ErrorState` widget (cloud-off icon + message + the error detail + a
   **RETRY** `FilledButton` calling `_retry`) instead of an `error_outline`
   empty-state. So on a permission/index error the spinner stops and the user
-  gets an actionable retry surface ‚Äî no more indefinite loop and no silent
+  gets an actionable retry surface -- no more indefinite loop and no silent
   "no logs" masquerade.
 - **Write-error handling**: the editor sheet's `onSave` callback previously
   popped the sheet *before* `await addHuntLog`/`updateHuntLog`, so a
@@ -2167,13 +2167,13 @@ had the identical two bugs.
   infos introduced** in changed files. The 2 `deprecated_member_use` infos
   (`DropdownButtonFormField.value`) in the editor sheet are **pre-existing**
   (unrelated to this change; only flagged on the local 3.47.0, not the CI
-  pin 3.29.1). Project total 316 infos + 13 warnings ‚Äî unchanged baseline.
+  pin 3.29.1). Project total 316 infos + 13 warnings -- unchanged baseline.
   `analysis_options.yaml` auto-touched by the analyzer was reverted before
   commit.
-- **`flutter test`**: `outfitter_client_roster_test` (6 ‚Äî covers both
+- **`flutter test`**: `outfitter_client_roster_test` (6 -- covers both
   `ClientProfile` and `GuidedHuntLog` model round-trips) +
   `offline_stream_guard_test` (5) all pass. Full suite **223 passed, 4
-  failed** ‚Äî the 4 failures are the documented pre-existing baseline
+  failed** -- the 4 failures are the documented pre-existing baseline
   (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
   `bluetooth_mesh`), none touch the changed files, identical to the prior
   commit.
@@ -2189,7 +2189,7 @@ had the identical two bugs.
   rules.
 
 
-## Phase 18 ‚Äî Venison Permit Log details sheet & permit creator safe-area bottom padding (added 2026-08-14)
+## Phase 18 -- Venison Permit Log details sheet & permit creator safe-area bottom padding (added 2026-08-14)
 
 - The two venison-permit surfaces (the draggable details sheet on the permit
   log + the Add/Issue permit form) rendered their bottom action buttons under
@@ -2219,7 +2219,7 @@ had the identical two bugs.
     `EdgeInsets.only(left: 16, top: 16, right: 16, bottom: 90.0)` so the
     signature + transport fields (and the submit button) have 90px of
     clearance above the gesture nav bar, clearing the action bar cleanly on
-    gesture-nav devices. (90px is reserved explicitly ‚Äî the SafeArea on the
+    gesture-nav devices. (90px is reserved explicitly -- the SafeArea on the
     button handles the device inset, so the list padding does not double
     count it.)
 - **`flutter analyze`** (local Flutter 3.47.0): **0 errors, 0 warnings, 0
@@ -2227,12 +2227,12 @@ had the identical two bugs.
   `DropdownButtonFormField.value` deprecation info at
   `venison_permit_form_screen.dart:945` is **pre-existing** (in
   `_AddSpeciesDialog`, unrelated to this change; only flagged on the local
-  3.47.0, not the CI pin 3.29.1). Project total 316 infos + 13 warnings ‚Äî
+  3.47.0, not the CI pin 3.29.1). Project total 316 infos + 13 warnings --
   unchanged baseline. `analysis_options.yaml` auto-touched by the analyzer
   was reverted before commit.
 - **`flutter test`**: `outfitter_client_roster_test` (6) +
   `offline_stream_guard_test` (5) + `role_guard_test` (31) all pass (42
-  total). Pure UI padding/layout change ‚Äî no logic touched, so no new
+  total). Pure UI padding/layout change -- no logic touched, so no new
   regressions; the 4 documented pre-existing failures remain unchanged and
   unrelated.
 - Files: `lib/features/hunter_mode/widgets/venison_permit_details_sheet.dart`
@@ -2884,7 +2884,7 @@ reporter's User ID, the free-text description, and a System Context block.
   (`resetForTest`), `test/features/offline_sync/mesh_sync_engine_test.dart`
   (NEW), `pubspec.yaml` / `pubspec.lock` (`sqflite_common_ffi` dev dep).
 
-## Phase 30 ‚Äî Optical Suite Scope Settings Dynamic Firearm Dropdown Link (added 2026-08-14)
+## Phase 30 -- Optical Suite Scope Settings Dynamic Firearm Dropdown Link (added 2026-08-14)
 
 Item #5 of the v4.4 to-do: convert the Optical Suite's static "Link to
 Firearm" field into a reactive dropdown populated from the hunter's Digital
@@ -2900,7 +2900,7 @@ selected firearm.
   `'${rifle.name} (${rifle.caliber})'` with a generic "Link to Firearm" hint
   and no empty-state guidance. The `RifleProfile.name` field is empty for
   real firearm-safe docs (the manual form persists `make`/`model`/`caliber`,
-  not `name`), so the dropdown rendered " (‚Äî)" for every real rifle.
+  not `name`), so the dropdown rendered " (--)" for every real rifle.
 - Rewritten as a `DropdownButtonHideUnderline > DropdownButtonFormField<String>`:
   - `value`: `firearm.id` (guarded against an id no longer present in the
     safe via an `effectiveValue` null-coalesce, so a just-deleted firearm
@@ -2924,13 +2924,13 @@ selected firearm.
 - New `_FirearmSafeShim` (private `StatefulWidget` at the bottom of the file)
   is pushed by the empty-state CTA. It resolves `ThemeController.instance`
   (the process-wide singleton, see below), awaits `init()` for the persisted
-  Day/Night mode (idempotent guard ‚Äî no-op if already initialized), and hosts
+  Day/Night mode (idempotent guard -- no-op if already initialized), and hosts
   the real `FirearmSafeScreen(theme: _theme)` full-screen. On return the
   cached Firestore `_firearmsStream` broadcast re-emits the
   newly-registered firearm automatically, so the dropdown populates with no
   manual reload.
 
-### `OpticProfile` ‚Äî `firearmId` binding field (model)
+### `OpticProfile` -- `firearmId` binding field (model)
 - New `final String firearmId` (default `''`) on `OpticProfile`
   (`lib/features/ballistics/data/models/optic_profile.dart`). Persisted inside
   the nested `optic` map on the firearm document so the binding "travels" with
@@ -2942,7 +2942,7 @@ selected firearm.
 - `OpticProfile.defaults` still has `firearmId: ''` (a defaults optic is not
   yet bound to any rifle until the user picks one).
 
-### `InventoryBridge.saveOpticProfile` ‚Äî secure binding stamp
+### `InventoryBridge.saveOpticProfile` -- secure binding stamp
 - `saveOpticProfile(rifleId, optic)` now stamps the optic with `rifleId` as
   its `firearmId` (`optic.copyWith(firearmId: rifleId)`) BEFORE the Firestore
   `set({'optic': ...}, merge: true)`, so the saved scope configuration is
@@ -2952,11 +2952,11 @@ selected firearm.
 - Allowed by the existing owner-scoped `firearms/{docId}` Firestore rule
   (`ownerOrAdmin('ownerId')`); no rules / index / Storage change required.
 
-### `RifleProfile` ‚Äî make/model fields + `displayName` (model)
+### `RifleProfile` -- make/model fields + `displayName` (model)
 - New `final String make` and `final String model` fields on `RifleProfile`
   (`lib/features/ballistics/data/models/rifle_profile.dart`), hydrated from
   the firearm-safe doc's `make` (with `brand`/`manufacturer` fallbacks) and
-  `model` (with `modelName` fallback) ‚Äî mirroring the field-alias resolution
+  `model` (with `modelName` fallback) -- mirroring the field-alias resolution
   the ballistic calc screen already uses. Also tolerates the `calibre` and
   `serial` spelling aliases the safe persists. Added to `toJson()` and
   `copyWith`.
@@ -2965,9 +2965,9 @@ selected firearm.
   for legacy/empty docs, and renders an em-dash when calibre is unknown so
   the parentheses are never empty. So a real firearm-safe entry like
   `{make:'Tikka', model:'T3x', caliber:'.308 Win'}` renders
-  "Tikka T3x (.308 Win)" (was " (‚Äî)" under the old name-only path).
+  "Tikka T3x (.308 Win)" (was " (--)" under the old name-only path).
 
-### `ThemeController` ‚Äî process-wide singleton
+### `ThemeController` -- process-wide singleton
 - Added `static ThemeController get instance => _instance ??= ThemeController()`
   + `static ThemeController? _instance` to `ThemeController`
   (`lib/core/theme/app_theme.dart`). `main()` now constructs the app's
@@ -2975,7 +2975,7 @@ selected firearm.
   making the singleton the **single source of truth** for the Day/Night
   preference. This lets out-of-tree consumers (the `_FirearmSafeShim` pushed
   from the stateless scope-tools context) read the SAME controller driving
-  the `MaterialApp` ‚Äî no divergence between the singleton and the main
+  the `MaterialApp` -- no divergence between the singleton and the main
   instance. Existing in-tree consumers (`widget.theme` passed down from
   `main()`) are unchanged; they hold the same singleton object.
 
@@ -2985,9 +2985,9 @@ selected firearm.
   (`optic_profile.dart`, `rifle_profile.dart`, `inventory_bridge.dart`,
   `scope_tools_bottom_sheet.dart`, `app_theme.dart`, `main.dart`,
   `optic_tools_test.dart`). The 3 infos in touched files are the documented
-  pre-existing deprecations (`DropdownButtonFormField.value` ‚Äî only flagged
+  pre-existing deprecations (`DropdownButtonFormField.value` -- only flagged
   on Flutter ‚â•3.33, NOT the CI 3.29.1 pin; `androidProvider`/`appleProvider`
-  in `main.dart`). Project total: **0 errors, 11 warnings, 313 infos** ‚Äî all
+  in `main.dart`). Project total: **0 errors, 11 warnings, 313 infos** -- all
   pre-existing in unrelated files (unchanged baseline). The one
   `unnecessary_brace_in_string_interps` introduced in `OpticProfile.toString`
   was fixed (braces removed) before commit. `analysis_options.yaml`
@@ -3001,7 +3001,7 @@ selected firearm.
   - `displayName` formats "make model (calibre)" exactly per spec;
   - brand/manufacturer fallbacks; em-dash for unknown calibre; name then
     "Unnamed firearm" fallbacks; `serial` alias tolerance.
-- **`flutter test`** (full suite): **273 passed, 4 failed** ‚Äî the 4 failures
+- **`flutter test`** (full suite): **273 passed, 4 failed** -- the 4 failures
   are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
   touch the changed files; identical failing set to the prior commit (+9
@@ -3021,7 +3021,7 @@ selected firearm.
   `test/optic_tools_test.dart` (+11 tests). No Firestore rules / index /
   Storage / pubspec changes (pure model + UI + secure-binding stamp).
 
-## Phase 31 ‚Äî SA Game Guide Animal Card Rowland Ward Data & UI Cleanup (added 2026-08-14)
+## Phase 31 -- SA Game Guide Animal Card Rowland Ward Data & UI Cleanup (added 2026-08-14)
 
 Item #6 of the v4.4 to-do: resolve the duplicate Rowland Ward display field
 on the SA Game Guide animal detail card, populate official South African
@@ -3042,7 +3042,7 @@ grayed-out icon for species with no recorded benchmark.
 - The prominent summary card was corrected to read "Rowland Ward" (the
   canonical spelling) and now sources its value from a single new helper,
   `_rowlandWardValue(animal)`, which resolves the three storage aliases
-  (`rwMinimum` ‚Üí `rolandWardMinimum` ‚Üí `trophyMinimumRW`) in priority
+  (`rwMinimum` -> `rolandWardMinimum` -> `trophyMinimumRW`) in priority
   order and trims the result. The old inline resolution + the now-unused
   `_valueOrDash` helper were deleted (would have been `unused_element`).
 
@@ -3057,13 +3057,13 @@ grayed-out icon for species with no recorded benchmark.
   - blue_wildebeest: "28 1/2 inches"
   - black_wildebeest: "22 7/8 inches"
   - impala: "23 5/8 inches"  *(corrected from the prior '23 6/8" (60.0 cm)'*
-    *‚Äî the official SA minimum is 23 5/8")*
+    *-- the official SA minimum is 23 5/8")*
   - springbok: "14 inches"
   - blesbok: "16 1/2 inches"
   - warthog / common warthog: "13 inches"
   - eland: "35 inches"
   - sable / sable antelope: "41 7/8 inches"  *(corrected from the prior*
-    *'40.0' ‚Äî the official SA minimum is 41 7/8")*
+    *'40.0' -- the official SA minimum is 41 7/8")*
   - nyala: "27 inches"
   - waterbuck / common waterbuck: "28 inches"
   - red_hartebeest: "23 inches"
@@ -3077,7 +3077,7 @@ grayed-out icon for species with no recorded benchmark.
   `'sable'`, `'waterbuck'`, `'red_hartebeest'`, `'cape_buffalo'`).
 - The richer measurement metadata (`measurementMethod` + `hornDescription` +
   `earLength`) is preserved for every listed species (and enriched where the
-  prior entry was a bare numeric string ‚Äî e.g. cape buffalo, red hartebeest,
+  prior entry was a bare numeric string -- e.g. cape buffalo, red hartebeest,
   waterbuck, sable now carry their measurement method + horn description).
 - A latent **duplicate-key compile error** was fixed: the original map still
   held older `'common warthog'`, `'springbok'`, `'springbok (cape)'`, and
@@ -3089,7 +3089,7 @@ grayed-out icon for species with no recorded benchmark.
 ### 3. N/A fallback badge with icon (`animal_detail_screen.dart`)
 - The prominent Rowland Ward summary card now checks the resolved value:
   when `_rowlandWardValue(animal)` returns `null` (the species has no
-  recorded benchmark ‚Äî null / empty / unlisted), the card renders a new
+  recorded benchmark -- null / empty / unlisted), the card renders a new
   `_RowlandWardNaBadge` widget instead of the value text or a bare em-dash.
 - `_RowlandWardNaBadge` is a clean, theme-aware pill rendering
   **`Rowland Ward: N/A`** with a grayed-out **`Icons.not_interested`** icon
@@ -3098,14 +3098,14 @@ grayed-out icon for species with no recorded benchmark.
   background + border. The measurement-type chip is suppressed in the N/A
   state (it's meaningless without a value).
 - So an animal with no Rowland Ward record (e.g. a plains zebra, giraffe, or
-  hyaena ‚Äî none are in the benchmark dictionary) now shows a clear, styled
-  "Rowland Ward: N/A" badge instead of an empty field or a confusing "‚Äî".
+  hyaena -- none are in the benchmark dictionary) now shows a clear, styled
+  "Rowland Ward: N/A" badge instead of an empty field or a confusing "--".
 
 ### Verification
 - **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
   warnings, 0 infos** in all changed files (`animal_detail_screen.dart`,
   `animal_seeder.dart`, `animal.dart`, `game_guide_rowland_ward_test.dart`).
-  Project total: **0 errors, 11 warnings, 323 infos** ‚Äî all pre-existing in
+  Project total: **0 errors, 11 warnings, 323 infos** -- all pre-existing in
   unrelated files (unchanged baseline). The `unused_element` that would have
   been introduced by the now-dead `_valueOrDash` helper was pre-empted by
   deleting the helper. `analysis_options.yaml` auto-touched by the analyzer
@@ -3116,10 +3116,10 @@ grayed-out icon for species with no recorded benchmark.
   insensitivity + whitespace trimming; null return for an unlisted species
   (the N/A-fallback contract); measurement method/horn description survival
   for listed species; sorted non-empty species-name list; and the
-  `Animal`-model alias-resolution priority (`rwMinimum` ‚Üí
-  `rolandWardMinimum` ‚Üí `trophyMinimumRW`) with blank/whitespace collapsing
+  `Animal`-model alias-resolution priority (`rwMinimum` ->
+  `rolandWardMinimum` -> `trophyMinimumRW`) with blank/whitespace collapsing
   to null (renders the N/A badge).
-- **`flutter test`** (full suite): **309 passed, 4 failed** ‚Äî the 4 failures
+- **`flutter test`** (full suite): **309 passed, 4 failed** -- the 4 failures
   are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
   touch the changed files; +36 vs the Phase-30 273-pass baseline, exactly
@@ -3135,7 +3135,7 @@ grayed-out icon for species with no recorded benchmark.
   credentialed env).
 
 
-## Phase 32 ‚Äî Digital Trophy Room Native Trophy Sharing (added 2026-08-14)
+## Phase 32 -- Digital Trophy Room Native Trophy Sharing (added 2026-08-14)
 
 Item #7 of the v4.4 to-do: add a native platform share button to every
 Digital Trophy Room entry so a hunter can broadcast a harvest dispatch to
@@ -3151,11 +3151,11 @@ engaging composed message.
 
 ### Share message composer (pure, testable)
 - New `lib/features/hunter_mode/services/trophy_share_composer.dart`
-  (`TrophyShareComposer`, private ctor ‚Äî pure static API mirroring the
+  (`TrophyShareComposer`, private ctor -- pure static API mirroring the
   `SupportEmailComposer` pattern from Phase 28; dependency-light:
   `share_plus` only, no extra platform plugins so it stays stable on the
   CI Flutter 3.29.1 pin and the local 3.47.0 stable).
-  - `buildTrophyShareMessage(Map<String, dynamic> trophy)` ‚Äî **pure
+  - `buildTrophyShareMessage(Map<String, dynamic> trophy)` -- **pure
     function** over a trophy document, fully unit-testable with no
     Flutter / platform plugins. Emits the spec's exact 5-line dispatch:
     ```
@@ -3181,7 +3181,7 @@ engaging composed message.
     (best-effort) rather than dropped.
   - **Species line**: falls back to `Unknown Trophy` when the field is
     null/empty, so the message is always complete and shareable.
-  - `shareTrophy(trophy, {subject})` ‚Äî thin platform wrapper: composes the
+  - `shareTrophy(trophy, {subject})` -- thin platform wrapper: composes the
     message and calls `Share.share(message, subject: 'My JagSpoor
     Trophy!')` to activate the native mobile platform share sheet
     (WhatsApp, Telegram, Email, SMS). Returns whether the share
@@ -3208,7 +3208,7 @@ engaging composed message.
   and the navigation arrow. The date `Text` is wrapped in `Expanded` with
   `ellipsis` so the row never overflows when the share button is present.
   A new `_shareTrophy(trophy)` State method (guards `mounted`, orange
-  fallback snackbar on platform failure) backs the card button ‚Äî so a
+  fallback snackbar on platform failure) backs the card button -- so a
   hunter can share straight from the trophy grid without opening the
   detail view.
 - Both surfaces use the SAME composer + the SAME fallback-snackbar
@@ -3220,19 +3220,19 @@ engaging composed message.
   warnings, 0 infos** in all changed/new files
   (`trophy_share_composer.dart`, `trophy_detail_screen.dart`,
   `trophy_room_screen.dart`, `trophy_share_composer_test.dart`). Project
-  total: **0 errors, 114 issues** (lib/ only) ‚Äî all pre-existing infos in
+  total: **0 errors, 114 issues** (lib/ only) -- all pre-existing infos in
   unrelated files (unchanged baseline; identical count to the pre-change
   baseline). `analysis_options.yaml` auto-touched by the analyzer / pub
   get was reverted before commit.
 - **`flutter test test/trophy_share_composer_test.dart`**: **11/11 pass**.
   Tests cover: full trophy (all four lines + the joined Score/Details
-  string); missing species ‚Üí `Unknown Trophy`; no measurements ‚Üí `N/A`;
+  string); missing species -> `Unknown Trophy`; no measurements -> `N/A`;
   partial measurements (only present fields rendered, absent fields
-  omitted not zeroed); missing/blank harvest date ‚Üí `N/A`; malformed date
+  omitted not zeroed); missing/blank harvest date -> `N/A`; malformed date
   shown verbatim; numeric-as-string parsing; null measurement values
   skipped; whole-number formatting (no trailing `.0`); exact 5-line
   message structure; and the `defaultSubject` marketing string.
-- **`flutter test`** (full suite): **320 passed, 4 failed** ‚Äî the 4
+- **`flutter test`** (full suite): **320 passed, 4 failed** -- the 4
   failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
   touch the changed files; +11 vs the Phase-31 309-pass baseline, exactly
@@ -3246,7 +3246,7 @@ engaging composed message.
   `test/trophy_share_composer_test.dart` (NEW, 11 tests).
 
 
-## Phase 33 ‚Äî Password Reset Email Delay & Expiration Fix (added 2026-08-14)
+## Phase 33 -- Password Reset Email Delay & Expiration Fix (added 2026-08-14)
 
 Item #8 of the v4.4 to-do: eliminate the perceived password-reset email
 delivery delay and token-expiration problems by applying explicit Firebase
@@ -3254,13 +3254,13 @@ delivery delay and token-expiration problems by applying explicit Firebase
 code is handled in-app via a deep link instead of a slow generic web flow)
 and by adding a 60-second retry cooldown to the reset request UI so users
 cannot spam duplicate reset tokens (each new token invalidates the previous
-link and re-queues an email delivery ‚Äî the root cause of the delay).
+link and re-queues an email delivery -- the root cause of the delay).
 
 ### Audit
 - Exactly **two** `sendPasswordResetEmail` call sites in the codebase:
-  - `lib/features/auth/auth_screen.dart` ‚Äî the hunter self-service
+  - `lib/features/auth/auth_screen.dart` -- the hunter self-service
     "Forgot Password?" dialog.
-  - `lib/features/admin/services/user_management_service.dart` ‚Äî the admin
+  - `lib/features/admin/services/user_management_service.dart` -- the admin
     account-provisioning flow (sends a reset / account-setup email to a
     newly provisioned hunter/outfitter).
 - Active package ids resolved from the native build configs:
@@ -3271,34 +3271,34 @@ link and re-queues an email delivery ‚Äî the root cause of the delay).
 
 ### Centralized `ActionCodeSettings` builder
 - New `lib/features/auth/services/password_reset_action_code_settings.dart`
-  (`PasswordResetActionCodeSettings`, private ctor ‚Äî pure static API;
+  (`PasswordResetActionCodeSettings`, private ctor -- pure static API;
   dependency-light: `firebase_auth` only). All deep-link configuration lives
   in exactly one place so both call sites share identical behaviour.
   - `build()` returns an `ActionCodeSettings` configured with:
-    - `url: 'https://jagspoor.page.link/reset-password'` ‚Äî the deep-link /
+    - `url: 'https://jagspoor.page.link/reset-password'` -- the deep-link /
       continue URL the user lands on after completing the reset (a Firebase
       Dynamic Links `*.page.link` domain as suggested in the to-do).
-    - `handleCodeInApp: true` ‚Äî tells Firebase to deliver the action code
+    - `handleCodeInApp: true` -- tells Firebase to deliver the action code
       as an in-app deep link (Universal Link / Android App Link) so the
       installed app opens directly instead of a generic web redirect. This
       is the key setting that eliminates the email delivery delay.
-    - `androidPackageName: 'com.example.jagspoor'` ‚Äî pins the Android app
+    - `androidPackageName: 'com.example.jagspoor'` -- pins the Android app
       so the link opens the installed app.
-    - `androidInstallApp: true` ‚Äî offers the Play Store when the app is not
+    - `androidInstallApp: true` -- offers the Play Store when the app is not
       installed (the to-do's `installApp: true`).
-    - `androidMinimumVersion: '1'` ‚Äî sends an out-of-date install to the
+    - `androidMinimumVersion: '1'` -- sends an out-of-date install to the
       Play Store to upgrade.
-    - `iOSBundleId: 'com.example.jagspoorV42'` ‚Äî pins the iOS app so the
+    - `iOSBundleId: 'com.example.jagspoorV42'` -- pins the iOS app so the
       universal link resolves on Apple devices.
   - **API note**: the project pins `firebase_auth_platform_interface 9.0.5`,
     whose `ActionCodeSettings` API uses flat fields
     (`androidPackageName` / `androidInstallApp` / `androidMinimumVersion` /
-    `iOSBundleId` / `handleCodeInApp` / `linkDomain`) ‚Äî NOT the newer
+    `iOSBundleId` / `handleCodeInApp` / `linkDomain`) -- NOT the newer
     `AndroidPackageName(...)` class / `canHandleCodeInApp` field introduced
     in firebase_auth 12.x. The builder uses the 9.x flat-field shape so it
     compiles cleanly on both the CI Flutter 3.29.1 pin and the local 3.47.0.
   - **Deploy requirement**: the `resetDeepLinkUrl` domain MUST be listed in
-    the Firebase Console ‚Üí Authentication ‚Üí Settings ‚Üí Authorized
+    the Firebase Console -> Authentication -> Settings -> Authorized
     domains. If a Dynamic Links domain (`*.page.link`) is used it must also
     be provisioned. Until the domain is authorized the reset call returns
     `auth/invalid-continue-uri`; the auth-screen dialog surfaces that with a
@@ -3349,7 +3349,7 @@ link and re-queues an email delivery ‚Äî the root cause of the delay).
     an in-dialog red banner (not just a SnackBar) so they stay visible while
     the user corrects the email.
 - New `lib/features/auth/services/password_reset_cooldown.dart`
-  (`PasswordResetCooldown`, private ctor ‚Äî pure static API, zero Flutter
+  (`PasswordResetCooldown`, private ctor -- pure static API, zero Flutter
   imports so fully unit-testable): `defaultCooldownSeconds` (60), `expiry`
   (absolute expiry timestamp), `remainingSeconds` (floored at 0), and
   `isActive` (before-expiry check). The arithmetic is pure; the dialog owns
@@ -3368,18 +3368,18 @@ link and re-queues an email delivery ‚Äî the root cause of the delay).
   warnings, 0 infos** in all changed/new files
   (`auth_screen.dart`, `password_reset_action_code_settings.dart`,
   `password_reset_cooldown.dart`, `user_management_service.dart`, and both
-  test files). Project total: **0 errors, 114 issues** (lib/ only) ‚Äî all
+  test files). Project total: **0 errors, 114 issues** (lib/ only) -- all
   pre-existing infos in unrelated files (unchanged baseline; identical count
   to the pre-change baseline). `analysis_options.yaml` auto-touched by the
   analyzer / pub get was reverted before commit.
 - **`flutter test`** (new suites): `password_reset_action_code_settings_test`
-  (9/9 pass ‚Äî deep-link URL, `handleCodeInApp`, Android package name,
+  (9/9 pass -- deep-link URL, `handleCodeInApp`, Android package name,
   `androidInstallApp`, minimum version, iOS bundle id, constants stability,
   fresh-instance equivalence, `asMap()` round-trip) +
-  `password_reset_cooldown_test` (10/10 pass ‚Äî default window, expiry
+  `password_reset_cooldown_test` (10/10 pass -- default window, expiry
   arithmetic, remaining-seconds at start / partial / expired / exact-0,
   `isActive` before / at / after expiry).
-- **`flutter test`** (full suite): **339 passed, 4 failed** ‚Äî the 4
+- **`flutter test`** (full suite): **339 passed, 4 failed** -- the 4
   failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
   the changed files; +19 vs the Phase-32 320-pass baseline, exactly the new
@@ -3395,14 +3395,14 @@ link and re-queues an email delivery ‚Äî the root cause of the delay).
   `test/password_reset_action_code_settings_test.dart` (NEW, 9 tests),
   `test/password_reset_cooldown_test.dart` (NEW, 10 tests).
 - **Deploy reminder**: authorize `https://jagspoor.page.link` (and provision
-  the Dynamic Links domain if used) in the Firebase Console ‚Üí
-  Authentication ‚Üí Settings ‚Üí Authorized domains, in a credentialed env.
+  the Dynamic Links domain if used) in the Firebase Console ->
+  Authentication -> Settings -> Authorized domains, in a credentialed env.
   Until authorized, the reset call surfaces the in-UI
   `invalid-continue-uri` "domain not authorized" error rather than failing
   silently.
 
 
-## Phase 34 ‚Äî Hunter 7.5% Markup & Outfitter Revenue Protection + PayFast Sandbox Alignment (added 2026-08-14)
+## Phase 34 -- Hunter 7.5% Markup & Outfitter Revenue Protection + PayFast Sandbox Alignment (added 2026-08-14)
 
 Item #9 of the v4.4 to-do: guarantee the 7.5% platform markup is fully
 **absorbed** into every hunter-facing price (with the 25% deposit computed
@@ -3414,7 +3414,7 @@ marked-up deposit via a single-source sandbox launcher.
 
 ### 1. Single-source `PricingMath` helper (NEW)
 - New `lib/features/hunter_mode/services/pricing_math.dart` — pure,
-  dependency-free pricing arithmetic (no Flutter / Firebase imports ‚Üí fully
+  dependency-free pricing arithmetic (no Flutter / Firebase imports -> fully
   unit-testable). The single source of truth for the markup, deposit, and
   net-earnings math so hunter-facing and outfitter-facing surfaces can never
   drift.
@@ -3427,32 +3427,32 @@ marked-up deposit via a single-source sandbox launcher.
   - `depositFromMarkedUpTotal(total)` / `balanceFromMarkedUpTotal(total)`.
   - `netEarnings({grossRevenue, platformFee})` = `gross ‚àí fee` = the
     outfitter's base earnings (the protected net-revenue figure).
-  - `resolveHunterTotal({totalHunterPrice, basePrice})` ‚Äî prefers the stored
+  - `resolveHunterTotal({totalHunterPrice, basePrice})` -- prefers the stored
     marked-up total; for **legacy documents** without `totalHunterPriceRands`
     / `totalPriceZAR`, derives `base √ó 1.075` so a hunter never sees the
     unmarked-up outfitter base price (or R0).
-  - `resolveDeposit({storedDeposit, markedUpTotalValue})` ‚Äî prefers the stored
+  - `resolveDeposit({storedDeposit, markedUpTotalValue})` -- prefers the stored
     deposit; derives 25% of the marked-up total for legacy docs.
-  - `aggregateRevenueSummary(bookings)` ‚Äî pure aggregation of a booking-record
+  - `aggregateRevenueSummary(bookings)` -- pure aggregation of a booking-record
     iterable into `{grossRevenue, platformFees, netEarnings, totalBookings}`,
     applying the net-revenue protection rules (gross = sum of marked-up
     totals; fee = 7.5% of base, derived when missing; net = gross ‚àí fee =
     base). Unit-testable without the Firestore emulator.
 
 ### 2. Hunter-facing markup presentation (fixed)
-- **`hunter_package_marketplace_screen.dart`** ‚Äî the marketplace is the
+- **`hunter_package_marketplace_screen.dart`** -- the marketplace is the
   primary hunter checkout surface. Three pricing sites rewired to
   `PricingMath`:
   - **Package card** (`_PackageCard`): the displayed price previously fell
     back to the bare `basePriceRands` when `totalPriceZAR` was missing
-    (legacy packages) ‚Äî showing the unmarked-up outfitter base to hunters.
+    (legacy packages) -- showing the unmarked-up outfitter base to hunters.
     Now uses `PricingMath.resolveHunterTotal` so the card always shows the
     marked-up total (`base √ó 1.075`), even for legacy packages.
   - **Booking confirmation sheet** (`_BookingConfirmationSheet`): the
     inline `commission = base √ó 0.075; total = base + commission; deposit =
     total √ó 0.25` math replaced with `PricingMath.resolveHunterTotal` +
     `PricingMath.depositFromMarkedUpTotal`. The sheet renders only
-    "Total Price" + "25% Deposit (due on approval ¬∑ non-refundable)" ‚Äî
+    "Total Price" + "25% Deposit (due on approval ¬∑ non-refundable)" --
     **no explicit "Platform Fee" line** is shown to the hunter (the 7.5% is
     fully absorbed into the total). This was already the case; the change
     centralizes the arithmetic so it cannot drift.
@@ -3463,7 +3463,7 @@ marked-up deposit via a single-source sandbox launcher.
     `PricingMath.balanceFromMarkedUpTotal`. The PayFast charge amount is now
     `depositAmount` directly (resolved off the marked-up total).
 - **Custom package builder** (`hunter_custom_package_builder_screen.dart`):
-  already correct from Phase 26 ‚Äî per-line `hunterDisplayPriceZAR`
+  already correct from Phase 26 -- per-line `hunterDisplayPriceZAR`
   (base √ó 1.075, written at scan-save time) + `_deposit = _grandTotal √ó
   0.25` + `PayfastCheckout.launchDeposit`. Verified unchanged and aligned.
 
@@ -3472,16 +3472,16 @@ Two latent bugs in the outfitter financial dashboard corrected:
 - **`OutfitterAnalyticsService.getRevenueSummaryStream`**:
   - **Status filter bug**: previously queried `.where('status',
     isEqualTo: 'Approved')` only. After the outfitter approves a booking its
-    status transitions `Approved ‚Üí Pending Deposit ‚Üí Paid ‚Üí Completed`, so
+    status transitions `Approved -> Pending Deposit -> Paid -> Completed`, so
     the summary only ever counted bookings stuck at the transient `Approved`
-    state ‚Äî missing every paid / deposit-pending / completed booking. Now
+    state -- missing every paid / deposit-pending / completed booking. Now
     uses `.where('status', whereIn: earnedBookingStatuses)` where
     `earnedBookingStatuses = ['Approved','Pending Deposit','Paid',
     'Completed']` (excludes `Pending Approval`, `Declined`, `Cancelled`).
   - **Net-revenue double-count bug**: previously `grossEarnings` = sum of
     `basePriceRands` (already net of fee) and `netEarnings = grossEarnings
     ‚àí platformFees` = base ‚àí fee = base √ó 0.925. For a R10,000 base listing
-    this displayed "Net Earnings" = R9,250 ‚Äî **understating** the outfitter's
+    this displayed "Net Earnings" = R9,250 -- **understating** the outfitter's
     actual earnings by the fee. The spec requires the outfitter to see
     R10,000. Rewired through `PricingMath.aggregateRevenueSummary`:
     `grossEarnings` = sum of `totalHunterPriceRands` (total collected from
@@ -3492,16 +3492,16 @@ Two latent bugs in the outfitter financial dashboard corrected:
     net = R10,000 (the exact spec figure).
 - **`outfitter_revenue_screen._getMonthlyStatsData`**: the monthly revenue
   chart previously summed `totalHunterPriceRands` (the marked-up total) as
-  "revenue" ‚Äî **overstating** outfitter monthly revenue by the 7.5% fee. Now
+  "revenue" -- **overstating** outfitter monthly revenue by the 7.5% fee. Now
   sums `basePriceRands` (net of fees) and uses the same `earnedBookingStatuses`
   `whereIn` filter so the chart agrees with the summary card.
 - **Info dialog copy** (`outfitter_revenue_screen` "Gross Revenue vs Platform
-  Commission"): corrected to reflect the new semantics ‚Äî "Gross Revenue =
+  Commission"): corrected to reflect the new semantics -- "Gross Revenue =
   total paid by hunters (incl. 7.5% fee)", "Platform Fee = 7.5% of the
   outfitter base price", "Net Earnings = gross ‚àí fee = the outfitter's base
   price (net of fees)"; and notes only earned bookings are counted.
 - **Outfitter booking dashboard** (`outfitter_booking_dashboard_screen`):
-  audited ‚Äî the per-booking financial breakdown correctly shows
+  audited -- the per-booking financial breakdown correctly shows
   "Outfitter Base Price" (net) + "7.5% Platform Fee" + "Total (incl. 7.5%
   fee)" + deposit/balance. This is the appropriate outfitter view (they see
   their base net earnings AND the fee split per booking); left unchanged.
@@ -3520,21 +3520,21 @@ Two latent bugs in the outfitter financial dashboard corrected:
   `payfastITNHandler`) lives in exactly one place. The duplicate constants
   and the now-unused `url_launcher` import were removed. The amount charged
   is the 25% marked-up deposit (`depositAmount`, resolved off
-  `totalHunterPriceRands √ó 0.25`) ‚Äî matching the hunter-facing "25% Deposit"
-  row exactly. The sandbox config (`isSandbox` semantics ‚Äî sandbox host +
+  `totalHunterPriceRands √ó 0.25`) -- matching the hunter-facing "25% Deposit"
+  row exactly. The sandbox config (`isSandbox` semantics -- sandbox host +
   published test credentials) remains fully operational for test checkout
   runs.
 
 ### 5. Tests
 - `test/pricing_math_test.dart` (NEW, 24 tests, all pass):
   - constants (3); `markedUpTotal` (2); `commissionFromBase` (1);
-    `depositFromBase` (2 ‚Äî confirms 25% off the marked-up total, NOT the
+    `depositFromBase` (2 -- confirms 25% off the marked-up total, NOT the
     base); `depositFromMarkedUpTotal` (1); `balanceFromMarkedUpTotal` (1);
-    `netEarnings` (2 ‚Äî R10,000 not R10,750 and not R9,250, across a base
-    range); `resolveHunterTotal` (4 ‚Äî legacy fallback never returns the bare
-    base); `resolveDeposit` (2); PayFast deposit alignment (2 ‚Äî charge ==
+    `netEarnings` (2 -- R10,000 not R10,750 and not R9,250, across a base
+    range); `resolveHunterTotal` (4 -- legacy fallback never returns the bare
+    base); `resolveDeposit` (2); PayFast deposit alignment (2 -- charge ==
     displayed 25% marked-up deposit, never off the unmarked-up base);
-    end-to-end booking contract (1); `aggregateRevenueSummary` (4 ‚Äî stored
+    end-to-end booking contract (1); `aggregateRevenueSummary` (4 -- stored
     totals, legacy derivation, net-never-includes-fee, empty).
 - `test/outfitter_revenue_summary_test.dart` (NEW, 5 tests, all pass):
   `earnedBookingStatuses` includes every earned state, excludes
@@ -3548,12 +3548,12 @@ Two latent bugs in the outfitter financial dashboard corrected:
   (`pricing_math.dart`, `outfitter_analytics_service.dart`,
   `hunter_package_marketplace_screen.dart`, `outfitter_revenue_screen.dart`,
   and both test files). Project total: **0 errors, 114 issues** (lib/ only)
-  ‚Äî identical to the pre-change baseline (all pre-existing infos in
+  -- identical to the pre-change baseline (all pre-existing infos in
   unrelated files; the consolidation actually removed the marketplace's
   duplicate constants + `url_launcher` import, so no new issues).
   `analysis_options.yaml` auto-touched by the analyzer / pub get was
   reverted before commit.
-- **`flutter test`** (full suite): **368 passed, 4 failed** ‚Äî the 4
+- **`flutter test`** (full suite): **368 passed, 4 failed** -- the 4
   failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none touch
   the changed files; +29 vs the Phase-33 339-pass baseline (24 pricing +
@@ -3574,7 +3574,7 @@ Two latent bugs in the outfitter financial dashboard corrected:
   `test/outfitter_revenue_summary_test.dart` (NEW, 5 tests).
 
 
-## Phase 35 ‚Äî .vscode Gitignore & API Key Security Setup (added 2026-08-14)
+## Phase 35 -- .vscode Gitignore & API Key Security Setup (added 2026-08-14)
 
 Item #10 of the v4.4 to-do: stop VS Code launch configurations (which carry
 live API keys / credentials, e.g. `GEMINI_API_KEY`) from leaking into version
@@ -3638,7 +3638,7 @@ have a reference config.
 - A local `.vscode/launch.json` (with a placeholder live key
   `AIzaSyFAKE_LIVE_KEY_REPLACE_ME_...`) exists on disk for local development
   and remains **completely untracked** by the Git index. Verified:
-  `git check-ignore -v .vscode/launch.json` ‚Üí `.gitignore:34:.vscode/launch.json`
+  `git check-ignore -v .vscode/launch.json` -> `.gitignore:34:.vscode/launch.json`
   (ignored); `git status --ignored` shows `!! .vscode/launch.json`; the
   staged set contains only `.gitignore` + `.vscode/launch.json.example`.
 
@@ -3648,9 +3648,9 @@ have a reference config.
   `.vscode/launch.json` is NOT staged (ignored).
 - Scanned the staged diff for credential patterns
   (`api_key=AIza`, `sk-`, `secret`, `password`, `token=`, `Bearer `,
-  `AIzaSy[A-Za-z0-9_-]{20,}`): **no live credentials** ‚Äî the only match is
+  `AIzaSy[A-Za-z0-9_-]{20,}`): **no live credentials** -- the only match is
   the literal placeholder `YOUR_GEMINI_API_KEY_HERE`.
-- `git ls-files .vscode/` ‚Üí `.vscode/launch.json.example` (the only tracked
+- `git ls-files .vscode/` -> `.vscode/launch.json.example` (the only tracked
   file under `.vscode/`).
 - No Firestore / Storage / pubspec / Dart changes (pure repo-hygiene +
   security). No `flutter analyze` / `flutter test` impact (no code touched).
@@ -3658,7 +3658,7 @@ have a reference config.
   (NEW, tracked). `.vscode/launch.json` (local, gitignored, untracked).
 
 
-## Phase 36 ‚Äî Gemini API Key Configuration & Resolution Fallback (added 2026-08-14)
+## Phase 36 -- Gemini API Key Configuration & Resolution Fallback (added 2026-08-14)
 
 Items #1 and #2 of the v4.5 to-do: verify the local VS Code launch
 configuration passes `--dart-define=GEMINI_API_KEY=...` correctly, and harden
@@ -3682,22 +3682,22 @@ unavailable" banner.
   copy-paste reference.
 
 ### 2. Centralized `GeminiConfigService` (NEW)
-- New `lib/core/services/gemini_config_service.dart` ‚Äî the single source of
+- New `lib/core/services/gemini_config_service.dart` -- the single source of
   truth for the Gemini API key, implementing the spec's three-tier fallback
   chain in priority order:
-  1. **`const String.fromEnvironment('GEMINI_API_KEY')`** ‚Äî the
+  1. **`const String.fromEnvironment('GEMINI_API_KEY')`** -- the
      `--dart-define` value baked in at **compile** time (highest priority;
      the canonical way to ship a key in a release build).
-  2. **`Platform.environment['GEMINI_API_KEY']`** ‚Äî the runtime process env,
+  2. **`Platform.environment['GEMINI_API_KEY']`** -- the runtime process env,
      used by desktop / CI runners (`flutter test`, `flutter run -d
      linux/windows`) and by `flutter run --dart-define=...` on mobile. The
      accessor is guarded with try/catch so it is safe on web (where
      `Platform.environment` throws).
-  3. **Local storage (SharedPreferences key `jagspoor_gemini_api_key`)** ‚Äî
+  3. **Local storage (SharedPreferences key `jagspoor_gemini_api_key`)** --
      the runtime fallback when `--dart-define` was omitted at compile time.
      An admin / the user can set it at runtime via `setApiKey`; it persists
      across launches. (Firebase Remote Config was NOT added as a dependency
-     ‚Äî it is not in `pubspec.yaml` and adding it risks the iOS SPM/CocoaPods
+     -- it is not in `pubspec.yaml` and adding it risks the iOS SPM/CocoaPods
      build skew documented in the CI section; `shared_preferences` is already
      a dependency and already used for theme + battery-saver persistence, so
      the local-storage fallback is dependency-light and CI-safe.)
@@ -3744,10 +3744,10 @@ unavailable" banner.
   `removeListener` in `dispose`, `setState` on change). A new
   `_buildAiAvailabilityBanner()` renders a reactive card above the farm
   selector:
-  - **Configured** (any source) ‚Üí green/accent card: "AI Extraction Ready"
+  - **Configured** (any source) -> green/accent card: "AI Extraction Ready"
     + the source label ("compile-time --dart-define" / "runtime
     environment" / "local storage").
-  - **Not configured** ‚Üí orange card: "Gemini API Key Not Configured" +
+  - **Not configured** -> orange card: "Gemini API Key Not Configured" +
     guidance to set `GEMINI_API_KEY` via `--dart-define`, the runtime env,
     or local storage.
   So the outfitter knows *why* AI extraction is unavailable before
@@ -3786,11 +3786,11 @@ unavailable" banner.
   `pricelist_scanner_service.dart`, documented since Phase 4) and the
   pre-existing `deprecated_member_use` infos (`androidProvider` /
   `appleProvider` in `main.dart`). Project total: **0 errors, 113 issues**
-  (lib/ only) ‚Äî down 1 from the Phase-35 114-issue baseline because the
+  (lib/ only) -- down 1 from the Phase-35 114-issue baseline because the
   dead `_showSuccess` removal dropped one `unused_element` warning.
   `analysis_options.yaml` auto-touched by the analyzer / pub get was
   reverted before commit.
-- **`flutter test`** (full suite): **388 passed, 4 failed** ‚Äî the 4
+- **`flutter test`** (full suite): **388 passed, 4 failed** -- the 4
   failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
   touch the changed files; +20 vs the Phase-34 368-pass baseline (exactly
@@ -3808,7 +3808,7 @@ unavailable" banner.
   `test/gemini_config_service_test.dart` (NEW, 20 tests).
 
 
-## Phase 37 ‚Äî Firestore Security Rules & Permission Audit (startup seeding) (added 2026-08-14)
+## Phase 37 -- Firestore Security Rules & Permission Audit (startup seeding) (added 2026-08-14)
 
 Item #5 of the v4.5 to-do: audit `firestore.rules` for the collections
 populated or read during startup seeding and eliminate
@@ -3820,12 +3820,12 @@ populated or read during startup seeding and eliminate
   only by a `SharedPreferences` `ballistics_seeded` flag) writes the app's
   bundled CSV reference data into three Firestore collections:
   `factory_ammunition`, `bullets`, `propellants`. The previous rules gated all
-  three with `allow write: if isAdmin()` ‚Äî so the one-time reference-data
+  three with `allow write: if isAdmin()` -- so the one-time reference-data
   seed was rejected server-side for every non-admin (hunter / outfitter) on
   first launch. The seeder uses `batch.set(..., SetOptions(merge: true))`
   with deterministic doc ids derived from `brand_caliber_grain`, so seeding
   is idempotent and concurrent seeds never clobber each other.
-- **`game_guide`**: NOT a Firestore collection ‚Äî it is a Hunter Dashboard
+- **`game_guide`**: NOT a Firestore collection -- it is a Hunter Dashboard
   feature-card `id` (navigates to `AnimalListScreen`). No rule needed.
 - **`app_config` / `system_benchmarks`**: do NOT exist anywhere in the
   codebase (no reads, no writes, no rules). The to-do listed them as
@@ -3837,14 +3837,14 @@ populated or read during startup seeding and eliminate
   startup; no change needed.
 - **`animals`** (SA Game Guide): `allow read: if true` (public), `allow
   write: if isAdmin()`. `seedAnimalsFromCSV()` writes to `animals` but is a
-  MANUAL admin utility (NOT called at startup ‚Äî no caller in `main.dart` or
+  MANUAL admin utility (NOT called at startup -- no caller in `main.dart` or
   anywhere except its own definition), so it does not cause startup
   `PERMISSION_DENIED`. No change needed.
-- **`users/{uid}`**: `allow read: if isSignedIn()` ‚Äî covers the
+- **`users/{uid}`**: `allow read: if isSignedIn()` -- covers the
   `UserRoleProvider` / splash role-resolution read at startup. No change.
 
 ### 2. Rule adjustments (the fix)
-`firestore.rules` ‚Äî the three catalog reference collections were split
+`firestore.rules` -- the three catalog reference collections were split
 from a bare `allow write: if isAdmin()` into explicit read / create+update
 / delete grants:
 ```
@@ -3917,7 +3917,7 @@ the contract the rules enforce). Groups:
   changes (pure rules + structural test).
 
 
-## Phase 38 ‚Äî SA Game Guide Rowland Ward Data & Scientific Name Seed Fix (added 2026-08-14)
+## Phase 38 -- SA Game Guide Rowland Ward Data & Scientific Name Seed Fix (added 2026-08-14)
 
 Item #6 of the v4.5 to-do: populate official Rowland Ward minimum trophy
 benchmarks AND scientific (binomial) names for the SA Game Guide species,
@@ -3929,7 +3929,7 @@ automatically, and surface both in the detail UI.
   the 14 to-do species in `_rolandWardMetrics` (and added the duplicate-UI
   removal + N/A badge). BUT:
   - The seeder (`seedAnimalsFromCSV`) wrote `scientificName: ''` ("Not
-    provided in CSV" ‚Äî the CSV has no scientific-name column), so every
+    provided in CSV" -- the CSV has no scientific-name column), so every
     seeded `animals` doc had a blank scientific name.
   - The seeder only set `trophyMinimumRW`/`rolandWardMinimum`/`rwMinimum`
     + `earLength` from the lookup; it did NOT write `rwMeasurementMethod`
@@ -3949,27 +3949,27 @@ automatically, and surface both in the detail UI.
   underscore alias), so a single lookup resolves both the trophy benchmark
   and the scientific name. All 14 to-do species are populated with their
   official binomials / trinomials:
-  - Greater Kudu ‚Üí `Tragelaphus strepsiceros`
-  - Cape Buffalo ‚Üí `Syncerus caffer`
-  - Blue Wildebeest ‚Üí `Connochaetes taurinus`
-  - Black Wildebeest ‚Üí `Connochaetes gnou`
-  - Gemsbok (Oryx) ‚Üí `Oryx gazella`
-  - Impala ‚Üí `Aepyceros melampus`
-  - Springbok ‚Üí `Antidorcas marsupialis`
-  - Blesbok ‚Üí `Damaliscus pygargus phillipsi`
-  - Common Warthog ‚Üí `Phacochoerus africanus`
-  - Eland ‚Üí `Taurotragus oryx`
-  - Sable Antelope ‚Üí `Hippotragus niger`
-  - Nyala ‚Üí `Tragelaphus angasii`
-  - Common Waterbuck ‚Üí `Kobus ellipsiprymnus`
-  - Red Hartebeest ‚Üí `Alcelaphus buselaphus caama`
+  - Greater Kudu -> `Tragelaphus strepsiceros`
+  - Cape Buffalo -> `Syncerus caffer`
+  - Blue Wildebeest -> `Connochaetes taurinus`
+  - Black Wildebeest -> `Connochaetes gnou`
+  - Gemsbok (Oryx) -> `Oryx gazella`
+  - Impala -> `Aepyceros melampus`
+  - Springbok -> `Antidorcas marsupialis`
+  - Blesbok -> `Damaliscus pygargus phillipsi`
+  - Common Warthog -> `Phacochoerus africanus`
+  - Eland -> `Taurotragus oryx`
+  - Sable Antelope -> `Hippotragus niger`
+  - Nyala -> `Tragelaphus angasii`
+  - Common Waterbuck -> `Kobus ellipsiprymnus`
+  - Red Hartebeest -> `Alcelaphus buselaphus caama`
 - The broader RW-table species (bushbuck, roan, tsessebe, duikers,
   reedbuck, steenbok, grysbok, bushpig, cheetah, leopard, lion, elephant,
   rhino, hippo, crocodile, dik-dik, suni, Lichtenstein's hartebeest) are
   also keyed with their scientific names so no half-populated records
   remain (any species with a RW benchmark also carries a scientific name).
 - New `getScientificNameForSpecies(String)` helper (case-insensitive,
-  trimmed, returns null for unlisted ‚Üí UI N/A fallback).
+  trimmed, returns null for unlisted -> UI N/A fallback).
 
 ### 2. Seeder writes the full benchmark dataset
 - `seedAnimalsFromCSV` now resolves `getRolandWardMetricsForSpecies`
@@ -3981,7 +3981,7 @@ automatically, and surface both in the detail UI.
   searchable by binomial. The write remains `set(merge: true)`, so a
   re-seed **overwrites** stale null / empty / em-dash Rowland Ward values
   and blank scientific names on existing installs (the to-do's
-  "force seed migration / DB overwrite" requirement) ‚Äî `merge: true`
+  "force seed migration / DB overwrite" requirement) -- `merge: true`
   writes every non-null field, so the full benchmark data replaces the
   legacy blanks.
 
@@ -3990,17 +3990,17 @@ automatically, and surface both in the detail UI.
   `animal_seeder.dart`. The `main.dart` startup `addPostFrameCallback`
   now runs the game-guide seed (alongside the ballistics seed) gated by
   the persisted `game_guide_seed_version` SharedPreferences string:
-  - Fresh install (empty persisted version) ‚Üí seeds.
+  - Fresh install (empty persisted version) -> seeds.
   - Existing install on a prior version (e.g. `game_guide_seed_v1` or
-    empty) ‚Üí `seededGuideVersion != gameGuideSeedVersion` ‚Üí re-seeds.
-  - Already on `game_guide_seed_v2` ‚Üí skips.
+    empty) -> `seededGuideVersion != gameGuideSeedVersion` -> re-seeds.
+  - Already on `game_guide_seed_v2` -> skips.
   Bumping the const re-triggers the seeder for every existing install,
   overwriting the stale fields. Failures are caught + `debugPrint`ed
   (non-fatal; the game guide's own Firestore stream surfaces errors
   gracefully per the Phase 16/17 hardening). Import of `animal_seeder.dart`
   added to `main.dart`.
 
-### 4. Firestore rules ‚Äî `animals` write split (`firestore.rules`)
+### 4. Firestore rules -- `animals` write split (`firestore.rules`)
 - The `animals` match block was widened from `allow write: if isAdmin()`
   into explicit grants so the startup seeder (run for every signed-in user)
   succeeds without `PERMISSION_DENIED`:
@@ -4014,7 +4014,7 @@ automatically, and surface both in the detail UI.
   Public read is preserved (the SA Game Guide works offline +
   unauthenticated for reference). `create, update: isSignedIn()` mirrors
   the Phase 37 ballistics-catalog pattern (static reference catalog data,
-  `merge: true`, deterministic doc ids ‚Äî authenticated seeding is the
+  `merge: true`, deterministic doc ids -- authenticated seeding is the
   minimal permission; no UI writes to `animals` outside the seeder).
   `delete: isAdmin()` is tightened vs. the old bare `write` so a non-admin
   can never wipe the catalog. **Deploy reminder**:
@@ -4038,12 +4038,12 @@ automatically, and surface both in the detail UI.
   The only issues in touched files are the 2 pre-existing
   `androidProvider`/`appleProvider` deprecation infos in `main.dart`
   (documented baseline; only flagged on the local 3.47.0). `lib/` total
-  **113 issues** ‚Äî unchanged baseline. `analysis_options.yaml`
+  **113 issues** -- unchanged baseline. `analysis_options.yaml`
   auto-touched by the analyzer was reverted before commit.
-- **`flutter test`**: `game_guide_rowland_ward_test` (43 ‚Äî was 36; +7 new:
+- **`flutter test`**: `game_guide_rowland_ward_test` (43 -- was 36; +7 new:
   5 scientific-name + 2 seed-version) + `firestore_rules_seeding_test`
-  (14 ‚Äî updated the `animals` assertion to the new create/update/delete
-  split) all pass (57 total). Full suite **409 passed, 4 failed** ‚Äî the 4
+  (14 -- updated the `animals` assertion to the new create/update/delete
+  split) all pass (57 total). Full suite **409 passed, 4 failed** -- the 4
   failures are the documented pre-existing baseline (`saps_tracker`,
   `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
   touch the changed files; +7 vs the Phase-37 402-pass baseline (exactly
@@ -4063,7 +4063,125 @@ automatically, and surface both in the detail UI.
   credentialed env to activate the `animals` seed/permission split. Until
   deployed, the old `write: isAdmin()` gate still rejects the first-launch
   game-guide seed for non-admins (surfaced as a non-fatal `debugPrint` in
-  the startup try/catch ‚Äî the guide still renders from whatever `animals`
+  the startup try/catch -- the guide still renders from whatever `animals`
   docs exist + the in-memory RW/scientific-name lookups the field-estimate
   + detail screens use directly).
+
+
+## Phase 39 -- PayFast deposit checkout button on Pending Deposit booking cards (added 2026-08-14)
+
+Item #7 of the v4.5 to-do: add a prominent, primary PayFast deposit
+checkout button directly on the hunter's "My Bookings" cards for
+`Pending Deposit` bookings, with loading state + success/failure feedback.
+
+### Background (pre-fix state + the bug)
+- The hunter's "My Bookings" tab renders a private `_HunterBookingCard`
+  per booking in
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`.
+  A PayFast `ElevatedButton.icon` already existed, BUT:
+  - It rendered at the **bottom** of the card, below the chat expansion
+    panel (`_buildChatDrawer()`), so a hunter had to scroll past the chat
+    thread to reach it (not "prominent").
+  - **Bug (the core issue)**: the eligibility check was
+    `statusLower == 'pending_deposit'` (underscore). The canonical
+    post-approval status written by `approveBookingAndRequestDeposit` is
+    `'Pending Deposit'` (space-separated) -- `statusLower` becomes
+    `'pending deposit'` (space). The underscore form `'pending_deposit'`
+    **never matched**, so the Pay button silently failed to render on the
+    canonical `Pending Deposit` bookings; it only ever appeared on legacy
+    `'Approved'` / `'pending_payment'` bookings (the fallback branches).
+    This is why the to-do framed it as "add the button to PENDING DEPOSIT
+    bookings" -- for the canonical status it was effectively absent.
+  - The label used a raw `'R ${...toStringAsFixed(2)}'` rather than a
+    shared currency formatter (the to-do references
+    `PricingMath.formatCurrency(...)`).
+  - The checkout handler passed no `itemName` (the package title), so the
+    PayFast line item read `'JagSpoor Booking <id>'` instead of the
+    package name.
+  - There was no loading state and no **success** confirmation snackbar
+    (only a failure snackbar).
+
+### 1. `PricingMath.formatCurrency` (NEW)
+- New pure, locale-independent ZAR formatter in
+  `lib/features/hunter_mode/services/pricing_math.dart`:
+  `formatCurrency(double)` -> `'R 1\u202F234.50'` (thin-space thousands
+  grouping, two decimals, optional minus). It is now the single source of
+  truth for the marketplace / booking-card deposit labels (matches the
+  app's existing ZAR formatting). Pure string arithmetic via a private
+  `_groupThousands` helper (no `intl` dependency, keeps it unit-testable).
+
+### 2. Eligibility fix -- canonical `Pending Deposit` status
+- `_HunterBookingCardState`'s `isDepositDueStatus` now matches the
+  canonical **space** form case-insensitively
+  (`statusLower == 'pending deposit'`), with the legacy
+  `'pending_deposit'` / `'approved'` / `'pending_payment'` spellings
+  retained as fallbacks for older booking documents. The fix is the
+  addition of the `'pending deposit'` (space) match -- the v4.5 Item #7
+  bug. `showPayButton = isDepositDueStatus && payfastAmount > 0`
+  (unchanged guard). The deposit is resolved via
+  `PricingMath.resolveDeposit(storedDeposit: depositAmountRands,
+  markedUpTotalValue: totalPrice)` (already in place), where `totalPrice`
+  is `PricingMath.resolveHunterTotal(totalHunterPriceRands, basePrice)`.
+
+### 3. Prominent card-level button (above the chat panel)
+- The PayFast `ElevatedButton.icon` was **moved from the bottom of the
+  card to directly above the chat expansion panel** (rendered right after
+  the deposit-breakdown banner, before the date-change banners and the
+  chat drawer), so the hunter can pay the deposit without scrolling past
+  the chat thread (the to-do's "above or alongside the expansion panel").
+  - `icon`: `Icons.lock_clock_rounded` (toggles to an inline
+    `CircularProgressIndicator` while `_isPaying`).
+  - `label`: `'Pay 25% Deposit (<PricingMath.formatCurrency(depositAmount)>)'`
+    (falls back to `'Pay via PayFast'` when deposit is 0, which is gated
+    out by `showPayButton` anyway).
+  - `style`: `Colors.green.shade700` primary elevated (deep-green accent),
+    white foreground, `elevation: 2`, `disabledBackgroundColor` for the
+    loading state.
+  - `onPressed`: `_initiatePayFastCheckout(bookingId, amount, itemName:
+    packageName)` (passes the **package title** as the PayFast line-item
+    name); `null` (disabled) while `_isPaying`.
+
+### 4. Loading + success/failure feedback (`_initiatePayFastCheckout`)
+- New `_isPaying` state on `_HunterBookingCardState`; the handler now:
+  1. guards re-entry (`if (_isPaying) return`), `setState(_isPaying =
+     true)`;
+  2. captures `ScaffoldMessenger.maybeOf(context)` **before** the async
+     gap (the card may unmount while the browser hand-off is in flight);
+  3. calls `PayfastCheckout.launchDeposit(bookingId, amount, itemName:)`;
+  4. on `launched == true` shows a green confirmation snackbar:
+     *"PayFast checkout portal opened in your browser -- pay your 25%
+     deposit to confirm the booking."* (5s);
+  5. on `launched == false` shows a failure snackbar:
+     *"Unable to open PayFast checkout -- no browser app available.
+     Please try again or contact the outfitter."*;
+  6. `catch` surfaces `'PayFast checkout failed: <e>'`;
+  7. `finally` clears `_isPaying` (guarded by `mounted`).
+- All post-async-gap context use is `mounted`-guarded; the messenger is
+  captured pre-gap so the snackbar still fires if the card unmounted is
+  false. `ScaffoldMessenger.maybeOf` (null-safe) avoids the
+  `use_build_context_synchronously` lint.
+
+### 5. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in the changed files
+  (`pricing_math.dart`, `hunter_package_marketplace_screen.dart`).
+  `lib/` total **113 issues** -- unchanged baseline (all pre-existing in
+  unrelated files; no new issues introduced). `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- **`flutter test`**: new `payfast_deposit_button_test` 16/16 pass
+  (5 `formatCurrency` + 4 `resolveDeposit` + 5 eligibility + 2
+  item-name). Full suite **425 passed, 4 failed** -- the 4 failures are
+  the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; +16 vs the Phase-38 409-pass baseline (exactly
+  the new tests).
+- No Firestore / Storage / rules / index / pubspec changes (pure UI +
+  pricing-helper + tests).
+- Files: `lib/features/hunter_mode/services/pricing_math.dart`
+  (`formatCurrency` + `_groupThousands`),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (`_isPaying` state, eligibility fix, prominent pre-chat button,
+  `formatCurrency` label, `itemName` pass-through, loading +
+  success/failure snackbars, `mounted` guards),
+  `test/payfast_deposit_button_test.dart` (NEW, 16 tests), `AGENTS.md`.
 

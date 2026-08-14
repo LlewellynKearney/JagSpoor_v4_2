@@ -1391,6 +1391,7 @@ class _HunterBookingCard extends StatefulWidget {
 
 class _HunterBookingCardState extends State<_HunterBookingCard> {
   bool _isChatExpanded = false;
+  bool _isPaying = false;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
 
@@ -1479,9 +1480,16 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     final statusLower = status.toLowerCase();
 
     // PayFast checkout eligibility: render the Pay button when the booking is
-    // awaiting the deposit (case-insensitive). The charge amount is the 25%
-    // deposit (off the marked-up total).
-    final isDepositDueStatus = statusLower == 'pending_deposit' ||
+    // awaiting the deposit. The canonical post-approval status is
+    // `'Pending Deposit'` (space-separated, written by
+    // `approveBookingAndRequestDeposit`), so the check is case-insensitive on
+    // the space form. The legacy `approved` / `pending_payment` spellings are
+    // retained as fallbacks for older booking documents. (v4.5 to-do Item #7
+    // — previously this checked the underscore form `'pending_deposit'`,
+    // which never matched the canonical space-spelled status, so the deposit
+    // button silently failed to render on `Pending Deposit` bookings.)
+    final isDepositDueStatus = statusLower == 'pending deposit' ||
+        statusLower == 'pending_deposit' ||
         statusLower == 'approved' ||
         statusLower == 'pending_payment';
     final payfastAmount = depositAmount;
@@ -1610,6 +1618,55 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
               ),
             ),
 
+          // 💳 PayFast deposit checkout — prominent primary action rendered
+          // directly on the card ABOVE the chat expansion panel so the hunter
+          // can pay the 25% deposit without scrolling past the chat thread.
+          // Shown only for payable bookings (deposit-due status, deposit > 0).
+          // (v4.5 to-do Item #7.)
+          if (showPayButton)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: _isPaying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.lock_clock_rounded,
+                          color: Colors.white),
+                  label: Text(
+                    depositAmount > 0
+                        ? 'Pay 25% Deposit (${PricingMath.formatCurrency(depositAmount)})'
+                        : 'Pay via PayFast',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.green.shade700
+                        .withValues(alpha: 0.5),
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _isPaying
+                      ? null
+                      : () => _initiatePayFastCheckout(
+                            bookingId: widget.bookingId,
+                            amount: payfastAmount,
+                            itemName: packageName,
+                          ),
+                ),
+              ),
+            ),
+
           // Date-change request status banner.
           if (dateChange != null && !dateChange.isPending)
             Padding(
@@ -1624,33 +1681,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
           // 💬 Chat & Negotiation Thread Panel
           _buildChatDrawer(),
-
-          // 💳 PayFast checkout — shown only for payable bookings (deposit due).
-          if (showPayButton)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.payment_rounded, color: Colors.white),
-                  label: Text(depositAmount > 0
-                      ? 'Pay 25% Deposit (R ${depositAmount.toStringAsFixed(2)}) via PayFast'
-                      : 'Pay via PayFast'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () => _initiatePayFastCheckout(
-                    bookingId: widget.bookingId,
-                    amount: payfastAmount,
-                  ),
-                ),
-              ),
-            ),
 
           // 📅 Request Date Change button.
           if (canRequestDateChange)
@@ -2042,22 +2072,62 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
   /// Builds the PayFast sandbox payment URL from the booking details and
   /// launches it in the external browser. The booking id is passed as
   /// `m_payment_id` so the ITN handler can reconcile it back to the booking.
+  /// [itemName] is the package/booking title, surfaced as the PayFast line
+  /// item name. Toggles the in-card [_isPaying] loading state and surfaces a
+  /// confirmation snackbar once the checkout portal has opened (or a failure
+  /// snackbar if the browser hand-off is unavailable). (v4.5 to-do Item #7.)
   Future<void> _initiatePayFastCheckout({
     required String bookingId,
     required double amount,
+    String? itemName,
   }) async {
-    // Route through the single-source PayFast sandbox launcher so the sandbox
-    // configuration (host / merchant id / key / ITN endpoint) lives in exactly
-    // one place (`PayfastCheckout`). The amount charged is the 25% marked-up
-    // deposit (already resolved off `totalHunterPriceRands × 0.25`).
-    final launched = await PayfastCheckout.launchDeposit(
-      bookingId: bookingId,
-      amount: amount,
-    );
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open PayFast checkout')),
+    if (_isPaying) return;
+    setState(() => _isPaying = true);
+    // Capture the messenger before the async gap (the widget may unmount
+    // while the browser hand-off is in flight).
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      // Route through the single-source PayFast sandbox launcher so the
+      // sandbox configuration (host / merchant id / key / ITN endpoint)
+      // lives in exactly one place (`PayfastCheckout`). The amount charged
+      // is the 25% marked-up deposit (already resolved off
+      // `totalHunterPriceRands × 0.25`).
+      final launched = await PayfastCheckout.launchDeposit(
+        bookingId: bookingId,
+        amount: amount,
+        itemName: itemName,
       );
+      if (!mounted) return;
+      if (launched) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'PayFast checkout portal opened in your browser — pay your 25% '
+              'deposit to confirm the booking.',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      } else {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to open PayFast checkout — no browser app available. '
+              'Please try again or contact the outfitter.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(content: Text('PayFast checkout failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPaying = false);
+      }
     }
   }
 

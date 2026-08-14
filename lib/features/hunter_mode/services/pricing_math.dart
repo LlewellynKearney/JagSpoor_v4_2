@@ -73,6 +73,44 @@ class PricingMath {
   }) =>
       grossRevenue - platformFee;
 
+  /// Formats a ZAR money amount for hunter-facing display, e.g.
+  /// `formatCurrency(1234.5)` → `'R 1 234.50'`, `formatCurrency(0)` →
+  /// `'R 0.00'`. Locale-independent (no external intl dep): groups
+  /// thousands with a thin space and always emits two decimals so prices
+  /// line up. Single source of truth for the marketplace / booking-card
+  /// deposit labels. (v4.5 to-do Item #7.)
+  static String formatCurrency(double amount) {
+    final neg = amount < 0;
+    final abs = amount.abs();
+    // Two-decimal rounded base, then group the integer part with thin spaces.
+    final rounded = abs.toStringAsFixed(2);
+    final dot = rounded.indexOf('.');
+    final intPart = dot == -1 ? rounded : rounded.substring(0, dot);
+    final decPart = dot == -1 ? '00' : rounded.substring(dot + 1);
+    final grouped = _groupThousands(intPart);
+    final body = decPart.isEmpty ? grouped : '$grouped.$decPart';
+    return '${neg ? '-' : ''}R $body';
+  }
+
+  /// Groups an integer string with thin-space thousands separators
+  /// (`'1234567'` → `'1\u202F234\u202F567'`). Pure string arithmetic.
+  static String _groupThousands(String intPart) {
+    if (intPart.length <= 3) return intPart;
+    final buf = StringBuffer();
+    var count = 0;
+    for (var i = intPart.length - 1; i >= 0; i--) {
+      if (count == 3) {
+        buf.write('\u202F'); // thin space (matches the app's ZAR formatting)
+        count = 0;
+      }
+      buf.write(intPart[i]);
+      count++;
+    }
+    // Reverse the buffer.
+    final s = buf.toString();
+    return String.fromCharCodes(s.runes.toList().reversed);
+  }
+
   /// Resolves a stored booking/package document's hunter-facing total,
   /// applying the 7.5% markup to the base price when the precomputed
   /// `totalHunterPriceRands` / `totalPriceZAR` field is absent (legacy docs).
