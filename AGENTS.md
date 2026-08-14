@@ -3988,17 +3988,40 @@ automatically, and surface both in the detail UI.
 ### 3. Forced seed migration via version tag (`lib/main.dart`)
 - New `const String gameGuideSeedVersion = 'game_guide_seed_v2'` in
   `animal_seeder.dart`. The `main.dart` startup `addPostFrameCallback`
-  now runs the game-guide seed (alongside the ballistics seed) gated by
-  the persisted `game_guide_seed_version` SharedPreferences string:
-  - Fresh install (empty persisted version) -> seeds.
-  - Existing install on a prior version (e.g. `game_guide_seed_v1` or
-    empty) -> `seededGuideVersion != gameGuideSeedVersion` -> re-seeds.
-  - Already on `game_guide_seed_v2` -> skips.
-  Bumping the const re-triggers the seeder for every existing install,
-  overwriting the stale fields. Failures are caught + `debugPrint`ed
-  (non-fatal; the game guide's own Firestore stream surfaces errors
-  gracefully per the Phase 16/17 hardening). Import of `animal_seeder.dart`
-  added to `main.dart`.
+  runs the game-guide seed (alongside the ballistics seed). Both seeders
+  are now FORCED UNCONDITIONAL on every app startup (the
+  `SharedPreferences` `ballistics_seeded` / `game_guide_seed_version`
+  gates are bypassed for this forced re-seed pass) so local SQLite and
+  Firestore are fully populated on every launch -- see the
+  "Forced startup re-seed (v4.5 hot-fix)" entry below. Failures are
+  caught + `debugPrint`ed (non-fatal; the game guide's own Firestore
+  stream surfaces errors gracefully per the Phase 16/17 hardening).
+  Import of `animal_seeder.dart` added to `main.dart`.
+
+### Forced startup re-seed (v4.5 hot-fix, added 2026-08-14)
+- `lib/main.dart` `addPostFrameCallback` now calls
+  `BallisticsSeeder.seedAll()` and `seedAnimalsFromCSV()` UNCONDITIONALLY
+  on every app startup -- the `SharedPreferences`
+  `ballistics_seeded` boolean gate and the `game_guide_seed_version`
+  string gate are both bypassed (the prefs values are still WRITTEN after
+  a successful seed so any consumer reading the legacy flag still sees
+  `true`/the current version, but the gate no longer prevents the call).
+- This forces a full re-seed of the `factory_ammunition` / `bullets` /
+  `propellants` ballistics reference catalogs AND the `animals` SA Game
+  Guide catalog (official Rowland Ward minimums, measurement method +
+  horn description, scientific names, search keywords) on every launch,
+  so existing installs whose docs carry null / empty / em-dash Rowland
+  Ward values or blank scientific names get the full benchmark dataset
+  overwritten via each seeder's `merge: true` / `set(merge: true)` write.
+- Both seeders are idempotent (deterministic doc ids, merge writes), so
+  re-seeding is safe and conflict-free. The seeders run for every
+  signed-in user; the Phase 37 / Phase 38 `firestore.rules` splits
+  (`factory_ammunition` / `bullets` / `propellants` / `animals` ->
+  `create, update: if isSignedIn()`, `delete: if isAdmin()`) permit the
+  non-admin seed without `PERMISSION_DENIED` once deployed.
+- `flutter analyze` (Flutter 3.47.0): 0 errors in `lib/main.dart`
+  (only the 2 pre-existing `androidProvider` / `appleProvider`
+  deprecation infos, documented baseline).
 
 ### 4. Firestore rules -- `animals` write split (`firestore.rules`)
 - The `animals` match block was widened from `allow write: if isAdmin()`

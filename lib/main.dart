@@ -113,44 +113,36 @@ Future<void> main() async {
       }
     });
 
-    // Temporary database populator hook - RUNS ONCE
+    // TEMPORARY: force UNCONDITIONAL ballistics + game guide re-seed on every
+    // app startup so local SQLite and Firestore are fully populated. The
+    // SharedPreferences `ballistics_seeded` / `game_guide_seed_version`
+    // gates are bypassed for this forced re-seed pass (v4.5 hot-fix).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
 
-      // --- Ballistics reference-data seed ---
-      final hasSeeded = prefs.getBool('ballistics_seeded') ?? false;
-      if (!hasSeeded) {
-        try {
-          debugPrint("STARTING LIVE BALLISTIC DATA INGESTION...");
-          final seeder = BallisticsSeeder();
-          await seeder.seedAll();
-          await prefs.setBool('ballistics_seeded', true);
-          debugPrint("FIRESTORE POPULATION COMPLETELY SUCCESSFUL!");
-        } catch (e) {
-          debugPrint("SEEDER ERROR LOG: $e");
-        }
-      } else {
-        debugPrint("Ballistics data already seeded. Skipping.");
+      // --- Ballistics reference-data seed (FORCED, unconditional) ---
+      try {
+        debugPrint("STARTING LIVE BALLISTIC DATA INGESTION (FORCED)...");
+        final seeder = BallisticsSeeder();
+        await seeder.seedAll();
+        await prefs.setBool('ballistics_seeded', true);
+        debugPrint("FIRESTORE POPULATION COMPLETELY SUCCESSFUL!");
+      } catch (e) {
+        debugPrint("SEEDER ERROR LOG: $e");
       }
 
-      // --- SA Game Guide seed (forced migration via version tag) ---
-      // Re-runs whenever [gameGuideSeedVersion] bumps, so existing installs
-      // that carry null / empty / em-dash Rowland Ward values or blank
-      // scientific names get the full benchmark dataset overwritten via the
-      // seeder's `merge: true` write. (v4.5 to-do Item #6.)
-      final seededGuideVersion =
-          prefs.getString('game_guide_seed_version') ?? '';
-      if (seededGuideVersion != gameGuideSeedVersion) {
-        try {
-          debugPrint("STARTING SA GAME GUIDE SEED (v$gameGuideSeedVersion)...");
-          await seedAnimalsFromCSV();
-          await prefs.setString('game_guide_seed_version', gameGuideSeedVersion);
-          debugPrint("SA GAME GUIDE SEED COMPLETE (v$gameGuideSeedVersion).");
-        } catch (e) {
-          debugPrint("GAME GUIDE SEEDER ERROR LOG: $e");
-        }
-      } else {
-        debugPrint("SA Game Guide already seeded at v$gameGuideSeedVersion. Skipping.");
+      // --- SA Game Guide seed (FORCED, unconditional) ---
+      // Re-runs on every startup so existing installs that carry null /
+      // empty / em-dash Rowland Ward values or blank scientific names get
+      // the full benchmark dataset overwritten via the seeder's
+      // `merge: true` write.
+      try {
+        debugPrint("STARTING SA GAME GUIDE SEED (FORCED, v$gameGuideSeedVersion)...");
+        await seedAnimalsFromCSV();
+        await prefs.setString('game_guide_seed_version', gameGuideSeedVersion);
+        debugPrint("SA GAME GUIDE SEED COMPLETE (v$gameGuideSeedVersion).");
+      } catch (e) {
+        debugPrint("GAME GUIDE SEEDER ERROR LOG: $e");
       }
     });
 
