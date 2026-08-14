@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -8,6 +9,14 @@ class LocalDatabaseService {
   factory LocalDatabaseService() => instance;
 
   LocalDatabaseService._internal();
+
+  /// Test-only: clears the cached database handle so the next [database] access
+  /// opens a fresh database (used by the off-grid mesh-sync integration tests
+  /// to isolate each test under a temp path via `sqflite_common_ffi`).
+  @visibleForTesting
+  static void resetForTest() {
+    _database = null;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;

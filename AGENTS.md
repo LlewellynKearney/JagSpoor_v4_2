@@ -2794,3 +2794,93 @@ reporter's User ID, the free-text description, and a System Context block.
   (dead email helpers removed),
   `test/support_email_composer_test.dart` (NEW).
 
+
+## Phase 29 — Off-Grid Mesh Sync info icon & integration tests (added 2026-08-14)
+
+### UI info icon & explanatory modal
+- The Off-Grid Team Radar screen (`lib/features/hunter_mode/screens/mesh_radar_screen.dart`)
+  gained a reusable `ContextualInfoIcon` in its `AppBar.actions` (alongside the
+  existing mesh on/off `Switch`). Tapping it opens the standard
+  `ExplanationDialog` (the app's self-documenting modal, via
+  `lib/core/widgets/contextual_info_icon.dart`) titled "Off-Grid Mesh Sync",
+  describing the P2P mesh architecture through three KEY CONCEPTS rows that map
+  to the engine's real subsystems:
+  - **Automatic Neighbor Discovery** — BLE and Wi-Fi Direct advertise and
+    detect nearby team devices automatically; no router or cell tower required.
+    (Mirrors `BluetoothMeshSync.startBroadcasting` / `startMeshDiscovery`, which
+    use `nearby_connections` `Strategy.P2P_CLUSTER`.)
+  - **Encrypted Local Relay** — carcass logs, waypoints, and emergency pings
+    are relayed device-to-device across the mesh, so every team member sees the
+    latest field state even off-grid. (Mirrors
+    `BluetoothMeshSyncService.receiveIncomingMeshPayload` + the
+    `carcass_records` / `bookings` / `outfitter_packages` / `invoices` sync
+    tables.)
+  - **Cloud Catch-Up Sync** — queued transactions are pushed to Firestore
+    automatically the moment any single mesh device regains cellular or
+    satellite data; no manual sync required. (Mirrors the `isDirty=1` flag the
+    merge stamps on every ingested/updated record, which the
+    `OfflineSyncQueue` connectivity listener flushes on reconnect.)
+
+### Mesh sync test suite (real code paths, no engine mocks)
+- New `test/features/offline_sync/mesh_sync_engine_test.dart` — 9 tests, all
+  pass — exercises the REAL `BluetoothMeshSyncService` (in
+  `lib/core/services/bluetooth_mesh_sync_service.dart`) against a REAL in-memory
+  SQLite database via `sqflite_common_ffi` (added as a `dev_dependency`:
+  `sqflite_common_ffi: ^2.4.2`). No mocks of the sync engine itself — the
+  existing pre-existing-failing `test/features/sync/bluetooth_mesh_test.dart`
+  uses a custom `MockLocalStorageCache` (the mock-based anti-pattern this suite
+  avoids); this new suite tests the actual service code.
+  - **setUpAll** initializes the FFI SQLite factory globally
+    (`sqfliteFfiInit()` + `databaseFactory = databaseFactoryFfi`) so the real
+    `LocalDatabaseService` opens a genuine SQLite database on the desktop test
+    runner. **setUp** isolates each test under a fresh temp DB path
+    (`databaseFactory.deleteDatabase(testDbPath)` +
+    `LocalDatabaseService.resetForTest()`). **tearDown** disposes the mesh
+    singleton (`BluetoothMeshSyncService.instance.dispose()`) so each test gets
+    a clean service (empty signature cache + zeroed peer count).
+  - **Group 1 — Local queue transaction serialization & deserialization:**
+    `MeshSyncPayload.serialize()` → `deserialize()` round-trip (every field
+    preserved, no raw newlines in the BLE packet frame); `toJson` / `fromJson`
+    preserve every field; ISO8601 timestamp with timezone offset parses.
+  - **Group 2 — Peer node discovery event broadcasting:**
+    `receiveIncomingMeshPayload` emits on the `ingestionStream` (real broadcast
+    `StreamController`) AND bumps the `peerCountStream`; own broadcasts are
+    skipped (loop prevention — `senderDeviceId == _deviceId`); duplicate
+    payloads (same sender/table/recordId/timestamp signature) are de-duplicated
+    and emitted exactly once.
+  - **Group 3 — Conflict resolution when merging offline records
+    (last-writer-wins):** an incoming record with no local match is inserted
+    (flat-column data + `isDirty=1` for cloud catch-up); an incoming record
+    with an OLDER `timestamp` than the local `updatedAt` does NOT overwrite the
+    newer local row; an incoming record with a NEWER `timestamp` DOES overwrite
+    the older local row and re-marks it dirty. (The `carcass_records` table
+    carries `isDirty` but no timestamp column in the production schema; the
+    tests `ALTER TABLE … ADD COLUMN updatedAt/createdAt TEXT` in-test — via an
+    idempotent `_tryAddColumn` helper — so the merge's real timestamp-comparison
+    branch is exercised against a controlled seeded timestamp, matching the
+    `updatedAt`/`createdAt` fallback the engine reads on tables that carry
+    those columns.)
+- Added `LocalDatabaseService.resetForTest()` (`@visibleForTesting`) — clears
+  the static cached `Database` handle so the next `database` access opens a
+  fresh test-path DB; the only production-code change, and it is test-gated.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0 warnings,
+  0 infos** in all new/modified files (`mesh_radar_screen.dart`,
+  `local_database_service.dart`, `mesh_sync_engine_test.dart`). Project total
+  0 errors + 11 warnings — unchanged baseline (all pre-existing in unrelated
+  files). `analysis_options.yaml` auto-touched by the analyzer was reverted
+  before commit.
+- **`flutter test test/features/offline_sync/`**: 9/9 pass. Full suite
+  **264 passed, 4 failed** — the 4 failures are the documented pre-existing
+  baseline (`saps_tracker`, `offline_sync_queue`, `advanced_ballistics`,
+  `bluetooth_mesh`), none touch the changed files (+9 from the prior commit's
+  255, exactly the new mesh-sync tests).
+- No Firestore / Storage / rules / index changes (pure client-side mesh engine
+  + UI). The `sqflite_common_ffi` addition is a `dev_dependency` only (does
+  not ship in the release build).
+- Files: `lib/features/hunter_mode/screens/mesh_radar_screen.dart`
+  (info icon + modal), `lib/features/shared/data/services/local_database_service.dart`
+  (`resetForTest`), `test/features/offline_sync/mesh_sync_engine_test.dart`
+  (NEW), `pubspec.yaml` / `pubspec.lock` (`sqflite_common_ffi` dev dep).
+

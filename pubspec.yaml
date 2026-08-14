@@ -111,6 +111,7 @@ dev_dependencies:
   test: ^1.25.0
   mockito: ^5.4.4
   fake_cloud_firestore: ^4.1.1
+  sqflite_common_ffi: ^2.4.2
 
 flutter:
   uses-material-design: true

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/widgets/contextual_info_icon.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/bluetooth_mesh_sync.dart';
 
@@ -60,6 +61,36 @@ class _MeshRadarScreenState extends State<MeshRadarScreen> {
       appBar: AppBar(
         title: const Text('Off-Grid Team Radar'),
         actions: [
+          ContextualInfoIcon(
+            title: 'Off-Grid Mesh Sync',
+            description:
+                'When cellular signal drops to zero, JagSpoor forms an '
+                'encrypted peer-to-peer mesh between nearby devices so hunting '
+                'teams keep sharing critical data until any one device '
+                'reconnects to the cloud.',
+            concepts: const [
+              ExplanationConcept(
+                label: 'Automatic Neighbor Discovery',
+                detail:
+                    'BLE and Wi-Fi Direct advertise and detect nearby team '
+                    'devices automatically — no router or cell tower required.',
+              ),
+              ExplanationConcept(
+                label: 'Encrypted Local Relay',
+                detail:
+                    'Carcass logs, waypoints, and emergency pings are relayed '
+                    'device-to-device across the mesh, so every team member '
+                    'sees the latest field state even off-grid.',
+              ),
+              ExplanationConcept(
+                label: 'Cloud Catch-Up Sync',
+                detail:
+                    'Queued transactions are pushed to Firestore automatically '
+                    'the moment any single mesh device regains cellular or '
+                    'satellite data — no manual sync required.',
+              ),
+            ],
+          ),
           Switch(
             value: _isMeshActive,
             onChanged: _toggleMesh,
