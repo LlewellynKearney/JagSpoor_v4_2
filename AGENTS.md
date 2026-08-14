@@ -3021,3 +3021,116 @@ selected firearm.
   `test/optic_tools_test.dart` (+11 tests). No Firestore rules / index /
   Storage / pubspec changes (pure model + UI + secure-binding stamp).
 
+## Phase 31 ‚Äî SA Game Guide Animal Card Rowland Ward Data & UI Cleanup (added 2026-08-14)
+
+Item #6 of the v4.4 to-do: resolve the duplicate Rowland Ward display field
+on the SA Game Guide animal detail card, populate official South African
+Rowland Ward minimum trophy benchmarks, and add an N/A fallback badge with a
+grayed-out icon for species with no recorded benchmark.
+
+### 1. Duplicate Rowland Ward UI field removed (`animal_detail_screen.dart`)
+- The animal detail card (`lib/screens/animal_detail_screen.dart`) rendered
+  the Rowland Ward minimum **twice**: once as a prominent
+  "Roland Ward Minimum Trophy Standard" summary `Card` (top of the detail
+  body) and again as a `'Rowland Ward Minimum'` `_DetailRow` inside the
+  `'TROPHY REFERENCE'` `_SectionCard`. Both read the same underlying value,
+  so the trophy minimum appeared twice per animal card.
+- The redundant `_DetailRow` was removed; the `'TROPHY REFERENCE'` section now
+  renders ONLY the supporting measurement metadata (`Measurement Method` +
+  `Horn Description`), which were never duplicated. The Rowland Ward minimum
+  now renders exactly **once** per animal card (in the prominent summary).
+- The prominent summary card was corrected to read "Rowland Ward" (the
+  canonical spelling) and now sources its value from a single new helper,
+  `_rowlandWardValue(animal)`, which resolves the three storage aliases
+  (`rwMinimum` ‚Üí `rolandWardMinimum` ‚Üí `trophyMinimumRW`) in priority
+  order and trims the result. The old inline resolution + the now-unused
+  `_valueOrDash` helper were deleted (would have been `unused_element`).
+
+### 2. Official SA Rowland Ward minimum benchmarks populated
+  (`lib/utils/animal_seeder.dart`)
+- The static `_rolandWardMetrics` dictionary (the data store backing
+  `getRolandWardMinimumForSpecies` / the CSV seeder) was updated with the
+  official South African Rowland Ward minimum trophy scores for the 14
+  listed species, in the to-do's "X inches" format:
+  - greater_kudu: "53 7/8 inches"
+  - gemsbok: "40 inches"
+  - blue_wildebeest: "28 1/2 inches"
+  - black_wildebeest: "22 7/8 inches"
+  - impala: "23 5/8 inches"  *(corrected from the prior '23 6/8" (60.0 cm)'*
+    *‚Äî the official SA minimum is 23 5/8")*
+  - springbok: "14 inches"
+  - blesbok: "16 1/2 inches"
+  - warthog / common warthog: "13 inches"
+  - eland: "35 inches"
+  - sable / sable antelope: "41 7/8 inches"  *(corrected from the prior*
+    *'40.0' ‚Äî the official SA minimum is 41 7/8")*
+  - nyala: "27 inches"
+  - waterbuck / common waterbuck: "28 inches"
+  - red_hartebeest: "23 inches"
+  - cape_buffalo: "42 inches"
+- Both naming conventions are now keyed so lookups resolve regardless of how
+  the caller spells the species: the **space-keyed** form (the CSV
+  `commonName` lowercased, e.g. `'greater kudu'`, `'common warthog'`,
+  `'sable antelope'`, `'cape buffalo'`, `'red hartebeest'`, `'common
+  waterbuck'`) AND the **underscore-keyed** form used by the to-do spec
+  (`'greater_kudu'`, `'blue_wildebeest'`, `'black_wildebeest'`, `'warthog'`,
+  `'sable'`, `'waterbuck'`, `'red_hartebeest'`, `'cape_buffalo'`).
+- The richer measurement metadata (`measurementMethod` + `hornDescription` +
+  `earLength`) is preserved for every listed species (and enriched where the
+  prior entry was a bare numeric string ‚Äî e.g. cape buffalo, red hartebeest,
+  waterbuck, sable now carry their measurement method + horn description).
+- A latent **duplicate-key compile error** was fixed: the original map still
+  held older `'common warthog'`, `'springbok'`, `'springbok (cape)'`, and
+  `'springbok (kalahari)'` entries further down that collided with the new
+  official entries I added for those species. The stale duplicates were
+  removed (the new official entries win), so the `const` map now compiles
+  cleanly with no key conflicts.
+
+### 3. N/A fallback badge with icon (`animal_detail_screen.dart`)
+- The prominent Rowland Ward summary card now checks the resolved value:
+  when `_rowlandWardValue(animal)` returns `null` (the species has no
+  recorded benchmark ‚Äî null / empty / unlisted), the card renders a new
+  `_RowlandWardNaBadge` widget instead of the value text or a bare em-dash.
+- `_RowlandWardNaBadge` is a clean, theme-aware pill rendering
+  **`Rowland Ward: N/A`** with a grayed-out **`Icons.not_interested`** icon
+  (tinted with `theme.subtitleColor` so it reads as "disabled/not
+  applicable" in both Day and Night modes), a subtle subtitle-tinted
+  background + border. The measurement-type chip is suppressed in the N/A
+  state (it's meaningless without a value).
+- So an animal with no Rowland Ward record (e.g. a plains zebra, giraffe, or
+  hyaena ‚Äî none are in the benchmark dictionary) now shows a clear, styled
+  "Rowland Ward: N/A" badge instead of an empty field or a confusing "‚Äî".
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in all changed files (`animal_detail_screen.dart`,
+  `animal_seeder.dart`, `animal.dart`, `game_guide_rowland_ward_test.dart`).
+  Project total: **0 errors, 11 warnings, 323 infos** ‚Äî all pre-existing in
+  unrelated files (unchanged baseline). The `unused_element` that would have
+  been introduced by the now-dead `_valueOrDash` helper was pre-empted by
+  deleting the helper. `analysis_options.yaml` auto-touched by the analyzer
+  was reverted before commit.
+- **`flutter test test/game_guide_rowland_ward_test.dart`**: **36/36 pass**.
+  Tests cover: all 14 official SA minimums resolve for BOTH the space-keyed
+  (CSV common-name) and underscore-keyed (to-do spec) conventions; case-
+  insensitivity + whitespace trimming; null return for an unlisted species
+  (the N/A-fallback contract); measurement method/horn description survival
+  for listed species; sorted non-empty species-name list; and the
+  `Animal`-model alias-resolution priority (`rwMinimum` ‚Üí
+  `rolandWardMinimum` ‚Üí `trophyMinimumRW`) with blank/whitespace collapsing
+  to null (renders the N/A badge).
+- **`flutter test`** (full suite): **309 passed, 4 failed** ‚Äî the 4 failures
+  are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; +36 vs the Phase-30 273-pass baseline, exactly
+  the new game-guide tests.
+- Files: `lib/screens/animal_detail_screen.dart` (duplicate removed,
+  `_rowlandWardValue` helper, `_RowlandWardNaBadge`, spelling corrected),
+  `lib/utils/animal_seeder.dart` (official SA minimums + underscore aliases
+  + stale duplicate keys removed + corrected impala/sable values),
+  `test/game_guide_rowland_ward_test.dart` (NEW, 36 tests). No Firestore
+  rules / index / Storage / pubspec changes (pure data + presentation +
+  the seeder is a one-shot admin seeding utility; existing Firestore
+  `animals` docs are unchanged until the seeder is re-run in a
+  credentialed env).
+

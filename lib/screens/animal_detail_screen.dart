@@ -130,29 +130,25 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Prominent Roland Ward trophy standard summary
+                  // Single Rowland Ward trophy-standard summary (de-duplicated).
                   Builder(
                     builder: (context) {
-                      final rwValue =
-                          animal.rwMinimum?.trim() ??
-                          animal.rolandWardMinimum?.trim() ??
-                          animal.trophyMinimumRW?.trim();
-                      final measurementType =
-                          (() {
-                            final m = animal.rwMeasurementMethod?.toLowerCase();
-                            if (m != null && m.contains('horn')) return 'Horn';
-                            if (m != null && m.contains('tusk')) return 'Tusk';
-                            if (m != null &&
-                                (m.contains('point') || m.contains('skull'))) {
-                              return 'Points';
-                            }
-                            final d = animal.rwHornDescription?.toLowerCase();
-                            if (d != null && d.contains('horn')) return 'Horn';
-                            if (d != null && d.contains('tusk')) return 'Tusk';
-                            if (d != null && d.contains('point'))
-                              return 'Points';
-                            return null;
-                          })();
+                      final rwValue = _rowlandWardValue(animal);
+                      final isNa = rwValue == null;
+                      final measurementType = (() {
+                        final m = animal.rwMeasurementMethod?.toLowerCase();
+                        if (m != null && m.contains('horn')) return 'Horn';
+                        if (m != null && m.contains('tusk')) return 'Tusk';
+                        if (m != null &&
+                            (m.contains('point') || m.contains('skull'))) {
+                          return 'Points';
+                        }
+                        final d = animal.rwHornDescription?.toLowerCase();
+                        if (d != null && d.contains('horn')) return 'Horn';
+                        if (d != null && d.contains('tusk')) return 'Tusk';
+                        if (d != null && d.contains('point')) return 'Points';
+                        return null;
+                      })();
 
                       return Card(
                         color: theme.cardColor,
@@ -170,7 +166,7 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Roland Ward Minimum Trophy Standard',
+                                      'Rowland Ward Minimum Trophy Standard',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -179,20 +175,23 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 8),
-                                    Text(
-                                      rwValue == null || rwValue.isEmpty
-                                          ? '—'
-                                          : rwValue,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700,
-                                        color: theme.textColor,
+                                    if (isNa)
+                                      // N/A fallback: no official benchmark
+                                      // recorded for this species.
+                                      _RowlandWardNaBadge(theme: theme)
+                                    else
+                                      Text(
+                                        rwValue,
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: theme.textColor,
+                                        ),
                                       ),
-                                    ),
                                   ],
                                 ),
                               ),
-                              if (measurementType != null) ...[
+                              if (!isNa && measurementType != null) ...[
                                 Tooltip(
                                   message: 'Measurement: $measurementType',
                                   child: Container(
@@ -240,11 +239,10 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                     theme: theme,
                     title: 'TROPHY REFERENCE',
                     children: [
-                      _DetailRow(
-                        theme: theme,
-                        label: 'Rowland Ward Minimum',
-                        value: _valueOrDash(animal.trophyMinimumRW),
-                      ),
+                      // The Rowland Ward minimum is rendered ONCE, in the
+                      // prominent summary card above. This section keeps only
+                      // the supporting measurement metadata (method + horn
+                      // description), so the value is never shown twice.
                       if (animal.rwMeasurementMethod != null &&
                           animal.rwMeasurementMethod!.isNotEmpty)
                         _DetailRow(
@@ -398,9 +396,16 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
 
   bool _hasText(String? value) => value != null && value.trim().isNotEmpty;
 
-  String _valueOrDash(String? value) {
-    if (value == null || value.trim().isEmpty) return '—';
-    return value.trim();
+  /// The single source of truth for the Rowland Ward minimum trophy value
+  /// shown on an animal card. Resolves the three storage aliases
+  /// (`rwMinimum`, `rolandWardMinimum`, `trophyMinimumRW`) in priority order
+  /// and trims the result. Returns `null` when no official benchmark is
+  /// recorded for the species (renders the N/A fallback badge).
+  String? _rowlandWardValue(Animal animal) {
+    final v = animal.rwMinimum?.trim() ??
+        animal.rolandWardMinimum?.trim() ??
+        animal.trophyMinimumRW?.trim();
+    return (v == null || v.isEmpty) ? null : v;
   }
 
   bool _hasEcologicalData(Animal animal) {
@@ -606,6 +611,48 @@ class _DetailRow extends StatelessWidget {
                 color: theme.textColor,
                 fontStyle: italic ? FontStyle.italic : FontStyle.normal,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Fallback badge rendered in place of the Rowland Ward minimum when a
+/// species has no official benchmark recorded (null / empty / unlisted).
+/// Shows `Rowland Ward: N/A` with a grayed-out `not_interested` icon.
+class _RowlandWardNaBadge extends StatelessWidget {
+  final ThemeController theme;
+
+  const _RowlandWardNaBadge({required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.subtitleColor.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.subtitleColor.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.not_interested,
+            size: 16,
+            color: theme.subtitleColor,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Rowland Ward: N/A',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: theme.subtitleColor,
             ),
           ),
         ],

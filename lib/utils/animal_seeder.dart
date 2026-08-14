@@ -20,100 +20,118 @@ class RolandWardMetrics {
 }
 
 const _rolandWardMetrics = <String, RolandWardMetrics>{
-  // Spiral Curve Method (Method 8)
+  // Spiral Curve Method (Method 8) — official SA Rowland Ward minimum 53 7/8".
   'kudu': RolandWardMetrics(
-    rwMinimum: '53 7/8" (136.8 cm)',
+    rwMinimum: '53 7/8 inches',
+    earLength: 12.0,
+    measurementMethod: 'Method 8 - Spiral Curve',
+    hornDescription: 'Horn length measured along spiral',
+  ),
+  'greater_kudu': RolandWardMetrics(
+    rwMinimum: '53 7/8 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Spiral Curve',
     hornDescription: 'Horn length measured along spiral',
   ),
   'greater kudu': RolandWardMetrics(
-    rwMinimum: '53 7/8" (136.8 cm)',
+    rwMinimum: '53 7/8 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Spiral Curve',
     hornDescription: 'Horn length measured along spiral',
   ),
   'kudu (eastern cape)': RolandWardMetrics(
-    rwMinimum: '53" (134.6 cm)',
+    rwMinimum: '53 7/8 inches',
     earLength: 11.0,
     measurementMethod: 'Method 8 - Spiral Curve',
     hornDescription: 'Horn length measured along spiral',
   ),
   'kudu (southern greater)': RolandWardMetrics(
-    rwMinimum: '53 7/8" (136.8 cm)',
+    rwMinimum: '53 7/8 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Spiral Curve',
     hornDescription: 'Horn length measured along spiral',
   ),
-  // Cape Eland - Horn Length (Method 8)
+  // Cape Eland - Horn Length (Method 8) — official SA minimum 35".
   'cape eland': RolandWardMetrics(
-    rwMinimum: '35" (88.9 cm)',
+    rwMinimum: '35 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Horn Length',
     hornDescription: 'Horn length measured along curve',
   ),
   'eland': RolandWardMetrics(
-    rwMinimum: '35" (88.9 cm)',
+    rwMinimum: '35 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Horn Length',
     hornDescription: 'Horn length measured along curve',
   ),
   'eland (cape)': RolandWardMetrics(
-    rwMinimum: '35" (88.9 cm)',
+    rwMinimum: '35 inches',
     earLength: 12.0,
     measurementMethod: 'Method 8 - Horn Length',
     hornDescription: 'Horn length measured along curve',
   ),
-  // Gemsbok - Horn Length (Method 7-a)
+  // Gemsbok - Horn Length (Method 7-a) — official SA minimum 40".
   'gemsbok (oryx)': RolandWardMetrics(
-    rwMinimum: '40" (101.6 cm)',
+    rwMinimum: '40 inches',
     earLength: 9.0,
     measurementMethod: 'Method 7-a - Horn Length',
     hornDescription: 'Horn length straight line',
   ),
   'gemsbok': RolandWardMetrics(
-    rwMinimum: '40" (101.6 cm)',
+    rwMinimum: '40 inches',
     earLength: 9.0,
     measurementMethod: 'Method 7-a - Horn Length',
     hornDescription: 'Horn length straight line',
   ),
-  // Nyala - Spiral Curve (Method 8)
+  // Nyala - Spiral Curve (Method 8) — official SA minimum 27".
   'nyala': RolandWardMetrics(
-    rwMinimum: '27" (68.6 cm)',
+    rwMinimum: '27 inches',
     earLength: 8.5,
     measurementMethod: 'Method 8 - Spiral Curve',
     hornDescription: 'Horn length along spiral',
   ),
-  // Blue Wildebeest - Outside Spread (Method 13)
+  // Blue Wildebeest - Outside Spread (Method 13) — official SA minimum 28 1/2".
   'blue wildebeest': RolandWardMetrics(
-    rwMinimum: '28 1/2" (72.4 cm)',
+    rwMinimum: '28 1/2 inches',
     earLength: 8.0,
     measurementMethod: 'Method 13 - Outside Spread',
     hornDescription: 'Horn spread measured outside',
   ),
-  // Black Wildebeest - Boss Curve (Method 13)
+  'blue_wildebeest': RolandWardMetrics(
+    rwMinimum: '28 1/2 inches',
+    earLength: 8.0,
+    measurementMethod: 'Method 13 - Outside Spread',
+    hornDescription: 'Horn spread measured outside',
+  ),
+  // Black Wildebeest - Boss Curve (Method 13) — official SA minimum 22 7/8".
   'black wildebeest': RolandWardMetrics(
-    rwMinimum: '22 7/8" (58.1 cm)',
+    rwMinimum: '22 7/8 inches',
     earLength: 6.0,
     measurementMethod: 'Method 13 - Boss Curve',
     hornDescription: 'Boss curve measurement',
   ),
-  // Impala - Straight Line (Method 7-a)
+  'black_wildebeest': RolandWardMetrics(
+    rwMinimum: '22 7/8 inches',
+    earLength: 6.0,
+    measurementMethod: 'Method 13 - Boss Curve',
+    hornDescription: 'Boss curve measurement',
+  ),
+  // Impala - Straight Line (Method 7-a) — official SA minimum 23 5/8".
   'impala': RolandWardMetrics(
-    rwMinimum: '23 6/8" (60.0 cm)',
+    rwMinimum: '23 5/8 inches',
     earLength: 6.0,
     measurementMethod: 'Method 7-a - Straight Line',
     hornDescription: 'Horn length straight line',
   ),
   'impala (southern)': RolandWardMetrics(
-    rwMinimum: '23 6/8" (60.0 cm)',
+    rwMinimum: '23 5/8 inches',
     earLength: 6.0,
     measurementMethod: 'Method 7-a - Straight Line',
     hornDescription: 'Horn length straight line',
   ),
-  // Blesbok - Ridge Length (Method 7-a)
+  // Blesbok - Ridge Length (Method 7-a) — official SA minimum 16 1/2".
   'blesbok': RolandWardMetrics(
-    rwMinimum: '16 1/2" (41.9 cm)',
+    rwMinimum: '16 1/2 inches',
     earLength: 6.0,
     measurementMethod: 'Method 7-a - Ridge Length',
     hornDescription: 'Horn ridge length',
@@ -130,10 +148,56 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
     measurementMethod: 'Method 7-a - Ridge Length',
     hornDescription: 'Horn ridge length',
   ),
-  'cape buffalo': RolandWardMetrics(rwMinimum: '42.0', earLength: 9.0),
-  'buffalo (southern african)': RolandWardMetrics(
-    rwMinimum: '42.0',
+  // Cape Buffalo - official SA minimum 42".
+  'cape buffalo': RolandWardMetrics(
+    rwMinimum: '42 inches',
     earLength: 9.0,
+    measurementMethod: 'Method 22 - Tip-to-tip spread',
+    hornDescription: 'Boss width / tip-to-tip spread',
+  ),
+  'cape_buffalo': RolandWardMetrics(
+    rwMinimum: '42 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 22 - Tip-to-tip spread',
+    hornDescription: 'Boss width / tip-to-tip spread',
+  ),
+  'buffalo (southern african)': RolandWardMetrics(
+    rwMinimum: '42 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 22 - Tip-to-tip spread',
+    hornDescription: 'Boss width / tip-to-tip spread',
+  ),
+  // Common Warthog - Upper Tusk Curve (Method 5) — official SA minimum 13".
+  'common warthog': RolandWardMetrics(
+    rwMinimum: '13 inches',
+    earLength: 5.0,
+    measurementMethod: 'Method 5 - Upper Tusk Curve',
+    hornDescription: 'Upper tusk curve length',
+  ),
+  'warthog': RolandWardMetrics(
+    rwMinimum: '13 inches',
+    earLength: 5.0,
+    measurementMethod: 'Method 5 - Upper Tusk Curve',
+    hornDescription: 'Upper tusk curve length',
+  ),
+  // Springbok - Curve Length (Method 7-a) — official SA minimum 14".
+  'springbok': RolandWardMetrics(
+    rwMinimum: '14 inches',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
+  ),
+  'springbok (cape)': RolandWardMetrics(
+    rwMinimum: '14 inches',
+    earLength: 6.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
+  ),
+  'springbok (kalahari)': RolandWardMetrics(
+    rwMinimum: '14 inches',
+    earLength: 7.0,
+    measurementMethod: 'Method 7-a - Curve Length',
+    hornDescription: 'Horn curve length',
   ),
   'southern bushbuck': RolandWardMetrics(rwMinimum: '15.0', earLength: 6.0),
   'bushbuck (southern african)': RolandWardMetrics(
@@ -150,36 +214,29 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
   'red duiker': RolandWardMetrics(rwMinimum: '2.5', earLength: null),
   'common duiker': RolandWardMetrics(rwMinimum: '4.75', earLength: 4.0),
   'bushpig': RolandWardMetrics(rwMinimum: '5.5', earLength: null),
-  'common warthog': RolandWardMetrics(
-    rwMinimum: '13" (33.0 cm)',
-    earLength: 5.0,
-    measurementMethod: 'Method 5 - Upper Tusk Curve',
-    hornDescription: 'Upper tusk curve length',
-  ),
-  'springbok': RolandWardMetrics(
-    rwMinimum: '14" (35.6 cm)',
-    earLength: 6.0,
-    measurementMethod: 'Method 7-a - Curve Length',
-    hornDescription: 'Horn curve length',
-  ),
-  'springbok (cape)': RolandWardMetrics(
-    rwMinimum: '14" (35.6 cm)',
-    earLength: 6.0,
-    measurementMethod: 'Method 7-a - Curve Length',
-    hornDescription: 'Horn curve length',
-  ),
-  'springbok (kalahari)': RolandWardMetrics(
-    rwMinimum: '14" (35.6 cm)',
-    earLength: 7.0,
-    measurementMethod: 'Method 7-a - Curve Length',
-    hornDescription: 'Horn curve length',
-  ),
   'cape grysbok': RolandWardMetrics(rwMinimum: '3.0', earLength: null),
   'grysbok (cape)': RolandWardMetrics(rwMinimum: '3.0', earLength: null),
   "sharpe's grysbok": RolandWardMetrics(rwMinimum: '1.5', earLength: null),
   'grybok (sharp’s)': RolandWardMetrics(rwMinimum: '1.5', earLength: null),
-  'red hartebeest': RolandWardMetrics(rwMinimum: '23.0', earLength: 8.0),
-  'hartebeest (cape/red)': RolandWardMetrics(rwMinimum: '23.0', earLength: 8.0),
+  // Red Hartebeest — official SA minimum 23".
+  'red hartebeest': RolandWardMetrics(
+    rwMinimum: '23 inches',
+    earLength: 8.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length over the curve',
+  ),
+  'red_hartebeest': RolandWardMetrics(
+    rwMinimum: '23 inches',
+    earLength: 8.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length over the curve',
+  ),
+  'hartebeest (cape/red)': RolandWardMetrics(
+    rwMinimum: '23 inches',
+    earLength: 8.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length over the curve',
+  ),
   'hartebeest (lichtensteins)': RolandWardMetrics(
     rwMinimum: '18.5',
     earLength: 9.5,
@@ -187,9 +244,33 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
   'oribi': RolandWardMetrics(rwMinimum: '5.5', earLength: 3.5),
   'mountain reedbuck': RolandWardMetrics(rwMinimum: '6.25', earLength: 6.0),
   'southern reedbuck': RolandWardMetrics(rwMinimum: '14.0', earLength: 7.0),
-  'common waterbuck': RolandWardMetrics(rwMinimum: '28.0', earLength: 9.0),
+  // Common Waterbuck — official SA minimum 28".
+  'common waterbuck': RolandWardMetrics(
+    rwMinimum: '28 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length straight line',
+  ),
+  'waterbuck': RolandWardMetrics(
+    rwMinimum: '28 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length straight line',
+  ),
   'roan antelope': RolandWardMetrics(rwMinimum: '27.0', earLength: 12.0),
-  'sable antelope': RolandWardMetrics(rwMinimum: '40.0', earLength: 9.0),
+  // Sable Antelope — official SA minimum 41 7/8".
+  'sable antelope': RolandWardMetrics(
+    rwMinimum: '41 7/8 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length over the curve',
+  ),
+  'sable': RolandWardMetrics(
+    rwMinimum: '41 7/8 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length over the curve',
+  ),
   'black rhinoceros': RolandWardMetrics(rwMinimum: '24.0', earLength: null),
   'southern white rhinoceros': RolandWardMetrics(
     rwMinimum: '26.0',
@@ -203,7 +284,12 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
     earLength: null,
   ),
   'lion (african)': RolandWardMetrics(rwMinimum: '23 pts', earLength: null),
-  'waterbuck (common)': RolandWardMetrics(rwMinimum: '28.0', earLength: 9.0),
+  'waterbuck (common)': RolandWardMetrics(
+    rwMinimum: '28 inches',
+    earLength: 9.0,
+    measurementMethod: 'Method 7-a - Horn Length',
+    hornDescription: 'Horn length straight line',
+  ),
   'tsessebe': RolandWardMetrics(rwMinimum: '15.0', earLength: null),
   'steenbok': RolandWardMetrics(rwMinimum: '4.5', earLength: 4.0),
   'suni': RolandWardMetrics(rwMinimum: '2.5', earLength: null),
