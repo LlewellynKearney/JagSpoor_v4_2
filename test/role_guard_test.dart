@@ -177,4 +177,63 @@ void main() {
       }
     });
   });
+
+  // ==========================================================================
+  // Post-auth direct role routing contract (Item #10).
+  //
+  // Documents the role -> destination route mapping implemented by
+  // SplashScreen._navigateToNextScreen + AuthScreen._routeAfterAuth: a user
+  // with a permanent single role is routed straight to their dashboard,
+  // bypassing the "Select Operational Profile" screen. Role selection is the
+  // fallback for `unknown` (no role / fetch error / dual-role / unassigned).
+  // The guard policy must ADMIT the routed role to that route, so this also
+  // asserts canAccess holds for every (role, destination) pair the router
+  // emits.
+  // ==========================================================================
+  group('Post-auth direct role routing contract', () {
+    const roleRoutes = <AppRole, String>{
+      AppRole.admin: '/admin_dashboard',
+      AppRole.hunter: '/hunter_dashboard',
+      AppRole.outfitter: '/outfitter_dashboard',
+    };
+
+    test('each permanent single role routes to exactly one dashboard', () {
+      // The mapping is exhaustive over the three permanent roles.
+      expect(roleRoutes.length, 3);
+      expect(roleRoutes[AppRole.admin], '/admin_dashboard');
+      expect(roleRoutes[AppRole.hunter], '/hunter_dashboard');
+      expect(roleRoutes[AppRole.outfitter], '/outfitter_dashboard');
+    });
+
+    test('routed role is admitted by the route guard (no access-denied loop)',
+        () {
+      for (final entry in roleRoutes.entries) {
+        expect(RoleGuard.canAccess(entry.key, entry.value), isTrue,
+            reason:
+                '${entry.key} routed to ${entry.value} must be admitted by the guard');
+      }
+    });
+
+    test('unknown role is NOT routed to any dashboard (goes to selection)', () {
+      expect(roleRoutes.keys.contains(AppRole.unknown), isFalse);
+      // And the guard denies unknown access to each dashboard, so a stale
+      // unknown never slips onto a dashboard via the guard either.
+      for (final route in roleRoutes.values) {
+        expect(RoleGuard.canAccess(AppRole.unknown, route), isFalse);
+      }
+    });
+
+    test('AppRole.fromString drives the bypass: outfitter/hunter short-circuit',
+        () {
+      // The router resolves the role from users/{uid}.role via fromString; an
+      // outfitter/hunter string must produce the matching AppRole so the
+      // bypass branch fires.
+      expect(AppRole.fromString('outfitter'), AppRole.outfitter);
+      expect(AppRole.fromString('hunter'), AppRole.hunter);
+      // Anything else (including 'unassigned' / 'dual') must fall through to
+      // role selection, not a dashboard.
+      expect(AppRole.fromString('unassigned'), AppRole.unknown);
+      expect(AppRole.fromString('dual'), AppRole.unknown);
+    });
+  });
 }

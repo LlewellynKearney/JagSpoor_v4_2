@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/services/user_role_provider.dart';
@@ -75,6 +76,13 @@ class _SplashScreenState extends State<SplashScreen>
     // Resolve the role once here (cached for the route guards / dashboards).
     final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
 
+    // Self-heal a missing `outfitterId` self-link before entering outfitter
+    // mode, so downstream owner-scoped Firestore rules (trophies, permits,
+    // client_roster, guided_hunt_logs…) don't crash on a missing parameter.
+    if (role == AppRole.outfitter) {
+      await _ensureOutfitterSelfLink();
+    }
+
     if (!mounted) return;
     switch (role) {
       case AppRole.admin:
@@ -93,6 +101,40 @@ class _SplashScreenState extends State<SplashScreen>
           context,
           MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         );
+    }
+  }
+
+  /// Ensures the signed-in outfitter's `users/{uid}` document carries an
+  /// `outfitterId` field equal to their own uid. Outfitter-mode Firestore
+  /// collections (trophies, venison_permits, scanned_pricelists,
+  /// client_roster, guided_hunt_logs) are all owner-scoped on
+  /// `outfitterId == auth.uid`; a missing field would make every list query
+  /// silently empty and every create get rejected server-side. Best-effort,
+  /// non-fatal — failures don't block the boot route.
+  Future<void> _ensureOutfitterSelfLink() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+    final db = FirebaseFirestore.instance;
+    try {
+      final userDoc = await db.collection('users').doc(uid).get();
+      final data = userDoc.data() ?? const <String, dynamic>{};
+      if (data['outfitterId'] != uid) {
+        await db.collection('users').doc(uid).set({
+          'outfitterId': uid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      final outfitterDoc = await db.collection('outfitters').doc(uid).get();
+      if (outfitterDoc.exists &&
+          outfitterDoc.data()?['outfitterId'] != uid) {
+        await db.collection('outfitters').doc(uid).set({
+          'outfitterId': uid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (_) {
+      // Non-fatal: proceed to the outfitter dashboard.
     }
   }
 

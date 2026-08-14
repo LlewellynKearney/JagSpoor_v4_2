@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
+import 'services/user_role_provider.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -49,7 +50,7 @@ class _AuthScreenState extends State<AuthScreen> {
         if (_requires2FA(credential.user)) {
           _show2FAVerificationSheet();
         } else {
-          _navigateToRoleSelection();
+          _routeAfterAuth();
         }
       } else {
         setState(() => _isLoading = false);
@@ -81,7 +82,7 @@ class _AuthScreenState extends State<AuthScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _TwoFAVerificationSheet(
-        onVerified: _navigateToRoleSelection,
+        onVerified: _routeAfterAuth,
         onCancel: () {
           Navigator.pop(context);
           _authGateService.signOut();
@@ -91,13 +92,103 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  void _navigateToRoleSelection() {
+  /// Post-auth role-aware routing — the direct role bypass.
+  ///
+  /// Resolves the signed-in user's role (cached for the route guards) and
+  /// routes straight to the matching dashboard, bypassing the
+  /// "Select Operational Profile" screen entirely for users with a permanent
+  /// single role:
+  ///   - `outfitter` → `/outfitter_dashboard` (after self-linking
+  ///     `outfitterId = uid` if missing — see [_ensureOutfitterSelfLink])
+  ///   - `hunter`    → `/hunter_dashboard`
+  ///   - `admin`     → `/admin_dashboard`
+  ///   - `unknown` / dual-role / unassigned → [RoleSelectionScreen]
+  ///
+  /// This mirrors [SplashScreen._navigateToNextScreen] so a returning
+  /// outfitter/hunter is never bounced through role selection on every
+  /// login. Role selection is strictly reserved for new sign-ups, dual-role
+  /// accounts, and `unassigned`/`admin` profiles.
+  Future<void> _routeAfterAuth() async {
+    // Resolve the role ONCE (forceRefresh to bypass any stale cache from a
+    // previous session) and cache it so the destination route guard admits
+    // the user without a re-fetch.
+    final role =
+        await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+
+    // Self-heal a missing `outfitterId` self-link before entering outfitter
+    // mode, so downstream owner-scoped Firestore rules (trophies, permits,
+    // client_roster, guided_hunt_logs…) don't crash on a missing parameter.
+    if (role == AppRole.outfitter) {
+      await _ensureOutfitterSelfLink();
+    }
+
     if (!mounted) return;
     setState(() => _isLoading = false);
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-    );
+
+    switch (role) {
+      case AppRole.admin:
+        Navigator.pushReplacementNamed(context, '/admin_dashboard');
+        break;
+      case AppRole.hunter:
+        Navigator.pushReplacementNamed(context, '/hunter_dashboard');
+        break;
+      case AppRole.outfitter:
+        Navigator.pushReplacementNamed(context, '/outfitter_dashboard');
+        break;
+      case AppRole.unknown:
+        // No permanent single role — let the user pick / preview a mode.
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+        );
+    }
+  }
+
+  /// Ensures the signed-in outfitter's `users/{uid}` document carries an
+  /// `outfitterId` field equal to their own uid. Outfitter-mode Firestore
+  /// collections (trophies, venison_permits, scanned_pricelists,
+  /// client_roster, guided_hunt_logs) are all owner-scoped on
+  /// `outfitterId == auth.uid`; a missing field would make every list query
+  /// silently empty and every create get rejected server-side. This is a
+  /// best-effort, non-fatal write — if it fails (e.g. offline / rules), the
+  /// user still proceeds to the dashboard and the field can be backfilled
+  /// later. Also mirrors the field onto the `outfitters/{uid}` doc when it
+  /// exists (the enterprise record keyed by uid).
+  Future<void> _ensureOutfitterSelfLink() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+    final db = FirebaseFirestore.instance;
+    try {
+      final userDoc = await db.collection('users').doc(uid).get();
+      final data = userDoc.data() ?? const <String, dynamic>{};
+      final storedOutfitterId = data['outfitterId'];
+
+      // Self-link is only needed when the field is absent or not yet
+      // pointing at the user's own uid.
+      if (storedOutfitterId != uid) {
+        await db.collection('users').doc(uid).set({
+          'outfitterId': uid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      // Mirror the self-link onto the enterprise record if it exists (the
+      // `outfitters/{uid}` doc is the canonical outfitter profile; many
+      // downstream reads look it up by uid).
+      final outfitterDoc = await db.collection('outfitters').doc(uid).get();
+      if (outfitterDoc.exists &&
+          outfitterDoc.data()?['outfitterId'] != uid) {
+        await db.collection('outfitters').doc(uid).set({
+          'outfitterId': uid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (_) {
+      // Non-fatal: proceed to the outfitter dashboard. The self-link is a
+      // best-effort hardening; the dashboard's own queries surface errors
+      // gracefully and the field can be backfilled later.
+    }
   }
 
   Future<void> _handleAuth() async {
@@ -176,10 +267,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       setState(() => _isLoading = false);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-      );
+      // Sign-in path: resolve the stored role and route directly to the
+      // matching dashboard, bypassing role selection for users who already
+      // have a permanent single role (outfitter / hunter / admin).
+      await _routeAfterAuth();
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
