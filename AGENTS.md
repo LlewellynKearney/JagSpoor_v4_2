@@ -4620,3 +4620,85 @@ deployment.**
   for the sandbox/test project only.
 - Files: `firestore.rules` (bookings block widened + hardened rules
   preserved in comments), `AGENTS.md`.
+
+## Phase 44 -- Restore production-hardened least-privilege rules on bookings (added 2026-08-14)
+
+Reverts the Phase 43 sandbox widening of the `match /bookings/{bookingId}`
+block back to the production-hardened least-privilege posture.
+
+### What changed
+- `firestore.rules` `match /bookings/{bookingId}` block restored to the
+  strict production access controls (the same body that shipped before
+  Phase 43):
+  ```
+  function isBookingParty() {
+    return isSignedIn() && (
+      resource.data.hunterId == request.auth.uid ||
+      resource.data.outfitterId == request.auth.uid
+    );
+  }
+  function statusUpdateAllowed() {
+    return isSignedIn()
+      && resource.data.outfitterId == request.auth.uid
+      && request.resource.data.outfitterId == resource.data.outfitterId
+      && request.resource.data.hunterId == resource.data.hunterId;
+  }
+  allow read: if isAdmin() || isBookingParty();
+  allow create: if isSignedIn()
+    && request.resource.data.hunterId == request.auth.uid;
+  allow update: if statusUpdateAllowed()
+    || (isBookingParty()
+        && request.resource.data.status == resource.data.status);
+  allow delete: if isAdmin();
+  ```
+- The wide `allow read/create/update: if isSignedIn()` sandbox grants AND the
+  Phase 43 ⚠️ sandbox warning banner + commented helpers were removed. The
+  `chats` subcollection booking-party restriction is unchanged.
+
+### Why this is least-privilege
+- **read**: only the admin, the hunter who placed the booking, or the
+  outfitter who owns the package (no cross-tenant PII exposure).
+- **create**: a signed-in user may create a booking only under their own
+  `hunterId` (no spoofed bookings under another hunter/outfitter id).
+- **update**: the outfitter may flip the `status` field
+  (`statusUpdateAllowed`, which also freezes `hunterId`/`outfitterId`); any
+  booking party may update NON-status fields (the
+  `request.resource.data.status == resource.data.status` guard freezes the
+  status field for non-outfitters, so a hunter can never self-approve or
+  self-mark-Paid).
+- **delete**: admin only.
+- The production deposit `status -> Paid` flip is performed by the deployed
+  `payfastITNHandler` Cloud Function using the Admin SDK, which bypasses
+  Firestore rules entirely -- so the production deposit flow needs no
+  client-side rule widening.
+
+### Debug simulator note
+- The `kDebugMode`-only PayFast deposit simulator (Phase 42) is unaffected
+  in code: the button + `PackageBookingManager.simulateDepositPaid` remain.
+  Under these hardened rules a hunter-triggered simulation write that flips
+  `status` to `Paid` will be permission-denied server-side -- which is the
+  intended production posture. The card's `_simulatePaymentSuccess` catch
+  block surfaces that as a clear orange snackbar ("Simulation failed: ...
+  run as the outfitter/admin or relax rules in your sandbox") rather than
+  crashing. For sandbox testing of the simulator, run as the outfitter/admin
+  (the outfitter `statusUpdateAllowed` branch permits the flip) or use the
+  safer custom-claim alternative noted in Phase 43
+  (`request.auth.token.sandbox == true`).
+
+### Verification
+- `flutter analyze`: 0 errors (no Dart changed; 324 pre-existing
+  infos/warnings in unrelated files, unchanged baseline).
+- Structural rules validation: braces balance 0, parens balance 0,
+  default-deny present; the bookings block carries `isBookingParty` +
+  `statusUpdateAllowed`, the hardened read/create/update/delete grants, the
+  status-frozen update branch, and NO sandbox `isSignedIn()`-wide grants
+  or warning banner.
+- `flutter test test/firestore_rules_seeding_test.dart`: 14/14 pass (the
+  seeding tests assert the unchanged catalog collection contracts).
+
+### Deploy reminder
+- `npx firebase-tools deploy --only firestore:rules` in a credentialed env
+  to activate the production-hardened rules. This is the ruleset that
+  SHOULD deploy to the production Firebase project.
+- Files: `firestore.rules` (bookings block restored to least-privilege),
+  `AGENTS.md`.
