@@ -11,6 +11,15 @@ class RifleProfile {
   final String serialNumber;
   final String ownerId;
 
+  /// Manufacturer / brand as stored in the Digital Firearm Safe (the manual
+  /// firearm form persists `make`; legacy optics-only docs may omit it).
+  /// Used to render the optic-link dropdown as "make model (calibre)".
+  final String make;
+
+  /// Model designation as stored in the Digital Firearm Safe. Used together
+  /// with [make] to render the optic-link dropdown label.
+  final String model;
+
   /// Barrel length as stored in the Digital Firearm Safe (free-text, e.g.
   /// '16"' or '406 mm'). Used to auto-populate scope-calibration specs when
   /// a firearm is linked. Empty on legacy firearm documents.
@@ -27,6 +36,8 @@ class RifleProfile {
     this.scopeClickValue = 0.25,
     this.serialNumber = '',
     this.ownerId = '',
+    this.make = '',
+    this.model = '',
     this.barrelLength = '',
     this.optic,
   });
@@ -54,10 +65,21 @@ class RifleProfile {
     return RifleProfile(
       id: id ?? (json['id'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
-      caliber: (json['caliber'] as String?) ?? '',
+      caliber: (json['caliber'] as String?) ??
+          (json['calibre'] as String?) ??
+          '',
       scopeClickValue: clickValue,
-      serialNumber: (json['serialNumber'] as String?) ?? '',
+      serialNumber: (json['serialNumber'] as String?) ??
+          (json['serial'] as String?) ??
+          '',
       ownerId: (json['ownerId'] as String?) ?? '',
+      make: (json['make'] as String?) ??
+          (json['brand'] as String?) ??
+          (json['manufacturer'] as String?) ??
+          '',
+      model: (json['model'] as String?) ??
+          (json['modelName'] as String?) ??
+          '',
       barrelLength: (json['barrelLength'] as String?) ?? '',
       optic: optic,
     );
@@ -70,6 +92,8 @@ class RifleProfile {
         'scopeClickValue': scopeClickValue,
         'serialNumber': serialNumber,
         'ownerId': ownerId,
+        'make': make,
+        'model': model,
         'barrelLength': barrelLength,
         if (optic != null) 'optic': optic!.toJson(),
       };
@@ -84,13 +108,29 @@ class RifleProfile {
     return 0.25;
   }
 
-    RifleProfile copyWith({
+  /// Human-readable label for the optic-link dropdown, formatted as
+  /// "make model (calibre)" per the Optical Suite spec. Falls back to
+  /// [name] then to a generic "Unnamed firearm" when make/model are absent
+  /// (legacy docs), and renders an em-dash when calibre is unknown so the
+  /// parentheses are never empty.
+  String get displayName {
+    final makeModel = [make, model].where((s) => s.isNotEmpty).join(' ');
+    final base = makeModel.isNotEmpty
+        ? makeModel
+        : (name.isNotEmpty ? name : 'Unnamed firearm');
+    final cal = caliber.isNotEmpty ? caliber : '—';
+    return '$base ($cal)';
+  }
+
+  RifleProfile copyWith({
     String? id,
     String? name,
     String? caliber,
     double? scopeClickValue,
     String? serialNumber,
     String? ownerId,
+    String? make,
+    String? model,
     String? barrelLength,
     OpticProfile? optic,
   }) {
@@ -101,6 +141,8 @@ class RifleProfile {
       scopeClickValue: scopeClickValue ?? this.scopeClickValue,
       serialNumber: serialNumber ?? this.serialNumber,
       ownerId: ownerId ?? this.ownerId,
+      make: make ?? this.make,
+      model: model ?? this.model,
       barrelLength: barrelLength ?? this.barrelLength,
       optic: optic ?? this.optic,
     );

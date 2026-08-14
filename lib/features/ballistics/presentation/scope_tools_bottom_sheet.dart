@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
+import 'package:jagspoor/features/hunter_mode/firearm_safe_screen.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -101,8 +103,23 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     setState(() {
       _selectedRifleId = rifleId;
       _selectedRifle = rifle;
-      _optic = rifle.optic ?? OpticProfile.defaults;
+      // Hydrate from the linked optic (if any), otherwise use the defaults —
+      // and stamp the binding so saving persists `firearmId` on the optic map.
+      final loaded = rifle.optic ?? OpticProfile.defaults;
+      _optic = loaded.copyWith(firearmId: rifleId);
     });
+  }
+
+  /// Opens the Digital Firearm Safe so the hunter can register a rifle when
+  /// the safe is empty. The safe is a pushed `MaterialPageRoute`; on return
+  /// the cached `_firearmsStream` (a Firestore snapshots broadcast) re-emits
+  /// the newly-registered firearm automatically — no manual refresh needed.
+  void _openFirearmSafe() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const _FirearmSafeShim(),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -175,7 +192,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ok
-              ? 'Optic profile saved to ${_selectedRifle?.name}.'
+              ? 'Optic profile saved to ${_selectedRifle?.displayName ?? 'firearm'}.'
               : 'Save failed — check connection.'),
           backgroundColor: ok ? _goGreen : _dangerRed,
         ),
@@ -275,6 +292,12 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       stream: _firearmsStream,
       builder: (context, snapshot) {
         final rifles = snapshot.data ?? [];
+        final isEmpty = rifles.isEmpty;
+        // Guard the `value:` against an id that no longer exists in the safe
+        // (e.g. the firearm was just deleted) — `DropdownButtonFormField`
+        // throws if `value` is non-null and not among the items.
+        final effectiveValue =
+            rifles.any((r) => r.id == _selectedRifleId) ? _selectedRifleId : null;
         return Container(
           margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -289,35 +312,61 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedRifleId,
+                  child: DropdownButtonFormField<String>(
+                    value: effectiveValue,
                     isExpanded: true,
                     dropdownColor: _panelBlack,
-                    hint: Text('Link to Firearm',
-                        style: TextStyle(color: _textSecondary)),
-                    style: TextStyle(color: _textPrimary),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                    ),
+                    hint: Text(
+                      isEmpty
+                          ? 'No firearms in safe (Add in Firearm Safe)'
+                          : 'Link to Firearm',
+                      style: TextStyle(
+                        color: isEmpty ? _accent : _textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    style: TextStyle(color: _textPrimary, fontSize: 13),
                     items: rifles
-                        .map((r) => DropdownMenuItem(
+                        .map((r) => DropdownMenuItem<String>(
                               value: r.id,
                               child: Text(
-                                '${r.name} (${r.caliber.isEmpty ? "—" : r.caliber})',
-                                style: TextStyle(fontSize: 13),
+                                r.displayName,
+                                style: const TextStyle(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ))
                         .toList(),
-                    onChanged: (id) => _onRifleSelected(rifles, id),
+                    onChanged: isEmpty
+                        ? null
+                        : (id) => _onRifleSelected(rifles, id),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Chip(
-                label: Text(_optic.turretUnitLabel,
-                    style: TextStyle(
-                        fontSize: 11, color: _textPrimary)),
-                backgroundColor: _accent,
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-              ),
+              if (isEmpty) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Open Digital Firearm Safe',
+                  icon: Icon(Icons.add_circle_rounded, color: _accent, size: 20),
+                  onPressed: _openFirearmSafe,
+                ),
+              ] else ...[
+                const SizedBox(width: 8),
+                Chip(
+                  label: Text(_optic.turretUnitLabel,
+                      style: TextStyle(
+                          fontSize: 11, color: _textPrimary)),
+                  backgroundColor: _accent,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
             ],
           ),
         );
@@ -1363,4 +1412,46 @@ class TurretTrackingEntry {
     required this.result,
     required this.timestamp,
   });
+}
+
+/// Shim pushed by the Optical Suite's empty-state "Link to Firearm" action so
+/// the hunter can register a rifle without leaving the scope-config flow.
+///
+/// Resolves the live [ThemeController] (the process-wide singleton constructed
+/// in `main()` and mirrored by `ThemeController.instance`) and hosts the real
+/// [FirearmSafeScreen] full-screen. On return the cached Firestore
+/// `_firearmsStream` broadcast re-emits the newly-registered firearm
+/// automatically, so the dropdown populates without a manual reload.
+class _FirearmSafeShim extends StatefulWidget {
+  const _FirearmSafeShim();
+
+  @override
+  State<_FirearmSafeShim> createState() => _FirearmSafeShimState();
+}
+
+class _FirearmSafeShimState extends State<_FirearmSafeShim> {
+  late final ThemeController _theme;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _theme = ThemeController.instance;
+    // Ensure the persisted Day/Night preference is loaded before rendering so
+    // the shim matches the app's current mode (no cold-start flash).
+    _theme.init().whenComplete(() {
+      if (mounted) setState(() => _initialized = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    return FirearmSafeScreen(theme: _theme);
+  }
 }

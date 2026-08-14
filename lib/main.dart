@@ -29,7 +29,10 @@ import 'core/utils/measurement_formatter.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final themeController = ThemeController();
+  // Use the process-wide singleton so any out-of-tree consumer (e.g. the
+  // Optical Suite's Firearm-Safe shim) reads the SAME controller driving the
+  // app's MaterialApp — one source of truth for the Day/Night preference.
+  final themeController = ThemeController.instance;
   // Load persisted Day/Night preference before runApp so the first frame
   // uses the user's saved mode (no flash of the default on cold start).
   await themeController.init();

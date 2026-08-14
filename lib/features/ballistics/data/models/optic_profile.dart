@@ -31,6 +31,12 @@ class OpticProfile {
   final double nativeMagnification;
   final double currentMagnification;
 
+  /// Id of the Digital Firearm Safe entry this optic configuration is bound to.
+  /// Persisted inside the nested `optic` map on the firearm document so the
+  /// linkage "travels" with the rifle and survives Firestore re-reads. Empty
+  /// (`''`) for legacy optic specs that pre-date the dynamic link.
+  final String firearmId;
+
   const OpticProfile({
     this.opticName = '',
     this.tubeDiameterMm = 30.0,
@@ -41,6 +47,7 @@ class OpticProfile {
     this.reticleType = 'Mil-Dot',
     this.nativeMagnification = 10.0,
     this.currentMagnification = 10.0,
+    this.firearmId = '',
   });
 
   /// Defaults used when a firearm has no persisted optic spec.
@@ -71,6 +78,7 @@ class OpticProfile {
       reticleType: (json['reticleType'] as String?) ?? 'Mil-Dot',
       nativeMagnification: _toDouble(json['nativeMagnification'], 10.0),
       currentMagnification: _toDouble(json['currentMagnification'], 10.0),
+      firearmId: (json['firearmId'] as String?) ?? '',
     );
   }
 
@@ -84,6 +92,7 @@ class OpticProfile {
         'reticleType': reticleType,
         'nativeMagnification': nativeMagnification,
         'currentMagnification': currentMagnification,
+        'firearmId': firearmId,
       };
 
   OpticProfile copyWith({
@@ -96,6 +105,7 @@ class OpticProfile {
     String? reticleType,
     double? nativeMagnification,
     double? currentMagnification,
+    String? firearmId,
   }) {
     return OpticProfile(
       opticName: opticName ?? this.opticName,
@@ -107,6 +117,7 @@ class OpticProfile {
       reticleType: reticleType ?? this.reticleType,
       nativeMagnification: nativeMagnification ?? this.nativeMagnification,
       currentMagnification: currentMagnification ?? this.currentMagnification,
+      firearmId: firearmId ?? this.firearmId,
     );
   }
 
@@ -141,8 +152,9 @@ class OpticProfile {
 
   @override
   String toString() =>
-      'OpticProfile($opticName, ${tubeDiameterMm}mm, HOB ${heightOverBoreInches}", '
-      '$turretUnitLabel $clickValueLabel, $focalPlaneLabel, $reticleType)';
+      'OpticProfile($opticName, $tubeDiameterMm mm, HOB $heightOverBoreInches", '
+      '$turretUnitLabel $clickValueLabel, $focalPlaneLabel, $reticleType, '
+      'firearm=$firearmId)';
 }
 
 /// Common reticle types offered in the optic picker.

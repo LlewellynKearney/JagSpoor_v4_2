@@ -2884,3 +2884,140 @@ reporter's User ID, the free-text description, and a System Context block.
   (`resetForTest`), `test/features/offline_sync/mesh_sync_engine_test.dart`
   (NEW), `pubspec.yaml` / `pubspec.lock` (`sqflite_common_ffi` dev dep).
 
+## Phase 30 ‚Äî Optical Suite Scope Settings Dynamic Firearm Dropdown Link (added 2026-08-14)
+
+Item #5 of the v4.4 to-do: convert the Optical Suite's static "Link to
+Firearm" field into a reactive dropdown populated from the hunter's Digital
+Firearm Safe stream, and securely bind the saved scope configuration to the
+selected firearm.
+
+### Optical Suite surface (`scope_tools_bottom_sheet.dart`)
+- The "OPTICAL SUITE" `ScopeToolsBottomSheet` is the scope-settings profile
+  configuration surface (opened from the Hunter Dashboard "Scope Settings &
+  Tools" card via `showModalBottomSheet`). Its `_buildFirearmLink()` row is
+  the "Link to Firearm" field.
+- The field was previously a bare `DropdownButton<String>` that rendered
+  `'${rifle.name} (${rifle.caliber})'` with a generic "Link to Firearm" hint
+  and no empty-state guidance. The `RifleProfile.name` field is empty for
+  real firearm-safe docs (the manual form persists `make`/`model`/`caliber`,
+  not `name`), so the dropdown rendered " (‚Äî)" for every real rifle.
+- Rewritten as a `DropdownButtonHideUnderline > DropdownButtonFormField<String>`:
+  - `value`: `firearm.id` (guarded against an id no longer present in the
+    safe via an `effectiveValue` null-coalesce, so a just-deleted firearm
+    doesn't trigger the "value not in items" assertion).
+  - `child`: `Text(rifle.displayName)` formatted as **"make model (calibre)"**
+    per spec (e.g. "Tikka T3x (.308 Win)"), with `overflow: ellipsis` so long
+    make/model combos never overflow the row.
+  - Empty-safe stream: `StreamBuilder<List<RifleProfile>>` over the cached
+    `_firearmsStream` (`InventoryBridge.watchSafeFirearms()`, already wrapped
+    in `.asBroadcastStream()` in `initState` for multi-listener / re-mount
+    safety). When the list is empty the dropdown renders the placeholder
+    hint **"No firearms in safe (Add in Firearm Safe)"** (tinted with the
+    theme accent), `onChanged` is set to `null` (disabled), and a trailing
+    `IconButton` (`add_circle_rounded`, "Open Digital Firearm Safe") appears
+    to launch the Firearm Safe registration flow without leaving the
+    scope-config sheet. The turret-unit chip is only rendered when a
+    firearm is selected (it's meaningless without a host rifle).
+- `_onRifleSelected` now stamps the binding: `_optic = (rifle.optic ??
+  OpticProfile.defaults).copyWith(firearmId: rifleId)`, so the in-memory
+  optic carries the host firearm id and saving persists it (see below).
+- New `_FirearmSafeShim` (private `StatefulWidget` at the bottom of the file)
+  is pushed by the empty-state CTA. It resolves `ThemeController.instance`
+  (the process-wide singleton, see below), awaits `init()` for the persisted
+  Day/Night mode (idempotent guard ‚Äî no-op if already initialized), and hosts
+  the real `FirearmSafeScreen(theme: _theme)` full-screen. On return the
+  cached Firestore `_firearmsStream` broadcast re-emits the
+  newly-registered firearm automatically, so the dropdown populates with no
+  manual reload.
+
+### `OpticProfile` ‚Äî `firearmId` binding field (model)
+- New `final String firearmId` (default `''`) on `OpticProfile`
+  (`lib/features/ballistics/data/models/optic_profile.dart`). Persisted inside
+  the nested `optic` map on the firearm document so the binding "travels" with
+  the rifle and survives Firestore re-reads. Empty (`''`) for legacy optic
+  specs that pre-date the dynamic link (hydrates cleanly via
+  `(json['firearmId'] as String?) ?? ''`).
+- Added to `toJson()` (`'firearmId': firearmId`), `fromJson()` round-trip, and
+  `copyWith(firearmId:)`. `toString()` now logs the bound firearm id.
+- `OpticProfile.defaults` still has `firearmId: ''` (a defaults optic is not
+  yet bound to any rifle until the user picks one).
+
+### `InventoryBridge.saveOpticProfile` ‚Äî secure binding stamp
+- `saveOpticProfile(rifleId, optic)` now stamps the optic with `rifleId` as
+  its `firearmId` (`optic.copyWith(firearmId: rifleId)`) BEFORE the Firestore
+  `set({'optic': ...}, merge: true)`, so the saved scope configuration is
+  securely bound to the selected firearm. The blank-rifleId guard (rejects
+  empty) already existed; the stamp makes the linkage explicit and
+  tamper-evident on the persisted doc.
+- Allowed by the existing owner-scoped `firearms/{docId}` Firestore rule
+  (`ownerOrAdmin('ownerId')`); no rules / index / Storage change required.
+
+### `RifleProfile` ‚Äî make/model fields + `displayName` (model)
+- New `final String make` and `final String model` fields on `RifleProfile`
+  (`lib/features/ballistics/data/models/rifle_profile.dart`), hydrated from
+  the firearm-safe doc's `make` (with `brand`/`manufacturer` fallbacks) and
+  `model` (with `modelName` fallback) ‚Äî mirroring the field-alias resolution
+  the ballistic calc screen already uses. Also tolerates the `calibre` and
+  `serial` spelling aliases the safe persists. Added to `toJson()` and
+  `copyWith`.
+- New `displayName` getter renders the dropdown label as **"make model
+  (calibre)"** per spec. Falls back to `name`, then to "Unnamed firearm"
+  for legacy/empty docs, and renders an em-dash when calibre is unknown so
+  the parentheses are never empty. So a real firearm-safe entry like
+  `{make:'Tikka', model:'T3x', caliber:'.308 Win'}` renders
+  "Tikka T3x (.308 Win)" (was " (‚Äî)" under the old name-only path).
+
+### `ThemeController` ‚Äî process-wide singleton
+- Added `static ThemeController get instance => _instance ??= ThemeController()`
+  + `static ThemeController? _instance` to `ThemeController`
+  (`lib/core/theme/app_theme.dart`). `main()` now constructs the app's
+  controller via `ThemeController.instance` instead of `ThemeController()`,
+  making the singleton the **single source of truth** for the Day/Night
+  preference. This lets out-of-tree consumers (the `_FirearmSafeShim` pushed
+  from the stateless scope-tools context) read the SAME controller driving
+  the `MaterialApp` ‚Äî no divergence between the singleton and the main
+  instance. Existing in-tree consumers (`widget.theme` passed down from
+  `main()`) are unchanged; they hold the same singleton object.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0 warnings,
+  0 new infos** in all changed files
+  (`optic_profile.dart`, `rifle_profile.dart`, `inventory_bridge.dart`,
+  `scope_tools_bottom_sheet.dart`, `app_theme.dart`, `main.dart`,
+  `optic_tools_test.dart`). The 3 infos in touched files are the documented
+  pre-existing deprecations (`DropdownButtonFormField.value` ‚Äî only flagged
+  on Flutter ‚â•3.33, NOT the CI 3.29.1 pin; `androidProvider`/`appleProvider`
+  in `main.dart`). Project total: **0 errors, 11 warnings, 313 infos** ‚Äî all
+  pre-existing in unrelated files (unchanged baseline). The one
+  `unnecessary_brace_in_string_interps` introduced in `OpticProfile.toString`
+  was fixed (braces removed) before commit. `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- **`flutter test test/optic_tools_test.dart`**: **22/22 pass** (was 13;
+  +9 new tests: 4 `OpticProfile firearm binding` + 5 `RifleProfile display
+  name`). The 9 new tests assert:
+  - `firearmId` defaults to `''` for legacy specs; round-trips through JSON;
+  - `copyWith(firearmId:)` updates only `firearmId`;
+  - a hydrated optic carries the host firearm id;
+  - `displayName` formats "make model (calibre)" exactly per spec;
+  - brand/manufacturer fallbacks; em-dash for unknown calibre; name then
+    "Unnamed firearm" fallbacks; `serial` alias tolerance.
+- **`flutter test`** (full suite): **273 passed, 4 failed** ‚Äî the 4 failures
+  are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; identical failing set to the prior commit (+9
+  net pass count vs the Phase-29 264 baseline, exactly the 9 new optic-model
+  assertions).
+- Files: `lib/features/ballistics/data/models/optic_profile.dart`
+  (`firearmId` field + JSON/copyWith/toString),
+  `lib/features/ballistics/data/models/rifle_profile.dart` (`make`/`model`
+  fields + aliases + `displayName`),
+  `lib/features/ballistics/data/inventory_bridge.dart`
+  (`saveOpticProfile` stamps `firearmId`),
+  `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`
+  (`DropdownButtonFormField` + empty-safe placeholder + Firearm-Safe CTA +
+  `_onRifleSelected` binding + `_FirearmSafeShim`),
+  `lib/core/theme/app_theme.dart` (`ThemeController.instance` singleton),
+  `lib/main.dart` (uses singleton),
+  `test/optic_tools_test.dart` (+11 tests). No Firestore rules / index /
+  Storage / pubspec changes (pure model + UI + secure-binding stamp).
+

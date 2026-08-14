@@ -209,4 +209,88 @@ void main() {
       expect((out['optic'] as Map)['turretUnit'], 'MRAD');
     });
   });
+
+  group('OpticProfile firearm binding', () {
+    test('firearmId defaults to empty for legacy optic specs', () {
+      expect(const OpticProfile().firearmId, '');
+      final fromLegacy = OpticProfile.fromJson({'opticName': 'Legacy'});
+      expect(fromLegacy.firearmId, '');
+    });
+
+    test('round-trips firearmId through JSON', () {
+      const optic = OpticProfile(opticName: 'Razor', firearmId: 'rifle_123');
+      final out = optic.toJson();
+      expect(out['firearmId'], 'rifle_123');
+      final restored = OpticProfile.fromJson(out);
+      expect(restored.firearmId, 'rifle_123');
+    });
+
+    test('copyWith updates firearmId without touching other fields', () {
+      const base = OpticProfile(opticName: 'NX8', clickValue: 0.1);
+      final bound = base.copyWith(firearmId: 'rifle_abc');
+      expect(bound.firearmId, 'rifle_abc');
+      expect(bound.opticName, 'NX8');
+      expect(bound.clickValue, 0.1);
+    });
+
+    test('hydrated optic carries the host firearm id', () {
+      final rifle = RifleProfile.fromJson({
+        'make': 'Tikka',
+        'model': 'T3x',
+        'caliber': '.308 Win',
+        'optic': {
+          'opticName': 'Viper',
+          'firearmId': 'rifle_xyz',
+        },
+      });
+      expect(rifle.optic, isNotNull);
+      expect(rifle.optic!.firearmId, 'rifle_xyz');
+    });
+  });
+
+  group('RifleProfile display name (optic-link dropdown label)', () {
+    test('formats make + model + calibre per spec', () {
+      final rifle = RifleProfile.fromJson({
+        'make': 'Tikka',
+        'model': 'T3x',
+        'caliber': '.308 Win',
+      });
+      expect(rifle.displayName, 'Tikka T3x (.308 Win)');
+    });
+
+    test('falls back to brand/manufacturer when make is absent', () {
+      final brand = RifleProfile.fromJson({
+        'brand': 'Sako',
+        'model': 'S20',
+        'caliber': '6.5 CM',
+      });
+      expect(brand.displayName, 'Sako S20 (6.5 CM)');
+    });
+
+    test('renders em-dash when calibre is unknown', () {
+      final noCal = RifleProfile.fromJson({'make': 'Remington', 'model': '700'});
+      expect(noCal.displayName, 'Remington 700 (—)');
+    });
+
+    test('falls back to name then generic when make/model absent', () {
+      final withName = RifleProfile.fromJson({'name': 'Old Rifle', 'caliber': '.308'});
+      expect(withName.displayName, 'Old Rifle (.308)');
+
+      final bare = RifleProfile.fromJson({'caliber': '.300'});
+      expect(bare.displayName, 'Unnamed firearm (.300)');
+
+      final empty = RifleProfile(id: 'x', name: '', caliber: '');
+      expect(empty.displayName, 'Unnamed firearm (—)');
+    });
+
+    test('serial alias is tolerated (firearm safe persists "serial")', () {
+      final rifle = RifleProfile.fromJson({
+        'make': 'CZ',
+        'model': '557',
+        'caliber': '7x57',
+        'serial': 'SN-12345',
+      });
+      expect(rifle.serialNumber, 'SN-12345');
+    });
+  });
 }

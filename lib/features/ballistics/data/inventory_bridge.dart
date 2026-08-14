@@ -201,6 +201,11 @@ class InventoryBridge {
   /// Persists an [OpticProfile] against a firearm by writing it as a nested
   /// `optic` map on the firearm document. Allowed because firearm docs are
   /// owner-scoped (`ownerOrAdmin('ownerId')`) in the Firestore rules.
+  ///
+  /// The optic is stamped with [rifleId] as its `firearmId` before writing so
+  /// the scope configuration is securely bound to the selected firearm and
+  /// the linkage survives Firestore re-reads (the binding "travels" with the
+  /// rifle). A blank [rifleId] is rejected up-front.
   Future<bool> saveOpticProfile(String rifleId, OpticProfile optic) async {
     try {
       if (_currentUserId == null) {
@@ -211,10 +216,11 @@ class InventoryBridge {
         debugPrint('InventoryBridge: Cannot save optic - empty rifleId');
         return false;
       }
+      final bound = optic.copyWith(firearmId: rifleId);
       await _firestore
           .collection('firearms')
           .doc(rifleId)
-          .set({'optic': optic.toJson()}, SetOptions(merge: true));
+          .set({'optic': bound.toJson()}, SetOptions(merge: true));
       debugPrint('InventoryBridge: Saved optic for rifle $rifleId');
       return true;
     } catch (e) {

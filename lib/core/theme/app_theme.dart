@@ -42,6 +42,14 @@ enum HuntingConcept { thermalGlow, walnutLuxury, neonShock }
 class ThemeController extends ChangeNotifier {
   static const String _prefsKey = 'jagspoor_dark_mode';
 
+  /// Process-wide singleton. Constructed lazily on first access; mirrors the
+  /// instance created in `main()` (which is the one actually driving the
+  /// app's `MaterialApp`). Callers that need a `ThemeController` outside the
+  /// widget tree (e.g. a shim pushed from a stateless context) should use this
+  /// so they read the same persisted Day/Night preference.
+  static ThemeController get instance => _instance ??= ThemeController();
+  static ThemeController? _instance;
+
   HuntingConcept _currentConcept = HuntingConcept.walnutLuxury;
   bool _isDarkMode = false;
   bool _initialized = false;
