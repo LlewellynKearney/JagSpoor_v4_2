@@ -6,6 +6,7 @@ import '../../services/location_resolver_service.dart';
 import '../../utils/image_helper.dart';
 import 'trophy_detail_screen.dart';
 import 'add_trophy_screen.dart';
+import 'services/trophy_share_composer.dart';
 
 class TrophyRoomScreen extends StatefulWidget {
   final ThemeController theme;
@@ -136,6 +137,19 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
         SnackBar(
           content: Text('Error opening trophy: ${e.toString()}'),
           backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _shareTrophy(Map<String, dynamic> trophy) async {
+    final ok = await TrophyShareComposer.shareTrophy(trophy);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open share sheet. Please try again.'),
+          backgroundColor: Colors.orange,
         ),
       );
     }
@@ -382,12 +396,30 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        harvestDate,
-                        style: TextStyle(
-                          color: widget.theme.subtitleColor,
-                          fontSize: 11,
+                      Expanded(
+                        child: Text(
+                          harvestDate,
+                          style: TextStyle(
+                            color: widget.theme.subtitleColor,
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.share,
+                          size: 18,
+                          color: widget.theme.accentColor,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        tooltip: 'Share Trophy',
+                        onPressed: () => _shareTrophy(trophy),
                       ),
                       Icon(
                         Icons.arrow_forward_ios,

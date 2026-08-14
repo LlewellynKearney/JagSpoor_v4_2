@@ -3134,3 +3134,114 @@ grayed-out icon for species with no recorded benchmark.
   `animals` docs are unchanged until the seeder is re-run in a
   credentialed env).
 
+
+## Phase 32 ‚Äî Digital Trophy Room Native Trophy Sharing (added 2026-08-14)
+
+Item #7 of the v4.4 to-do: add a native platform share button to every
+Digital Trophy Room entry so a hunter can broadcast a harvest dispatch to
+WhatsApp / Telegram / Email / SMS via the OS share sheet, with a clean,
+engaging composed message.
+
+### Dependency verification
+- `share_plus: ^10.0.0` was **already present** in `pubspec.yaml` (used by
+  the PDF engine `Share.shareXFiles` and the manual invoice screen). No
+  version bump needed; `flutter pub get` resolves cleanly. The 10.x API
+  exposes both `Share.share(text, subject:)` (text share) and
+  `Share.shareXFiles(...)` (file share); this feature uses the text path.
+
+### Share message composer (pure, testable)
+- New `lib/features/hunter_mode/services/trophy_share_composer.dart`
+  (`TrophyShareComposer`, private ctor ‚Äî pure static API mirroring the
+  `SupportEmailComposer` pattern from Phase 28; dependency-light:
+  `share_plus` only, no extra platform plugins so it stays stable on the
+  CI Flutter 3.29.1 pin and the local 3.47.0 stable).
+  - `buildTrophyShareMessage(Map<String, dynamic> trophy)` ‚Äî **pure
+    function** over a trophy document, fully unit-testable with no
+    Flutter / platform plugins. Emits the spec's exact 5-line dispatch:
+    ```
+    ü¶å Check out my latest harvest on JagSpoor!
+    Species: [Species Name]
+    Score / Details: [Rowland Ward / SCI Score or horn measurements]
+    Date: [Formatted Date]
+    Shared via JagSpoor App
+    ```
+  - **Score / Details line**: trophy documents carry the harvest horn /
+    antler measurements (`antlerSpread` / `antlerLength` /
+    `antlerCircumference` in cm, `weight` in kg) but **no stored Rowland
+    Ward / SCI score**, so the line is assembled from whichever
+    measurements are present (the spec's "or horn measurements"
+    alternative), joined with `‚Ä¢`. Fields missing from legacy / partial
+    entries are skipped (not rendered as 0); when NO measurement is
+    recorded the line collapses to `N/A` so it is never blank. Whole
+    numbers render without a trailing `.0` (e.g. `Spread 48 cm`, not
+    `Spread 48.0 cm`); fractional values render to 1 decimal.
+  - **Date line**: `harvestDate` is stored as ISO `YYYY-MM-DD`; validated
+    and re-emitted in that canonical shape. A missing / blank date falls
+    back to `N/A`; a malformed (unparseable) date is shown verbatim
+    (best-effort) rather than dropped.
+  - **Species line**: falls back to `Unknown Trophy` when the field is
+    null/empty, so the message is always complete and shareable.
+  - `shareTrophy(trophy, {subject})` ‚Äî thin platform wrapper: composes the
+    message and calls `Share.share(message, subject: 'My JagSpoor
+    Trophy!')` to activate the native mobile platform share sheet
+    (WhatsApp, Telegram, Email, SMS). Returns whether the share
+    invocation completed without throwing; a platform error is swallowed
+    and reported as `false` so the caller can surface a fallback
+    snackbar. `defaultSubject` is exposed for tests.
+  - Numeric values stored as strings (legacy / mixed-type docs) are
+    parsed via a tolerant `_asNum` (handles `num` + `double.tryParse`),
+    matching the storage shape the add/edit trophy screens write.
+
+### UI & button integration
+- **Trophy detail screen** (`lib/features/hunter_mode/trophy_detail_screen.dart`):
+  added a `share` `IconButton` to the `AppBar.actions` (before the existing
+  edit button), tinted with the theme accent, tooltip "Share Trophy". On
+  tap it captures `ScaffoldMessenger` before the async gap (matching the
+  edit button's existing pattern), calls `TrophyShareComposer.shareTrophy`,
+  guards `mounted`, and on failure shows an orange "Unable to open share
+  sheet" snackbar. So the full-trophy detail view (all measurements, the
+  harvest info, tags) is the primary share surface.
+- **Trophy room grid** (`lib/features/hunter_mode/trophy_room_screen.dart`):
+  added a compact `share` `IconButton` (18px, tight `BoxConstraints` so it
+  fits the 2-column grid card without breaking the aspect ratio) to each
+  `_buildPremiumTrophyCard`'s bottom info row, alongside the harvest date
+  and the navigation arrow. The date `Text` is wrapped in `Expanded` with
+  `ellipsis` so the row never overflows when the share button is present.
+  A new `_shareTrophy(trophy)` State method (guards `mounted`, orange
+  fallback snackbar on platform failure) backs the card button ‚Äî so a
+  hunter can share straight from the trophy grid without opening the
+  detail view.
+- Both surfaces use the SAME composer + the SAME fallback-snackbar
+  contract, so the share experience is consistent whether triggered from
+  the grid or the detail screen.
+
+### Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 infos** in all changed/new files
+  (`trophy_share_composer.dart`, `trophy_detail_screen.dart`,
+  `trophy_room_screen.dart`, `trophy_share_composer_test.dart`). Project
+  total: **0 errors, 114 issues** (lib/ only) ‚Äî all pre-existing infos in
+  unrelated files (unchanged baseline; identical count to the pre-change
+  baseline). `analysis_options.yaml` auto-touched by the analyzer / pub
+  get was reverted before commit.
+- **`flutter test test/trophy_share_composer_test.dart`**: **11/11 pass**.
+  Tests cover: full trophy (all four lines + the joined Score/Details
+  string); missing species ‚Üí `Unknown Trophy`; no measurements ‚Üí `N/A`;
+  partial measurements (only present fields rendered, absent fields
+  omitted not zeroed); missing/blank harvest date ‚Üí `N/A`; malformed date
+  shown verbatim; numeric-as-string parsing; null measurement values
+  skipped; whole-number formatting (no trailing `.0`); exact 5-line
+  message structure; and the `defaultSubject` marketing string.
+- **`flutter test`** (full suite): **320 passed, 4 failed** ‚Äî the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; +11 vs the Phase-31 309-pass baseline, exactly
+  the new trophy-share-composer tests.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  share composition + the existing `share_plus` dep).
+- Files: `lib/features/hunter_mode/services/trophy_share_composer.dart`
+  (NEW), `lib/features/hunter_mode/trophy_detail_screen.dart` (AppBar
+  share button), `lib/features/hunter_mode/trophy_room_screen.dart`
+  (card share button + `_shareTrophy`),
+  `test/trophy_share_composer_test.dart` (NEW, 11 tests).
+

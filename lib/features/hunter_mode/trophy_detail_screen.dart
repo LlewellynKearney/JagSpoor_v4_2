@@ -4,6 +4,7 @@ import '../../core/utils/measurement_formatter.dart';
 import '../../services/location_resolver_service.dart';
 import '../../utils/image_helper.dart';
 import 'edit_trophy_screen.dart';
+import 'services/trophy_share_composer.dart';
 
 class TrophyDetailScreen extends StatefulWidget {
   final ThemeController theme;
@@ -79,6 +80,27 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
             iconTheme: IconThemeData(color: widget.theme.accentColor),
             elevation: 0,
             actions: [
+              IconButton(
+                icon: Icon(Icons.share, color: widget.theme.accentColor),
+                tooltip: 'Share Trophy',
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final ok = await TrophyShareComposer.shareTrophy(
+                    widget.trophy,
+                  );
+                  if (!mounted) return;
+                  if (!ok) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Unable to open share sheet. Please try again.',
+                        ),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                },
+              ),
               IconButton(
                 icon: Icon(Icons.edit, color: widget.theme.accentColor),
                 tooltip: 'Edit Trophy',
