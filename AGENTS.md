@@ -3916,3 +3916,154 @@ the contract the rules enforce). Groups:
   (NEW, 14 tests), `AGENTS.md`. No Dart `lib/` / Storage / index / pubspec
   changes (pure rules + structural test).
 
+
+## Phase 38 ‚Äî SA Game Guide Rowland Ward Data & Scientific Name Seed Fix (added 2026-08-14)
+
+Item #6 of the v4.5 to-do: populate official Rowland Ward minimum trophy
+benchmarks AND scientific (binomial) names for the SA Game Guide species,
+force a seed migration so existing installs re-seed the full dataset
+automatically, and surface both in the detail UI.
+
+### Background (pre-fix state)
+- Phase 31 had already populated the official SA Rowland Ward minimums for
+  the 14 to-do species in `_rolandWardMetrics` (and added the duplicate-UI
+  removal + N/A badge). BUT:
+  - The seeder (`seedAnimalsFromCSV`) wrote `scientificName: ''` ("Not
+    provided in CSV" ‚Äî the CSV has no scientific-name column), so every
+    seeded `animals` doc had a blank scientific name.
+  - The seeder only set `trophyMinimumRW`/`rolandWardMinimum`/`rwMinimum`
+    + `earLength` from the lookup; it did NOT write `rwMeasurementMethod`
+    or `rwHornDescription` (the `getRolandWardMetricsForSpecies` helper
+    returned them, but the seeder didn't consume them).
+  - `seedAnimalsFromCSV()` was NOT called at startup (only the ballistics
+    `BallisticsSeeder.seedAll()` was, in `main.dart`); it was a manual /
+    admin utility, so existing installs never re-seeded and stale blank
+    scientific names + any legacy em-dash RW values persisted.
+  - `firestore.rules` gated `animals` with `allow write: if isAdmin()`, so
+    running the seeder at startup for a non-admin would
+    `PERMISSION_DENIED` (the same root cause as Phase 37).
+
+### 1. Scientific names dictionary (`lib/utils/animal_seeder.dart`)
+- New `_scientificNames` const map keyed by the same lowercased common-name
+  variants as `_rolandWardMetrics` (space-keyed CSV common name +
+  underscore alias), so a single lookup resolves both the trophy benchmark
+  and the scientific name. All 14 to-do species are populated with their
+  official binomials / trinomials:
+  - Greater Kudu ‚Üí `Tragelaphus strepsiceros`
+  - Cape Buffalo ‚Üí `Syncerus caffer`
+  - Blue Wildebeest ‚Üí `Connochaetes taurinus`
+  - Black Wildebeest ‚Üí `Connochaetes gnou`
+  - Gemsbok (Oryx) ‚Üí `Oryx gazella`
+  - Impala ‚Üí `Aepyceros melampus`
+  - Springbok ‚Üí `Antidorcas marsupialis`
+  - Blesbok ‚Üí `Damaliscus pygargus phillipsi`
+  - Common Warthog ‚Üí `Phacochoerus africanus`
+  - Eland ‚Üí `Taurotragus oryx`
+  - Sable Antelope ‚Üí `Hippotragus niger`
+  - Nyala ‚Üí `Tragelaphus angasii`
+  - Common Waterbuck ‚Üí `Kobus ellipsiprymnus`
+  - Red Hartebeest ‚Üí `Alcelaphus buselaphus caama`
+- The broader RW-table species (bushbuck, roan, tsessebe, duikers,
+  reedbuck, steenbok, grysbok, bushpig, cheetah, leopard, lion, elephant,
+  rhino, hippo, crocodile, dik-dik, suni, Lichtenstein's hartebeest) are
+  also keyed with their scientific names so no half-populated records
+  remain (any species with a RW benchmark also carries a scientific name).
+- New `getScientificNameForSpecies(String)` helper (case-insensitive,
+  trimmed, returns null for unlisted ‚Üí UI N/A fallback).
+
+### 2. Seeder writes the full benchmark dataset
+- `seedAnimalsFromCSV` now resolves `getRolandWardMetricsForSpecies`
+  (full metrics: official minimum + measurement method + horn description
+  + ear length) and `getScientificNameForSpecies` per row, and constructs
+  the `Animal` with `scientificName`, `rwMeasurementMethod`, and
+  `rwHornDescription` populated (previously blank). The `searchKeywords`
+  now also include the lowercased scientific name so the guide is
+  searchable by binomial. The write remains `set(merge: true)`, so a
+  re-seed **overwrites** stale null / empty / em-dash Rowland Ward values
+  and blank scientific names on existing installs (the to-do's
+  "force seed migration / DB overwrite" requirement) ‚Äî `merge: true`
+  writes every non-null field, so the full benchmark data replaces the
+  legacy blanks.
+
+### 3. Forced seed migration via version tag (`lib/main.dart`)
+- New `const String gameGuideSeedVersion = 'game_guide_seed_v2'` in
+  `animal_seeder.dart`. The `main.dart` startup `addPostFrameCallback`
+  now runs the game-guide seed (alongside the ballistics seed) gated by
+  the persisted `game_guide_seed_version` SharedPreferences string:
+  - Fresh install (empty persisted version) ‚Üí seeds.
+  - Existing install on a prior version (e.g. `game_guide_seed_v1` or
+    empty) ‚Üí `seededGuideVersion != gameGuideSeedVersion` ‚Üí re-seeds.
+  - Already on `game_guide_seed_v2` ‚Üí skips.
+  Bumping the const re-triggers the seeder for every existing install,
+  overwriting the stale fields. Failures are caught + `debugPrint`ed
+  (non-fatal; the game guide's own Firestore stream surfaces errors
+  gracefully per the Phase 16/17 hardening). Import of `animal_seeder.dart`
+  added to `main.dart`.
+
+### 4. Firestore rules ‚Äî `animals` write split (`firestore.rules`)
+- The `animals` match block was widened from `allow write: if isAdmin()`
+  into explicit grants so the startup seeder (run for every signed-in user)
+  succeeds without `PERMISSION_DENIED`:
+  ```
+  match /animals/{animalId} {
+    allow read: if true;                    // public game guide
+    allow create, update: if isSignedIn();  // enables startup seed
+    allow delete: if isAdmin();              // catalog cannot be wiped
+  }
+  ```
+  Public read is preserved (the SA Game Guide works offline +
+  unauthenticated for reference). `create, update: isSignedIn()` mirrors
+  the Phase 37 ballistics-catalog pattern (static reference catalog data,
+  `merge: true`, deterministic doc ids ‚Äî authenticated seeding is the
+  minimal permission; no UI writes to `animals` outside the seeder).
+  `delete: isAdmin()` is tightened vs. the old bare `write` so a non-admin
+  can never wipe the catalog. **Deploy reminder**:
+  `npx firebase-tools deploy --only firestore:rules` in a credentialed env.
+
+### 5. UI display (`lib/screens/animal_detail_screen.dart`)
+- The IDENTIFICATION section's "Scientific Name" `_DetailRow` now renders
+  `N/A` when `scientificName` is empty (was a blank value), consistent with
+  the Rowland Ward N/A badge added in Phase 31. So a species with no
+  recorded scientific name shows a clear "N/A" instead of an empty row.
+  (The Rowland Ward summary card + TROPHY REFERENCE section already render
+  the official minimum, measurement method, and horn description from
+  Phase 31; the seeder now actually populates the method + description
+  fields onto the doc, so they display.)
+
+### 6. Verification
+- **`flutter analyze`** (local Flutter 3.47.0 stable): **0 errors, 0
+  warnings, 0 new infos** in the changed files
+  (`animal_seeder.dart`, `main.dart`, `animal_detail_screen.dart`,
+  `game_guide_rowland_ward_test.dart`, `firestore_rules_seeding_test.dart`).
+  The only issues in touched files are the 2 pre-existing
+  `androidProvider`/`appleProvider` deprecation infos in `main.dart`
+  (documented baseline; only flagged on the local 3.47.0). `lib/` total
+  **113 issues** ‚Äî unchanged baseline. `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- **`flutter test`**: `game_guide_rowland_ward_test` (43 ‚Äî was 36; +7 new:
+  5 scientific-name + 2 seed-version) + `firestore_rules_seeding_test`
+  (14 ‚Äî updated the `animals` assertion to the new create/update/delete
+  split) all pass (57 total). Full suite **409 passed, 4 failed** ‚Äî the 4
+  failures are the documented pre-existing baseline (`saps_tracker`,
+  `offline_sync_queue`, `advanced_ballistics`, `bluetooth_mesh`), none
+  touch the changed files; +7 vs the Phase-37 402-pass baseline (exactly
+  the new game-guide tests).
+- Structural rules validation: brace balance 0; default-deny present;
+  `animals` read=true, create+update=isSignedIn, delete=isAdmin, no bare
+  write (Python parse).
+- Files: `lib/utils/animal_seeder.dart` (`_scientificNames` +
+  `getScientificNameForSpecies` + `gameGuideSeedVersion` + seeder writes
+  full metrics + scientific name), `lib/main.dart` (startup game-guide seed
+  gated by version tag + import), `lib/screens/animal_detail_screen.dart`
+  (scientific-name N/A fallback), `firestore.rules` (`animals` write
+  split), `test/game_guide_rowland_ward_test.dart` (+7 tests),
+  `test/firestore_rules_seeding_test.dart` (`animals` assertion updated),
+  `AGENTS.md`. No Storage / index / pubspec changes.
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate the `animals` seed/permission split. Until
+  deployed, the old `write: isAdmin()` gate still rejects the first-launch
+  game-guide seed for non-admins (surfaced as a non-fatal `debugPrint` in
+  the startup try/catch ‚Äî the guide still renders from whatever `animals`
+  docs exist + the in-memory RW/scientific-name lookups the field-estimate
+  + detail screens use directly).
+

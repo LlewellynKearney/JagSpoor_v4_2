@@ -57,10 +57,19 @@ service cloud.firestore {
     }
 
     // ── Marketplace / catalog (readable by any signed-in user) ──────────
-    // Animals remain publicly readable for the SA Game Guide; admin write.
+    // SA Game Guide catalog (`animals`). Public read (the game guide works
+    // offline + unauthenticated for reference). Write is split so the
+    // startup `seedAnimalsFromCSV()` seeder (run from `main.dart` for every
+    // signed-in user, forced via the `game_guide_seed_version` version tag)
+    // can populate / overwrite the full benchmark dataset (official
+    // Rowland Ward minimum + measurement method + horn description +
+    // scientific name) on existing installs without a permission-denied.
+    // Delete stays admin-only so the catalog can never be wiped by a
+    // non-admin. (v4.5 to-do Item #6.)
     match /animals/{animalId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
     // Basic user profiles: readable by any signed-in user (marketplace

@@ -300,6 +300,119 @@ const _rolandWardMetrics = <String, RolandWardMetrics>{
   'bush pig': RolandWardMetrics(rwMinimum: '5.5', earLength: null),
 };
 
+/// Official scientific (binomial / trinomial) names for the South African
+/// game-guide species. Keyed by the same lowercased common-name variants
+/// used by [_rolandWardMetrics] (space-keyed CSV common name + underscore
+/// alias) so a single lookup resolves both the trophy benchmark and the
+/// scientific name. Per v4.5 to-do Item #6.
+const _scientificNames = <String, String>{
+  // Greater Kudu
+  'kudu': 'Tragelaphus strepsiceros',
+  'greater_kudu': 'Tragelaphus strepsiceros',
+  'greater kudu': 'Tragelaphus strepsiceros',
+  'kudu (eastern cape)': 'Tragelaphus strepsiceros',
+  'kudu (southern greater)': 'Tragelaphus strepsiceros',
+  // Cape Buffalo
+  'cape buffalo': 'Syncerus caffer',
+  'cape_buffalo': 'Syncerus caffer',
+  'buffalo (southern african)': 'Syncerus caffer',
+  // Blue Wildebeest
+  'blue wildebeest': 'Connochaetes taurinus',
+  'blue_wildebeest': 'Connochaetes taurinus',
+  // Black Wildebeest
+  'black wildebeest': 'Connochaetes gnou',
+  'black_wildebeest': 'Connochaetes gnou',
+  // Gemsbok (Oryx)
+  'gemsbok (oryx)': 'Oryx gazella',
+  'gemsbok': 'Oryx gazella',
+  // Impala
+  'impala': 'Aepyceros melampus',
+  'impala (southern)': 'Aepyceros melampus',
+  // Springbok
+  'springbok': 'Antidorcas marsupialis',
+  'springbok (cape)': 'Antidorcas marsupialis',
+  'springbok (kalahari)': 'Antidorcas marsupialis',
+  // Blesbok
+  'blesbok': 'Damaliscus pygargus phillipsi',
+  'bontebok': 'Damaliscus pygargus pygargus',
+  'bontebok (purebred)': 'Damaliscus pygargus pygargus',
+  // Common Warthog
+  'common warthog': 'Phacochoerus africanus',
+  'warthog': 'Phacochoerus africanus',
+  // Eland
+  'eland': 'Taurotragus oryx',
+  'cape eland': 'Taurotragus oryx',
+  'eland (cape)': 'Taurotragus oryx',
+  // Sable Antelope
+  'sable antelope': 'Hippotragus niger',
+  'sable': 'Hippotragus niger',
+  // Nyala
+  'nyala': 'Tragelaphus angasii',
+  // Waterbuck
+  'common waterbuck': 'Kobus ellipsiprymnus',
+  'waterbuck': 'Kobus ellipsiprymnus',
+  'waterbuck (common)': 'Kobus ellipsiprymnus',
+  // Red Hartebeest
+  'red hartebeest': 'Alcelaphus buselaphus caama',
+  'red_hartebeest': 'Alcelaphus buselaphus caama',
+  'hartebeest (cape/red)': 'Alcelaphus buselaphus caama',
+  // Additional species recorded in the Rowland Ward table
+  'southern bushbuck': 'Tragelaphus sylvaticus',
+  'bushbuck (southern african)': 'Tragelaphus sylvaticus',
+  'bushbuck (chobe)': 'Tragelaphus ornatus',
+  'roan antelope': 'Hippotragus equinus',
+  'tsessebe': 'Damaliscus lunatus',
+  'common duiker': 'Sylvicapra grimmia',
+  'red duiker': 'Cephalophus natalensis',
+  'natal red duiker': 'Cephalophus natalensis',
+  'blue duiker': 'Philantomba monticola',
+  'mountain reedbuck': 'Redunca fulvorufula',
+  'southern reedbuck': 'Redunca arundinum',
+  'steenbok': 'Raphicerus campestris',
+  'oribi': 'Ourebia ourebi',
+  'cape grysbok': 'Raphicerus melanotis',
+  'grysbok (cape)': 'Raphicerus melanotis',
+  "sharpe's grysbok": 'Raphicerus sharpei',
+  'bushpig': 'Potamochoerus larvatus',
+  'bush pig': 'Potamochoerus larvatus',
+  'cheetah': 'Acinonyx jubatus',
+  'leopard': 'Panthera pardus',
+  'leopard (southern african)': 'Panthera pardus',
+  'lion': 'Panthera leo',
+  'lion (african)': 'Panthera leo',
+  'african elephant': 'Loxodonta africana',
+  'elephant (african)': 'Loxodonta africana',
+  'black rhinoceros': 'Diceros bicornis',
+  'southern white rhinoceros': 'Ceratotherium simum simum',
+  'hippopotamus': 'Hippopotamus amphibius',
+  'nile crocodile': 'Crocodylus niloticus',
+  'crocodile (nile)': 'Crocodylus niloticus',
+  'dik-dik (damaraland)': 'Madoqua kirkii',
+  'suni': 'Neotragus moschatus',
+  'suni (moschatus)': 'Neotragus moschatus',
+  "suni (livingstone's)": 'Neotragus livingstonianus',
+  'hartebeest (lichtensteins)': 'Alcelaphus lichtensteinii',
+};
+
+/// Resolves the official scientific (binomial) name for a South African
+/// game species by its common name (case-insensitive, trimmed). Returns
+/// null when the species has no recorded scientific name.
+String? getScientificNameForSpecies(String speciesName) {
+  final normalizedName = speciesName.trim().toLowerCase();
+  return _scientificNames[normalizedName];
+}
+
+/// The current game-guide seed version. Bumping this forces every existing
+/// app install to re-seed the full `animals` dataset at startup (the
+/// `main.dart` startup seeder compares this against the persisted
+/// `game_guide_seed_version` SharedPreferences key). Per v4.5 to-do Item #6
+/// — earlier installs carried null / empty / em-dash Rowland Ward values and
+/// blank scientific names; a version bump re-runs the seeder so the
+/// `merge: true` write overwrites those stale fields with the full benchmark
+/// data (official RW minimum + measurement method + horn description +
+/// scientific name).
+const String gameGuideSeedVersion = 'game_guide_seed_v2';
+
 String? getRolandWardMinimumForSpecies(String speciesName) {
   final normalizedName = speciesName.trim().toLowerCase();
   return _rolandWardMetrics[normalizedName]?.rwMinimum;
@@ -399,11 +512,21 @@ Future<void> seedAnimalsFromCSV() async {
           'https://upload.wikimedia.org/wikipedia/commons/6/6f/Nyala_%28Tragelaphus_angasii%29_male.jpg';
     }
 
+    // Resolve the full Rowland Ward benchmark (official minimum + measurement
+    // method + horn description + ear length) and the official scientific
+    // name for this species. The seeder writes ALL of these onto the `animals`
+    // doc with `merge: true`, so a re-seed (forced by bumping
+    // [gameGuideSeedVersion]) overwrites stale null / empty / em-dash
+    // Rowland Ward values and blank scientific names on existing installs.
+    final rwMetrics = getRolandWardMetricsForSpecies(commonName);
+    final rwMinimum = rwMetrics?.rwMinimum ?? getRolandWardMinimumForSpecies(commonName);
+    final scientificName = getScientificNameForSpecies(commonName) ?? '';
+
     // Create Animal object
     final animal = Animal(
       id: docId,
       name: commonName,
-      scientificName: '', // Not provided in CSV
+      scientificName: scientificName,
       category: animalType,
       regions: regions,
       habitat: 'South Africa', // Default habitat
@@ -412,15 +535,18 @@ Future<void> seedAnimalsFromCSV() async {
           recommendedCaliber.isNotEmpty && recommendedCaliber != 'N/A'
               ? recommendedCaliber
               : null,
-      trophyMinimumRW: getRolandWardMinimumForSpecies(commonName),
-      rolandWardMinimum: getRolandWardMinimumForSpecies(commonName),
-      rwMinimum: getRolandWardMinimumForSpecies(commonName),
-      earLength: getEarLengthForSpecies(commonName),
+      trophyMinimumRW: rwMinimum,
+      rolandWardMinimum: rwMinimum,
+      rwMinimum: rwMinimum,
+      earLength: rwMetrics?.earLength ?? getEarLengthForSpecies(commonName),
+      rwMeasurementMethod: rwMetrics?.measurementMethod,
+      rwHornDescription: rwMetrics?.hornDescription,
       imageUrl: imageUrl,
       searchKeywords: [
         commonName.toLowerCase(),
         animalType.toLowerCase(),
         ...regions.map((r) => r.toLowerCase()),
+        if (scientificName.isNotEmpty) scientificName.toLowerCase(),
       ],
       sortOrder: i,
       updatedAt: DateTime.now(),

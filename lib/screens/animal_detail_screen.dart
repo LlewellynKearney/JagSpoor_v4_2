@@ -111,7 +111,9 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
                       _DetailRow(
                         theme: theme,
                         label: 'Scientific Name',
-                        value: animal.scientificName,
+                        value: animal.scientificName.isEmpty
+                            ? 'N/A'
+                            : animal.scientificName,
                         italic: true,
                       ),
                       if (animal.afrikaansName != null &&

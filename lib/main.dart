@@ -24,6 +24,7 @@ import 'features/hunter_mode/edit_trophy_screen.dart';
 import 'features/outfitter_mode/outfitter_dashboard.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
+import 'utils/animal_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 import 'core/utils/measurement_formatter.dart';
 
@@ -115,8 +116,9 @@ Future<void> main() async {
     // Temporary database populator hook - RUNS ONCE
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
-      final hasSeeded = prefs.getBool('ballistics_seeded') ?? false;
 
+      // --- Ballistics reference-data seed ---
+      final hasSeeded = prefs.getBool('ballistics_seeded') ?? false;
       if (!hasSeeded) {
         try {
           debugPrint("STARTING LIVE BALLISTIC DATA INGESTION...");
@@ -129,6 +131,26 @@ Future<void> main() async {
         }
       } else {
         debugPrint("Ballistics data already seeded. Skipping.");
+      }
+
+      // --- SA Game Guide seed (forced migration via version tag) ---
+      // Re-runs whenever [gameGuideSeedVersion] bumps, so existing installs
+      // that carry null / empty / em-dash Rowland Ward values or blank
+      // scientific names get the full benchmark dataset overwritten via the
+      // seeder's `merge: true` write. (v4.5 to-do Item #6.)
+      final seededGuideVersion =
+          prefs.getString('game_guide_seed_version') ?? '';
+      if (seededGuideVersion != gameGuideSeedVersion) {
+        try {
+          debugPrint("STARTING SA GAME GUIDE SEED (v$gameGuideSeedVersion)...");
+          await seedAnimalsFromCSV();
+          await prefs.setString('game_guide_seed_version', gameGuideSeedVersion);
+          debugPrint("SA GAME GUIDE SEED COMPLETE (v$gameGuideSeedVersion).");
+        } catch (e) {
+          debugPrint("GAME GUIDE SEEDER ERROR LOG: $e");
+        }
+      } else {
+        debugPrint("SA Game Guide already seeded at v$gameGuideSeedVersion. Skipping.");
       }
     });
 

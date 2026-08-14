@@ -87,12 +87,19 @@ void main() {
     });
 
     // `animals` is the SA Game Guide catalog — public read preserved.
-    test('animals: read = true (public game guide)', () {
+    // Seeded at startup by `seedAnimalsFromCSV()` (forced via the
+    // `game_guide_seed_version` version tag) for every signed-in user, so
+    // create/update is open to authenticated users (enables the startup
+    // seed) and delete stays admin-only. (v4.5 to-do Item #6.)
+    test('animals: public read + authenticated create/update (startup seed) '
+        '+ admin delete', () {
       final block = _blockFor(rules, 'animals');
       expect(block, contains('allow read: if true;'));
-      // Animals are NOT seeded at startup (seedAnimalsFromCSV is a manual
-      // admin utility), so write stays admin-only.
-      expect(block, contains('allow write: if isAdmin()'));
+      expect(block, contains('allow create, update: if isSignedIn()'));
+      expect(block, contains('allow delete: if isAdmin()'));
+      // The old bare `allow write: if isAdmin()` gate (which blocked the
+      // startup game-guide seed for non-admins) must NOT remain.
+      expect(block, isNot(contains('allow write: if isAdmin()')));
     });
   });
 }

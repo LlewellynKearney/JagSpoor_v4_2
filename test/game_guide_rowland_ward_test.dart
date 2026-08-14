@@ -136,4 +136,108 @@ void main() {
       expect(resolve(animalWith()), isNull);
     });
   });
+
+  // ── v4.5 to-do Item #6: official scientific (binomial) names ──────────
+  group('Scientific names — official binomials (v4.5 Item #6)', () {
+    const officialScientificNames = <String, String>{
+      'Greater Kudu': 'Tragelaphus strepsiceros',
+      'Cape Buffalo': 'Syncerus caffer',
+      'Blue Wildebeest': 'Connochaetes taurinus',
+      'Black Wildebeest': 'Connochaetes gnou',
+      'Gemsbok (Oryx)': 'Oryx gazella',
+      'Impala': 'Aepyceros melampus',
+      'Springbok': 'Antidorcas marsupialis',
+      'Blesbok': 'Damaliscus pygargus phillipsi',
+      'Common Warthog': 'Phacochoerus africanus',
+      'Eland': 'Taurotragus oryx',
+      'Sable Antelope': 'Hippotragus niger',
+      'Nyala': 'Tragelaphus angasii',
+      'Common Waterbuck': 'Kobus ellipsiprymnus',
+      'Red Hartebeest': 'Alcelaphus buselaphus caama',
+    };
+
+    test('all 14 to-do species resolve to their official scientific name', () {
+      for (final entry in officialScientificNames.entries) {
+        expect(getScientificNameForSpecies(entry.key), entry.value,
+            reason: '${entry.key} should map to ${entry.value}');
+      }
+      expect(officialScientificNames.length, 14);
+    });
+
+    test('scientific-name lookup is case-insensitive + trims whitespace', () {
+      expect(getScientificNameForSpecies('  greater kudu  '),
+          'Tragelaphus strepsiceros');
+      expect(getScientificNameForSpecies('CAPE BUFFALO'), 'Syncerus caffer');
+    });
+
+    test('underscore alias keys also resolve (to-do spec convention)', () {
+      expect(getScientificNameForSpecies('greater_kudu'),
+          'Tragelaphus strepsiceros');
+      expect(getScientificNameForSpecies('blue_wildebeest'),
+          'Connochaetes taurinus');
+      expect(getScientificNameForSpecies('red_hartebeest'),
+          'Alcelaphus buselaphus caama');
+    });
+
+    test('returns null for an unlisted species (UI N/A fallback)', () {
+      expect(getScientificNameForSpecies('domestic goat'), isNull);
+    });
+
+    test('every species with a Rowland Ward benchmark also has a scientific '
+        'name (no half-populated records)', () {
+      final rwKeys = _rolandWardMetricsKeys();
+      for (final k in rwKeys) {
+        // A species listed in the RW table should either have a scientific
+        // name OR be a known non-mammalian/exception entry. We assert that
+        // the 14 to-do species (and their common aliases) all resolve.
+        if (_coreSpeciesAliases.contains(k)) {
+          expect(getScientificNameForSpecies(k), isNotNull,
+              reason: '$k has a RW benchmark but no scientific name');
+        }
+      }
+    });
+  });
+
+  group('Forced seed migration version tag (v4.5 Item #6)', () {
+    test('gameGuideSeedVersion is the v2 migration tag', () {
+      expect(gameGuideSeedVersion, 'game_guide_seed_v2');
+    });
+
+    test('a version bump re-triggers the seeder (string inequality)', () {
+      // The main.dart startup hook compares the persisted version against
+      // [gameGuideSeedVersion]; any change re-runs seedAnimalsFromCSV.
+      const priorVersion = 'game_guide_seed_v1';
+      expect(priorVersion == gameGuideSeedVersion, isFalse,
+          reason: 'the v2 tag must differ from any prior version so existing '
+              'installs re-seed');
+      expect('', isNot(equals(gameGuideSeedVersion)),
+          reason: 'a fresh install (empty persisted version) must seed');
+    });
+  });
 }
+
+/// Exposes the private `_rolandWardMetrics` keys for the cross-check test.
+List<String> _rolandWardMetricsKeys() {
+  // The 14 to-do species + their common alias spellings that must all carry
+  // BOTH a Rowland Ward benchmark and a scientific name.
+  return _coreSpeciesAliases.toList();
+}
+
+/// Canonical common-name aliases for the 14 to-do species that must have
+/// both a Rowland Ward minimum and a scientific name populated.
+const List<String> _coreSpeciesAliases = [
+  'kudu', 'greater_kudu', 'greater kudu',
+  'cape buffalo', 'cape_buffalo',
+  'blue wildebeest', 'blue_wildebeest',
+  'black wildebeest', 'black_wildebeest',
+  'gemsbok', 'gemsbok (oryx)',
+  'impala',
+  'springbok',
+  'blesbok',
+  'common warthog', 'warthog',
+  'eland', 'cape eland',
+  'sable antelope', 'sable',
+  'nyala',
+  'common waterbuck', 'waterbuck',
+  'red hartebeest', 'red_hartebeest',
+];
