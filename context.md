@@ -828,6 +828,57 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   routing),
   `test/farm_config_test.dart` (NEW, 33 tests).
 
+### 16.9 Bug Report screenshot attachments (implemented 2026-08-15)
+- The in-app Bug Report modal (`BugReportModal`) now supports up to **5
+  screenshot attachments** as visual proof. Two entry points were added to
+  the form: **Take Photo** (native camera via `image_picker.pickImage`,
+  `ImageSource.camera`, `maxWidth/maxHeight: 1920`, quality 85) and **Add
+  from Gallery** (`image_picker.pickMultiImage`, quality 80, `limit` = the
+  remaining slots). Both are gated by a `_canAddScreenshot` cap so a reporter
+  cannot exceed the maximum; the cap is also re-checked after the multi-pick
+  returns in case the picker ignored `limit`.
+- Picked images render as a **horizontal thumbnail strip** (96×96, rounded)
+  with a per-image remove button (circular close badge), so the reporter can
+  preview and remove attachments before submission. A broken-image fallback
+  renders for an undecodable file.
+- On submit, each attached `XFile` is **compressed** through the central
+  `ImageService.compressExisting` (1280px, JPEG q75) and **uploaded** to
+  Firebase Storage at
+  `bug_report_attachments/{userId}/{timestamp}_{i}.jpg` via
+  `ImageService.uploadCompressedPhoto` (JPEG `SettableMetadata`). The
+  resulting download URLs are passed to
+  `FeedbackFirebaseService.submitBugReport(screenshotUrls:)`, which persists
+  them on the `bug_reports` doc as an `screenshotUrls` array. The upload is
+  **best-effort**: a failed per-image upload is logged (debugPrint) and does
+  not block the report itself (the report still submits with whatever URLs
+  succeeded; the support email handoff proceeds as before).
+- **Storage rules**: new `match /bug_report_attachments/{uid}/{fileName}`
+  block in `storage.rules` — owner-scoped writes
+  (`request.auth.uid == uid`); reads covered by the global authenticated-read
+  rule (admins reviewing the report need to view the attachments). No
+  `firestore.rules` change required (`bug_reports/{reportId}` create was
+  already `isSignedIn()`).
+- **Permissions**: Android `CAMERA` + `READ_MEDIA_IMAGES` (API 33+) and iOS
+  `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` /
+  `NSPhotoLibraryAddUsageDescription` were already declared in Phase 13
+  (package creator camera capture); no new native manifest entries needed.
+- **Testability**: `FeedbackFirebaseService` gained an injectable
+  `FirebaseFirestore` + `currentUserIdResolver` constructor seam so it can be
+  exercised against `fake_cloud_firestore` without a Firebase app.
+- **Tests**: `test/bug_report_screenshot_test.dart` (6 new, all pass) —
+  persists `screenshotUrls` when attachments provided; omits the field
+  entirely when none (legacy reports unaffected); empty-list treated as no
+  attachments; single-url preservation; standard audit fields
+  (`hunterId`/`timestamp`/`title`/`steps`/`severity`); feature-suggestion
+  path unaffected (no `screenshotUrls` field). Full suite 540 pass (was 534;
+  +6; no regressions).
+- Files: `lib/features/hunter_mode/presentation/bug_report_modal.dart`
+  (screenshot picker + preview strip + remove + upload-on-submit),
+  `lib/features/hunter_mode/services/feedback_firebase_service.dart`
+  (`screenshotUrls` param + injectable firestore/uid seam),
+  `storage.rules` (`bug_report_attachments/{uid}` block),
+  `test/bug_report_screenshot_test.dart` (NEW, 6 tests).
+
 ---
 
 ## 17. Project File Structure

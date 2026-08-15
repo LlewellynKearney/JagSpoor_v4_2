@@ -12,33 +12,50 @@ class FeedbackFirebaseService {
   static const String _bugReportsCollection = 'bug_reports';
   static const String _featureSuggestionsCollection = 'feature_suggestions';
 
+  final FirebaseFirestore _firestore;
+  final String? Function() _currentUserIdResolver;
+
+  /// Creates a service. Defaults to the global [FirebaseFirestore.instance]
+  /// + the live [FirebaseAuth] current user; tests may inject a
+  /// `fake_cloud_firestore` instance via [firestore] and a stub uid resolver
+  /// via [currentUserIdResolver] so the service runs without a Firebase app.
+  FeedbackFirebaseService({
+    FirebaseFirestore? firestore,
+    String? Function()? currentUserIdResolver,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _currentUserIdResolver =
+            currentUserIdResolver ?? _defaultUserIdResolver;
+
+  static String? _defaultUserIdResolver() =>
+      FirebaseAuth.instance.currentUser?.uid;
+
   /// Submits a bug report to the 'bug_reports' Firestore collection.
   ///
   /// Parameters:
   /// - [title]: The bug title/subject
   /// - [steps]: Steps to reproduce the bug
   /// - [severity]: Severity level (Low, Medium, Critical)
+  /// - [screenshotUrls]: Optional list of Firebase Storage download URLs for
+  ///   screenshot attachments the reporter added as visual proof. Omitted from
+  ///   the document when empty so legacy reports are unaffected.
   ///
   /// Returns a [Future] that completes when the document is successfully written.
   Future<void> submitBugReport({
     required String title,
     required String steps,
     required String severity,
+    List<String> screenshotUrls = const [],
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final hunterId = user?.uid;
-
     final document = <String, dynamic>{
       'title': title,
       'steps': steps,
       'severity': severity,
-      'hunterId': hunterId,
+      'hunterId': _currentUserIdResolver(),
       'timestamp': FieldValue.serverTimestamp(),
+      if (screenshotUrls.isNotEmpty) 'screenshotUrls': screenshotUrls,
     };
 
-    await FirebaseFirestore.instance
-        .collection(_bugReportsCollection)
-        .add(document);
+    await _firestore.collection(_bugReportsCollection).add(document);
   }
 
   /// Submits a feature suggestion to the 'feature_suggestions' Firestore collection.
@@ -54,19 +71,14 @@ class FeedbackFirebaseService {
     required String description,
     required String benefits,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final hunterId = user?.uid;
-
     final document = <String, dynamic>{
       'title': title,
       'description': description,
       'benefits': benefits,
-      'hunterId': hunterId,
+      'hunterId': _currentUserIdResolver(),
       'timestamp': FieldValue.serverTimestamp(),
     };
 
-    await FirebaseFirestore.instance
-        .collection(_featureSuggestionsCollection)
-        .add(document);
+    await _firestore.collection(_featureSuggestionsCollection).add(document);
   }
 }

@@ -5392,3 +5392,48 @@ catalog.
   `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
   `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
   `test/farm_config_test.dart` (NEW), `context.md` (16.8), `AGENTS.md`.
+
+## Phase 49 -- Bug Report screenshot attachments (added 2026-08-15)
+
+- The in-app Bug Report modal (`lib/features/hunter_mode/presentation/
+  bug_report_modal.dart`) now supports up to 5 screenshot attachments as
+  visual proof. Two entry points: **Take Photo** (`image_picker.pickImage`,
+  `ImageSource.camera`, `maxWidth/maxHeight: 1920`, quality 85) and **Add
+  from Gallery** (`image_picker.pickMultiImage`, quality 80, `limit` = the
+  remaining slots). Both gated by a `_canAddScreenshot` cap (re-checked
+  after the multi-pick returns).
+- Picked images render as a horizontal thumbnail strip (96x96, rounded) with
+  a per-image remove button (circular close badge) so the reporter can
+  preview + remove before submission. A broken-image fallback renders for an
+  undecodable file.
+- On submit each attached `XFile` is compressed through the central
+  `ImageService.compressExisting` (1280px, JPEG q75) and uploaded to Firebase
+  Storage at `bug_report_attachments/{userId}/{timestamp}_{i}.jpg` via
+  `ImageService.uploadCompressedPhoto`. The download URLs are passed to
+  `FeedbackFirebaseService.submitBugReport(screenshotUrls:)`, persisted on
+  the `bug_reports` doc as a `screenshotUrls` array. Best-effort: a failed
+  per-image upload is logged (debugPrint) and does not block the report.
+- `FeedbackFirebaseService` gained an injectable `FirebaseFirestore` +
+  `currentUserIdResolver` constructor seam (default = the global instance +
+  `FirebaseAuth.instance.currentUser?.uid`) so the service can be exercised
+  against `fake_cloud_firestore` without a Firebase app. The
+  `screenshotUrls` field is omitted from the doc entirely when empty so
+  legacy reports are unaffected.
+- **Storage rules**: new `match /bug_report_attachments/{uid}/{fileName}`
+  block in `storage.rules` -- owner-scoped writes
+  (`request.auth.uid == uid`); reads covered by the global authenticated-
+  read rule. No `firestore.rules` change required (`bug_reports/{reportId}`
+  create was already `isSignedIn()`).
+- **Permissions**: Android `CAMERA` + `READ_MEDIA_IMAGES` (API 33+) and iOS
+  camera/photo usage descriptions were already declared in Phase 13 (package
+  creator camera capture); no new native manifest entries needed.
+- **Verification**: `flutter analyze` lib/ + the new test -> 0 errors, 0
+  warnings. `flutter test` -> **540 pass** (was 534; +6 new in
+  `test/bug_report_screenshot_test.dart`; no regressions).
+- Files: `lib/features/hunter_mode/presentation/bug_report_modal.dart`
+  (screenshot picker + preview strip + remove + upload-on-submit),
+  `lib/features/hunter_mode/services/feedback_firebase_service.dart`
+  (`screenshotUrls` param + injectable firestore/uid seam),
+  `storage.rules` (`bug_report_attachments/{uid}` block),
+  `test/bug_report_screenshot_test.dart` (NEW, 6 tests), `context.md` (16.9),
+  `AGENTS.md`.
