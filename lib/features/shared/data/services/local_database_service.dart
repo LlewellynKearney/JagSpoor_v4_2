@@ -30,7 +30,7 @@ class LocalDatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -94,6 +94,35 @@ class LocalDatabaseService {
         updatedAt TEXT
       )
     ''');
+
+    // Create target_session_logs table for the Shot Group Target Analyzer
+    // history (a hunter's saved precision diagnostics, offline-first).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS target_session_logs (
+        id TEXT PRIMARY KEY,
+        firearmId TEXT,
+        firearmLabel TEXT,
+        distance REAL,
+        distanceUnit TEXT,
+        angularUnit TEXT,
+        clickValue REAL,
+        shotCount INTEGER,
+        extremeSpreadMm REAL,
+        extremeSpreadInches REAL,
+        extremeSpreadAngular REAL,
+        meanRadiusMm REAL,
+        meanRadiusAngular REAL,
+        offsetHorizontalMm REAL,
+        offsetVerticalMm REAL,
+        suggestedUpClicks INTEGER,
+        suggestedRightClicks INTEGER,
+        precisionCategory TEXT,
+        calibrated INTEGER,
+        aimPointDx REAL,
+        aimPointDy REAL,
+        createdAt TEXT
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -119,6 +148,38 @@ class LocalDatabaseService {
         await db.execute(
           "ALTER TABLE outfitter_packages ADD COLUMN basePrice REAL DEFAULT 0",
         );
+      } catch (_) {}
+    }
+    // Migrate from v3 to v4 - create target_session_logs table for the
+    // Shot Group Target Analyzer history.
+    if (oldVersion < 4) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS target_session_logs (
+            id TEXT PRIMARY KEY,
+            firearmId TEXT,
+            firearmLabel TEXT,
+            distance REAL,
+            distanceUnit TEXT,
+            angularUnit TEXT,
+            clickValue REAL,
+            shotCount INTEGER,
+            extremeSpreadMm REAL,
+            extremeSpreadInches REAL,
+            extremeSpreadAngular REAL,
+            meanRadiusMm REAL,
+            meanRadiusAngular REAL,
+            offsetHorizontalMm REAL,
+            offsetVerticalMm REAL,
+            suggestedUpClicks INTEGER,
+            suggestedRightClicks INTEGER,
+            precisionCategory TEXT,
+            calibrated INTEGER,
+            aimPointDx REAL,
+            aimPointDy REAL,
+            createdAt TEXT
+          )
+        ''');
       } catch (_) {}
     }
   }

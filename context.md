@@ -449,6 +449,43 @@ SA game, with color-coded zone highlighting, distance-scaled sizing, and
 shot-angle compensation (quartering-away/quartering-toward skew via lateral
 transformation matrices).
 
+### 9.7 Shot Group Target Analyzer (`shot_group_analyzer_screen.dart`)
+A calibrated computer-vision + geometry pipeline (replaces the legacy mock
+analyzer) for diagnosing rifle precision on a straight-on target photo. Location:
+`lib/features/hunter_mode/` (service `shot_group_analyzer_service.dart`, overlay
+`widgets/shot_group_target_overlay.dart`, screen
+`screens/shot_group_analyzer_screen.dart`).
+
+- **Real shot-hole detection**: dark-blob detection (luminance threshold +
+  4-connected-component labelling on a sampled grid) with circularity / size
+  gates that reject dust specks, the reference coin, and text strokes; each
+  accepted blob's centroid becomes a `ShotImpact` in full-resolution pixel
+  coordinates.
+- **Scale calibration** via a user-placed two-point `ScaleReference`
+  (`pxPerMm = pixelLength / knownLengthMm`); reference length is user-editable
+  (defaults: 5-Rand coin 26 mm, 1-inch grid 25.4 mm).
+- **Group geometry**: extreme spread (max pairwise distance + contributing
+  shot pair), mean radius (avg distance from the center of impact), and
+  center-of-impact offset from a marked point of aim — all calibrated, with
+  physically-exact angular conversions (1 MOA = 1.047" @100 yd; 1 MIL =
+  3.6" @100 yd; yards or meters).
+- **Suggested turret correction**: converts the COI offset to clicks at the
+  scope's per-click value, applying the opposite-direction dial convention.
+- **Firearm linking**: a `DropdownButtonFormField` populated strictly from the
+  Digital Firearm Safe (`InventoryBridge.watchSafeFirearms()` stream), rendered
+  as "make model (calibre)" via `RifleProfile.displayName`. The selected
+  firearm's id + label snapshot travel with the saved session.
+- **Offline session logging**: a completed analysis can be saved to the local
+  SQLite `target_session_logs` table (`TargetSessionLogManager`) — firearm
+  linkage, shot geometry, suggested clicks, and precision category — so a
+  hunter can review historical precision diagnostics off-grid. The table is
+  created/migrated by `LocalDatabaseService` (DB version 4).
+- **UI / accessibility**: theme-aware high-contrast colours throughout (the
+  low-contrast amber stat/click labels were replaced with the theme accent
+  against card backgrounds); `SafeArea` + `SafeBottomInset` scroll padding so
+  bottom controls / the system nav bar never clip content; the floating
+  capture buttons are `SafeArea`-wrapped.
+
 ---
 
 ## 10. Track (Spoor) Identifier

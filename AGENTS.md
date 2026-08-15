@@ -5035,3 +5035,97 @@ failures** for the first time in the project's tracked history.
   `macos/Flutter/GeneratedPluginRegistrant.swift`,
   `windows/flutter/generated_plugins.cmake`, `AGENTS.md`.
 
+
+
+## Phase 48 -- Shot Group Target Analyzer: UI clipping/contrast fix + firearm linking & offline logging (added 2026-08-15)
+
+Item: fix UI clipping, contrast, and feature enhancements in the Shot Group
+Target Analyzer screen.
+
+### 1. Screen overflow / hidden content (fixed)
+- The `ShotGroupAnalyzerScreen` body `SingleChildScrollView` used a flat
+  `EdgeInsets.all(12)` with no `SafeArea` and no bottom safe-area inset, so on
+  gesture-nav phones the bottom SAVE button + results panel rendered under the
+  Android 3-button / iOS home-indicator bar. The floating capture buttons were
+  also un-SafeArea'd.
+- Fix: wrapped the body in `SafeArea(top: false)` and switched the scroll
+  padding to `SafeBottomInset.paddingFor(context, horizontal: 12, top: 12)`
+  (the project's standard bottom-inset helper) so the last control scrolls
+  cleanly above the gesture bar. The empty state + the FAB row are now
+  `SafeArea`-wrapped too.
+
+### 2. Color scheme & contrast (fixed)
+- The screen + overlay used raw `Colors.amber` for stats, MOA/MIL labels, the
+  suggested-clicks line, the ANALYZE button, the auto-detect icon, and the
+  floating buttons. On the light theme (`#F4EFEA` background) amber/yellow is
+  low-contrast and hard to read.
+- Fix: every `Colors.amber` / `Colors.white` / `Colors.black` UI control on the
+  screen + overlay toolbar/hint was replaced with the theme-aware
+  `ThemeController` palette (`accentColor`, `textColor`, `subtitleColor`,
+  `cardColor`), with `selectedColor` on the `ToggleButtons`/`ChoiceChip`s set
+  to `textColor` over an `accentColor` fill so the active segment stays legible
+  in both modes. The `Colors.white24` dividers in the results panel became
+  `subtitleColor.withValues(alpha: 0.25)`. The `greenAccent` precision badge
+  became `Colors.green` (theme-stable).
+- The overlay painter's canvas elements (amber reference line, red extreme-
+  spread line, green COI, cyan aim crosshair, orange/red shot markers) are
+  drawn ON TOP of the target photo image, so their high-contrast hues are kept
+  intentionally -- they read against the photo, not the screen background.
+
+### 3. Firearm selection & target logging (new)
+- **Firearm selector**: a `DropdownButtonFormField<String>` (with
+  `DropdownButtonHideUnderline`) populated strictly from the Digital Firearm
+  Safe via `InventoryBridge.watchSafeFirearms()` (cached as a broadcast stream
+  in `initState` so a re-mounting `StreamBuilder` never throws "already
+  listened to"). Each item renders `RifleProfile.displayName`
+  ("make model (calibre)"); the value is guarded against a just-deleted firearm
+  so the dropdown never hits the "value not in items" assertion. When the safe
+  is empty the dropdown is disabled with a "Choose Firearm" hint and the empty
+  state surfaces "No firearms in safe yet -- add one in the Digital Firearm
+  Safe."
+- **Offline session logging**: new `TargetSessionLog` model
+  (`lib/features/hunter_mode/models/target_session_log.dart`) +
+  `TargetSessionLogManager` (`services/target_session_log_manager.dart`) that
+  persists a completed `ShotGroupAnalysis` (firearm id + label snapshot, shot
+  count, extreme spread / mean radius / COI offsets in mm + angular, suggested
+  clicks, precision category, calibrated flag, aim point, timestamp) to the
+  local SQLite `target_session_logs` table.
+- **Local DB migration**: `LocalDatabaseService` bumped to DB version 4 with a
+  new `target_session_logs` table (created in `_onCreate` + migrated in
+  `_onUpgrade` for existing v3 installs). The manager exposes
+  `saveSession` / `loadSessions` (newest-first) / `deleteSession`.
+- **SAVE TARGET SESSION button**: a `FilledButton.icon` rendered under the
+  results panel (only when an analysis exists) with a loading state
+  (`_savingSession`) + success/failure snackbars; `ScaffoldMessenger` is
+  captured before the async gap and `mounted` is guarded throughout.
+- **Picker error handling**: `_pickFromGallery` / `_capture` now wrap the
+  `image_picker` calls in `try/catch` and surface a red snackbar instead of an
+  unhandled exception (camera unavailable / permission denied).
+
+### 4. Tests
+- `test/target_session_log_test.dart` (NEW, 8 tests, all pass): model
+  `toMap`/`fromMap` round-trip (every field), missing-aim-point tolerance, unit
+  labels; the pure `TargetSessionLogManager.buildLog` helper; and a SQLite
+  integration group (real `sqflite_common_ffi` DB, no manager mocks) covering
+  save+load, newest-first ordering, delete, and empty-list. Uses the same
+  FFI + `LocalDatabaseService.resetForTest` isolation pattern as the mesh-sync
+  integration suite.
+
+### 5. Verification
+- `flutter analyze` (local Flutter 3.47.0 stable): 0 errors, 0 warnings in all
+  changed/new files. The single remaining issue in the screen is the
+  documented pre-existing `DropdownButtonFormField.value` deprecation info
+  (only flagged on Flutter >=3.33, NOT the CI 3.29.1 pin; the project uses
+  `value:` everywhere for cross-version compatibility).
+- `flutter test test/target_session_log_test.dart test/shot_group_analyzer_test.dart`:
+  19/19 pass (8 new + 11 existing). No regressions.
+- Files: `lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`
+  (rewritten), `lib/features/hunter_mode/widgets/shot_group_target_overlay.dart`
+  (theme-aware toolbar/hint), `lib/features/hunter_mode/models/target_session_log.dart`
+  (NEW), `lib/features/hunter_mode/services/target_session_log_manager.dart`
+  (NEW), `lib/features/shared/data/services/local_database_service.dart`
+  (DB v4 + target_session_logs table + migration), `test/target_session_log_test.dart`
+  (NEW), `context.md` (Section 9.7 Shot Group Target Analyzer), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec changes (pure on-device UI +
+  local SQLite logging; the firearm dropdown reads the existing owner-scoped
+  `firearms` collection whose rules are unchanged).

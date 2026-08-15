@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../services/shot_group_analyzer_service.dart';
 
 /// Interactive target overlay: renders the target photo with alignment
@@ -162,41 +163,46 @@ class _ShotGroupTargetOverlayState extends State<ShotGroupTargetOverlay> {
   }
 
   Widget _toolbar() {
+    final t = ThemeController.instance;
     return Wrap(
       spacing: 8,
       runSpacing: 6,
       children: [
-        _modeChip('Place Shots', _OverlayMode.placeShots, Icons.gps_fixed),
-        _modeChip('Calibrate Scale', _OverlayMode.calibrateRefA, Icons.straighten),
-        _modeChip('Mark Aim', _OverlayMode.markAim, Icons.center_focus_strong),
+        _modeChip('Place Shots', _OverlayMode.placeShots, Icons.gps_fixed, t),
+        _modeChip('Calibrate Scale', _OverlayMode.calibrateRefA, Icons.straighten, t),
+        _modeChip('Mark Aim', _OverlayMode.markAim, Icons.center_focus_strong, t),
         ActionChip(
           onPressed: () => setState(() => _guidesOn = !_guidesOn),
           avatar: Icon(Icons.grid_on,
               size: 16,
-              color: _guidesOn ? Colors.amber : Colors.white54),
+              color: _guidesOn ? t.accentColor : t.subtitleColor),
           label: Text('Guides',
-              style: TextStyle(color: Colors.white, fontSize: 11)),
-          backgroundColor: Colors.black54,
+              style: TextStyle(color: t.textColor, fontSize: 11)),
+          backgroundColor: t.cardColor,
+          side: BorderSide(color: t.accentColor.withValues(alpha: 0.3)),
         ),
         ActionChip(
           onPressed: _undoLast,
-          avatar: const Icon(Icons.undo, size: 16, color: Colors.white70),
-          label: const Text('Undo',
-              style: TextStyle(color: Colors.white, fontSize: 11)),
-          backgroundColor: Colors.black54,
+          avatar: Icon(Icons.undo, size: 16, color: t.subtitleColor),
+          label: Text('Undo',
+              style: TextStyle(color: t.textColor, fontSize: 11)),
+          backgroundColor: t.cardColor,
+          side: BorderSide(color: t.accentColor.withValues(alpha: 0.3)),
         ),
         ActionChip(
           onPressed: _shots.isEmpty ? null : _clearShots,
           avatar: const Icon(Icons.delete_sweep, size: 16, color: Colors.red),
           label: const Text('Clear',
               style: TextStyle(color: Colors.red, fontSize: 11)),
-          backgroundColor: Colors.black54,
+          backgroundColor: t.cardColor,
+          side: BorderSide(color: t.accentColor.withValues(alpha: 0.3)),
         ),
       ],
     );
   }
 
-  Widget _modeChip(String label, _OverlayMode target, IconData icon) {
+  Widget _modeChip(
+      String label, _OverlayMode target, IconData icon, ThemeController t) {
     final selected = _mode == target ||
         (target == _OverlayMode.calibrateRefA &&
             _mode == _OverlayMode.calibrateRefB);
@@ -206,20 +212,23 @@ class _ShotGroupTargetOverlayState extends State<ShotGroupTargetOverlay> {
         _mode = target;
         if (target == _OverlayMode.calibrateRefA) _refA = null;
       }),
-      avatar: Icon(icon, size: 16, color: selected ? Colors.black : Colors.amber),
+      avatar: Icon(icon, size: 16, color: selected ? t.textColor : t.accentColor),
       label: Text(label,
           style: TextStyle(
-              color: selected ? Colors.black : Colors.white, fontSize: 11)),
-      selectedColor: Colors.amber,
+              color: selected ? t.textColor : t.textColor, fontSize: 11)),
+      selectedColor: t.accentColor,
+      backgroundColor: t.cardColor,
+      side: BorderSide(color: t.accentColor.withValues(alpha: 0.3)),
     );
   }
 
   Widget _modeHint() {
+    final t = ThemeController.instance;
     final (text, color) = switch (_mode) {
-      _OverlayMode.placeShots => ('Tap shot holes on the target to place impacts.', Colors.white70),
-      _OverlayMode.calibrateRefA => ('Tap the first edge of the reference (coin / grid line).', Colors.amber),
-      _OverlayMode.calibrateRefB => ('Tap the opposite edge to set the ${_refLengthMm.toStringAsFixed(1)}mm span.', Colors.amber),
-      _OverlayMode.markAim => ('Tap the bullseye / point of aim.', Colors.cyanAccent),
+      _OverlayMode.placeShots => ('Tap shot holes on the target to place impacts.', t.subtitleColor),
+      _OverlayMode.calibrateRefA => ('Tap the first edge of the reference (coin / grid line).', t.accentColor),
+      _OverlayMode.calibrateRefB => ('Tap the opposite edge to set the ${_refLengthMm.toStringAsFixed(1)}mm span.', t.accentColor),
+      _OverlayMode.markAim => ('Tap the bullseye / point of aim.', Colors.cyan),
     };
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -240,10 +249,17 @@ class _ShotGroupTargetOverlayState extends State<ShotGroupTargetOverlay> {
                   child: TextFormField(
                     initialValue: _refLengthMm.toStringAsFixed(0),
                     keyboardType: TextInputType.number,
-                    style: const TextStyle(color: Colors.white, fontSize: 11),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: t.textColor, fontSize: 11),
+                    decoration: InputDecoration(
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                            color: t.accentColor.withValues(alpha: 0.4)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: t.accentColor),
+                      ),
                     ),
                     onChanged: (v) {
                       final val = double.tryParse(v);
@@ -253,7 +269,8 @@ class _ShotGroupTargetOverlayState extends State<ShotGroupTargetOverlay> {
                     },
                   ),
                 ),
-                const Text('mm', style: TextStyle(color: Colors.amber, fontSize: 11)),
+                Text('mm',
+                    style: TextStyle(color: t.accentColor, fontSize: 11)),
               ],
             ),
         ],
