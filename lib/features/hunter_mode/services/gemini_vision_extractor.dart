@@ -60,8 +60,9 @@ Fees: Dagfooi=Daily Rate; Slagfooi=Slaughter Fee; Gidskoste=Guide Fee; Wildrit=G
 You are an OCR + structured-data extractor for South African hunting price lists.
 Read the attached image/PDF and extract EVERY priced line item. Return ONLY a JSON
 array (no markdown, no prose). Each element must be:
-{"type":"species"|"fee","species":"<animal name as printed, Afrikaans or English>","sex":"<Bul/Ram/Koei/Ooi/Jongbul/Penkop/Knypkop/Male/Female or empty>","sizeRange":"<e.g. >50" or <20" or 40"-50" or empty>","priceZAR":<number, base price before commission>,"feeType":"<daily|slaughter|guide|gamedrive|vehicle|accommodation|meals|transport or empty>","displayLabel":"<the full original line text as printed>"}
+{"type":"species"|"fee","species":"<animal name as printed, Afrikaans or English>","sex":"<Bul/Ram/Koei/Ooi/Jongbul/Penkop/Knypkop/Male/Female or empty>","sizeRange":"<e.g. >50" or <20" or 40"-50" or empty>","priceZAR":<number, base price before commission>,"feeType":"<daily|slaughter|guide|gamedrive|vehicle|accommodation|meals|transport or empty>","quantityLimit":<integer max animals available/allowed for this line, or null when not stated>,"displayLabel":"<the full original line text as printed>"}
 - priceZAR is a number in Rand (strip the R / ZAR / spaces / thousand separators).
+- quantityLimit is the maximum number of animals available or allowed for that line (e.g. "x3", "max 5", "3 available", a "Qty" column). Use null when the price list does not state a limit.
 - Preserve the original printed species + sex wording in "species"/"sex"/"displayLabel"; do NOT translate.
 - For daily/slaughter/guide/game-drive/vehicle/accommodation/meals/transport lines use type "fee" and put the category in "feeType".
 - If a line has no price, omit it.

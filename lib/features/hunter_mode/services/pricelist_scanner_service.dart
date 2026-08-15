@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/services/gemini_config_service.dart';
 import '../../../core/services/offline_stream_guard.dart';
+import '../models/farm_config.dart';
 import 'gemini_vision_extractor.dart';
 import 'pricelist_text_parser.dart';
 
@@ -93,6 +94,7 @@ class PricelistScannerService {
       'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
       'hunterPriceFormatted': 'R${hunterPrice.toStringAsFixed(0)}',
       'commissionZAR': hunterPrice - basePrice,
+      if (item.quantityLimit != null) 'quantityLimit': item.quantityLimit,
     };
   }
 
@@ -322,6 +324,20 @@ class PricelistScannerService {
     final data = Map<String, dynamic>.from(snapshot.docs.first.data());
     data['id'] = snapshot.docs.first.id;
     return data;
+  }
+
+  /// Builds a structured hunting catalog for [farmId] from its most-recent
+  /// active scanned price list — the animals available for hunting (species,
+  /// sex/class, trophy size tier, price per animal, and quantity limit) plus
+  /// the farm's fee lines (daily / accommodation / vehicle / guide / etc.).
+  ///
+  /// Returns `null` when the farm has no active price list. Used by the Custom
+  /// Package Builder to render the species + lodging pickers from the
+  /// outfitter's live rates. Readable by signed-in hunters.
+  Future<FarmHuntingCatalog?> getFarmHuntingCatalog(String farmId) async {
+    final pricelist = await getActivePricelistForFarm(farmId);
+    if (pricelist == null) return null;
+    return FarmHuntingCatalog.fromPricelist(pricelist);
   }
 
   /// Retrieves all scanned price lists for a specific farm.

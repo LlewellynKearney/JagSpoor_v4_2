@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../core/services/payfast_checkout.dart';
+import '../models/farm_config.dart';
+import '../services/outfitter_enterprise_manager.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../widgets/booking_chat_thread.dart';
 
@@ -166,6 +168,8 @@ class _HunterCustomPackageBuilderScreenState
         'lineTotal': unit * qty,
         'outfitterBasePrice': item['outfitterBasePrice'] ?? 0.0,
         'hunterDisplayPriceZAR': unit,
+        if (item['quantityLimit'] != null)
+          'quantityLimit': item['quantityLimit'],
       });
     }
     return out;
@@ -246,10 +250,22 @@ class _HunterCustomPackageBuilderScreenState
   Future<void> _payDeposit() async {
     final bookingId = _createdBookingId;
     if (bookingId == null) return;
+    // Route the deposit to the farm's attached PayFast merchant account when
+    // one is configured; otherwise fall back to the platform default.
+    FarmPayFastProfile? farmProfile;
+    try {
+      farmProfile =
+          await OutfitterEnterpriseManager.instance.getFarmPayFastProfile(
+              widget.farmId);
+      if (!farmProfile.isConfigured) farmProfile = null;
+    } catch (_) {
+      farmProfile = null;
+    }
     final ok = await PayfastCheckout.launchDeposit(
       bookingId: bookingId,
       amount: _deposit,
       itemName: 'JagSpoor Custom Package Deposit $bookingId',
+      farmProfile: farmProfile,
     );
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -883,6 +899,8 @@ class _ItemQtyRow extends StatelessWidget {
     final sizeRange = item['trophySizeRange'] as String? ?? '';
     final isSelected = qty > 0;
     final lineTotal = unitPrice * qty;
+    final quantityLimit = _resolveQtyLimit(item);
+    final atLimit = quantityLimit != null && qty >= quantityLimit;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -920,6 +938,8 @@ class _ItemQtyRow extends StatelessWidget {
                       if (sexLabel.isNotEmpty)
                         _metaChip(sexLabel),
                       if (sizeRange.isNotEmpty) _metaChip(sizeRange),
+                      if (quantityLimit != null)
+                        _metaChip('max $quantityLimit'),
                     ],
                   ),
                 ],
@@ -936,10 +956,23 @@ class _ItemQtyRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _qtyStepper(),
+          _qtyStepper(atLimit: atLimit),
         ],
       ),
     );
+  }
+
+  /// Resolves the per-line quantity limit from the item map (int / num /
+  /// numeric string). Returns `null` when unset (unlimited).
+  static int? _resolveQtyLimit(Map<String, dynamic> item) {
+    final v = item['quantityLimit'];
+    if (v is int) return v > 0 ? v : null;
+    if (v is num) return v.toInt() > 0 ? v.toInt() : null;
+    if (v is String) {
+      final n = int.tryParse(v);
+      return (n != null && n > 0) ? n : null;
+    }
+    return null;
   }
 
   Widget _metaChip(String label) {
@@ -956,7 +989,7 @@ class _ItemQtyRow extends StatelessWidget {
     );
   }
 
-  Widget _qtyStepper() {
+  Widget _qtyStepper({required bool atLimit}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -971,7 +1004,12 @@ class _ItemQtyRow extends StatelessWidget {
                 fontWeight: FontWeight.bold),
           ),
         ),
-        _btn(icon: Icons.add_rounded, onTap: () => onChanged(qty + 1)),
+        // Cap the '+' button at the per-line quantity limit so a hunter
+        // cannot book more animals than the outfitter has available.
+        _btn(
+          icon: Icons.add_rounded,
+          onTap: atLimit ? null : () => onChanged(qty + 1),
+        ),
       ],
     );
   }

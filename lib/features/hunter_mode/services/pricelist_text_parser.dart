@@ -35,6 +35,12 @@ class PricelistItem {
   /// 'gamedrive', 'vehicle', 'accommodation', 'meals', 'transport', or ''.
   final String feeType;
 
+  /// Maximum quantity available/allowed for this line item at the farm
+  /// (e.g. "only 3 kudu bulls available this season"). `null` means unlimited
+  /// / not specified by the price list. The Custom Package Builder caps the
+  /// hunter's quantity stepper at this value.
+  final int? quantityLimit;
+
   const PricelistItem({
     required this.displayLabel,
     required this.speciesName,
@@ -45,6 +51,7 @@ class PricelistItem {
     required this.priceZAR,
     required this.itemType,
     required this.feeType,
+    this.quantityLimit,
   });
 
   Map<String, dynamic> toMap() => {
@@ -58,12 +65,14 @@ class PricelistItem {
         'outfitterBasePrice': priceZAR,
         'itemType': itemType,
         'feeType': feeType,
+        if (quantityLimit != null) 'quantityLimit': quantityLimit,
       };
 
   @override
   String toString() =>
       'PricelistItem($displayLabel | $speciesName | sex=$sex | '
-      'size=$trophySizeRange | R$priceZAR | $itemType/$feeType)';
+      'size=$trophySizeRange | R$priceZAR | $itemType/$feeType'
+      '${quantityLimit != null ? ' | qty<=$quantityLimit' : ''})';
 }
 
 /// Pure-Dart, dependency-free parser that dynamically extracts structured
@@ -218,7 +227,14 @@ class PricelistTextParser {
     final sizeResult = _popSizeRange(line);
     final working = sizeResult.remaining.trim();
 
-    final priceResult = _extractPrice(working);
+    // Extract a quantity limit (e.g. "x3", "max 5", "qty 2", "(3 avail)",
+    // "5 available") BEFORE the price, so the qty number is not swallowed by
+    // the greedy price matcher (which matches digit+space runs).
+    final qtyResult = _popQuantityLimit(working);
+    final workingNoQty = qtyResult.remaining.trim();
+    final quantityLimit = qtyResult.limit;
+
+    final priceResult = _extractPrice(workingNoQty);
     if (priceResult == null) return null;
     final priceZAR = priceResult.value;
     final remainder = priceResult.strippedLine.trim();
@@ -238,6 +254,7 @@ class PricelistTextParser {
         priceZAR: priceZAR,
         itemType: 'species',
         feeType: '',
+        quantityLimit: quantityLimit,
       );
     }
 
@@ -254,9 +271,57 @@ class PricelistTextParser {
         priceZAR: priceZAR,
         itemType: 'fee',
         feeType: fee,
+        quantityLimit: quantityLimit,
       );
     }
     return null;
+  }
+
+  /// Pops a quantity-limit token from [text], returning the parsed limit (or
+  /// `null`) and the text with the token removed. Recognises common SA
+  /// price-list notations:
+  ///   "x3", "X3", "max 5", "max5", "qty 2", "qty:2", "limit 4",
+  ///   "(3 avail)", "(3 available)", "(max 3)", "3 available".
+  /// Returns `null` (no limit) when no token is found. Pure / unit-testable.
+  _QtyResult _popQuantityLimit(String text) {
+    // (max 3) / (3 avail) / (3 available)
+    var m = RegExp(r'\(\s*(?:max\s*|qty[:\s]*)?(\d{1,3})\s*(?:avail(?:able)?)?\s*\)',
+            caseSensitive: false)
+        .firstMatch(text);
+    if (m != null) {
+      final n = int.tryParse(m.group(1)!);
+      if (n != null && n > 0) {
+        return _QtyResult(n, text.replaceFirst(m.group(0)!, ''));
+      }
+    }
+    // max 5 / max5 / qty 2 / qty:2 / limit 4
+    m = RegExp(r'\b(?:max|qty|limit)[:\s]*(\d{1,3})\b', caseSensitive: false)
+        .firstMatch(text);
+    if (m != null) {
+      final n = int.tryParse(m.group(1)!);
+      if (n != null && n > 0) {
+        return _QtyResult(n, text.replaceFirst(m.group(0)!, ''));
+      }
+    }
+    // leading/trailing "x3" / "X3" (only when prefixed by space or start, to
+    // avoid stripping the "x" in "6.5x55")
+    m = RegExp(r'(?:^|\s)[xX](\d{1,3})\b').firstMatch(text);
+    if (m != null) {
+      final n = int.tryParse(m.group(1)!);
+      if (n != null && n > 0) {
+        return _QtyResult(n, text.replaceFirst(m.group(0)!, ''));
+      }
+    }
+    // trailing "3 available" / "3 avail"
+    m = RegExp(r'\b(\d{1,3})\s+avail(?:able)?\b', caseSensitive: false)
+        .firstMatch(text);
+    if (m != null) {
+      final n = int.tryParse(m.group(1)!);
+      if (n != null && n > 0) {
+        return _QtyResult(n, text.replaceFirst(m.group(0)!, ''));
+      }
+    }
+    return _QtyResult(null, text);
   }
 
   /// Longest-match species resolver (case-insensitive). Returns the canonical
@@ -412,6 +477,12 @@ class _SexMatch {
   _SexMatch({required this.original, required this.bucket});
 }
 
+class _QtyResult {
+  final int? limit;
+  final String remaining;
+  _QtyResult(this.limit, this.remaining);
+}
+
 /// Normalises a Gemini Vision structured-JSON response (a list of raw
 /// entries with species/sex/sizeRange/priceZAR/type fields) into
 /// [PricelistItem]s by routing every field through the same Afrikaans-aware
@@ -430,6 +501,10 @@ class GeminiResultNormalizer {
       final priceZAR = _toPrice(raw['priceZAR'] ?? raw['price'] ?? raw['outfitterBasePrice']);
       if (priceZAR <= 0) continue;
       final displayLabel = (raw['displayLabel'] ?? raw['label'] ?? rawSpecies).toString();
+      final quantityLimit = _toQuantityLimit(
+        raw['quantityLimit'] ?? raw['quantityAvailable'] ??
+            raw['maxQuantity'] ?? raw['qty'] ?? raw['available'],
+      );
 
       if (type == 'fee' || rawSpecies.isEmpty) {
         final fee = parser._resolveFee('$rawSpecies $displayLabel') ??
@@ -445,6 +520,7 @@ class GeminiResultNormalizer {
           priceZAR: priceZAR,
           itemType: 'fee',
           feeType: fee,
+          quantityLimit: quantityLimit,
         ));
         continue;
       }
@@ -463,6 +539,7 @@ class GeminiResultNormalizer {
         priceZAR: priceZAR,
         itemType: 'species',
         feeType: '',
+        quantityLimit: quantityLimit,
       ));
     }
     return items;
@@ -486,6 +563,21 @@ class GeminiResultNormalizer {
       return parsePrice(m.group(0)!) ?? 0;
     }
     return 0;
+  }
+
+  /// Coerces a Gemini quantity-limit value (num / numeric string) into a
+  /// positive `int?`, or `null` when absent / non-positive / unparseable.
+  static int? _toQuantityLimit(dynamic v) {
+    if (v == null) return null;
+    int? n;
+    if (v is int) {
+      n = v;
+    } else if (v is num) {
+      n = v.toInt();
+    } else {
+      n = int.tryParse(v.toString());
+    }
+    return (n != null && n > 0) ? n : null;
   }
 }
 

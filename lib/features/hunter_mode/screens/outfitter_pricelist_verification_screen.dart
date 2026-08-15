@@ -100,6 +100,8 @@ class _OutfitterPricelistVerificationScreenState
           'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
           'hunterPriceFormatted': 'R${displayPrice.toStringAsFixed(0)}',
           'commissionZAR': displayPrice - basePrice,
+          if (item['quantityLimit'] != null)
+            'quantityLimit': item['quantityLimit'],
         });
       }
 

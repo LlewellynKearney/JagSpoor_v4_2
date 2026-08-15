@@ -721,16 +721,6 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `Share.share` (legacy/empty-photo entries still share).
 
 ### 16.7 Factory ammunition pre-population from the bundled asset catalog (implemented 2026-08-15)
-The Ammunition Type Selection screen's "No factory ammunition profiles found"
-empty state is resolved for every caliber present in the bundled asset
-database. The factory-load cascading selector (Brand → Grain → Description) now
-reads directly from the local `assets/data/ammunition_database.csv` catalog via
-`FactoryAmmunitionRepository` (`lib/features/ballistics/data/factory_ammunition_repository.dart`)
-instead of relying solely on the Firestore `factory_ammunition` seed (which
-requires a network round-trip + a successful one-time seed + the deployed
-rules). Selecting a firearm caliber now searches the bundled catalog and
-populates the standard factory ammo profiles immediately — offline, on a fresh
-install, with no network and no Firestore seed.
 - `FactoryAmmoProfile` (brand, caliber, grain, description, bc, muzzle
   velocity) + a `displayLabel` helper.
 - `FactoryAmmunitionRepository` singleton: `loadAll()` reads + caches the CSV
@@ -748,6 +738,95 @@ install, with no network and no Firestore seed.
   asset). The Firestore `factory_ammunition` seed (`BallisticsSeeder`) is
   unchanged — it remains the server-side catalog for any non-screen consumers;
   the repository is the screen's authoritative offline-first source.
+
+### 16.8 Outfitter Mode refactor — AI price-list quantity limits, per-farm cost config, per-farm PayFast routing (implemented 2026-08-15)
+- **AI price-list scanner — quantity limits**: `PricelistItem` gained a
+  `quantityLimit` (`int?`) field. The parser now extracts the limit from
+  common SA price-list notations (`x3`, `max 5`, `qty 2`, `(3 avail)`,
+  `5 available`) and pops the token **before** price extraction so the qty
+  digit is not swallowed by the greedy price matcher. The Gemini Vision
+  instruction prompt now explicitly asks for `quantityLimit` (max animals
+  available/allowed per line, or null). `GeminiResultNormalizer` carries
+  `quantityLimit` (plus `quantityAvailable`/`maxQuantity`/`qty`/`available`
+  aliases) through structured JSON. The limit is persisted in
+  `scanned_pricelists.items[].quantityLimit` (verification screen +
+  `_itemToExtractedMap`).
+- **Per-farm hunting catalog**: `FarmHuntingCatalog` (+ `FarmAnimalListing`
+  + `FarmFeeListing`) is a pure transformation of a `scanned_pricelists` doc
+  that groups items into animals (species, sex/class, trophy size tier, price
+  per animal, quantity limit) and fees (daily/accommodation/vehicle/etc.).
+  `PricelistScannerService.getFarmHuntingCatalog(farmId)` returns it for the
+  farm's most-recent active price list (readable by signed-in hunters).
+- **Per-farm cost config**: `FarmCostConfig` (daily rate per hunter /
+  observer, accommodation/night, catering/day, vehicle fee, guide fee, plus
+  a free-form `extraOptions` list) is persisted as a nested `costConfig` map
+  on the `farms/{farmId}` document via
+  `OutfitterEnterpriseManager.updateFarmCosts`. The Edit Farm sheet in the
+  Enterprise Control Panel gained a "COST RATES (PACKAGE BUILDER)" section
+  editing all six rate fields.
+- **Per-farm PayFast routing**: `FarmPayFastProfile` (merchant id, merchant
+  key, passphrase, live-vs-sandbox toggle) is persisted as a nested
+  `payfastProfile` map on the farm document via
+  `OutfitterEnterpriseManager.updateFarmPayFastProfile` /
+  `clearFarmPayFastProfile` / `getFarmPayFastProfile`.
+  `PayfastCheckout.resolveEndpoint(profile)` routes the deposit to the farm's
+  merchant account when `isConfigured`, otherwise the platform default
+  sandbox. The Custom Package Builder's `_payDeposit` resolves the farm's
+  profile and passes it to `PayfastCheckout.launchDeposit`, so deposits for
+  custom packages route directly to the outfitter's PayFast account. A
+  `PayfastCheckout.openPayFastRegistration()` helper + an Edit Farm "Register
+  a new PayFast account" button link to the PayFast merchant-application
+  page.
+- **Custom Package Builder — quantity capping**: the per-line quantity
+  stepper's `+` button is disabled (and a `max N` chip is shown) when the
+  selected quantity reaches the line's `quantityLimit`, so a hunter cannot
+  book more animals than the outfitter has available. The booked
+  `quantityLimit` is carried through `_collectSelected` onto the booking doc
+  for outfitter visibility.
+- **Security note**: the per-farm PayFast merchant key + passphrase are
+  credentials stored on the owner-scoped farm document. For a production
+  hardening pass, prefer a Cloud Function that holds the passphrase
+  server-side and signs the PayFast request server-to-server; this MVP
+  enables the direct-routing requested. `firestore.rules` already permits
+  the owning outfitter to update `farms/{farmId}` (so `updateFarmCosts` /
+  `updateFarmPayFastProfile` / `clearFarmPayFastProfile` succeed) and signed-
+  in hunters to read `farms` (so `getFarmPayFastProfile` resolves); no rules
+  change is required.
+- **Tests**: `test/farm_config_test.dart` (33 new, all pass) —
+  `FarmCostConfig` empty/toMap/fromMap/copyWith/round-trip,
+  `FarmPayFastProfile.isConfigured`/toMap/fromMap,
+  `PayfastCheckout.resolveEndpoint` (default sandbox, farm sandbox, farm live,
+  not-configured fallback), `buildReturnUrl` encoding,
+  `FarmHuntingCatalog.fromPricelist` (animal/fee split, hunterPrice
+  derivation, qty-limit collapse on null/zero/negative/string, empty),
+  `PricelistTextParser` quantity extraction (`x3`/`max 5`/`(2 avail)`/`5
+  available`/none/label-stripped), `GeminiResultNormalizer` quantityLimit
+  carry-through. Full suite 534 pass (was 501; +33; no regressions).
+- Files: `lib/features/hunter_mode/models/farm_config.dart` (catalog models
+  added; cloud_firestore import removed as unused),
+  `lib/features/hunter_mode/services/pricelist_text_parser.dart`
+  (`quantityLimit` field + `_popQuantityLimit` order fix + Gemini
+  normalizer `_toQuantityLimit`),
+  `lib/features/hunter_mode/services/gemini_vision_extractor.dart`
+  (instruction asks for `quantityLimit`),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (`_itemToExtractedMap` persists `quantityLimit`; `getFarmHuntingCatalog`
+  added),
+  `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`
+  (`quantityLimit` persisted on save),
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`
+  (`updateFarmCosts` / `updateFarmPayFastProfile` /
+  `clearFarmPayFastProfile` / `getFarmPayFastProfile`),
+  `lib/core/services/payfast_checkout.dart` (`resolveEndpoint` +
+  `PayFastEndpoint` + per-farm `launchDeposit` + `openPayFastRegistration` +
+  `payfastRegistrationUrl`),
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`
+  (Edit Farm sheet: Cost Rates section + PayFast Profile section + Register
+  button + `_parseOptDouble` / `_sectionHeader` helpers),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (qty-limit cap + `quantityLimit` carry-through + per-farm PayFast deposit
+  routing),
+  `test/farm_config_test.dart` (NEW, 33 tests).
 
 ---
 

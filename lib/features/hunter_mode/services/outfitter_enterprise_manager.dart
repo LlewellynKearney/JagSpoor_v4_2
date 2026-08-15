@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/farm_config.dart';
+
 class OutfitterEnterpriseManager {
   static final OutfitterEnterpriseManager _instance =
       OutfitterEnterpriseManager._internal();
@@ -100,6 +102,92 @@ class OutfitterEnterpriseManager {
     };
 
     await _firestore.collection('farms').doc(farmId).update(updates);
+  }
+
+  // ==========================================
+  // PER-FARM COST CONFIGURATION
+  // ==========================================
+  /// Updates the per-farm cost configuration (daily rates, accommodation,
+  /// catering, vehicle/guide fees, extra package-builder options) used by the
+  /// Custom Package Builder. Stored as a nested `costConfig` map on the farm
+  /// document (merge, so sibling farm fields are preserved).
+  ///
+  /// Throws: Exception if the user is not authenticated, [farmId] is empty,
+  /// or the write fails. Only the owning outfitter may call this (enforced by
+  /// `firestore.rules` `isOwnerOf('outfitterId')` on `farms/{farmId}`).
+  Future<void> updateFarmCosts({
+    required String farmId,
+    required FarmCostConfig costConfig,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to update farm costs');
+    }
+    if (farmId.trim().isEmpty) {
+      throw Exception('Farm ID cannot be empty');
+    }
+    await _firestore.collection('farms').doc(farmId).update({
+      FarmConfigField.costConfig: costConfig.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ==========================================
+  // PER-FARM PAYFAST PROFILE
+  // ==========================================
+  /// Attaches a PayFast merchant profile (merchant id / key / passphrase) to
+  /// a farm so hunter deposit payments for custom packages built against that
+  /// farm route directly to the farm's PayFast account. Stored as a nested
+  /// `payfastProfile` map on the farm document.
+  ///
+  /// **Security note**: the merchant key + passphrase are credentials stored
+  /// on the owner-scoped farm document. For a production hardening pass,
+  /// prefer a Cloud Function that holds the passphrase server-side and signs
+  /// the PayFast request. This MVP enables the direct-routing requested.
+  ///
+  /// Throws: Exception if the user is not authenticated, [farmId] is empty,
+  /// or the write fails.
+  Future<void> updateFarmPayFastProfile({
+    required String farmId,
+    required FarmPayFastProfile profile,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to update PayFast profile');
+    }
+    if (farmId.trim().isEmpty) {
+      throw Exception('Farm ID cannot be empty');
+    }
+    await _firestore.collection('farms').doc(farmId).update({
+      FarmConfigField.payfastProfile: profile.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Clears the PayFast profile from a farm (reverts deposits to the platform
+  /// default merchant). Removes the `payfastProfile` field entirely.
+  Future<void> clearFarmPayFastProfile({required String farmId}) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to clear PayFast profile');
+    }
+    if (farmId.trim().isEmpty) {
+      throw Exception('Farm ID cannot be empty');
+    }
+    await _firestore.collection('farms').doc(farmId).update({
+      FarmConfigField.payfastProfile: FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Reads the PayFast profile attached to [farmId], or
+  /// [FarmPayFastProfile.empty] when none is configured. Used by the Custom
+  /// Package Builder to route the deposit to the farm's merchant account.
+  Future<FarmPayFastProfile> getFarmPayFastProfile(String farmId) async {
+    if (farmId.trim().isEmpty) return FarmPayFastProfile.empty;
+    final doc = await _firestore.collection('farms').doc(farmId).get();
+    if (!doc.exists) return FarmPayFastProfile.empty;
+    final data = doc.data();
+    final raw = data?[FarmConfigField.payfastProfile];
+    if (raw is! Map) return FarmPayFastProfile.empty;
+    return FarmPayFastProfile.fromMap(Map<String, dynamic>.from(raw));
   }
 
   // ==========================================

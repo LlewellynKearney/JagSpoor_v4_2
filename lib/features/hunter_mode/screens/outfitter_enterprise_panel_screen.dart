@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../core/services/payfast_checkout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/farm_config.dart';
 import '../services/outfitter_enterprise_manager.dart';
 
 class OutfitterEnterprisePanelScreen extends StatefulWidget {
@@ -33,6 +35,20 @@ class _OutfitterEnterprisePanelScreenState
   final _editContactNumberController = TextEditingController();
   final _editRegistrationNumberController = TextEditingController();
 
+  // Per-farm cost config controllers (Edit Farm sheet).
+  final _dailyRateHunterController = TextEditingController();
+  final _dailyRateObserverController = TextEditingController();
+  final _accommodationController = TextEditingController();
+  final _cateringController = TextEditingController();
+  final _vehicleFeeController = TextEditingController();
+  final _guideFeeController = TextEditingController();
+
+  // Per-farm PayFast profile controllers (Edit Farm sheet).
+  final _payfastMerchantIdController = TextEditingController();
+  final _payfastMerchantKeyController = TextEditingController();
+  final _payfastPassphraseController = TextEditingController();
+  bool _payfastUseLive = false;
+
   String? _selectedFarmId;
   bool _isAddingFarm = false;
   bool _isAssigningManager = false;
@@ -52,6 +68,15 @@ class _OutfitterEnterprisePanelScreenState
     _editSizeHectaresController.dispose();
     _editContactNumberController.dispose();
     _editRegistrationNumberController.dispose();
+    _dailyRateHunterController.dispose();
+    _dailyRateObserverController.dispose();
+    _accommodationController.dispose();
+    _cateringController.dispose();
+    _vehicleFeeController.dispose();
+    _guideFeeController.dispose();
+    _payfastMerchantIdController.dispose();
+    _payfastMerchantKeyController.dispose();
+    _payfastPassphraseController.dispose();
     super.dispose();
   }
 
@@ -174,6 +199,36 @@ class _OutfitterEnterprisePanelScreenState
     _editRegistrationNumberController.text =
         (data['registrationNumber'] ?? '').toString();
 
+    // Per-farm cost config.
+    final costConfig =
+        FarmCostConfig.fromMap((data['costConfig'] as Map?)?.cast());
+    _dailyRateHunterController.text = costConfig.dailyRateHunter == null
+        ? ''
+        : costConfig.dailyRateHunter!.toStringAsFixed(0);
+    _dailyRateObserverController.text = costConfig.dailyRateObserver == null
+        ? ''
+        : costConfig.dailyRateObserver!.toStringAsFixed(0);
+    _accommodationController.text = costConfig.accommodationPerNight == null
+        ? ''
+        : costConfig.accommodationPerNight!.toStringAsFixed(0);
+    _cateringController.text = costConfig.cateringPerDay == null
+        ? ''
+        : costConfig.cateringPerDay!.toStringAsFixed(0);
+    _vehicleFeeController.text = costConfig.vehicleFee == null
+        ? ''
+        : costConfig.vehicleFee!.toStringAsFixed(0);
+    _guideFeeController.text = costConfig.guideFee == null
+        ? ''
+        : costConfig.guideFee!.toStringAsFixed(0);
+
+    // Per-farm PayFast profile.
+    final payfast =
+        FarmPayFastProfile.fromMap((data['payfastProfile'] as Map?)?.cast());
+    _payfastMerchantIdController.text = payfast.merchantId;
+    _payfastMerchantKeyController.text = payfast.merchantKey;
+    _payfastPassphraseController.text = payfast.passphrase;
+    _payfastUseLive = payfast.useLive;
+
     final editFormKey = GlobalKey<FormState>();
 
     showModalBottomSheet<void>(
@@ -293,11 +348,179 @@ class _OutfitterEnterprisePanelScreenState
                       TextFormField(
                         controller: _editRegistrationNumberController,
                         style: TextStyle(color: theme.textColor),
-                        textInputAction: TextInputAction.done,
+                        textInputAction: TextInputAction.next,
                         decoration: _inputDecoration(
                           hint: 'Farm / concession registration no.',
                           label: 'Registration Number',
                           theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _sectionHeader(theme, 'COST RATES (PACKAGE BUILDER)',
+                          Icons.payments_outlined),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _dailyRateHunterController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Daily Rate / Hunter (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _dailyRateObserverController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Daily Rate / Observer (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _accommodationController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Accommodation / Night (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _cateringController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Catering / Day (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _vehicleFeeController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Vehicle Fee (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _guideFeeController,
+                              style: TextStyle(color: theme.textColor),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration: _inputDecoration(
+                                hint: '0',
+                                label: 'Guide Fee (R)',
+                                theme: theme,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      _sectionHeader(theme, 'PAYFAST PAYOUT PROFILE',
+                          Icons.account_balance_wallet_outlined),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Attach a PayFast merchant account to route this farm\'s '
+                        'deposits directly to the outfitter. Leave blank to use '
+                        'the platform default.',
+                        style:
+                            TextStyle(color: theme.subtitleColor, fontSize: 11),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _payfastMerchantIdController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: '10000100',
+                          label: 'PayFast Merchant ID',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _payfastMerchantKeyController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'merchant key',
+                          label: 'PayFast Merchant Key',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _payfastPassphraseController,
+                        style: TextStyle(color: theme.textColor),
+                        textInputAction: TextInputAction.next,
+                        decoration: _inputDecoration(
+                          hint: 'optional passphrase',
+                          label: 'PayFast Passphrase',
+                          theme: theme,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          'Use LIVE PayFast host (uncheck for sandbox)',
+                          style:
+                              TextStyle(color: theme.textColor, fontSize: 13),
+                        ),
+                        value: _payfastUseLive,
+                        onChanged: (v) =>
+                            setSheetState(() => _payfastUseLive = v),
+                        activeColor: theme.accentColor,
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => PayfastCheckout.openPayFastRegistration(),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                        label: const Text(
+                            'Register a new PayFast account'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.accentColor,
+                          side: BorderSide(
+                              color: theme.accentColor.withValues(alpha: 0.5)),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -370,6 +593,24 @@ class _OutfitterEnterprisePanelScreenState
       }
     }
 
+    // Parse cost-config fields (blank -> null = not configured).
+    final costConfig = FarmCostConfig(
+      dailyRateHunter: _parseOptDouble(_dailyRateHunterController.text),
+      dailyRateObserver: _parseOptDouble(_dailyRateObserverController.text),
+      accommodationPerNight: _parseOptDouble(_accommodationController.text),
+      cateringPerDay: _parseOptDouble(_cateringController.text),
+      vehicleFee: _parseOptDouble(_vehicleFeeController.text),
+      guideFee: _parseOptDouble(_guideFeeController.text),
+    );
+
+    // Parse PayFast profile (blank merchant id/key -> empty = not configured).
+    final payfastProfile = FarmPayFastProfile(
+      merchantId: _payfastMerchantIdController.text.trim(),
+      merchantKey: _payfastMerchantKeyController.text.trim(),
+      passphrase: _payfastPassphraseController.text.trim(),
+      useLive: _payfastUseLive,
+    );
+
     try {
       await OutfitterEnterpriseManager.instance.updateFarm(
         farmId: farmId,
@@ -385,6 +626,28 @@ class _OutfitterEnterprisePanelScreenState
                 ? null
                 : _editRegistrationNumberController.text.trim(),
       );
+
+      // Persist per-farm cost config (best-effort, non-fatal).
+      try {
+        await OutfitterEnterpriseManager.instance
+            .updateFarmCosts(farmId: farmId, costConfig: costConfig);
+      } catch (_) {
+        // Cost-config write is non-fatal; the farm details already saved.
+      }
+
+      // Persist / clear the per-farm PayFast profile.
+      try {
+        if (payfastProfile.isConfigured) {
+          await OutfitterEnterpriseManager.instance
+              .updateFarmPayFastProfile(
+                  farmId: farmId, profile: payfastProfile);
+        } else {
+          await OutfitterEnterpriseManager.instance
+              .clearFarmPayFastProfile(farmId: farmId);
+        }
+      } catch (_) {
+        // PayFast-profile write is non-fatal.
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -408,6 +671,35 @@ class _OutfitterEnterprisePanelScreenState
         setSheetState(() => _isUpdatingFarm = false);
       }
     }
+  }
+
+  /// Parses a trimmed text field into a nullable double (blank -> null).
+  /// Returns `null` for a non-numeric value (the caller treats null as
+  /// "not configured"); the validation is intentionally lenient for optional
+  /// cost fields.
+  static double? _parseOptDouble(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
+  Widget _sectionHeader(
+      ThemeController theme, String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: theme.accentColor, size: 18),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            color: theme.textColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ],
+    );
   }
 
   @override

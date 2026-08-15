@@ -1,5 +1,7 @@
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../features/hunter_mode/models/farm_config.dart';
+
 /// PayFast **sandbox** checkout launcher.
 ///
 /// JagSpoor's published sandbox test credentials (NOT production secrets).
@@ -8,8 +10,15 @@ class PayfastCheckout {
   PayfastCheckout._();
 
   static const String _sandboxHost = 'https://sandbox.payfast.co.za';
+  static const String _liveHost = 'https://www.payfast.co.za';
   static const String _merchantId = '10000100';
   static const String _merchantKey = '46f0cd694581a';
+
+  /// PayFast merchant account registration URL — opened by the farm-config
+  /// "Register a new PayFast account" button when a farm has no PayFast
+  /// profile attached.
+  static const String payfastRegistrationUrl =
+      'https://payfast.co.za/apply-now';
 
   /// Instant Transaction Notification endpoint — the deployed
   /// `payfastITNHandler` Cloud Function. Update region/host after deploy.
@@ -39,12 +48,37 @@ class PayfastCheckout {
     return '$returnScheme?booking_id=$encodedId&status=success';
   }
 
-  /// Builds the PayFast sandbox payment URL from [bookingId] + [amount] and
-  /// launches it in the external browser. The booking id is passed as
-  /// `m_payment_id` so the ITN handler can reconcile the payment back to the
-  /// booking (it flips the booking `status` to `Paid` on COMPLETE), and as the
-  /// `booking_id` query param on the per-booking return deep link so the app
-  /// can detect the browser-checkout return. (v4.5 to-do Item #10.)
+  /// Resolves the PayFast host + merchant credentials for a deposit launch.
+  /// When [farmProfile] is configured (`isConfigured`), the farm's merchant
+  /// id / key / live-vs-sandbox host are used so the deposit routes directly
+  /// to the farm's PayFast account; otherwise the platform default sandbox
+  /// credentials are used. Pure / unit-testable.
+  static PayFastEndpoint resolveEndpoint([
+    FarmPayFastProfile? farmProfile,
+  ]) {
+    if (farmProfile != null && farmProfile.isConfigured) {
+      return PayFastEndpoint(
+        host: farmProfile.useLive ? _liveHost : _sandboxHost,
+        merchantId: farmProfile.merchantId,
+        merchantKey: farmProfile.merchantKey,
+      );
+    }
+    return PayFastEndpoint(
+      host: _sandboxHost,
+      merchantId: _merchantId,
+      merchantKey: _merchantKey,
+    );
+  }
+
+  /// Builds the PayFast payment URL from [bookingId] + [amount] and launches
+  /// it in the external browser. When [farmProfile] is supplied and
+  /// configured, the deposit routes to that farm's PayFast merchant account
+  /// (per-farm direct payout routing); otherwise the platform default sandbox
+  /// merchant is used. The booking id is passed as `m_payment_id` so the ITN
+  /// handler can reconcile the payment back to the booking (it flips the
+  /// booking `status` to `Paid` on COMPLETE), and as the `booking_id` query
+  /// param on the per-booking return deep link so the app can detect the
+  /// browser-checkout return.
   ///
   /// Returns `false` when the URL cannot be launched (so the caller can show a
   /// graceful SnackBar); `true` when the external checkout was opened.
@@ -52,10 +86,12 @@ class PayfastCheckout {
     required String bookingId,
     required double amount,
     String? itemName,
+    FarmPayFastProfile? farmProfile,
   }) async {
+    final endpoint = resolveEndpoint(farmProfile);
     final params = <String, String>{
-      'merchant_id': _merchantId,
-      'merchant_key': _merchantKey,
+      'merchant_id': endpoint.merchantId,
+      'merchant_key': endpoint.merchantKey,
       'return_url': buildReturnUrl(bookingId),
       'cancel_url': cancelUrl,
       'notify_url': notifyUrl,
@@ -67,7 +103,7 @@ class PayfastCheckout {
         .map((e) =>
             '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
         .join('&');
-    final uri = Uri.parse('$_sandboxHost/eng/process?$query');
+    final uri = Uri.parse('${endpoint.host}/eng/process?$query');
 
     if (!await canLaunchUrl(uri)) {
       return false;
@@ -75,4 +111,35 @@ class PayfastCheckout {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
     return true;
   }
+
+  /// Opens the PayFast merchant-account registration page in the external
+  /// browser. Used by the farm-config "Register a new PayFast account" button.
+  /// Returns whether a browser accepted the handoff.
+  static Future<bool> openPayFastRegistration() async {
+    final uri = Uri.parse(payfastRegistrationUrl);
+    if (!await canLaunchUrl(uri)) return false;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    return true;
+  }
+}
+
+/// Resolved PayFast endpoint (host + merchant credentials) for a deposit
+/// launch — either a per-farm profile or the platform default. Pure value
+/// type returned by [PayfastCheckout.resolveEndpoint].
+class PayFastEndpoint {
+  final String host;
+  final String merchantId;
+  final String merchantKey;
+
+  const PayFastEndpoint({
+    required this.host,
+    required this.merchantId,
+    required this.merchantKey,
+  });
+
+  bool get isLive => host.contains('://www.payfast.co.za');
+
+  @override
+  String toString() =>
+      'PayFastEndpoint($merchantId @ ${isLive ? "live" : "sandbox"})';
 }

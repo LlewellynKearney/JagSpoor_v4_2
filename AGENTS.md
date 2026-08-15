@@ -5335,3 +5335,60 @@ catalog.
   (FutureBuilder over the repository + typed profile access + matcher
   delegation + import cleanup), `test/factory_ammunition_repository_test.dart`
   (NEW, 26 tests), `context.md` (16.7), `AGENTS.md`.
+
+## Phase 48 -- Outfitter Mode refactor: AI price-list quantity limits, per-farm cost config, per-farm PayFast routing (added 2026-08-15)
+
+- **AI price-list scanner -- quantity limits**: `PricelistItem.quantityLimit`
+  (`int?`) is now extracted from common SA price-list notations (`x3`,
+  `max 5`, `qty 2`, `(3 avail)`, `5 available`). The qty token is popped
+  BEFORE price extraction in `_parseLine` (was after) so the greedy price
+  matcher (matches digit+space runs) no longer swallows the qty digit
+  ("Blesbok R2000 5 available" -> limit 5, not price 20005). The Gemini Vision
+  instruction now asks for `quantityLimit`; `GeminiResultNormalizer` carries
+  it through (with `quantityAvailable`/`maxQuantity`/`qty`/`available`
+  aliases) via a clean `_toQuantityLimit` helper. Persisted on
+  `scanned_pricelists.items[].quantityLimit` (verification screen +
+  `_itemToExtractedMap`).
+- **Per-farm hunting catalog**: `FarmHuntingCatalog` +
+  `FarmAnimalListing` + `FarmFeeListing` (pure transformation of a
+  `scanned_pricelists` doc) groups items into animals (species, sex/class,
+  trophy size tier, price/animal, quantity limit) + fees.
+  `PricelistScannerService.getFarmHuntingCatalog(farmId)` returns it from the
+  farm's most-recent active price list (readable by signed-in hunters).
+- **Per-farm cost config**: `FarmCostConfig` (daily rate hunter/observer,
+  accommodation/night, catering/day, vehicle, guide + `extraOptions`) is
+  persisted as a nested `costConfig` map on `farms/{farmId}` via
+  `OutfitterEnterpriseManager.updateFarmCosts`. The Enterprise Control Panel
+  Edit Farm sheet gained a "COST RATES (PACKAGE BUILDER)" section.
+- **Per-farm PayFast routing**: `FarmPayFastProfile` (merchant id, key,
+  passphrase, live/sandbox) persisted as a nested `payfastProfile` map via
+  `OutfitterEnterpriseManager.updateFarmPayFastProfile` /
+  `clearFarmPayFastProfile` / `getFarmPayFastProfile`.
+  `PayfastCheckout.resolveEndpoint(profile)` routes the deposit to the farm's
+  merchant account when configured, else the platform default sandbox. The
+  Custom Package Builder `_payDeposit` resolves the farm profile + passes it
+  to `PayfastCheckout.launchDeposit`. A "Register a new PayFast account"
+  button (`PayfastCheckout.openPayFastRegistration`) links to the merchant-
+  application page.
+- **Custom Package Builder -- quantity capping**: the per-line `+` stepper is
+  disabled (and a `max N` chip renders) when the selected qty reaches the
+  line's `quantityLimit`, so a hunter cannot over-book. The booked
+  `quantityLimit` is carried through `_collectSelected` onto the booking doc.
+- **Security note**: per-farm PayFast merchant key + passphrase are stored on
+  the owner-scoped farm doc. For production, prefer a Cloud Function that
+  signs the PayFast request server-side; this MVP enables the direct routing
+  requested. No `firestore.rules` change required (farms update is already
+  owner-scoped; farms read is already signed-in).
+- **Verification**: `flutter analyze` lib/ -> 0 errors, 0 warnings. `flutter
+  test` -> **534 pass** (was 501; +33 new in `test/farm_config_test.dart`;
+  no regressions).
+- Files: `lib/features/hunter_mode/models/farm_config.dart`,
+  `lib/features/hunter_mode/services/pricelist_text_parser.dart`,
+  `lib/features/hunter_mode/services/gemini_vision_extractor.dart`,
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`,
+  `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `lib/core/services/payfast_checkout.dart`,
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
+  `test/farm_config_test.dart` (NEW), `context.md` (16.8), `AGENTS.md`.
