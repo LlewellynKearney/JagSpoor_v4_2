@@ -5635,3 +5635,58 @@ catalog.
   6 tests), `context.md` (16.12), `AGENTS.md`. No Firestore / Storage /
   rules / index / pubspec changes (pure UI + a reusable widget + manifest
   permission).
+
+## Phase 53 -- AdaptiveImage strict URI-path-handling pipeline (added 2026-08-15)
+
+- Fixed the URI-path-handling bug in the shared `AdaptiveImage` widget
+  (`lib/utils/image_helper.dart`) where a local-looking path whose file did
+  not exist (e.g. `/data/local/tmp/missing.jpg` after a reinstall / new
+  device / scoped-storage migration) was wrongly passed to
+  `CachedNetworkImage` as if it were a URL — the network loader hung/threw
+  because a local path is not a valid absolute http URI.
+- **New strict fallback pipeline** (matches the 4 instruction points):
+  1. **Local file** — `_isLocalPath` treats a string as local if it starts
+     with `/data/`, `/storage/`, `file://`, OR satisfies
+     `p.isAbsolute(path)` (the `path` package, already a direct main dep
+     `^1.9.0`). The `file://` scheme is stripped via
+     `Uri.parse(path).toFilePath()` (raw-substring fallback on parse
+     failure), and `File(normalizedPath).existsSync()` is verified BEFORE
+     rendering `Image.file(File(normalizedPath))` directly. A decode failure
+     is logged and falls to the placeholder (NOT retried as a network URL).
+  2. **Network image** — `CachedNetworkImage` is used ONLY when the string
+     explicitly starts with `http://` or `https://`. Network failures
+     (HTTP 403/404/socket) are logged with the exact exception and fall to
+     the placeholder.
+  3. **Placeholder** — when the string is neither an existing local file
+     NOR an `http(s)` URL, `PhotoUnavailablePlaceholder` (or the caller's
+     `errorWidget`) is rendered. A non-existent local path, `content://`
+     Android media URI, or bare token is NEVER passed to
+     `CachedNetworkImage`.
+- **Pure functions extracted** for testability: `isLocalImagePath(path)` and
+  `normalizeLocalImagePath(path)` are now top-level pure functions (the
+  widget delegates to them). This decouples the URI-path-handling logic
+  from the widget tree so it is unit-testable WITHOUT mounting an `Image`
+  widget (real image decode via `dart:ui` is flaky/hangs in a headless test
+  sandbox, so the decode-dependent widget tests were replaced with
+  pure-function unit tests).
+- **Tests**: `test/adaptive_image_pipeline_test.dart` rewritten — 22 tests
+  (was 6), all pass:
+  - Widget branch tests (no decode): empty path → placeholder; stale local
+    path (missing) → placeholder NOT CachedNetworkImage; non-existent
+    `file://` URI → placeholder NOT CachedNetworkImage; remote `http(s)`
+    URL → CachedNetworkImage; non-URL non-local string → placeholder NOT
+    CachedNetworkImage; `content://` URI → placeholder NOT CachedNetworkImage;
+    caller `errorWidget` honoured for non-URL paths; caller `errorWidget`
+    plumbed to the network stage for http(s) URLs.
+  - Pure-function unit tests (instructions 1 & 2): `isLocalImagePath` —
+    `/data/`, `/storage/`, `file://`, POSIX absolute all local;
+    `http(s)`/`content://`/bare-token/relative/empty all NOT local.
+    `normalizeLocalImagePath` — strips `file://` via `Uri.toFilePath()`
+    (`file:///data/local/tmp/x.png` → `/data/local/tmp/x.png`); plain
+    filesystem path + http URL returned unchanged.
+- **Verification**: `flutter analyze` lib/ + test/ -> 0 errors, 0 warnings.
+  `flutter test` -> **562 pass** (was 546; +16 net, no regressions).
+- Files: `lib/utils/image_helper.dart` (strict pipeline + extracted pure
+  functions), `test/adaptive_image_pipeline_test.dart` (rewritten, 22
+  tests), `context.md` (16.13), `AGENTS.md`. No Firestore / Storage /
+  rules / index / pubspec / manifest changes (pure logic + tests).
