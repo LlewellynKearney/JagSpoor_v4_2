@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
-import '../data/caliber_normalizer.dart';
+import '../data/factory_ammunition_repository.dart';
 
 class AmmunitionTypeSelectionScreen extends StatefulWidget {
   final ThemeController theme;
@@ -42,39 +42,34 @@ class _AmmunitionTypeSelectionScreenState
   String? _selectedPropellantType;
 
   Future<List<QuerySnapshot>>? _bulletsAndPropellantsFuture;
+
+  /// Factory ammunition profiles loaded from the bundled asset catalog
+  /// (`assets/data/ammunition_database.csv`) via [FactoryAmmunitionRepository].
+  /// Offline-first: populated the moment a caliber is selected, independent of
+  /// the Firestore seed (which requires a network round-trip + successful
+  /// one-time seed + deployed rules). Resolves the "No factory ammunition
+  /// profiles found" empty state for every caliber present in the asset DB.
+  Future<List<FactoryAmmoProfile>>? _factoryAmmoFuture;
+  String? _factoryAmmoCaliberKey;
+
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   bool isCaliberMatch(String? weaponCaliber, String? dbCaliber) {
-    if (weaponCaliber == null || dbCaliber == null) return false;
-    String clean(String s) =>
-        s.replaceAll(RegExp(r'[\s\-\.]'), '').toLowerCase();
-    String wClean = clean(weaponCaliber);
-    String dClean = clean(dbCaliber);
-    if ((wClean == "243" || wClean == "6mm") &&
-        (dClean.contains("243") || dClean.contains("6mm"))) {
-      return true;
-    }
-    return wClean.contains(dClean) || dClean.contains(wClean);
+    return FactoryAmmunitionRepository.matchesCaliber(weaponCaliber, dbCaliber);
   }
 
-  /// Builds a Firestore stream for factory ammunition with normalized caliber variations.
-  /// Uses CaliberNormalizer to generate comprehensive variant list for robust matching.
-  Stream<QuerySnapshot> _buildFactoryAmmoStream() {
+  /// Builds a [Future] that resolves to the factory ammunition profiles for the
+  /// firearm's caliber, loaded from the bundled asset catalog. Cached per
+  /// caliber so re-building the form (e.g. toggling fields) does not re-read
+  /// the asset.
+  Future<List<FactoryAmmoProfile>> _loadFactoryAmmo() {
     final caliber = widget.firearm['caliber'] ?? '';
-    final caliberVariations = CaliberNormalizer.getVariants(caliber);
-
-    // An empty `whereIn` array is rejected by Firestore ("A non-empty array is
-    // required"), which would surface as a stream error. Return a stable empty
-    // stream instead so the dropdown renders its empty/warning state cleanly.
-    if (caliberVariations.isEmpty) {
-      return const Stream.empty();
+    if (_factoryAmmoFuture == null || _factoryAmmoCaliberKey != caliber) {
+      _factoryAmmoCaliberKey = caliber;
+      _factoryAmmoFuture =
+          FactoryAmmunitionRepository.instance.getProfilesForCaliber(caliber);
     }
-
-    // Use whereIn with all normalized variations for robust matching
-    return FirebaseFirestore.instance
-        .collection('factory_ammunition')
-        .where('caliber', whereIn: caliberVariations)
-        .snapshots();
+    return _factoryAmmoFuture!;
   }
 
   @override
@@ -464,8 +459,8 @@ class _AmmunitionTypeSelectionScreenState
                 // Factory Ammunition Cascading Form
                 Form(
                   key: _formKey,
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: _buildFactoryAmmoStream(),
+                  child: FutureBuilder<List<FactoryAmmoProfile>>(
+                    future: _loadFactoryAmmo(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
                         return Text(
@@ -477,13 +472,11 @@ class _AmmunitionTypeSelectionScreenState
                         return const Center(child: CircularProgressIndicator());
                       }
 
-                      final allAmmo = snapshot.data?.docs ?? [];
+                      final allAmmo = snapshot.data ?? const [];
                       final caliber = widget.firearm['caliber'] ?? '';
                       final filteredAmmo =
-                          allAmmo.where((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final ammoCal = data['caliber']?.toString() ?? '';
-                            return isCaliberMatch(caliber, ammoCal);
+                          allAmmo.where((profile) {
+                            return isCaliberMatch(caliber, profile.caliber);
                           }).toList();
 
                       if (filteredAmmo.isEmpty) {
@@ -492,13 +485,7 @@ class _AmmunitionTypeSelectionScreenState
 
                       final brands =
                           filteredAmmo
-                              .map(
-                                (doc) =>
-                                    (doc.data()
-                                            as Map<String, dynamic>)['brand']
-                                        ?.toString() ??
-                                    '',
-                              )
+                              .map((p) => p.brand)
                               .where((b) => b.isNotEmpty)
                               .toSet()
                               .toList();
@@ -514,21 +501,8 @@ class _AmmunitionTypeSelectionScreenState
 
                       final grains =
                           filteredAmmo
-                              .where(
-                                (doc) =>
-                                    (doc.data()
-                                        as Map<String, dynamic>)['brand'] ==
-                                    _selectedBrand,
-                              )
-                              .map((doc) {
-                                final data = doc.data() as Map<String, dynamic>;
-                                final grainVal =
-                                    data['bulletgrain'] ?? data['bulletGrain'];
-                                return int.tryParse(
-                                      grainVal?.toString() ?? '',
-                                    ) ??
-                                    0;
-                              })
+                              .where((p) => p.brand == _selectedBrand)
+                              .map((p) => p.grain)
                               .where((g) => g > 0)
                               .toSet()
                               .toList();
@@ -544,26 +518,10 @@ class _AmmunitionTypeSelectionScreenState
 
                       final descriptions =
                           filteredAmmo
-                              .where((doc) {
-                                final data = doc.data() as Map<String, dynamic>;
-                                final grainVal =
-                                    data['bulletgrain'] ?? data['bulletGrain'];
-                                final grainInt =
-                                    int.tryParse(grainVal?.toString() ?? '') ??
-                                    0;
-                                return data['brand'] == _selectedBrand &&
-                                    grainInt == _selectedGrain;
-                              })
-                              .map(
-                                (doc) =>
-                                    (doc.data()
-                                            as Map<
-                                              String,
-                                              dynamic
-                                            >)['description']
-                                        ?.toString() ??
-                                    '',
-                              )
+                              .where((p) =>
+                                  p.brand == _selectedBrand &&
+                                  p.grain == _selectedGrain)
+                              .map((p) => p.description)
                               .where((d) => d.isNotEmpty)
                               .toSet()
                               .toList();

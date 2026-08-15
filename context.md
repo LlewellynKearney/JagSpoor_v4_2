@@ -720,6 +720,35 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `Share.shareXFiles`; when no photo resolves it falls back to text-only
   `Share.share` (legacy/empty-photo entries still share).
 
+### 16.7 Factory ammunition pre-population from the bundled asset catalog (implemented 2026-08-15)
+The Ammunition Type Selection screen's "No factory ammunition profiles found"
+empty state is resolved for every caliber present in the bundled asset
+database. The factory-load cascading selector (Brand → Grain → Description) now
+reads directly from the local `assets/data/ammunition_database.csv` catalog via
+`FactoryAmmunitionRepository` (`lib/features/ballistics/data/factory_ammunition_repository.dart`)
+instead of relying solely on the Firestore `factory_ammunition` seed (which
+requires a network round-trip + a successful one-time seed + the deployed
+rules). Selecting a firearm caliber now searches the bundled catalog and
+populates the standard factory ammo profiles immediately — offline, on a fresh
+install, with no network and no Firestore seed.
+- `FactoryAmmoProfile` (brand, caliber, grain, description, bc, muzzle
+  velocity) + a `displayLabel` helper.
+- `FactoryAmmunitionRepository` singleton: `loadAll()` reads + caches the CSV
+  once (process-lifetime cache); `getProfilesForCaliber(caliber)` returns the
+  matching profiles using a strict, synonym-aware matcher.
+- Caliber matching (`matchesCaliber`): exact normalized equality → curated
+  `CaliberNormalizer` variant set membership → boundary-aware bidirectional
+  contains. The boundary check rejects digit-adjacent false positives (e.g.
+  `9mm` no longer matches `7.62x39mm`'s `39mm` suffix). A `_canonicalize` step
+  maps regional/commercial synonyms the curated normalizer does not enumerate
+  (`9mm Par` / `9mm Parabellum` → `9mm Luger`; `7.62 Soviet` → `7.62x39mm`).
+- The screen's `StreamBuilder<QuerySnapshot>` over `factory_ammunition` was
+  replaced with a `FutureBuilder<List<FactoryAmmoProfile>>` over the
+  repository (caliber-keyed cache so re-opening the form does not re-read the
+  asset). The Firestore `factory_ammunition` seed (`BallisticsSeeder`) is
+  unchanged — it remains the server-side catalog for any non-screen consumers;
+  the repository is the screen's authoritative offline-first source.
+
 ---
 
 ## 17. Project File Structure

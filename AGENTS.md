@@ -5219,3 +5219,119 @@ Target Analyzer screen.
   AGENTS.md.
 - No Firestore rules / index / Storage / pubspec changes (pure client-side
   share composition + a dropdown-key fix).
+
+
+## Phase 50 -- Factory ammunition pre-population from the bundled asset catalog (added 2026-08-15)
+
+Item: pre-populate factory ammunition profiles from the local asset database
+when selecting calibers, so the Ammunition Type Selection screen never shows
+"No factory ammunition profiles found" for a caliber that exists in the bundled
+catalog.
+
+### 1. Root cause of the empty state
+- The factory-load cascading selector (Brand -> Grain -> Description) in
+  `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`
+  read from the Firestore `factory_ammunition` collection via a
+  `StreamBuilder<QuerySnapshot>` (`_buildFactoryAmmoStream` ->
+  `.where('caliber', whereIn: caliberVariations).snapshots()`).
+- That Firestore collection is populated ONLY by the one-time
+  `BallisticsSeeder.seedAmmunition` startup seed from
+  `assets/data/ammunition_database.csv`. The empty state appeared whenever the
+  seed had not yet run / failed (e.g. permission-denied before the Phase 37
+  rules deploy) / the device was offline with no cache / the curated
+  `CaliberNormalizer` variant list did not include the user's exact spelling.
+  So a valid caliber present in the asset CSV could still render an empty
+  selector because the lookup depended on a networked, seeded Firestore
+  collection rather than the bundled asset.
+
+### 2. Offline-first `FactoryAmmunitionRepository` (NEW)
+- New `lib/features/ballistics/data/factory_ammunition_repository.dart`:
+  - `FactoryAmmoProfile` (brand, caliber, grain, description, bc,
+    muzzleVelocityFps) + `displayLabel` ("brand . 168 gr . description").
+  - `FactoryAmmunitionRepository` singleton. `loadAll()` reads
+    `assets/data/ammunition_database.csv` via `rootBundle` once and caches the
+    parsed list for the process lifetime (subsequent lookups are synchronous
+    + O(n) over the ~300-row catalog). `getProfilesForCaliber(caliber)`
+    returns the matching profiles. `cached` exposes the loaded catalog; a
+    `@visibleForTesting resetCache()` + `parseCsv` static method make the
+    parsing contract unit-testable without `rootBundle`.
+  - **Caliber matching** (`matchesCaliber`, pure static, shared with the
+    screen's `isCaliberMatch`): priority (1) exact normalized equality;
+    (2) curated `CaliberNormalizer.getVariants` set membership (handles
+    `.308 Win` <-> `308 Cal` / `7.62 NATO`, `9mm` <-> `9mm Luger`, `.30-06 Sprg`
+    <-> `30-06 Springfield`, etc.); (3) boundary-aware bidirectional contains.
+    The boundary check (`_boundaryContains`) requires the needle to sit at a
+    digit boundary in the haystack, so `9mm` matches `9mm Luger` (normalized
+    `9mmluger`, boundary after = `l`) but NOT `7.62x39mm` (the `9mm` in
+    `39mm` is preceded by digit `3` and is rejected) -- a real false-positive
+    the prior loose `contains` matcher had. When the caller does not pass a
+    pre-computed variant set, the matcher derives one (`_variantSet`) so it
+    is self-contained.
+  - **Synonym canonicalization** (`_canonicalize`): maps regional/commercial
+    spellings the curated normalizer does not enumerate -- `9mm Par` /
+    `9mm Parabellum` -> `9mm Luger` (the CSV's canonical 9mm spelling),
+    `7.62 Soviet` -> `7.62x39mm` -- applied before variant generation so the
+    curated 9mm / 7.62x39 branches resolve. (The task brief named "9mm Par"
+    explicitly.)
+  - De-duplicates catalog rows by (brand, caliber, grain, description).
+
+### 3. Screen wiring (`ammunition_type_selection_screen.dart`)
+- `_buildFactoryAmmoStream` (the Firestore `StreamBuilder` source) was
+  replaced with `_loadFactoryAmmo()` -- a caliber-keyed
+  `Future<List<FactoryAmmoProfile>>` cache that calls
+  `FactoryAmmunitionRepository.instance.getProfilesForCaliber(caliber)`.
+- The factory-form `StreamBuilder<QuerySnapshot>` became a
+  `FutureBuilder<List<FactoryAmmoProfile>>`; the `filteredAmmo` / `brands` /
+  `grains` / `descriptions` derivation now reads typed `FactoryAmmoProfile`
+  fields (`p.brand`, `p.grain`, `p.description`) instead of
+  `Map<String,dynamic>` field accesses (`data['bulletgrain'] ?? data['bulletGrain']`,
+  etc.), and the per-row `isCaliberMatch` filter is delegated to
+  `FactoryAmmunitionRepository.matchesCaliber`. The empty-state
+  (`_buildEmptyAmmoWarning`) is now reached ONLY for calibers genuinely
+  absent from the bundled catalog.
+- The now-unused `caliber_normalizer.dart` import was removed (the repository
+  owns variant generation); `cloud_firestore` is still imported for the
+  custom-handloads (bullets/propellants) flow + the saved-configuration write.
+
+### 4. Tests
+- `test/factory_ammunition_repository_test.dart` (NEW, 26 tests, all pass):
+  - `parseCsv` (7): header + data rows; BC parsing; `gr` suffix stripping;
+    empty/blank content; skips empty brand/caliber rows; non-numeric grain ->
+    0; `displayLabel` composition.
+  - `matchesCaliber` (8): exact match; `9mm` <-> `9mm Luger`; `9mm Par` <->
+    `9mm Luger` (synonym); `.308 Win` <-> `308 Cal` / `7.62 NATO` (curated);
+    `.30-06 Sprg` <-> `30-06 Springfield`; `243` <-> `6mm` (special case);
+    unrelated calibers do not match; `9mm` does NOT match `7.62x39mm`
+    (boundary false-positive guard); null/blank -> false.
+  - `getProfilesForCaliber` filtered (5): 9mm matches 9mm + 9mm Luger rows
+    (not 7.62x39mm); .308 Win matches .308 Win rows; blank -> empty;
+    unrelated -> empty; de-duplication.
+  - Live asset integration (6, real `rootBundle`): loads the bundled catalog
+    + finds 9mm profiles; resolves `.308 Win`; resolves `9mm Par` to 9mm
+    Luger (the empty-state fix for the named caliber); blank/null -> empty
+    (no crash); a caliber absent from the catalog -> empty; catalog cache is
+    reused across lookups (same instance, no re-read).
+
+### 5. Verification
+- `flutter analyze` (local Flutter 3.47.0 stable): **0 errors, 0 warnings**
+  in all new/changed files
+  (`factory_ammunition_repository.dart`,
+  `ammunition_type_selection_screen.dart`,
+  `factory_ammunition_repository_test.dart`). The only remaining issues in
+  the screen are the documented pre-existing
+  `DropdownButtonFormField.value` deprecation infos (flagged on Flutter
+  >=3.33 only; the CI pin is 3.29.1 and the project uses `value:` everywhere
+  for cross-version compatibility). `lib/` baseline unchanged.
+  `analysis_options.yaml` auto-touched by the analyzer was reverted before
+  commit.
+- `flutter test` (full suite): **all 501 tests pass** (+26 vs the Phase-49
+  475-pass baseline, exactly the new repository tests; no regressions).
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  asset read + UI; `csv` was already a dependency used by `BallisticsSeeder`;
+  the Firestore `factory_ammunition` seed is unchanged and remains the
+  server-side catalog for non-screen consumers).
+- Files: `lib/features/ballistics/data/factory_ammunition_repository.dart`
+  (NEW), `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`
+  (FutureBuilder over the repository + typed profile access + matcher
+  delegation + import cleanup), `test/factory_ammunition_repository_test.dart`
+  (NEW, 26 tests), `context.md` (16.7), `AGENTS.md`.
