@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../../services/location_resolver_service.dart';
 import '../../utils/image_helper.dart';
+import '../../widgets/photo_unavailable_placeholder.dart';
 import 'edit_trophy_screen.dart';
 import 'services/trophy_share_composer.dart';
 
@@ -224,23 +225,8 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
               ),
             ),
           ),
-          errorWidget: Container(
-            color: widget.theme.cardColor,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.broken_image,
-                  size: 48,
-                  color: widget.theme.subtitleColor,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Photo unavailable',
-                  style: TextStyle(color: widget.theme.subtitleColor),
-                ),
-              ],
-            ),
+          errorWidget: PhotoUnavailablePlaceholder(
+            backgroundColor: widget.theme.cardColor,
           ),
         ),
       ),

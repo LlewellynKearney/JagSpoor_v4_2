@@ -5568,3 +5568,70 @@ catalog.
   `test/firearm_dropdown_selector_test.dart` (NEW, 6 tests),
   `context.md` (16.11), `AGENTS.md`. No Firestore / Storage / rules / index /
   pubspec changes (pure UI + a reusable widget).
+
+## Phase 52 -- Resilient trophy image fallback pipeline + PhotoUnavailablePlaceholder (added 2026-08-15)
+
+- Fixed the "Photo unavailable" broken-image issue on the Trophy Room details
+  screen by hardening the shared `AdaptiveImage` widget
+  (`lib/utils/image_helper.dart`) — the central image renderer used by
+  `trophy_detail_screen.dart`, `trophy_room_screen.dart`, AND
+  `firearm_detail_screen.dart` (all three benefit). The constructor API is
+  unchanged, so all callers remain compatible.
+- **3-stage resilient fallback pipeline**:
+  1. **Local file** — if the path looks local (`file://`, POSIX absolute,
+     Windows drive path, or `./`), strip the `file://` scheme and verify
+     `File(localPath).existsSync()` BEFORE attempting `Image.file`. A decode
+     failure (corrupt bytes / permission error) is logged and falls through
+     to stage 2.
+  2. **Network image** — for a remote URL (`http`/`https`) OR a local path
+     whose file no longer exists, render via `CachedNetworkImage`. Network
+     failures (HTTP 403 Forbidden, 404 Not Found, socket/SSL/storage errors)
+     are logged with the exact exception and fall through to stage 3.
+  3. **Placeholder** — when every source has failed, render the reusable
+     `PhotoUnavailablePlaceholder` (or the caller-supplied `errorWidget`).
+- **New reusable widget** `lib/widgets/photo_unavailable_placeholder.dart`
+  (`PhotoUnavailablePlaceholder`): neutral broken-image state, theme-aware,
+  optional `icon`/`label`/`backgroundColor` overrides. **No raw path or HTTP
+  status is surfaced to end users** — exact failure diagnostics go to
+  `debugPrint` only (dev logs), satisfying the security guideline that error
+  messages must not expose sensitive/internal path information.
+- **Explicit error logging**: both the `Image.file` `errorBuilder` and the
+  `CachedNetworkImage` `errorWidget` now `debugPrint` the exact exception
+  (type + message, offending path/URL, HTTP status where available) so
+  failures are visible in logs instead of failing silently. Verified in the
+  test output (`AdaptiveImage: local file does not exist at "…" — falling
+  back to network load.`).
+- **Android scoped storage & permissions** (`AndroidManifest.xml`):
+  `READ_MEDIA_IMAGES` was already declared for Android 13+ (API 33+, incl.
+  14 / S26+). Added the legacy `READ_EXTERNAL_STORAGE` with
+  `maxSdkVersion="32"` for Android 12 and below compat (the standard
+  dual-permission pattern) + explanatory comment. `_isLocalPath` explicitly
+  documents that `content://` Android media URIs are NOT treated as local
+  filesystem paths (Flutter `File()` cannot read them directly) — they fall
+  through to the network stage, which degrades gracefully to the placeholder.
+  image_picker returns a cached app-internal file path (not `content://`)
+  for picked media, so the local-file stage handles real picks.
+- **Trophy detail screen** (`trophy_detail_screen.dart`): the inline
+  broken-image `errorWidget` replaced with `PhotoUnavailablePlaceholder`.
+- **Tests**: `test/adaptive_image_pipeline_test.dart` (NEW, 6 widget tests,
+  all pass) — placeholder content + no sensitive detail surfaced + overrides;
+  empty path → placeholder; stale local path → delegates to network stage;
+  remote URL → network stage; caller errorWidget plumbed through. Tests
+  assert structural contracts (which widgets are constructed) rather than
+  async decode outcomes, so they're stable in a headless / no-network sandbox.
+- **Verification**: `flutter analyze` lib/ + test/ -> 0 errors, 0 warnings.
+  `flutter test` -> **546 pass** (was 540; +6 = new widget tests; no
+  regressions).
+- **Note on requested path**: the task referenced `lib/features/trophy_room/`,
+  which does not exist; the real files are `lib/features/hunter_mode/
+  trophy_detail_screen.dart` + `trophy_room_screen.dart`, and the shared
+  image widget is `lib/utils/image_helper.dart` (also used by
+  `firearm_detail_screen.dart`).
+- Files: `lib/widgets/photo_unavailable_placeholder.dart` (NEW),
+  `lib/utils/image_helper.dart` (3-stage pipeline + logging),
+  `lib/features/hunter_mode/trophy_detail_screen.dart` (uses placeholder),
+  `android/app/src/main/AndroidManifest.xml` (READ_EXTERNAL_STORAGE
+  maxSdkVersion=32 compat), `test/adaptive_image_pipeline_test.dart` (NEW,
+  6 tests), `context.md` (16.12), `AGENTS.md`. No Firestore / Storage /
+  rules / index / pubspec changes (pure UI + a reusable widget + manifest
+  permission).

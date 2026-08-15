@@ -10,8 +10,16 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <!-- Gallery / photo-library access for image_picker (Android 13+). -->
+    <!-- Gallery / photo-library access for image_picker.
+         Android 13+ (API 33+, incl. 14 / S26+) uses the granular
+         READ_MEDIA_IMAGES permission under scoped storage; Android 12 and
+         below still use the legacy READ_EXTERNAL_STORAGE grant. image_picker
+         returns a cached app-internal file path for picked media, so these
+         permissions cover browsing the user's photo library to pick a
+         trophy / firearm photo. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     
     <application
         android:label="jagspoor"

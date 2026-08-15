@@ -996,6 +996,79 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `context.md`, `AGENTS.md`. No Firestore / Storage / rules / index /
   pubspec changes (pure UI + a reusable widget).
 
+### 16.12 Resilient trophy image fallback pipeline + PhotoUnavailablePlaceholder (implemented 2026-08-15)
+- Fixed the "Photo unavailable" broken-image issue on the Trophy Room
+  details screen by hardening the shared `AdaptiveImage` widget
+  (`lib/utils/image_helper.dart`) — the central image renderer used by
+  `trophy_detail_screen.dart`, `trophy_room_screen.dart`, AND
+  `firearm_detail_screen.dart` (so all three surfaces benefit).
+- **Resilient fallback pipeline** (3-stage):
+  1. **Local file** — if the path looks local (`file://`, a POSIX absolute
+     path, a Windows drive path, or `./`), the `file://` scheme is stripped
+     and `File(localPath).existsSync()` is verified BEFORE attempting
+     `Image.file`. A decode failure (corrupt bytes / permission error) is
+     logged and falls through to stage 2.
+  2. **Network image** — for a remote URL (`http`/`https`) OR a local path
+     whose file no longer exists (app reinstalled / new device / scoped
+     storage migration), render via `CachedNetworkImage`. Network failures
+     (HTTP 403 Forbidden, 404 Not Found, socket/SSL/storage errors) are
+     logged with the exact exception and fall through to stage 3.
+  3. **Placeholder** — when every source has failed, render the reusable
+     `PhotoUnavailablePlaceholder` (or the caller-supplied `errorWidget`).
+- **New reusable widget** `lib/widgets/photo_unavailable_placeholder.dart`
+  (`PhotoUnavailablePlaceholder`): neutral broken-image state with a
+  generic "Photo unavailable" caption + `image_not_supported_outlined`
+  icon, theme-aware colours, and optional `icon`/`label`/`backgroundColor`
+  overrides. **No raw path or HTTP status is surfaced to end users** —
+  exact failure diagnostics go to `debugPrint` only (visible in dev logs,
+  not the UI), satisfying the security guideline that error messages must
+  not expose sensitive/internal path information.
+- **Explicit error logging**: both the `Image.file` `errorBuilder` and the
+  `CachedNetworkImage` `errorWidget` now `debugPrint` the exact exception
+  (exception type + message, the offending path/URL, HTTP status where
+  available) so failures are clearly visible in logs instead of failing
+  silently. Verified in the test output: e.g.
+  `AdaptiveImage: local file does not exist at "…" — falling back to
+  network load.` and `AdaptiveImage: network image load failed for "…" —
+  <error>`.
+- **Android scoped storage & permissions**
+  (`android/app/src/main/AndroidManifest.xml`): `READ_MEDIA_IMAGES` was
+  already declared for Android 13+ (API 33+, incl. 14 / S26+) scoped
+  storage. Added the legacy `READ_EXTERNAL_STORAGE` with
+  `maxSdkVersion="32"` for Android 12 and below compatibility (the
+  standard dual-permission pattern), with an explanatory comment. The
+  `_isLocalPath` detection explicitly documents that `content://` Android
+  media URIs are NOT treated as local filesystem paths (Flutter `File()`
+  cannot read them directly) — they fall through to the network stage,
+  which degrades gracefully to the placeholder if unresolvable.
+  image_picker returns a cached app-internal file path (not a `content://`
+  URI) for picked media, so the local-file stage handles real picks.
+- **Trophy detail screen** (`trophy_detail_screen.dart`): the inline
+  broken-image `errorWidget` (custom `Container` + `Icon` + `Text`) was
+  replaced with `PhotoUnavailablePlaceholder(backgroundColor: theme.cardColor)`
+  so the detail screen uses the shared branded placeholder.
+- **Tests**: `test/adaptive_image_pipeline_test.dart` (NEW, 6 widget tests,
+  all pass) — `PhotoUnavailablePlaceholder` renders the broken-image icon +
+  generic caption with no sensitive path/HTTP detail surfaced + honours
+  overrides; `AdaptiveImage` empty path → placeholder (no image widget
+  built); stale local path (file missing) → delegates to the network stage
+  (CachedNetworkImage constructed); remote URL → network stage;
+  caller-supplied errorWidget plumbed through to the network stage. Tests
+  assert the structural contract (which widgets are constructed) rather
+  than async image-decode outcomes, so they are stable in a headless /
+  no-network sandbox.
+- **Verification**: `flutter analyze` lib/ + test/ -> 0 errors, 0 warnings.
+  `flutter test` -> **546 pass** (was 540; +6 = the new widget tests; no
+  regressions).
+- Files: `lib/widgets/photo_unavailable_placeholder.dart` (NEW),
+  `lib/utils/image_helper.dart` (3-stage pipeline + logging),
+  `lib/features/hunter_mode/trophy_detail_screen.dart` (uses placeholder),
+  `android/app/src/main/AndroidManifest.xml` (READ_EXTERNAL_STORAGE
+  maxSdkVersion=32 compat),
+  `test/adaptive_image_pipeline_test.dart` (NEW, 6 tests),
+  `context.md`, `AGENTS.md`. No Firestore / Storage / rules / index /
+  pubspec changes (pure UI + a reusable widget + manifest permission).
+
 ---
 
 ## 17. Project File Structure
