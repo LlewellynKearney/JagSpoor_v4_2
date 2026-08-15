@@ -129,22 +129,6 @@
         { "fieldPath": "hunterId", "order": "ASCENDING" },
         { "fieldPath": "orderTimestamp", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "client_roster",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "guided_hunt_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "huntDate", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

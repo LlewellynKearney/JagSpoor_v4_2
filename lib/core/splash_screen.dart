@@ -78,7 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,
-    // client_roster, guided_hunt_logs…) don't crash on a missing parameter.
+    // scanned_pricelists…) don't crash on a missing parameter.
     if (role == AppRole.outfitter) {
       await _ensureOutfitterSelfLink();
     }
@@ -106,8 +106,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   /// Ensures the signed-in outfitter's `users/{uid}` document carries an
   /// `outfitterId` field equal to their own uid. Outfitter-mode Firestore
-  /// collections (trophies, venison_permits, scanned_pricelists,
-  /// client_roster, guided_hunt_logs) are all owner-scoped on
+  /// collections (trophies, venison_permits, scanned_pricelists) are all
+  /// owner-scoped on
   /// `outfitterId == auth.uid`; a missing field would make every list query
   /// silently empty and every create get rejected server-side. Best-effort,
   /// non-fatal — failures don't block the boot route.

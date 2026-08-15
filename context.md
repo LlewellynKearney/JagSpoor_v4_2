@@ -879,6 +879,53 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `storage.rules` (`bug_report_attachments/{uid}` block),
   `test/bug_report_screenshot_test.dart` (NEW, 6 tests).
 
+### 16.10 Removal of Client Roster & Guided Hunt Logs from Outfitter Mode (implemented 2026-08-15)
+- The **Client Roster** and **Guided Hunt Logs** features have been
+  **completely removed** from Outfitter Mode. Both were outfitter-side
+  harvest-logging / client-book subsystems that had grown redundant with the
+  venison-permit + booking + trophy-inventory workflows.
+- **UI & navigation**: the two dashboard feature cards ("Client Roster" and
+  "Guided Hunt Logs") and their imports were removed from
+  `outfitter_dashboard.dart`.
+- **Screen widgets, services, models deleted**:
+  - `lib/features/outfitter_mode/presentation/client_roster_screen.dart`
+  - `lib/features/outfitter_mode/presentation/guided_hunt_log_screen.dart`
+  - `lib/features/outfitter_mode/data/services/client_roster_manager.dart`
+  - `lib/features/outfitter_mode/data/services/guided_hunt_log_manager.dart`
+  - `lib/features/outfitter_mode/data/models/client_profile.dart`
+  - `lib/features/outfitter_mode/data/models/guided_hunt_log.dart`
+  - `test/outfitter_client_roster_test.dart` (6 tests removed).
+- **Venison permit form decoupling**: `VenisonPermitFormScreen` no longer
+  imports the client-roster / guided-hunt-log managers. The
+  `clientId` / `guidedHuntLogId` constructor params and the post-issue
+  permit-linking block (`GuidedHuntLogManager.linkPermit` /
+  `ClientRosterManager.addPermitReference`) were removed. The generic
+  `prefillData` map param is retained (it is self-contained and useful for
+  any caller that wants to seed the form without a Firestore booking lookup);
+  its docstring no longer references the removed managers.
+- **Firestore rules + indexes cleanup**: the `match /client_roster/{clientId}`
+  and `match /guided_hunt_logs/{logId}` blocks were removed from
+  `firestore.rules`, and the two composite indexes
+  (`client_roster (outfitterId ASC, createdAt DESC)` and
+  `guided_hunt_logs (outfitterId ASC, huntDate DESC)`) were removed from
+  `firestore.indexes.json`. The collections themselves are simply no longer
+  read or written by the app; existing docs (if any) remain in Firestore but
+  are orphaned (default-deny applies once the rules deploy).
+- **Comments**: stale `client_roster` / `guided_hunt_logs` references in the
+  `_ensureOutfitterSelfLink` docstrings/comments in `splash_screen.dart` and
+  `auth_screen.dart` were updated to list only the remaining owner-scoped
+  outfitter collections (trophies, venison_permits, scanned_pricelists).
+- **Verification**: `flutter analyze` lib/ + test/ -> 0 errors, 0 warnings.
+  `flutter test` -> **534 pass** (was 540; -6 = the deleted
+  `outfitter_client_roster_test.dart`; no regressions).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules,
+  firestore:indexes` in a credentialed env to activate the rules/index cleanup.
+- Files: deleted the 6 files above; modified
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/hunter_mode/screens/venison_permit_form_screen.dart`,
+  `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`,
+  `firestore.rules`, `firestore.indexes.json`, `context.md`, `AGENTS.md`.
+
 ---
 
 ## 17. Project File Structure

@@ -13,8 +13,6 @@ import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/outfitter_pricelist_scanner_screen.dart';
 import '../hunter_mode/screens/scanned_pricelist_history_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
-import '../outfitter_mode/presentation/client_roster_screen.dart';
-import '../outfitter_mode/presentation/guided_hunt_log_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
@@ -293,50 +291,6 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                               },
                             ),
                             const SizedBox(height: 12),
-                          ],
-
-                          // Client Roster — manage the PH's client hunter book.
-                          _buildFeatureCard(
-                            icon: Icons.group_rounded,
-                            title: 'Client Roster',
-                            description:
-                                'Manage client hunters: ID/passport, contact, '
-                                'assigned packages, and permit references.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ClientRosterScreen(
-                                    theme: widget.theme,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Guided Hunt Logs — harvest logging workflow.
-                          _buildFeatureCard(
-                            icon: Icons.history_edu_rounded,
-                            title: 'Guided Hunt Logs',
-                            description:
-                                'Record harvested game, carcass weights, trophy '
-                                'and shot details per client. Generate permits '
-                                '& push to the slaughterhouse manifest.',
-                            theme: widget.theme,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GuidedHuntLogScreen(
-                                    theme: widget.theme,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
 
                           // Venison Permit Log & Manager — single consolidated
                           // entry for issuing + viewing venison transport
@@ -362,6 +316,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                               );
                             },
                           ),
+                        ],
                         ],
                       ),
                         ), // Padding

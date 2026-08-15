@@ -272,38 +272,6 @@ service cloud.firestore {
       allow create, update, delete: if ownerOrAdmin('outfitterId');
     }
 
-    // Outfitter client roster (outfitterId). The PH manages their own client
-    // hunter book: identity, contact, assigned package/booking, permit refs.
-    // Access control is owner-scoped: the outfitter named in `outfitterId`
-    // (== the signed-in caller for creates, since `addClient` stamps
-    // `outfitterId = auth.uid`) may read + write their own roster; admins
-    // retain full access for support/oversight. Split into explicit
-    // read/create/update/delete so the policy is unambiguous and survives
-    // the default-deny fallback before these rules are deployed.
-    match /client_roster/{clientId} {
-      allow read: if ownerOrAdmin('outfitterId');
-      allow create: if isSignedIn()
-        && request.resource.data.outfitterId == request.auth.uid
-        || isAdmin();
-      allow update, delete: if ownerOrAdmin('outfitterId');
-    }
-
-    // Guided hunt logs (outfitterId). Each harvest log is scoped to the
-    // issuing outfitter and assigned to a client from the roster. Access
-    // control is owner-scoped: the outfitter named in `outfitterId` (== the
-    // signed-in caller for creates, since `addHuntLog` stamps
-    // `outfitterId = auth.uid`) may read + write their own logs; admins
-    // retain full access for support/oversight. Split into explicit
-    // read/create/update/delete so the policy is unambiguous and survives
-    // the default-deny fallback before these rules are deployed.
-    match /guided_hunt_logs/{logId} {
-      allow read: if ownerOrAdmin('outfitterId');
-      allow create: if isSignedIn()
-        && request.resource.data.outfitterId == request.auth.uid
-        || isAdmin();
-      allow update, delete: if ownerOrAdmin('outfitterId');
-    }
-
     // Spoor scans (userId). Private to the scanning hunter.
     match /spoor_scans/{docId} {
       allow read, write: if ownerOrAdmin('userId');
