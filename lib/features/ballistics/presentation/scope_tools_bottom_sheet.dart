@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
+import 'package:jagspoor/widgets/firearm_dropdown_selector.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -277,90 +278,29 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     return StreamBuilder<List<RifleProfile>>(
       stream: _firearmsStream,
       builder: (context, snapshot) {
-        final rifles = snapshot.data ?? [];
+        final rifles = snapshot.data ?? const <RifleProfile>[];
         final isEmpty = rifles.isEmpty;
-        // Guard the `value:` against an id that no longer exists in the safe
-        // (e.g. the firearm was just deleted) — `DropdownButtonFormField`
-        // throws if `value` is non-null and not among the items.
-        final effectiveValue =
-            rifles.any((r) => r.id == _selectedRifleId) ? _selectedRifleId : null;
+        // Turret-unit context badge (read-only; not a navigation trigger).
+        // Only meaningful once a host firearm is linked, so it is passed as
+        // the selector's `trailing` widget and hidden while loading / empty.
+        final turretBadge = Chip(
+          label: Text(_optic.turretUnitLabel,
+              style: TextStyle(fontSize: 11, color: _textPrimary)),
+          backgroundColor: _accent,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+        );
         return Container(
           margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: _panelBlack,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _accentDim.withValues(alpha: 0.5)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.link, color: _accent, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  // `DropdownButtonFormField` is a `FormField` and only reads
-                  // its `value` once on first build (it does NOT honour a
-                  // changed `value` on subsequent rebuilds — the internal
-                  // `FormFieldState` is initialised from the first value).
-                  // That meant the dropdown visually never reflected a
-                  // freshly-selected firearm. A `ValueKey` derived from the
-                  // effective value forces the field to reinitialise
-                  // whenever the selection changes, so the displayed
-                  // selection stays in sync with the state. This also keeps
-                  // tap handling responsive because the field is rebuilt
-                  // clean (no stale internal controller).
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey<String?>(effectiveValue),
-                    value: effectiveValue,
-                    isExpanded: true,
-                    dropdownColor: _panelBlack,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                    ),
-                    hint: Text(
-                      isEmpty
-                          ? 'No firearms in safe (Add in Firearm Safe)'
-                          : 'Choose Firearm',
-                      style: TextStyle(
-                        color: isEmpty ? _accent : _textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                    style: TextStyle(color: _textPrimary, fontSize: 13),
-                    items: rifles
-                        .map((r) => DropdownMenuItem<String>(
-                              value: r.id,
-                              child: Text(
-                                r.displayName,
-                                style: const TextStyle(fontSize: 13),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: isEmpty
-                        ? null
-                        : (id) => _onRifleSelected(rifles, id),
-                  ),
-                ),
-              ),
-              // Turret-unit context badge (read-only; not a navigation
-              // trigger). Only meaningful once a host firearm is linked.
-              if (!isEmpty) ...[
-                const SizedBox(width: 8),
-                Chip(
-                  label: Text(_optic.turretUnitLabel,
-                      style: TextStyle(
-                          fontSize: 11, color: _textPrimary)),
-                  backgroundColor: _accent,
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ],
+          child: FirearmDropdownSelector(
+            selectedFirearmId: _selectedRifleId,
+            firearms: rifles,
+            isLoading: snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData,
+            onChanged: (id) => _onRifleSelected(rifles, id),
+            leadingIcon: Icons.link,
+            // The selector hides `trailing` itself while loading / empty.
+            trailing: isEmpty ? null : turretBadge,
           ),
         );
       },

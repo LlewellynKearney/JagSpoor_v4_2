@@ -926,6 +926,76 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`,
   `firestore.rules`, `firestore.indexes.json`, `context.md`, `AGENTS.md`.
 
+### 16.11 Reusable Firearm Dropdown Selector + Optical Suite refactor (implemented 2026-08-15)
+- New reusable widget `lib/widgets/firearm_dropdown_selector.dart`
+  (`FirearmDropdownSelector`) — a controlled, stateless firearm selector
+  backed by the Digital Firearm Safe (`RifleProfile`). All selection state
+  is owned by the parent (the screen), and changes are reported via
+  `onChanged`.
+  - `DropdownButtonFormField<String>` binds to the unique string
+    `RifleProfile.id` (never an object reference), with a `ValueKey` derived
+    from the effective value so the `FormFieldState` reinitialises on every
+    selection change (fixing the "dropdown visually never reflects a
+    freshly-selected firearm" drift that `DropdownButtonFormField`'s
+    read-value-once-on-first-build behaviour causes).
+  - `selectedFirearmId` is **validated against the live `firearms` list on
+    every build** and coerced to `null` when absent — so a
+    `DropdownButtonFormField` "value not in items" assertion error can never
+    fire when a firearm is deleted while the dropdown is open.
+  - Visual states per spec: `isLoading == true` -> a thin
+    `LinearProgressIndicator` replaces the dropdown (first-load state);
+    `firearms` empty -> a disabled `TextFormField` with the hint
+    "No firearms found in Safe" (no interactive dropdown offered when there
+    is nothing to select); otherwise the live dropdown with each item
+    labelled `RifleProfile.displayName` ("make model (calibre)").
+  - Optional `trailing` widget (e.g. a turret-unit context `Chip`) — the
+    selector hides it itself while loading / empty. Optional `leadingIcon`
+    override for host-screen iconography.
+  - Uses `Theme.of(context)` exclusively (no hardcoded colors) so it adapts
+    to the Day/Night toggle.
+- **Shot Group Target Analyser refactor**
+  (`lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`):
+  the local `_buildFirearmSelector` dropdown logic was replaced with
+  `FirearmDropdownSelector`. **Crucially, the selector was moved ABOVE the
+  `ShotGroupTargetOverlay`** (the gesture canvas / `InteractiveViewer` /
+  tap-`GestureDetector` layer) in the body `Column` widget tree, so the
+  overlay's tap detector can never intercept taps meant for the dropdown
+  menu. The selector is now the first child of the body Column (rendered
+  before the overlay), not a sibling rendered after it. The screen's
+  `StreamBuilder` over `InventoryBridge.watchSafeFirearms()` remains the
+  data source; the `isLoading` flag is derived from
+  `snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData`.
+- **Scope Settings Tool refactor**
+  (`lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`):
+  the local `_buildFirearmLink` dropdown logic (the manual
+  `DropdownButtonHideUnderline > DropdownButtonFormField<String>` +
+  `ValueKey` + container + turret-unit `Chip`) was replaced with
+  `FirearmDropdownSelector`. The turret-unit context `Chip` is passed as
+  the selector's `trailing` widget (hidden automatically while loading /
+  empty). The `leadingIcon` is overridden to `Icons.link` to match the
+  prior iconography. The `_onRifleSelected` handler (which stamps the
+  optic's `firearmId`) is unchanged and still drives the binding.
+- **Tests**: `test/firearm_dropdown_selector_test.dart` (NEW, 6 widget
+  tests, all pass) — covers: live dropdown renders display names +
+  reports selection via `onChanged`; stale `selectedFirearmId` (deleted
+  firearm) coerces to `null` instead of throwing the "value not in items"
+  assertion; empty list renders the disabled "No firearms found in Safe"
+  `TextFormField`; `isLoading` renders a `LinearProgressIndicator`
+  (uses `pump`, not `pumpAndSettle`, because the indeterminate animation
+  never settles); `trailing` hidden while loading / empty, shown when
+  populated.
+- **Verification**: `flutter analyze` lib/ + test/ -> 0 errors, 0 warnings.
+  `flutter test` -> **540 pass** (was 534; +6 = the new widget tests; no
+  regressions).
+- Files: `lib/widgets/firearm_dropdown_selector.dart` (NEW),
+  `lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`
+  (refactored + selector hoisted above the gesture canvas),
+  `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`
+  (refactored),
+  `test/firearm_dropdown_selector_test.dart` (NEW, 6 tests),
+  `context.md`, `AGENTS.md`. No Firestore / Storage / rules / index /
+  pubspec changes (pure UI + a reusable widget).
+
 ---
 
 ## 17. Project File Structure

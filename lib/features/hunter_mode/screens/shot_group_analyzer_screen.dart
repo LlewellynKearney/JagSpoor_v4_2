@@ -7,6 +7,7 @@ import '../../ballistics/data/inventory_bridge.dart';
 import '../../ballistics/data/models/rifle_profile.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../widgets/firearm_dropdown_selector.dart';
 import '../services/shot_group_analyzer_service.dart';
 import '../services/target_session_log_manager.dart';
 import '../widgets/shot_group_target_overlay.dart';
@@ -245,6 +246,13 @@ class _ShotGroupAnalyzerScreenState extends State<ShotGroupAnalyzerScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Firearm selector sits ABOVE the gesture canvas
+                    // (`ShotGroupTargetOverlay`) in the widget tree so the
+                    // overlay's tap GestureDetector can never intercept taps
+                    // meant for the dropdown menu. The selector is a sibling
+                    // rendered before the overlay, not nested inside it.
+                    _buildFirearmSelector(t),
+                    const SizedBox(height: 12),
                     if (_decoding)
                       Padding(
                         padding: const EdgeInsets.all(8),
@@ -265,8 +273,6 @@ class _ShotGroupAnalyzerScreenState extends State<ShotGroupAnalyzerScreen> {
                         onAimPointChanged: (a) => _aimPoint = a,
                       ),
                     const SizedBox(height: 12),
-                    _buildFirearmSelector(t),
-                    const SizedBox(height: 8),
                     _configRow(t),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -357,59 +363,20 @@ class _ShotGroupAnalyzerScreenState extends State<ShotGroupAnalyzerScreen> {
   }
 
   Widget _buildFirearmSelector(ThemeController t) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: t.cardColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: t.accentColor.withValues(alpha: 0.3)),
-      ),
-      child: StreamBuilder<List<RifleProfile>>(
-        stream: _firearmsStream,
-        builder: (context, snapshot) {
-          final firearms = snapshot.data ?? const <RifleProfile>[];
-          _lastFirearms = firearms;
-          // Guard the value against a just-deleted firearm.
-          final effectiveValue = (_selectedFirearmId != null &&
-                  firearms.any((r) => r.id == _selectedFirearmId))
-              ? _selectedFirearmId
-              : null;
-          return Row(
-            children: [
-              Icon(Icons.gpp_good_outlined, size: 18, color: t.accentColor),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButtonFormField<String>(
-                    value: effectiveValue,
-                    isExpanded: true,
-                    style: TextStyle(color: t.textColor, fontSize: 12),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                      border: InputBorder.none,
-                      hintText: 'Choose Firearm',
-                      hintStyle:
-                          TextStyle(color: t.subtitleColor, fontSize: 12),
-                    ),
-                    items: firearms
-                        .map((r) => DropdownMenuItem<String>(
-                              value: r.id,
-                              child: Text(r.displayName,
-                                  overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: firearms.isEmpty
-                        ? null
-                        : (id) => setState(() => _selectedFirearmId = id),
-                    dropdownColor: t.cardColor,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+    return StreamBuilder<List<RifleProfile>>(
+      stream: _firearmsStream,
+      builder: (context, snapshot) {
+        final firearms = snapshot.data ?? const <RifleProfile>[];
+        _lastFirearms = firearms;
+        return FirearmDropdownSelector(
+          selectedFirearmId: _selectedFirearmId,
+          firearms: firearms,
+          // `ConnectionState.waiting` with no data is the first-load state.
+          isLoading: snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData,
+          onChanged: (id) => setState(() => _selectedFirearmId = id),
+        );
+      },
     );
   }
 
