@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/features/hunter_mode/services/trophy_share_composer.dart';
 
@@ -139,6 +141,123 @@ void main() {
   group('TrophyShareComposer default subject', () {
     test('default subject is the expected marketing string', () {
       expect(TrophyShareComposer.defaultSubject, 'My JagSpoor Trophy!');
+    });
+  });
+
+  group('TrophyShareComposer.firstPhotoPath', () {
+    test('returns the first photo from the photos list', () {
+      final trophy = <String, dynamic>{
+        'photos': ['/data/user/0/app/files/photo1.jpg', 'https://x/y.png'],
+      };
+      expect(TrophyShareComposer.firstPhotoPath(trophy),
+          '/data/user/0/app/files/photo1.jpg');
+    });
+
+    test('skips blank entries and returns the first non-blank', () {
+      final trophy = <String, dynamic>{
+        'photos': ['', '  ', '/data/user/0/app/files/photo2.jpg'],
+      };
+      expect(TrophyShareComposer.firstPhotoPath(trophy),
+          '/data/user/0/app/files/photo2.jpg');
+    });
+
+    test('returns null when photos is missing', () {
+      expect(TrophyShareComposer.firstPhotoPath(<String, dynamic>{}), isNull);
+    });
+
+    test('returns null when photos is empty', () {
+      expect(
+          TrophyShareComposer.firstPhotoPath(<String, dynamic>{
+            'photos': <dynamic>[],
+          }),
+          isNull);
+    });
+
+    test('returns null when photos is not a list', () {
+      expect(
+          TrophyShareComposer.firstPhotoPath(<String, dynamic>{
+            'photos': 'not-a-list',
+          }),
+          isNull);
+    });
+
+    test('accepts a remote URL as the first photo', () {
+      final trophy = <String, dynamic>{
+        'photos': ['https://firebasestorage.googleapis.com/v0/b/x/o/trophy.jpg'],
+      };
+      expect(TrophyShareComposer.firstPhotoPath(trophy),
+          'https://firebasestorage.googleapis.com/v0/b/x/o/trophy.jpg');
+    });
+  });
+
+  group('TrophyShareComposer.isLocalFilePath', () {
+    test('absolute unix path is local', () {
+      expect(TrophyShareComposer.isLocalFilePath('/data/user/0/app/x.jpg'),
+          isTrue);
+    });
+
+    test('file:// uri is local', () {
+      expect(
+          TrophyShareComposer.isLocalFilePath('file:///tmp/photo.jpg'), isTrue);
+    });
+
+    test('relative ./ path is local', () {
+      expect(TrophyShareComposer.isLocalFilePath('./photos/x.jpg'), isTrue);
+    });
+
+    test('windows path is local', () {
+      expect(TrophyShareComposer.isLocalFilePath(r'C:\Users\me\photo.jpg'),
+          isTrue);
+    });
+
+    test('https URL is not local', () {
+      expect(TrophyShareComposer.isLocalFilePath('https://example.com/x.jpg'),
+          isFalse);
+    });
+
+    test('firebase storage URL is not local', () {
+      expect(
+          TrophyShareComposer.isLocalFilePath(
+              'https://firebasestorage.googleapis.com/v0/b/bucket/o/x.jpg'),
+          isFalse);
+    });
+  });
+
+  group('TrophyShareComposer.resolveShareFile', () {
+    test('returns null for a null path', () async {
+      expect(await TrophyShareComposer.resolveShareFile(null), isNull);
+    });
+
+    test('returns null for a blank path', () async {
+      expect(await TrophyShareComposer.resolveShareFile('   '), isNull);
+    });
+
+    test('returns null for a local path that does not exist', () async {
+      // A path that won't exist on the test runner.
+      final path =
+          '/this/path/should/not/exist_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      expect(await TrophyShareComposer.resolveShareFile(path), isNull);
+    });
+
+    test('returns a File for an existing local path', () async {
+      // Create a real temp file and verify it is resolved directly (no
+      // download) — proves the local-file branch.
+      final tmpDir = await Directory.systemTemp.createTemp('trophy_share_');
+      final file = File('${tmpDir.path}/photo.jpg');
+      await file.writeAsBytes([0xFF, 0xD8, 0xFF]); // JPEG-ish bytes
+      try {
+        final resolved = await TrophyShareComposer.resolveShareFile(file.path);
+        expect(resolved, isNotNull);
+        expect(resolved!.path, file.path);
+      } finally {
+        await tmpDir.delete(recursive: true);
+      }
+    });
+
+    test('returns null for a malformed (no-scheme) remote path', () async {
+      // No scheme → Uri.hasScheme is false → null, no network attempt.
+      expect(await TrophyShareComposer.resolveShareFile('just-a-string'),
+          isNull);
     });
   });
 }

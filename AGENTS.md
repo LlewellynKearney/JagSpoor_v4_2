@@ -5129,3 +5129,93 @@ Target Analyzer screen.
 - No Firestore rules / index / Storage / pubspec changes (pure on-device UI +
   local SQLite logging; the firearm dropdown reads the existing owner-scoped
   `firearms` collection whose rules are unchanged).
+
+
+## Phase 49 -- Digital Trophy Room image sharing + Scope Settings firearm dropdown fix (added 2026-08-15)
+
+### 1. Digital Trophy Room -- share the actual trophy photo (fixed)
+- The Trophy Room share button (grid card in trophy_room_screen.dart + the
+  detail-screen AppBar in trophy_detail_screen.dart) previously invoked
+  TrophyShareComposer.shareTrophy, which only called Share.share(message) --
+  a TEXT-ONLY share. The trophy photo was never attached, so a hunter
+  broadcasting a harvest dispatch sent only the formatted text with no image.
+- TrophyShareComposer.shareTrophy now shares the actual image file alongside
+  the formatted text caption via Share.shareXFiles:
+  - New pure helper firstPhotoPath(Map) extracts the first usable entry from
+    the trophy doc's photos list (skips blank entries; null-tolerant).
+  - New pure helper isLocalFilePath(String) classifies a path as local vs.
+    remote (mirrors AdaptiveImage's detection: /, file://, ./, Windows drive).
+  - New resolveShareFile(String?) resolves a photo reference to a local File:
+    a local path is returned directly when the file still exists; a remote
+    (Firebase Storage) URL is downloaded to a temp file via http + path_provider
+    so share_plus can attach it. Best-effort: any failure returns null so the
+    caller falls back to text-only (no crash, no failed share).
+  - shareTrophy now: compose message -> firstPhotoPath -> resolveShareFile ->
+    Share.shareXFiles([XFile(path)], subject:, text: message) when a file
+    resolves; falls back to Share.share(message, subject:) when no photo.
+- Both call sites already pass the full trophy map (which carries photos), so
+  no call-site change was needed -- the photo is auto-extracted. The fallback
+  snackbar messaging is unchanged.
+- Dependencies: http, path_provider, share_plus were all already in pubspec
+  (share_plus + http + path_provider used by the PDF engine + venison permit
+  exporter). No pubspec change.
+
+### 2. Scope Settings & Tools -- firearm dropdown tap/binding fix (fixed)
+- Root cause: the Optical Suite (scope_tools_bottom_sheet.dart)
+  _buildFirearmLink used a DropdownButtonFormField<String> with
+  value: effectiveValue. DropdownButtonFormField is a FormField whose internal
+  FormFieldState is seeded from the FIRST value and IGNORES a changed value on
+  subsequent rebuilds (a long-standing Flutter behaviour). So after a user
+  tapped a firearm, _onRifleSelected ran setState and updated _selectedRifleId,
+  but the DropdownButtonFormField visually stayed on the hint ('Choose
+  Firearm') because its internal state never re-seeded -- the dropdown appeared
+  unresponsive / not to bind to the selection.
+- Fix: added key: ValueKey<String?>(effectiveValue) to the
+  DropdownButtonFormField. The key forces the widget to reinitialise whenever
+  the effective value changes, so the FormFieldState re-seeds from the new
+  value and the displayed selection reflects the freshly-tapped firearm on
+  every rebuild. This is the standard Flutter fix for the
+  DropdownButtonFormField-ignores-value-changes bug.
+- The dropdown already populates strictly from the Digital Firearm Safe via
+  InventoryBridge.watchSafeFirearms() (cached as a broadcast stream in
+  initState for re-mount safety), renders RifleProfile.displayName
+  ('make model (calibre)'), and is disabled with a clear hint when the safe
+  is empty. _onRifleSelected stamps OpticProfile.firearmId and _saveOptic
+  persists the binding to the firearms doc via InventoryBridge.saveOpticProfile
+  (which stamps firearmId on the optic map) -- so the database binding was
+  already correct; only the visual sync was broken (now fixed via the key).
+- No Firestore rules / index / Storage change (the firearms read is already
+  owner-scoped; the dropdown only reads).
+
+### 3. Tests
+- test/trophy_share_composer_test.dart extended with 17 new tests (was 11,
+  now 28), all pass:
+  - firstPhotoPath (6): first photo from list; skips blank entries; null when
+    missing/empty/not-a-list; accepts a remote URL.
+  - isLocalFilePath (6): absolute unix / file:// / ./ / Windows paths are
+    local; https + Firebase Storage URLs are not.
+  - resolveShareFile (5): null for null/blank path; null for a non-existent
+    local path; returns the File for a real temp file (proves the local-file
+    branch with no download); null for a malformed no-scheme path (no network
+    attempt).
+- The pure helpers (firstPhotoPath, isLocalFilePath) are fully unit-testable
+  with no Flutter/platform plugins; resolveShareFile uses real temp-file I/O
+  (no mocks) per the project test pattern.
+
+### 4. Verification
+- flutter analyze (local Flutter 3.47.0 stable): 0 errors, 0 warnings in all
+  changed/new files. The single remaining issue in the scope tools file is
+  the documented pre-existing DropdownButtonFormField.value deprecation info
+  (only flagged on Flutter >=3.33, NOT the CI 3.29.1 pin; the project uses
+  value: everywhere for cross-version compatibility).
+- flutter test test/trophy_share_composer_test.dart test/optic_tools_test.dart:
+  61/61 pass (28 trophy-share + 33 optic-tools). No regressions.
+- Files: lib/features/hunter_mode/services/trophy_share_composer.dart
+  (image-sharing: firstPhotoPath + isLocalFilePath + resolveShareFile +
+  Share.shareXFiles wiring),
+  lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart
+  (ValueKey on the DropdownButtonFormField), test/trophy_share_composer_test.dart
+  (+17 tests), context.md (16.4 dropdown fix + 16.6 trophy image sharing),
+  AGENTS.md.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  share composition + a dropdown-key fix).

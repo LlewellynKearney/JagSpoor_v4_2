@@ -298,7 +298,19 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonHideUnderline(
+                  // `DropdownButtonFormField` is a `FormField` and only reads
+                  // its `value` once on first build (it does NOT honour a
+                  // changed `value` on subsequent rebuilds — the internal
+                  // `FormFieldState` is initialised from the first value).
+                  // That meant the dropdown visually never reflected a
+                  // freshly-selected firearm. A `ValueKey` derived from the
+                  // effective value forces the field to reinitialise
+                  // whenever the selection changes, so the displayed
+                  // selection stays in sync with the state. This also keeps
+                  // tap handling responsive because the field is rebuilt
+                  // clean (no stale internal controller).
                   child: DropdownButtonFormField<String>(
+                    key: ValueKey<String?>(effectiveValue),
                     value: effectiveValue,
                     isExpanded: true,
                     dropdownColor: _panelBlack,

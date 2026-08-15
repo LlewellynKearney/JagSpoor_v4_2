@@ -691,11 +691,34 @@ State-of-the-art redesign of `ScopeToolsBottomSheet` / scope tooling:
 - MOA/MRAD click calculators.
 - Height-over-bore compensation.
 - Tracking-test loggers (zero-confirmation and group-size recording).
+- **Firearm-link dropdown** (implemented, fixed 2026-08-15): the Optical
+  Suite's "Link to Firearm" `DropdownButtonFormField` now binds correctly to
+  the Digital Firearm Safe stream (`InventoryBridge.watchSafeFirearms`) and
+  reflects the freshly-selected rifle on every rebuild. The root cause of the
+  "dropdown doesn't update after selection" bug was that
+  `DropdownButtonFormField` is a `FormField` whose internal state is seeded
+  from the first `value` and ignores changed `value`s on rebuild; a
+  `ValueKey(effectiveValue)` now forces a clean reinitialise on every
+  selection change. Saved profiles persist the `OpticProfile.firearmId`
+  binding on the `firearms` doc.
 
 ### 16.5 Dynamic In-App Info Tooltips `(i)` & Global Theme/HUD Verification
 - Add contextual `(i)` info tooltips across screens for in-app guidance.
 - Global pass to verify theme/HUD consistency (colors, safe-area insets, HUD
   styling) across all viewports.
+
+### 16.6 Digital Trophy Room native image sharing (implemented 2026-08-15)
+The Trophy Room share button (grid card + detail screen AppBar) now shares the
+**actual trophy photo file** alongside the formatted harvest-dispatch text via
+`Share.shareXFiles` (`trophy_share_composer.dart`):
+- `TrophyShareComposer.firstPhotoPath` extracts the first usable entry from the
+  trophy doc's `photos` list.
+- `resolveShareFile` resolves it to a local `File`: a local path is used
+  directly; a remote (Firebase Storage) URL is downloaded to a temp file via
+  `http` so `share_plus` can attach it.
+- `shareTrophy` attaches the image + the composed text caption + subject via
+  `Share.shareXFiles`; when no photo resolves it falls back to text-only
+  `Share.share` (legacy/empty-photo entries still share).
 
 ---
 
