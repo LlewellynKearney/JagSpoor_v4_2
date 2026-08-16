@@ -6232,3 +6232,29 @@ Two requested features: (1) a "© 2026 JagSpoor. All Rights Reserved." footer on
 - **Verification**: `flutter analyze` -> 0 errors, 0 warnings (306 infos, all pre-existing). `flutter test` -> **482 passed** (was 461; +21 = new price list tests; no regressions).
 - Files: `lib/core/widgets/copyright_footer.dart` (NEW), `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`, `lib/features/hunter_mode/hunter_profile_screen.dart`, `lib/features/outfitter_mode/outfitter_dashboard.dart`, `lib/features/hunter_mode/models/farm_game_price_entry.dart` (NEW), `lib/features/hunter_mode/services/farm_game_price_list_manager.dart` (NEW), `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart` (NEW), `firestore.rules`, `test/farm_game_price_entry_test.dart` (NEW), `AGENTS.md`.
 - Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a credentialed env to activate the new `farm_pricelists` rules. Until deployed the writes are denied (the add/edit/delete flow surfaces a snackbar).
+
+## Phase — Price List UI fixes, Rand currency, gender/horn fields, itemized fee pricing (added 2026-08-16)
+
+User-feedback fixes to the Outfitter Price List + Publish Package surfaces.
+
+### 1. Bottom sheet UI clipping + Rand currency
+- `OutfitterPriceListScreen._PriceEntrySheet` (the Add/Edit Species Entry modal) wrapped in `SafeArea(bottom: true)` + `SingleChildScrollView` whose bottom padding is `MediaQuery.of(context).viewInsets.bottom + 16`, so the "ADD ENTRY" button clears the system gesture bar AND the open keyboard on every device.
+- Replaced the `$` `Icons.attach_money` prefix icon on the price field with `Icons.payments_outlined` (the field label is "Price (ZAR)" + the validator strips an `R`/`r` prefix, so the Rand symbol is now the consistent currency cue). The list-card price chip already rendered `R ${...}`.
+
+### 2. Gender + Horn / Tusk Length fields
+- `FarmGamePriceEntry` model gained `gender` ('Male'/'Female'/'Any', default 'Any') and `hornTuskLength` (optional String, e.g. '28"+', 'Trophy', 'Cull').
+  - Read aliases tolerated: `gender`/`sex`, `hornTuskLength`/`horn`/`tusk`. `_normalizeGender` accepts case-insensitive input + common aliases (M/F, bull/ram->Male, cow/ewe/hen->Female, both/either->Any).
+  - `toMap` writes `gender` always + `hornTuskLength` only when non-empty. `copyWith` supports both new fields.
+- `FarmGamePriceListManager.addEntry` + `updateEntry` accept `gender` + `hornTuskLength` (default 'Any' / '' ); `updateEntry` clears the field via `FieldValue.delete()` when an empty string is passed.
+- Add/Edit Species Entry sheet: new `_buildGenderSelector` renders a `ToggleButtons` (Male / Female / Any) inside an `InputDecorator`; a new "Horn / Tusk Length" `TextFormField` (`Icons.straighten` prefix, optional, max 40 chars) with `FarmGamePriceValidator.validateHornTuskLength`.
+- `_PriceEntryCard` now renders a gender badge (male/female icon, suppressed when 'Any') + a horn/tusk badge (`Icons.straighten`) when present.
+
+### 3. Itemized services pricing (Publish Package)
+- The Publish Package "ITEMIZED BREAKDOWN" already listed the 7 standard service categories (`ItemizedBreakdownCategory.all`: Bakkie/Hunting Vehicle, Slaughtering, Coldroom, Hunter Daily, Non-Hunter Observer Daily, Overnight Accommodation, Catering) as tappable rows. The `AlertDialog` editor was rewritten into a `showModalBottomSheet` + `StatefulBuilder` with `SafeArea(bottom: true)` + `viewInsets.bottom + 16` padding, a `Form` with validators, the R prefix on the price field (`Icons.payments_outlined`), and a Save/Remove/Cancel row. Tapping any breakdown card opens it; Save persists the `ItemizedLineItem` into `_lineItems`, which flows into the `PackagePricing.lineItems` written to the `packages` doc on publish/edit.
+
+### 4. Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings in all changed files (276 infos globally, all pre-existing).
+- `flutter test`: `farm_game_price_entry_test.dart` 31/31 pass (was 21; +10 new). Full suite 484 pass (excluding the 2 pre-existing `fake_cloud_firestore 4.1.1` / `cloud_firestore 6.8.0` compile-skew test files `offline_sync_queue_test.dart` + `bug_report_screenshot_test.dart`, which fail identically on the baseline before this change -- unrelated dependency skew).
+- Environment note: installed Flutter 3.29.1 stable (CI pin) + `libsqlite3-dev` so the `sqflite_common_ffi` integration tests can load `libsqlite3.so`.
+- Files: `lib/features/hunter_mode/models/farm_game_price_entry.dart`, `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`, `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart`, `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`, `test/farm_game_price_entry_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure model + UI + a validator; the `farm_pricelists` rules from the prior phase already permit the owner-scoped writes the new fields use).

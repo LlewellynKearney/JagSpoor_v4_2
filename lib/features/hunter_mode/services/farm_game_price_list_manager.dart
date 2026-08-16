@@ -55,7 +55,8 @@ class FarmGamePriceListManager {
 
   /// Adds a new game-species entry to the farm's price list. Requires
   /// authentication + a non-empty [speciesName]; [qty] must be ‚â• 0 and
-  /// [priceZAR] must be ‚â• 0.
+  /// [priceZAR] must be ‚â• 0. [gender] defaults to 'Any' and [hornTuskLength]
+  /// is optional (omitted from the doc when empty).
   ///
   /// Returns the new document id. Throws [StateError] if unauthenticated or
   /// [ArgumentError] if the species name is empty.
@@ -64,6 +65,8 @@ class FarmGamePriceListManager {
     required String speciesName,
     required int qty,
     required double priceZAR,
+    String gender = 'Any',
+    String hornTuskLength = '',
   }) async {
     final uid = _currentUserId;
     if (uid == null) {
@@ -89,6 +92,9 @@ class FarmGamePriceListManager {
       'speciesName': speciesName.trim(),
       'qty': qty,
       'price': priceZAR,
+      'gender': gender,
+      if (hornTuskLength.trim().isNotEmpty)
+        'hornTuskLength': hornTuskLength.trim(),
       'createdAt': now,
       'updatedAt': now,
     });
@@ -97,12 +103,14 @@ class FarmGamePriceListManager {
 
   /// Updates an existing price-list entry. Only the supplied fields are
   /// written; null fields are skipped so a partial update preserves the
-  /// existing values.
+  /// existing values. Pass [hornTuskLength] as an empty string to clear it.
   Future<void> updateEntry({
     required String entryId,
     String? speciesName,
     int? qty,
     double? priceZAR,
+    String? gender,
+    String? hornTuskLength,
   }) async {
     if (_currentUserId == null) {
       throw StateError('User must be authenticated to manage a price list.');
@@ -124,6 +132,15 @@ class FarmGamePriceListManager {
     if (speciesName != null) updates['speciesName'] = speciesName.trim();
     if (qty != null) updates['qty'] = qty;
     if (priceZAR != null) updates['price'] = priceZAR;
+    if (gender != null) updates['gender'] = gender;
+    if (hornTuskLength != null) {
+      final trimmed = hornTuskLength.trim();
+      if (trimmed.isEmpty) {
+        updates['hornTuskLength'] = FieldValue.delete();
+      } else {
+        updates['hornTuskLength'] = trimmed;
+      }
+    }
 
     await _firestore.collection('farm_pricelists').doc(entryId).update(updates);
   }

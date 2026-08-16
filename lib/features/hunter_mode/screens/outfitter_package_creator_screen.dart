@@ -407,100 +407,194 @@ class _OutfitterPackageCreatorScreenState
           ? existing.pricePerUnit.toStringAsFixed(2)
           : '',
     );
+    final formKey = GlobalKey<FormState>();
+    bool saving = false;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: widget.theme.cardColor,
-          title: Text(
-            category.label,
-            style: TextStyle(
-              color: widget.theme.textColor,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: qtyController,
-                keyboardType: TextInputType.number,
-                style: TextStyle(color: widget.theme.textColor),
-                decoration: _inputDecoration(
-                  hint: 'Quantity',
-                  theme: widget.theme,
+      isScrollControlled: true,
+      backgroundColor: widget.theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return SafeArea(
+              bottom: true,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
                 ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: priceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                style: TextStyle(color: widget.theme.textColor),
-                decoration: _inputDecoration(
-                  hint: 'Price per unit (ZAR)',
-                  prefix: 'R ',
-                  theme: widget.theme,
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: widget.theme.subtitleColor
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        category.label,
+                        style: TextStyle(
+                          color: widget.theme.textColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: qtyController,
+                        keyboardType: TextInputType.number,
+                        style: TextStyle(color: widget.theme.textColor),
+                        decoration: _inputDecoration(
+                          hint: 'Quantity (e.g. 2)',
+                          theme: widget.theme,
+                          prefix: '',
+                        ).copyWith(
+                          labelText: 'Quantity',
+                          labelStyle:
+                              TextStyle(color: widget.theme.subtitleColor),
+                          prefixIcon:
+                              const Icon(Icons.confirmation_number_outlined),
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        validator: (v) {
+                          final n = int.tryParse(v?.trim() ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid quantity (0 or more).';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: priceController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        style: TextStyle(color: widget.theme.textColor),
+                        decoration: _inputDecoration(
+                          hint: 'Price per unit (ZAR)',
+                          theme: widget.theme,
+                          prefix: 'R ',
+                        ).copyWith(
+                          labelText: 'Price per unit (ZAR)',
+                          labelStyle:
+                              TextStyle(color: widget.theme.subtitleColor),
+                          prefixIcon: const Icon(Icons.payments_outlined),
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                        ],
+                        validator: (v) {
+                          final n =
+                              double.tryParse(v?.trim() ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid price (0 or more).';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          if (existing != null)
+                            TextButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _lineItems.remove(category.key);
+                                      });
+                                      Navigator.pop(ctx);
+                                    },
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.red),
+                              label: const Text('Remove',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text('Cancel',
+                                style: TextStyle(
+                                    color: widget.theme.subtitleColor)),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: saving
+                                ? null
+                                : () {
+                                    if (!formKey.currentState!.validate()) {
+                                      return;
+                                    }
+                                    final qty =
+                                        int.tryParse(qtyController.text.trim()) ??
+                                            0;
+                                    final price = double.tryParse(
+                                            priceController.text.trim()) ??
+                                        0.0;
+                                    if (qty <= 0 || price <= 0) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Enter a quantity and price greater than 0 to add this line.'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    setSheetState(() => saving = true);
+                                    setState(() {
+                                      _lineItems[category.key] = ItemizedLineItem(
+                                        key: category.key,
+                                        label: category.label,
+                                        quantity: qty,
+                                        pricePerUnit: price,
+                                      );
+                                    });
+                                    Navigator.pop(ctx);
+                                  },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: widget.theme.accentColor,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save),
+                            label: const Text('Save'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                ],
               ),
-            ],
-          ),
-          actions: [
-            if (existing != null)
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _lineItems.remove(category.key);
-                  });
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text('Remove',
-                    style: TextStyle(color: Colors.red)),
-              ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('Cancel',
-                  style: TextStyle(color: widget.theme.subtitleColor)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final qty = int.tryParse(qtyController.text.trim()) ?? 0;
-                final price =
-                    double.tryParse(priceController.text.trim()) ?? 0.0;
-                if (qty <= 0 || price <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Enter a valid quantity and price'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-                setState(() {
-                  _lineItems[category.key] = ItemizedLineItem(
-                    key: category.key,
-                    label: category.label,
-                    quantity: qty,
-                    pricePerUnit: price,
-                  );
-                });
-                Navigator.pop(dialogContext);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: widget.theme.accentColor,
-                foregroundColor: Colors.black,
-              ),
-              child: const Text('Save'),
-            ),
-          ],
+            );
+          },
         );
       },
     );

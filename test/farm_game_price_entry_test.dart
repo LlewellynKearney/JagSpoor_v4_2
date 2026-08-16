@@ -20,6 +20,8 @@ void main() {
         speciesName: 'Impala',
         qty: 5,
         priceZAR: 2500.0,
+        gender: 'Male',
+        hornTuskLength: '28"+',
         createdAt: created,
         updatedAt: created,
       );
@@ -29,6 +31,8 @@ void main() {
       expect(map['speciesName'], 'Impala');
       expect(map['qty'], 5);
       expect(map['price'], 2500.0);
+      expect(map['gender'], 'Male');
+      expect(map['hornTuskLength'], '28"+');
       expect(map['createdAt'], isA<Timestamp>());
       expect(map['updatedAt'], isA<Timestamp>());
 
@@ -39,12 +43,28 @@ void main() {
       expect(restored.speciesName, 'Impala');
       expect(restored.qty, 5);
       expect(restored.priceZAR, 2500.0);
+      expect(restored.gender, 'Male');
+      expect(restored.hornTuskLength, '28"+');
       // Firestore Timestamp.toDate() returns a local DateTime, so compare via
       // millisecondsSinceEpoch (timezone-independent).
       expect(restored.createdAt?.millisecondsSinceEpoch,
           created.millisecondsSinceEpoch);
       expect(restored.updatedAt?.millisecondsSinceEpoch,
           created.millisecondsSinceEpoch);
+    });
+
+    test('omits hornTuskLength from toMap when empty', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Impala',
+        qty: 1,
+        priceZAR: 100,
+      );
+      final map = entry.toMap();
+      expect(map.containsKey('hornTuskLength'), isFalse);
+      expect(map['gender'], 'Any');
     });
 
     test('tolerates speciesName alias "name"', () {
@@ -104,12 +124,56 @@ void main() {
       expect(entry.speciesName, '');
     });
 
-    test('trims the species name on read', () {
+    test('defaults gender to Any + hornTuskLength to empty when missing', () {
       final entry = FarmGamePriceEntry.fromMap(
-        {'speciesName': '  Impala  ', 'qty': 1, 'price': 100},
+        {'speciesName': 'Impala', 'qty': 1, 'price': 100},
+        id: 'x',
+      );
+      expect(entry.gender, 'Any');
+      expect(entry.hornTuskLength, '');
+    });
+
+    test('normalizes gender aliases (sex, M/F, bull/cow, both)', () {
+      expect(
+        FarmGamePriceEntry.fromMap({'gender': 'male'}, id: 'x').gender,
+        'Male',
+      );
+      expect(
+        FarmGamePriceEntry.fromMap({'sex': 'F'}, id: 'x').gender,
+        'Female',
+      );
+      expect(
+        FarmGamePriceEntry.fromMap({'gender': 'Bull'}, id: 'x').gender,
+        'Male',
+      );
+      expect(
+        FarmGamePriceEntry.fromMap({'gender': 'cow'}, id: 'x').gender,
+        'Female',
+      );
+      expect(
+        FarmGamePriceEntry.fromMap({'gender': 'Both'}, id: 'x').gender,
+        'Any',
+      );
+    });
+
+    test('tolerates hornTuskLength aliases "horn" / "tusk"', () {
+      expect(
+        FarmGamePriceEntry.fromMap({'horn': 'Trophy'}, id: 'x').hornTuskLength,
+        'Trophy',
+      );
+      expect(
+        FarmGamePriceEntry.fromMap({'tusk': '30" +'}, id: 'x').hornTuskLength,
+        '30" +',
+      );
+    });
+
+    test('trims the species name + horn/tusk length on read', () {
+      final entry = FarmGamePriceEntry.fromMap(
+        {'speciesName': '  Impala  ', 'qty': 1, 'price': 100, 'hornTuskLength': '  28"  '},
         id: 'x',
       );
       expect(entry.speciesName, 'Impala');
+      expect(entry.hornTuskLength, '28"');
     });
 
     test('copyWith updates only the supplied fields + preserves the rest', () {
@@ -120,6 +184,8 @@ void main() {
         speciesName: 'Impala',
         qty: 2,
         priceZAR: 1000,
+        gender: 'Male',
+        hornTuskLength: '28"',
       );
       final updated = entry.copyWith(qty: 8, priceZAR: 1750);
       expect(updated.id, 'e1');
@@ -127,6 +193,49 @@ void main() {
       expect(updated.speciesName, 'Impala'); // preserved
       expect(updated.qty, 8);
       expect(updated.priceZAR, 1750);
+      expect(updated.gender, 'Male'); // preserved
+      expect(updated.hornTuskLength, '28"'); // preserved
+    });
+
+    test('copyWith can update gender + hornTuskLength', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e1',
+        farmId: 'f1',
+        outfitterId: 'o1',
+        speciesName: 'Impala',
+        qty: 2,
+        priceZAR: 1000,
+      );
+      final updated = entry.copyWith(gender: 'Female', hornTuskLength: 'Cull');
+      expect(updated.gender, 'Female');
+      expect(updated.hornTuskLength, 'Cull');
+      expect(updated.speciesName, 'Impala'); // preserved
+    });
+  });
+
+  group('FarmGamePriceValidator.genderOptions', () {
+    test('contains Male, Female, Any', () {
+      expect(FarmGamePriceValidator.genderOptions, ['Male', 'Female', 'Any']);
+    });
+    test('default gender is Any', () {
+      expect(FarmGamePriceValidator.defaultGender, 'Any');
+    });
+  });
+
+  group('FarmGamePriceValidator.validateHornTuskLength', () {
+    test('accepts null + empty (optional field)', () {
+      expect(FarmGamePriceValidator.validateHornTuskLength(null), isNull);
+      expect(FarmGamePriceValidator.validateHornTuskLength(''), isNull);
+      expect(FarmGamePriceValidator.validateHornTuskLength('   '), isNull);
+    });
+    test('accepts a valid descriptor', () {
+      expect(FarmGamePriceValidator.validateHornTuskLength('28"+'), isNull);
+      expect(FarmGamePriceValidator.validateHornTuskLength('Trophy'), isNull);
+      expect(FarmGamePriceValidator.validateHornTuskLength('Cull'), isNull);
+    });
+    test('rejects values longer than 40 chars', () {
+      expect(FarmGamePriceValidator.validateHornTuskLength('x' * 41), isNotNull);
+      expect(FarmGamePriceValidator.validateHornTuskLength('x' * 40), isNull);
     });
   });
 

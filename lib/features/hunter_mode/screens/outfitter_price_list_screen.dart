@@ -414,6 +414,7 @@ class _PriceEntryCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 4,
                   children: [
                     _chip(
                       icon: Icons.confirmation_number,
@@ -424,6 +425,17 @@ class _PriceEntryCard extends StatelessWidget {
                       label:
                           'R ${entry.priceZAR.toStringAsFixed(2)}',
                     ),
+                    if (entry.gender.isNotEmpty && entry.gender != 'Any')
+                      _chip(
+                        icon: Icons.male,
+                        label: entry.gender,
+                        iconOverride: _genderIcon(entry.gender),
+                      ),
+                    if (entry.hornTuskLength.isNotEmpty)
+                      _chip(
+                        icon: Icons.straighten,
+                        label: entry.hornTuskLength,
+                      ),
                   ],
                 ),
               ],
@@ -444,7 +456,7 @@ class _PriceEntryCard extends StatelessWidget {
     );
   }
 
-  Widget _chip({required IconData icon, required String label}) {
+  Widget _chip({required IconData icon, required String label, IconData? iconOverride}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -454,7 +466,7 @@ class _PriceEntryCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: theme.subtitleColor),
+          Icon(iconOverride ?? icon, size: 13, color: theme.subtitleColor),
           const SizedBox(width: 4),
           Text(
             label,
@@ -463,6 +475,18 @@ class _PriceEntryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Returns a gender-appropriate icon for the badge (male/female).
+  IconData _genderIcon(String gender) {
+    switch (gender) {
+      case 'Male':
+        return Icons.male;
+      case 'Female':
+        return Icons.female;
+      default:
+        return Icons.transgender;
+    }
   }
 }
 
@@ -492,6 +516,8 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
   late final TextEditingController _speciesController;
   late final TextEditingController _qtyController;
   late final TextEditingController _priceController;
+  late final TextEditingController _hornTuskController;
+  String _gender = FarmGamePriceValidator.defaultGender;
   bool _saving = false;
 
   @override
@@ -508,6 +534,9 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
               ? ''
               : widget.existing!.priceZAR.toStringAsFixed(2)),
     );
+    _hornTuskController =
+        TextEditingController(text: widget.existing?.hornTuskLength ?? '');
+    _gender = widget.existing?.gender ?? FarmGamePriceValidator.defaultGender;
   }
 
   @override
@@ -515,6 +544,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
     _speciesController.dispose();
     _qtyController.dispose();
     _priceController.dispose();
+    _hornTuskController.dispose();
     super.dispose();
   }
 
@@ -528,6 +558,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
     final price = double.parse(
       _priceController.text.trim().replaceAll(RegExp(r'[Rr ]'), ''),
     );
+    final hornTusk = _hornTuskController.text.trim();
     try {
       if (widget.existing == null) {
         await widget.manager.addEntry(
@@ -535,6 +566,8 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
           speciesName: species,
           qty: qty,
           priceZAR: price,
+          gender: _gender,
+          hornTuskLength: hornTusk,
         );
       } else {
         await widget.manager.updateEntry(
@@ -542,6 +575,8 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
           speciesName: species,
           qty: qty,
           priceZAR: price,
+          gender: _gender,
+          hornTuskLength: hornTusk,
         );
       }
       if (!mounted) return;
@@ -569,103 +604,163 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final isEdit = widget.existing != null;
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.subtitleColor.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isEdit ? 'Edit Species Entry' : 'Add Species Entry',
-              style: TextStyle(
-                color: theme.textColor,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _speciesController,
-              textCapitalization: TextCapitalization.words,
-              style: TextStyle(color: theme.textColor),
-              decoration: _inputDecoration(theme, 'Species Name', 'e.g. Impala')
-                  .copyWith(prefixIcon: const Icon(Icons.pets)),
-              validator: FarmGamePriceValidator.validateSpecies,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _qtyController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: TextStyle(color: theme.textColor),
-              decoration: _inputDecoration(theme, 'Quantity (qty)', 'e.g. 5')
-                  .copyWith(prefixIcon: const Icon(Icons.confirmation_number)),
-              validator: FarmGamePriceValidator.validateQty,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _priceController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.Rr ]')),
-              ],
-              style: TextStyle(color: theme.textColor),
-              decoration: _inputDecoration(theme, 'Price (ZAR)', 'e.g. 2500')
-                  .copyWith(prefixIcon: const Icon(Icons.attach_money)),
-              validator: FarmGamePriceValidator.validatePrice,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: theme.accentColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                icon: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(
-                  _saving
-                      ? 'SAVING...'
-                      : (isEdit ? 'SAVE CHANGES' : 'ADD ENTRY'),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
+    return SafeArea(
+      bottom: true,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.subtitleColor.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                isEdit ? 'Edit Species Entry' : 'Add Species Entry',
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _speciesController,
+                textCapitalization: TextCapitalization.words,
+                style: TextStyle(color: theme.textColor),
+                decoration: _inputDecoration(theme, 'Species Name', 'e.g. Impala')
+                    .copyWith(prefixIcon: const Icon(Icons.pets)),
+                validator: FarmGamePriceValidator.validateSpecies,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _qtyController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: TextStyle(color: theme.textColor),
+                decoration: _inputDecoration(theme, 'Quantity (qty)', 'e.g. 5')
+                    .copyWith(prefixIcon: const Icon(Icons.confirmation_number)),
+                validator: FarmGamePriceValidator.validateQty,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _priceController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.Rr ]')),
+                ],
+                style: TextStyle(color: theme.textColor),
+                decoration: _inputDecoration(theme, 'Price (ZAR)', 'e.g. 2500')
+                    .copyWith(prefixIcon: const Icon(Icons.payments_outlined)),
+                validator: FarmGamePriceValidator.validatePrice,
+              ),
+              const SizedBox(height: 14),
+              _buildGenderSelector(theme),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _hornTuskController,
+                textCapitalization: TextCapitalization.words,
+                style: TextStyle(color: theme.textColor),
+                decoration: _inputDecoration(
+                  theme,
+                  'Horn / Tusk Length',
+                  'e.g. 28", Trophy, Cull',
+                ).copyWith(prefixIcon: const Icon(Icons.straighten)),
+                validator: FarmGamePriceValidator.validateHornTuskLength,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.accentColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(
+                    _saving
+                        ? 'SAVING...'
+                        : (isEdit ? 'SAVE CHANGES' : 'ADD ENTRY'),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenderSelector(ThemeController theme) {
+    return InputDecorator(
+      decoration: _inputDecoration(theme, 'Gender', '').copyWith(
+        prefixIcon: const Icon(Icons.transgender),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      child: Theme(
+        // Reset the modal's ToggleButtonsTheme so the segmented control uses
+        // the colors we set below rather than the app-wide theme.
+        data: Theme.of(context).copyWith(toggleButtonsTheme: null),
+        child: ToggleButtons(
+          isSelected: FarmGamePriceValidator.genderOptions
+              .map((g) => g == _gender)
+              .toList(),
+          onPressed: (index) {
+            setState(() {
+              _gender = FarmGamePriceValidator.genderOptions[index];
+            });
+          },
+          borderColor: theme.accentColor.withValues(alpha: 0.4),
+          selectedBorderColor: theme.accentColor,
+          selectedColor: Colors.white,
+          fillColor: theme.accentColor,
+          color: theme.subtitleColor,
+          borderRadius: BorderRadius.circular(8),
+          constraints: const BoxConstraints(minHeight: 38, minWidth: 64),
+          children: FarmGamePriceValidator.genderOptions
+              .map((g) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      g,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ))
+              .toList(),
         ),
       ),
     );

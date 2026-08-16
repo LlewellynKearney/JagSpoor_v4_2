@@ -3,13 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// A single game-species price-list entry for a farm.
 ///
 /// Each entry maps one game species to its offered quantity (`qty`) and unit
-/// price (ZAR). Records are persisted in the `farm_pricelists` Firestore
-/// collection linked directly to the owning [farmId] (and stamped with the
-/// outfitter's [outfitterId] for ownership scoping).
+/// price (ZAR), plus an optional [gender] classification ('Male' / 'Female' /
+/// 'Any') and an optional [hornTuskLength] trophy descriptor (e.g. '28"+',
+/// 'Trophy', 'Cull'). Records are persisted in the `farm_pricelists`
+/// Firestore collection linked directly to the owning [farmId] (and stamped
+/// with the outfitter's [outfitterId] for ownership scoping).
 ///
 /// Field aliases are tolerated on read ([speciesName]/[name], [qty]/[quantity],
-/// [price]/[priceZAR]/[priceRands]) so legacy / hand-written docs hydrate
-/// cleanly.
+/// [price]/[priceZAR]/[priceRands], [gender]/[sex], [hornTuskLength]/[horn]/
+/// [tusk]) so legacy / hand-written docs hydrate cleanly.
 class FarmGamePriceEntry {
   final String id;
   final String farmId;
@@ -17,6 +19,13 @@ class FarmGamePriceEntry {
   final String speciesName;
   final int qty;
   final double priceZAR;
+
+  /// 'Male' / 'Female' / 'Any' (defaults to 'Any' when unset).
+  final String gender;
+
+  /// Optional trophy descriptor, e.g. '28"+', 'Trophy', 'Cull'. May be empty.
+  final String hornTuskLength;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -27,6 +36,8 @@ class FarmGamePriceEntry {
     required this.speciesName,
     required this.qty,
     required this.priceZAR,
+    this.gender = 'Any',
+    this.hornTuskLength = '',
     this.createdAt,
     this.updatedAt,
   });
@@ -45,6 +56,9 @@ class FarmGamePriceEntry {
       speciesName: ((data['speciesName'] as String?) ?? (data['name'] as String?) ?? '').trim(),
       qty: _parseInt(data['qty'] ?? data['quantity']),
       priceZAR: _parseDouble(data['price'] ?? data['priceZAR'] ?? data['priceRands']),
+      gender: _normalizeGender(data['gender'] ?? data['sex']),
+      hornTuskLength:
+          ((data['hornTuskLength'] as String?) ?? (data['horn'] as String?) ?? (data['tusk'] as String?) ?? '').trim(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -62,6 +76,9 @@ class FarmGamePriceEntry {
       speciesName: ((data['speciesName'] as String?) ?? (data['name'] as String?) ?? '').trim(),
       qty: _parseInt(data['qty'] ?? data['quantity']),
       priceZAR: _parseDouble(data['price'] ?? data['priceZAR'] ?? data['priceRands']),
+      gender: _normalizeGender(data['gender'] ?? data['sex']),
+      hornTuskLength:
+          ((data['hornTuskLength'] as String?) ?? (data['horn'] as String?) ?? (data['tusk'] as String?) ?? '').trim(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -73,6 +90,8 @@ class FarmGamePriceEntry {
         'speciesName': speciesName,
         'qty': qty,
         'price': priceZAR,
+        'gender': gender,
+        if (hornTuskLength.isNotEmpty) 'hornTuskLength': hornTuskLength,
         if (createdAt != null)
           'createdAt': Timestamp.fromDate(createdAt!),
         if (updatedAt != null)
@@ -83,6 +102,8 @@ class FarmGamePriceEntry {
     String? speciesName,
     int? qty,
     double? priceZAR,
+    String? gender,
+    String? hornTuskLength,
     DateTime? updatedAt,
   }) =>
       FarmGamePriceEntry(
@@ -92,6 +113,8 @@ class FarmGamePriceEntry {
         speciesName: speciesName ?? this.speciesName,
         qty: qty ?? this.qty,
         priceZAR: priceZAR ?? this.priceZAR,
+        gender: gender ?? this.gender,
+        hornTuskLength: hornTuskLength ?? this.hornTuskLength,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -114,10 +137,39 @@ class FarmGamePriceEntry {
     return 0.0;
   }
 
+  /// Normalises a raw gender value to one of 'Male' / 'Female' / 'Any'.
+  /// Accepts case-insensitive input + the common 'M'/'F'/'Any'/'Both' aliases.
+  static String _normalizeGender(dynamic v) {
+    if (v == null) return 'Any';
+    final s = v.toString().trim().toLowerCase();
+    switch (s) {
+      case 'male':
+      case 'm':
+      case 'bull':
+      case 'ram':
+        return 'Male';
+      case 'female':
+      case 'f':
+      case 'cow':
+      case 'ewe':
+      case 'hen':
+        return 'Female';
+      case 'any':
+      case 'both':
+      case 'either':
+      case 'all':
+      case '':
+        return 'Any';
+      default:
+        return s[0].toUpperCase() + s.substring(1);
+    }
+  }
+
   @override
   String toString() =>
       'FarmGamePriceEntry(id: $id, farmId: $farmId, species: $speciesName, '
-      'qty: $qty, priceZAR: $priceZAR)';
+      'qty: $qty, priceZAR: $priceZAR, gender: $gender, '
+      'hornTuskLength: $hornTuskLength)';
 }
 
 /// Pure validation helpers for the price-list add/edit form. Unit-testable
@@ -125,6 +177,12 @@ class FarmGamePriceEntry {
 class FarmGamePriceValidator {
   static const int minQty = 0;
   static const double minPrice = 0.0;
+
+  /// The set of selectable gender values for the entry gender control.
+  static const List<String> genderOptions = ['Male', 'Female', 'Any'];
+
+  /// Default gender when none is specified.
+  static const String defaultGender = 'Any';
 
   /// Returns an error message if [species] is invalid (empty), else null.
   static String? validateSpecies(String? species) {
@@ -165,6 +223,16 @@ class FarmGamePriceValidator {
     }
     if (price < minPrice) {
       return 'Price cannot be negative.';
+    }
+    return null;
+  }
+
+  /// Returns an error message if [hornTuskLength] exceeds the max length,
+  /// else null. The field is optional, so an empty value is accepted.
+  static String? validateHornTuskLength(String? value) {
+    if (value == null) return null;
+    if (value.trim().length > 40) {
+      return 'Horn / Tusk length must be at most 40 characters.';
     }
     return null;
   }
