@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
-import '../models/package_pricing.dart';
 
 /// Manages the per-farm game price list (`farm_pricelists` Firestore
 /// collection).
@@ -314,13 +313,12 @@ class FarmGamePriceListManager {
   }) async {
     final existing = await getFarmServiceRates(farmId);
     if (existing == null) return;
-    final cat = ItemizedBreakdownCategory.all.firstWhere(
-      (c) => c.key == key,
-      orElse: () => ItemizedBreakdownCategory(key, key),
-    );
+    final cat = FarmServiceCategory.findByKey(key);
     existing.rates[key] = FarmServiceRate(
       key: key,
       label: cat.label,
+      unitLabel: cat.unitLabel,
+      quantityNoun: cat.quantityNoun,
       quantity: 0,
       pricePerUnit: 0,
     );

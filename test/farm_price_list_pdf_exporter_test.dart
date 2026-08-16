@@ -22,6 +22,157 @@ void main() {
     exporter = FarmPriceListPdfExporter();
   });
 
+  group('FarmPriceListPdfExporter — itemized service filtering', () {
+    /// Builds a [FarmServiceRates] with the given per-key (quantity, price)
+    /// pairs; unspecified categories are left at zero (unconfigured).
+    FarmServiceRates buildRates(Map<String, (int, double)> configured) {
+      final rates = FarmServiceRates.empty('farm-1', 'outfitter-1');
+      configured.forEach((key, pair) {
+        final cat = FarmServiceCategory.findByKey(key);
+        rates.rates[key] = FarmServiceRate(
+          key: key,
+          label: cat.label,
+          unitLabel: cat.unitLabel,
+          quantityNoun: cat.quantityNoun,
+          quantity: pair.$1,
+          pricePerUnit: pair.$2,
+        );
+      });
+      return rates;
+    }
+
+    test('filterActiveServices returns empty when services is null', () {
+      expect(exporter.filterActiveServices(null), isEmpty);
+    });
+
+    test('filterActiveServices omits zero-quantity services', () {
+      final rates = buildRates({
+        // bakkie: qty 0 -> omitted even though price > 0.
+        'bakkie_vehicle': (0, 500.0),
+        // catering: qty 3, price 250 -> included.
+        'catering': (3, 250.0),
+      });
+      final active = exporter.filterActiveServices(rates);
+      expect(active.length, 1);
+      expect(active.single.key, 'catering');
+    });
+
+    test('filterActiveServices omits zero-rate services', () {
+      final rates = buildRates({
+        // coldroom: price 0 -> omitted even though qty > 0.
+        'coldroom': (2, 0.0),
+        // hunter_daily: qty 2, price 800 -> included.
+        'hunter_daily': (2, 800.0),
+      });
+      final active = exporter.filterActiveServices(rates);
+      expect(active.length, 1);
+      expect(active.single.key, 'hunter_daily');
+    });
+
+    test('filterActiveServices omits services that are both zero', () {
+      final rates = buildRates({
+        'coldroom': (0, 0.0),
+        'catering': (3, 250.0),
+      });
+      final active = exporter.filterActiveServices(rates);
+      expect(active.length, 1);
+      expect(active.single.key, 'catering');
+    });
+
+    test('filterActiveServices omits ALL services when every qty+rate is zero',
+        () {
+      final rates = buildRates({
+        'bakkie_vehicle': (0, 0.0),
+        'catering': (0, 0.0),
+      });
+      expect(exporter.filterActiveServices(rates), isEmpty);
+    });
+
+    test('filterActiveServices treats blank/null stored values as zero '
+        '(excluded)', () {
+      // A raw stored doc with missing/null/blank quantity + price values:
+      // fromMap resolves these to 0, so they are excluded by the filter.
+      final rates = FarmServiceRates.fromMap({
+        'outfitterId': 'outfitter-1',
+        'rates': {
+          'bakkie_vehicle': {
+            'key': 'bakkie_vehicle',
+            // quantity missing -> 0
+            'pricePerUnit': null, // null -> 0
+          },
+          'slaughtering_big': {
+            'key': 'slaughtering_big',
+            'quantity': '', // blank string -> 0
+            'pricePerUnit': '', // blank string -> 0
+          },
+          'catering': {
+            'key': 'catering',
+            'quantity': 4,
+            'pricePerUnit': 300,
+          },
+        },
+      }, farmId: 'farm-1');
+      final active = exporter.filterActiveServices(rates);
+      expect(active.length, 1);
+      expect(active.single.key, 'catering');
+    });
+
+    test('filterActiveServices preserves the standard category order', () {
+      final rates = buildRates({
+        'catering': (3, 250.0),
+        'bakkie_vehicle': (2, 500.0),
+        'slaughtering_big': (1, 600.0),
+      });
+      final active = exporter.filterActiveServices(rates);
+      expect(active.map((r) => r.key).toList(), [
+        'bakkie_vehicle',
+        'slaughtering_big',
+        'catering',
+      ]);
+    });
+
+    test('filterActiveServices includes all 9 categories when all are configured',
+        () {
+      final configured = <String, (int, double)>{};
+      for (final cat in FarmServiceCategory.all) {
+        configured[cat.key] = (2, 100.0);
+      }
+      final rates = buildRates(configured);
+      expect(exporter.filterActiveServices(rates).length, 9);
+    });
+
+    test('filterActiveServices carries the unit label through to the export',
+        () {
+      final rates = buildRates({
+        'bakkie_vehicle': (2, 500.0),
+        'overnight_accommodation_hunter': (3, 850.0),
+      });
+      final active = exporter.filterActiveServices(rates);
+      final byKey = {for (final r in active) r.key: r};
+      expect(byKey['bakkie_vehicle']!.unitLabel, 'Per vehicle per day');
+      expect(byKey['overnight_accommodation_hunter']!.unitLabel, 'Per night');
+    });
+
+    test('buildContent uses only the active (filtered) services', () {
+      // buildContent delegates to filterActiveServices; a service with a zero
+      // rate must not appear. We assert the filtered list the builder consumes
+      // rather than parsing PDF bytes.
+      final rates = buildRates({
+        'bakkie_vehicle': (0, 500.0), // omitted
+        'catering': (3, 250.0), // included
+      });
+      final active = exporter.filterActiveServices(rates);
+      expect(active, hasLength(1));
+      // buildContent must not throw when rendering only the active services.
+      final widget = exporter.buildContent(
+        farmName: 'Filter Farm',
+        species: const [],
+        services: rates,
+      );
+      expect(widget, isA<pw.Widget>());
+    });
+  });
+
   group('FarmPriceListPdfExporter.buildContent', () {
     test('buildContent returns a pw.Widget (does not throw)', () {
       final widget = exporter.buildContent(

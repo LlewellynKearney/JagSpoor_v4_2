@@ -51,12 +51,18 @@ class FarmPriceListPdfExporter {
   /// Pure content builder -- returns a `pw.Widget` tree that the engine wraps
   /// in the standard branded header + footer. Stateless + side-effect free so
   /// it can be exercised in a unit test by rendering the document to bytes.
+  ///
+  /// Itemized service filtering rule: any service whose rate OR quantity is
+  /// blank, zero, or null is STRICTLY omitted from the generated PDF price
+  /// list table. Only active, non-zero services (qty>0 AND pricePerUnit>0,
+  /// resolved via [FarmServiceRate.isConfigured]) appear on the exported
+  /// document. See [filterActiveServices].
   pw.Widget buildContent({
     required String farmName,
     required List<FarmGamePriceEntry> species,
     FarmServiceRates? services,
   }) {
-    final configuredServices = services?.configuredRates ?? const <FarmServiceRate>[];
+    final configuredServices = filterActiveServices(services);
     final servicesTotal = configuredServices.fold<double>(0.0, (s, r) => s + r.total);
 
     return pw.Column(
@@ -109,12 +115,19 @@ class FarmPriceListPdfExporter {
             : pw.Column(
                 children: [
                   JagSpoorPdfTheme.dataTable(
-                    headers: ['Service', 'Qty', 'Rate (ZAR)', 'Total (ZAR)'],
-                    columnWidths: const [230, 40, 80, 90],
+                    headers: [
+                      'Service',
+                      'Qty',
+                      'Unit',
+                      'Rate (ZAR)',
+                      'Total (ZAR)',
+                    ],
+                    columnWidths: const [170, 30, 70, 70, 80],
                     rows: configuredServices
                         .map((r) => [
                               r.label,
                               r.quantity.toString(),
+                              r.unitLabel.isEmpty ? '-' : r.unitLabel,
                               JagSpoorPdfTheme.formatZAR(r.pricePerUnit),
                               JagSpoorPdfTheme.formatZAR(r.total),
                             ])
@@ -167,6 +180,21 @@ class FarmPriceListPdfExporter {
         ),
       ],
     );
+  }
+
+  /// Filters the farm's itemized service rates to ONLY the active, non-zero
+  /// services that should appear on the exported PDF price list table.
+  ///
+  /// Filtering rule (per spec): any itemized service whose rate OR quantity
+  /// is blank, zero, or null is strictly omitted. A service is included ONLY
+  /// when BOTH `quantity > 0` AND `pricePerUnit > 0` (i.e.
+  /// [FarmServiceRate.isConfigured]). Null/blank/zero values are resolved to
+  /// 0 during [FarmServiceRate.fromMap] parsing, so they are correctly
+  /// excluded here. Returns the configured services in standard category
+  /// order (via [FarmServiceRates.configuredRates]); returns an empty list
+  /// when [services] is null.
+  List<FarmServiceRate> filterActiveServices(FarmServiceRates? services) {
+    return services?.configuredRates ?? const <FarmServiceRate>[];
   }
 
   pw.Widget _emptyHint(String message) {

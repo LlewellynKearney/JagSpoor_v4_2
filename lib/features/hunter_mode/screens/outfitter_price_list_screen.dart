@@ -10,7 +10,6 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
-import '../models/package_pricing.dart';
 import '../services/farm_game_price_csv_importer.dart';
 import '../services/farm_game_price_list_manager.dart';
 import '../services/farm_price_list_pdf_exporter.dart';
@@ -555,11 +554,13 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                 ),
               )
             else
-              ...ItemizedBreakdownCategory.all.map((category) {
+              ...FarmServiceCategory.all.map((category) {
                 final rate = rates?.rate(category.key) ??
                     FarmServiceRate(
                       key: category.key,
                       label: category.label,
+                      unitLabel: category.unitLabel,
+                      quantityNoun: category.quantityNoun,
                       quantity: 0,
                       pricePerUnit: 0,
                     );
@@ -567,8 +568,8 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
               }),
             const SizedBox(height: 4),
             Text(
-              'Tap any service to set its quantity & rate. Rates are saved to '
-              'this farm and included in the PDF export.',
+              'Tap any service to set its quantity & rate. Only services with '
+              'a non-zero quantity AND rate are included in the PDF export.',
               style: TextStyle(
                 color: theme.subtitleColor,
                 fontSize: 11,
@@ -583,7 +584,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
 
   Widget _serviceRateRow(
     ThemeController theme,
-    ItemizedBreakdownCategory category,
+    FarmServiceCategory category,
     FarmServiceRate rate,
   ) {
     final configured = rate.isConfigured;
@@ -611,13 +612,30 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
           ),
         ),
         subtitle: configured
-            ? Text(
-                'Qty ${rate.quantity} × R ${rate.pricePerUnit.toStringAsFixed(2)} '
-                '= R ${rate.total.toStringAsFixed(2)}',
-                style: TextStyle(color: theme.accentColor, fontSize: 12),
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${rate.quantity} ${category.quantityNoun} × R '
+                    '${rate.pricePerUnit.toStringAsFixed(2)} '
+                    '(${category.unitLabel.toLowerCase()}) = R '
+                    '${rate.total.toStringAsFixed(2)}',
+                    style: TextStyle(color: theme.accentColor, fontSize: 12),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    category.unitLabel,
+                    style: TextStyle(
+                      color: theme.subtitleColor,
+                      fontSize: 10,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               )
             : Text(
-                'Tap to add quantity & rate',
+                '${category.unitLabel} · tap to add ${category.quantityNoun} & rate',
                 style: TextStyle(
                   color: theme.subtitleColor,
                   fontSize: 12,
@@ -637,7 +655,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
   /// line-item editor). Persists via [FarmGamePriceListManager.upsertFarmServiceRate]
   /// (or [removeFarmServiceRate] when cleared).
   void _editServiceRate(
-    ItemizedBreakdownCategory category,
+    FarmServiceCategory category,
     FarmServiceRate existing,
   ) {
     final qtyController = TextEditingController(
@@ -698,13 +716,24 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                         ),
                         textAlign: TextAlign.center,
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Rate unit: ${category.unitLabel}',
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                       const SizedBox(height: 20),
                       TextFormField(
                         controller: qtyController,
                         keyboardType: TextInputType.number,
                         style: TextStyle(color: widget.theme.textColor),
                         decoration: InputDecoration(
-                          labelText: 'Quantity',
+                          labelText:
+                              'Quantity (${category.quantityNoun})',
                           labelStyle:
                               TextStyle(color: widget.theme.subtitleColor),
                           prefixIcon: const Icon(
@@ -731,7 +760,8 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                             const TextInputType.numberWithOptions(decimal: true),
                         style: TextStyle(color: widget.theme.textColor),
                         decoration: InputDecoration(
-                          labelText: 'Rate per unit (ZAR)',
+                          labelText:
+                              'Rate — ${category.unitLabel} (ZAR)',
                           labelStyle:
                               TextStyle(color: widget.theme.subtitleColor),
                           prefixIcon: const Icon(Icons.payments_outlined),
@@ -822,6 +852,8 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                                         rate: FarmServiceRate(
                                           key: category.key,
                                           label: category.label,
+                                          unitLabel: category.unitLabel,
+                                          quantityNoun: category.quantityNoun,
                                           quantity: qty,
                                           pricePerUnit: price,
                                         ),
