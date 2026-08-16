@@ -210,8 +210,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   double _zeroDistanceMeters = 100.0;
 
   // Muzzle velocity and bullet weight controls (v19.0)
-  double _muzzleVelocityFps = 2700.0; // Range: 1300-4000 fps, Default: 2700
-  double _bulletWeightGrains = 150.0; // Range: 30-300 grains, Default: 150
+  double _muzzleVelocityFps = 2700.0; // Range: 800-5000 fps, Default: 2700
+  double _bulletWeightGrains = 300.0; // Range: 300-500 grains, Default: 300
 
   final List<Map<String, dynamic>> _fallbackAmmunitionCatalog = [
     {
@@ -485,9 +485,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       ),
                       child: Slider(
                         value: _targetRangeMeters,
-                        min: 50,
+                        min: 25,
                         max: 1000,
-                        divisions: 19,
+                        divisions: 39,
                         onChanged:
                             (v) => setState(() => _targetRangeMeters = v),
                       ),
@@ -529,7 +529,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     _buildParameterRow(
                       'Zero Distance (m)',
                       _zeroDistanceMeters,
-                      50,
+                      25,
                       1000,
                       (v) => setState(() => _zeroDistanceMeters = v),
                     ),
@@ -602,16 +602,16 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     _buildParameterRow(
                       'Muzzle Velocity (fps)',
                       _muzzleVelocityFps,
-                      1300,
-                      4000,
+                      800,
+                      5000,
                       (v) => setState(() => _muzzleVelocityFps = v),
                     ),
                     const SizedBox(height: 8),
                     _buildParameterRow(
                       'Bullet Weight (Grains)',
                       _bulletWeightGrains,
-                      30,
                       300,
+                      500,
                       (v) => setState(() => _bulletWeightGrains = v),
                     ),
                   ],
@@ -940,7 +940,11 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     final double bc =
         (_selectedAmmunitionData?['ballisticCoefficient'] ??
                 _selectedAmmunitionData?['bc'] ??
-                0.45)
+                (ammoCatalog.isNotEmpty
+                    ? (ammoCatalog.first['ballisticCoefficient'] ??
+                        ammoCatalog.first['bc'] ??
+                        0.45)
+                    : 0.45))
             .toDouble();
 
     // Use the slider fps value, converting to m/s for internal physics
@@ -959,7 +963,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     );
 
     final dropSpots =
-        trajectoryGrid.map((p) => FlSpot(p.rangeMeters, p.dropCm)).toList();
+        trajectoryGrid.map((p) => FlSpot(p.rangeMeters, -p.dropCm)).toList();
 
     final windageSpots =
         trajectoryGrid.map((p) => FlSpot(p.rangeMeters, p.windageCm)).toList();
@@ -968,6 +972,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       ...dropSpots,
       ...windageSpots,
     ].map((s) => s.y.abs()).fold<double>(0, (a, b) => math.max(a, b));
+
+    // Dynamic firearm label: selected firearm make/model/caliber, else prompt.
+    final String firearmLabel = _selectedFirearmData == null
+        ? 'Select Firearm'
+        : '${(_selectedFirearmData!['make'] ?? _selectedFirearmData!['brand'] ?? _selectedFirearmData!['manufacturer'] ?? 'Unknown').toString()} '
+            '${(_selectedFirearmData!['model'] ?? _selectedFirearmData!['modelName'] ?? _selectedFirearmData!['name'] ?? 'Firearm').toString()} '
+            '[${(_selectedFirearmData!['caliber'] ?? _selectedFirearmData!['calibre'] ?? 'N/A').toString()}]';
 
     return Container(
       height: 350,
@@ -987,14 +998,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 'DROP & WINDAGE vs RANGE',
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
-              if (ammoCatalog.isNotEmpty)
-                Text(
-                  ammoCatalog.first['name'] ?? '',
-                  style: TextStyle(
-                    color: JagspoorTheme.thermalGlow,
-                    fontSize: 11,
-                  ),
+              Text(
+                firearmLabel,
+                style: TextStyle(
+                  color: JagspoorTheme.thermalGlow,
+                  fontSize: 11,
                 ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1061,7 +1071,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     color: JagspoorTheme.walnutLuxury.withAlpha(128),
                   ),
                 ),
-                // Target Range Indicator Line (v17.1)
+                // Target Range Indicator Line (v17.1) + zero baseline.
                 extraLinesData: ExtraLinesData(
                   verticalLines: [
                     VerticalLine(
@@ -1080,6 +1090,23 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                         labelResolver:
                             (line) =>
                                 'TARGET: ${_targetRangeMeters.toStringAsFixed(0)}m',
+                      ),
+                    ),
+                  ],
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: 0,
+                      color: JagspoorTheme.walnutLuxury.withAlpha(96),
+                      strokeWidth: 1.5,
+                      label: HorizontalLineLabel(
+                        show: true,
+                        alignment: Alignment.topLeft,
+                        style: const TextStyle(
+                          color: Color(0xFF1A2421),
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        labelResolver: (line) => 'ZERO LINE',
                       ),
                     ),
                   ],
@@ -1117,13 +1144,16 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     getTooltipItems:
                         (spots) =>
                             spots.map((spot) {
-                              final label =
-                                  spot.barIndex == 0 ? 'Drop' : 'Wind';
+                              final isDrop = spot.barIndex == 0;
+                              final label = isDrop ? 'Drop' : 'Wind';
+                              // Drop spots are negated for display; show the
+                              // real drop magnitude (positive = below LOS).
+                              final value = isDrop ? -spot.y : spot.y;
                               return LineTooltipItem(
-                                '$label: ${spot.y.toStringAsFixed(2)} cm',
+                                '$label: ${value.toStringAsFixed(2)} cm',
                                 TextStyle(
                                   color:
-                                      spot.barIndex == 0
+                                      isDrop
                                           ? JagspoorTheme.thermalGlow
                                           : Colors.blueAccent,
                                   fontSize: 12,

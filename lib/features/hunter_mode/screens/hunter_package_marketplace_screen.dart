@@ -26,7 +26,6 @@ class HunterPackageMarketplaceScreen extends StatefulWidget {
 class _HunterPackageMarketplaceScreenState
     extends State<HunterPackageMarketplaceScreen>
     with SingleTickerProviderStateMixin {
-
   // South African provinces
   static const List<String> _provinces = [
     'All Provinces',
@@ -147,16 +146,15 @@ class _HunterPackageMarketplaceScreenState
                         Icons.arrow_drop_down,
                         color: theme.accentColor,
                       ),
-                      items:
-                          _provinces.map((province) {
-                            return DropdownMenuItem(
-                              value: province,
-                              child: Text(
-                                province,
-                                style: TextStyle(color: theme.textColor),
-                              ),
-                            );
-                          }).toList(),
+                      items: _provinces.map((province) {
+                        return DropdownMenuItem(
+                          value: province,
+                          child: Text(
+                            province,
+                            style: TextStyle(color: theme.textColor),
+                          ),
+                        );
+                      }).toList(),
                       onChanged: (value) {
                         setState(() {
                           _selectedProvince =
@@ -244,14 +242,15 @@ class _HunterPackageMarketplaceScreenState
               }
 
               return ListView.builder(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+                padding: EdgeInsets.fromLTRB(
+                    16, 16, 16, SafeBottomInset.of(context)),
                 itemCount: packages.length,
                 itemBuilder: (context, index) {
                   final packageData = packages[index];
                   final packageId = packageData['packageId'] as String? ?? '';
                   final data =
                       packageData['packageData'] as Map<String, dynamic>? ??
-                      <String, dynamic>{};
+                          <String, dynamic>{};
                   final farmName = packageData['farmName'] as String? ?? '';
                   final province = packageData['province'] as String? ?? '';
 
@@ -285,11 +284,10 @@ class _HunterPackageMarketplaceScreenState
     }
 
     return StreamBuilder(
-      stream:
-          FirebaseFirestore.instance
-              .collection('bookings')
-              .where('hunterId', isEqualTo: currentUserId)
-              .snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('hunterId', isEqualTo: currentUserId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -308,14 +306,15 @@ class _HunterPackageMarketplaceScreenState
 
         // Sort bookings in-memory by timestamp (descending)
         final docs = snapshot.data?.docs ?? [];
-        final bookings = List<QueryDocumentSnapshot>.from(docs)..sort((a, b) {
-          final aTime = a['bookingTimestamp'] as Timestamp?;
-          final bTime = b['bookingTimestamp'] as Timestamp?;
-          if (aTime == null && bTime == null) return 0;
-          if (aTime == null) return 1;
-          if (bTime == null) return -1;
-          return bTime.compareTo(aTime);
-        });
+        final bookings = List<QueryDocumentSnapshot>.from(docs)
+          ..sort((a, b) {
+            final aTime = a['bookingTimestamp'] as Timestamp?;
+            final bTime = b['bookingTimestamp'] as Timestamp?;
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+          });
 
         if (bookings.isEmpty) {
           return Center(
@@ -350,7 +349,8 @@ class _HunterPackageMarketplaceScreenState
           children: [
             Expanded(
               child: ListView.builder(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+                padding: EdgeInsets.fromLTRB(
+                    16, 16, 16, SafeBottomInset.of(context)),
                 itemCount: bookings.length,
                 itemBuilder: (context, index) {
                   final booking = bookings[index];
@@ -381,12 +381,11 @@ class _HunterPackageMarketplaceScreenState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => _BookingConfirmationSheet(
-            packageId: packageId,
-            data: data,
-            theme: widget.theme,
-          ),
+      builder: (context) => _BookingConfirmationSheet(
+        packageId: packageId,
+        data: data,
+        theme: widget.theme,
+      ),
     );
   }
 }
@@ -499,8 +498,8 @@ class _PackageCard extends StatelessWidget {
                               farmName.isNotEmpty
                                   ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
                                   : province.isNotEmpty
-                                  ? province
-                                  : 'Location TBD',
+                                      ? province
+                                      : 'Location TBD',
                               style: TextStyle(
                                 color: theme.subtitleColor,
                                 fontSize: 12,
@@ -630,29 +629,28 @@ class _PackageCard extends StatelessWidget {
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
-                  children:
-                      inclusions.take(4).map((item) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.accentColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: theme.accentColor.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Text(
-                            item,
-                            style: TextStyle(
-                              color: theme.accentColor,
-                              fontSize: 11,
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                  children: inclusions.take(4).map((item) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.accentColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: theme.accentColor.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        item,
+                        style: TextStyle(
+                          color: theme.accentColor,
+                          fontSize: 11,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 if (inclusions.length > 4) ...[
                   const SizedBox(height: 4),
@@ -674,9 +672,8 @@ class _PackageCard extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: isSoldOut ? null : onTap,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isSoldOut
-                        ? Colors.grey
-                        : const Color(0xFF1565C0),
+                    backgroundColor:
+                        isSoldOut ? Colors.grey : const Color(0xFF1565C0),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -740,7 +737,8 @@ class _PackageCard extends StatelessWidget {
   /// [SizedBox] when the package has no images so the card layout is unchanged.
   Widget _buildGallery(ThemeController theme) {
     final raw = data['imageUrls'];
-    final urls = raw is List ? raw.whereType<String>().toList() : const <String>[];
+    final urls =
+        raw is List ? raw.whereType<String>().toList() : const <String>[];
     if (urls.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: 96,
@@ -802,7 +800,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   @override
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
-    final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+    final basePrice =
+        (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
     // Hunter-facing total — derived via the single-source PricingMath helper.
     // The total equals the base package cost (there is no platform commission
     // and no deposit split).
@@ -994,40 +993,37 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: (_isLoading || isSoldOut)
-                        ? null
-                        : _confirmBooking,
+                    onPressed:
+                        (_isLoading || isSoldOut) ? null : _confirmBooking,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isSoldOut
-                          ? Colors.grey
-                          : const Color(0xFF1565C0),
+                      backgroundColor:
+                          isSoldOut ? Colors.grey : const Color(0xFF1565C0),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child:
-                        _isLoading
-                            ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                            : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.check_circle_outline, size: 20),
-                                SizedBox(width: 8),
-                                Text(
-                                  'BOOK THIS PACKAGE',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ],
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
                             ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_circle_outline, size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'BOOK THIS PACKAGE',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
               ],
@@ -1049,9 +1045,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
       runSpacing: 6,
       children: [
         _summaryChip(
-          icon: isItemized
-              ? Icons.list_alt_rounded
-              : Icons.payments_rounded,
+          icon: isItemized ? Icons.list_alt_rounded : Icons.payments_rounded,
           label: isItemized ? 'Itemized Package' : 'All-Inclusive Package',
         ),
         if (start != null)
@@ -1126,7 +1120,6 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             ],
           ),
           const SizedBox(height: 12),
-
           if (pricing.mode == PackagePricingMode.itemized) ...[
             if (pricing.lineItems.isEmpty && pricing.speciesItems.isEmpty)
               Text(
@@ -1142,8 +1135,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                       '${item.quantity} × R ${item.pricePerUnit.toStringAsFixed(2)}',
                   total: item.total,
                 )),
-            if (pricing.lineItems.isNotEmpty &&
-                pricing.speciesItems.isNotEmpty)
+            if (pricing.lineItems.isNotEmpty && pricing.speciesItems.isNotEmpty)
               const Divider(height: 16),
             ...pricing.speciesItems.map((species) => _breakdownLine(
                   label: species.speciesName,
@@ -1180,7 +1172,6 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                   )),
             ],
           ],
-
           if (inclusions.isNotEmpty) ...[
             const Divider(height: 16),
             Text(
@@ -1280,7 +1271,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
     try {
       final outfitterId = widget.data['outfitterId'] as String?;
-      final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+      final basePrice =
+          (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
       final packageName = widget.data['title'] as String?;
 
       if (outfitterId == null) {
@@ -1356,10 +1348,7 @@ class _PriceRow extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color:
-                isTotal
-                    ? Colors.green
-                    : theme.textColor,
+            color: isTotal ? Colors.green : theme.textColor,
             fontSize: isTotal ? 18 : 14,
             fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
           ),
@@ -1434,13 +1423,11 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         (data['outfitterPhoneNumber'] as String?) ??
         (data['contactNumber'] as String?) ??
         '';
-    final packageName =
-        data['packageName'] as String? ?? 'hunting package';
-    final totalPrice =
-        PricingMath.resolveHunterTotal(
-          totalHunterPrice: (data['totalHunterPriceRands'] as num?)?.toDouble(),
-          basePrice: (data['basePriceRands'] as num?)?.toDouble() ?? 0.0,
-        );
+    final packageName = data['packageName'] as String? ?? 'hunting package';
+    final totalPrice = PricingMath.resolveHunterTotal(
+      totalHunterPrice: (data['totalHunterPriceRands'] as num?)?.toDouble(),
+      basePrice: (data['basePriceRands'] as num?)?.toDouble() ?? 0.0,
+    );
     final status = data['status'] as String? ?? BookingStatus.pendingApproval;
 
     final message = 'Hello, regarding my $packageName booking on JagSpoor '
@@ -1454,7 +1441,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         : Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
 
     try {
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1500,7 +1488,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.data['status'] as String? ?? BookingStatus.pendingApproval;
+    final status =
+        widget.data['status'] as String? ?? BookingStatus.pendingApproval;
     final packageName =
         widget.data['packageName'] as String? ?? 'Custom Package';
     final basePrice =
@@ -1511,7 +1500,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     // commission), the base price is preferred so the card reflects the base
     // booking cost.
     final totalPrice = PricingMath.resolveHunterTotal(
-      totalHunterPrice: (widget.data['totalHunterPriceRands'] as num?)?.toDouble(),
+      totalHunterPrice:
+          (widget.data['totalHunterPriceRands'] as num?)?.toDouble(),
       basePrice: basePrice,
     );
     final statusLower = status.toLowerCase();
@@ -1523,9 +1513,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         (widget.data['dateChangeRequestPending'] as bool?) ?? false;
     final dateChangeMap =
         widget.data['dateChangeRequest'] as Map<String, dynamic>?;
-    final dateChange = dateChangeMap != null
-        ? DateChangeRequest.fromMap(dateChangeMap)
-        : null;
+    final dateChange =
+        dateChangeMap != null ? DateChangeRequest.fromMap(dateChangeMap) : null;
     final isPostApproval = statusLower == 'approved' ||
         statusLower == 'awaiting payment' ||
         statusLower == 'confirmed';
@@ -1775,201 +1764,203 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color:
-                            widget.theme.subtitleColor.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Icon(Icons.event_repeat_rounded,
-                          color: widget.theme.accentColor, size: 24),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Request Date Change',
-                        style: TextStyle(
-                          color: widget.theme.textColor,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Propose new dates for your outfitter to approve or decline.',
-                    style: TextStyle(
-                      color: widget.theme.subtitleColor,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _dateChangeDateChip(
-                          label: 'New Start Date',
-                          value: newStart,
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: newStart ?? DateTime.now(),
-                              firstDate: DateTime.now(),
-                              lastDate:
-                                  DateTime.now().add(const Duration(days: 730)),
-                            );
-                            if (picked != null) {
-                              setSheetState(() {
-                                newStart = picked;
-                                if (newEnd != null &&
-                                    newEnd!.isBefore(picked)) {
-                                  newEnd = picked;
-                                }
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _dateChangeDateChip(
-                          label: 'New End Date',
-                          value: newEnd,
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate:
-                                  newEnd ?? newStart ?? DateTime.now(),
-                              firstDate: newStart ?? DateTime.now(),
-                              lastDate:
-                                  DateTime.now().add(const Duration(days: 730)),
-                            );
-                            if (picked != null) {
-                              setSheetState(() {
-                                newEnd = picked;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: reasonController,
-                    style: TextStyle(color: widget.theme.textColor),
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Reason for date change (optional)...',
-                      hintStyle:
-                          TextStyle(color: widget.theme.subtitleColor),
-                      filled: true,
-                      fillColor: widget.theme.backgroundColor,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
+            return SafeArea(
+              top: false,
+              bottom: true,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
                           color:
-                              widget.theme.accentColor.withValues(alpha: 0.3),
+                              widget.theme.subtitleColor.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(sheetContext),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: widget.theme.textColor,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.event_repeat_rounded,
+                            color: widget.theme.accentColor, size: 24),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Request Date Change',
+                          style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Propose new dates for your outfitter to approve or decline.',
+                      style: TextStyle(
+                        color: widget.theme.subtitleColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _dateChangeDateChip(
+                            label: 'New Start Date',
+                            value: newStart,
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: newStart ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 730)),
+                              );
+                              if (picked != null) {
+                                setSheetState(() {
+                                  newStart = picked;
+                                  if (newEnd != null &&
+                                      newEnd!.isBefore(picked)) {
+                                    newEnd = picked;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _dateChangeDateChip(
+                            label: 'New End Date',
+                            value: newEnd,
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate:
+                                    newEnd ?? newStart ?? DateTime.now(),
+                                firstDate: newStart ?? DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 730)),
+                              );
+                              if (picked != null) {
+                                setSheetState(() {
+                                  newEnd = picked;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: reasonController,
+                      style: TextStyle(color: widget.theme.textColor),
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Reason for date change (optional)...',
+                        hintStyle: TextStyle(color: widget.theme.subtitleColor),
+                        filled: true,
+                        fillColor: widget.theme.backgroundColor,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color:
+                                widget.theme.accentColor.withValues(alpha: 0.3),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            if (newStart == null && newEnd == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Please select at least one new date'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                              return;
-                            }
-                            try {
-                              await PackageBookingManager.instance
-                                  .requestDateChange(
-                                bookingId: widget.bookingId,
-                                request: DateChangeRequest(
-                                  requestedStartDate: newStart,
-                                  requestedEndDate: newEnd,
-                                  reason: reasonController.text.trim(),
-                                ),
-                              );
-                              if (sheetContext.mounted) {
-                                Navigator.pop(sheetContext);
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: widget.theme.textColor,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              if (newStart == null && newEnd == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                        '✅ Date change request sent to outfitter'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (sheetContext.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('❌ Failed: $e'),
+                                        'Please select at least one new date'),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
+                                return;
                               }
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.theme.accentColor,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              try {
+                                await PackageBookingManager.instance
+                                    .requestDateChange(
+                                  bookingId: widget.bookingId,
+                                  request: DateChangeRequest(
+                                    requestedStartDate: newStart,
+                                    requestedEndDate: newEnd,
+                                    reason: reasonController.text.trim(),
+                                  ),
+                                );
+                                if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          '✅ Date change request sent to outfitter'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (sheetContext.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('❌ Failed: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: widget.theme.accentColor,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
+                            child: const Text('SEND REQUEST',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
-                          child: const Text('SEND REQUEST',
-                              style:
-                                  TextStyle(fontWeight: FontWeight.bold)),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -2102,13 +2093,12 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                   SizedBox(
                     height: 200,
                     child: StreamBuilder(
-                      stream:
-                          FirebaseFirestore.instance
-                              .collection('bookings')
-                              .doc(widget.bookingId)
-                              .collection('chats')
-                              .orderBy('timestamp', descending: false)
-                              .snapshots(),
+                      stream: FirebaseFirestore.instance
+                          .collection('bookings')
+                          .doc(widget.bookingId)
+                          .collection('chats')
+                          .orderBy('timestamp', descending: false)
+                          .snapshots(),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -2146,8 +2136,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                           itemBuilder: (context, index) {
                             final msg = messages[index].data();
                             final senderId = msg['senderId'] as String? ?? '';
-                            final isMe =
-                                senderId ==
+                            final isMe = senderId ==
                                 FirebaseAuth.instance.currentUser?.uid;
 
                             return _ChatBubbleHunter(
@@ -2280,10 +2269,9 @@ class _ChatBubbleHunter extends StatelessWidget {
             bottomRight: Radius.circular(isMe ? 4 : 16),
           ),
           border: Border.all(
-            color:
-                isMe
-                    ? theme.accentColor.withValues(alpha: 0.3)
-                    : theme.accentColor.withValues(alpha: 0.1),
+            color: isMe
+                ? theme.accentColor.withValues(alpha: 0.3)
+                : theme.accentColor.withValues(alpha: 0.1),
           ),
         ),
         child: Column(

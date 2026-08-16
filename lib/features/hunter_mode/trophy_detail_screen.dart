@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/measurement_formatter.dart';
@@ -105,34 +107,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
               IconButton(
                 icon: Icon(Icons.edit, color: widget.theme.accentColor),
                 tooltip: 'Edit Trophy',
-                onPressed: () async {
-                  final scaffold = ScaffoldMessenger.of(context);
-                  final nav = Navigator.of(context);
-
-                  final result = await Navigator.push<Map<String, dynamic>>(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (context) => EditTrophyScreen(
-                            theme: widget.theme,
-                            trophy: widget.trophy,
-                            firearms: widget.firearms,
-                          ),
-                    ),
-                  );
-
-                  if (result != null && mounted) {
-                    // Update the trophy data and rebuild
-                    scaffold.showSnackBar(
-                      const SnackBar(
-                        content: Text('Trophy updated successfully'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    // Optionally pop back to TrophyRoomScreen with updated data
-                    nav.pop(result);
-                  }
-                },
+                onPressed: _editTrophy,
               ),
             ],
           ),
@@ -165,6 +140,35 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
         );
       },
     );
+  }
+
+  /// Opens the Edit Trophy screen and pops back with the updated trophy data
+  /// when the user saves. Reused by the AppBar edit button + the re-upload
+  /// affordance shown when a legacy local-file photo no longer exists.
+  Future<void> _editTrophy() async {
+    final scaffold = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditTrophyScreen(
+          theme: widget.theme,
+          trophy: widget.trophy,
+          firearms: widget.firearms,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      scaffold.showSnackBar(
+        const SnackBar(
+          content: Text('Trophy updated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      nav.pop(result);
+    }
   }
 
   Widget _buildImageSection() {
@@ -211,26 +215,85 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: AdaptiveImage(
-          imagePath: photos.first,
-          fit: BoxFit.cover,
-          placeholder: Container(
-            color: widget.theme.accentColor.withValues(alpha: 0.1),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  widget.theme.accentColor,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            AdaptiveImage(
+              imagePath: photos.first,
+              fit: BoxFit.cover,
+              placeholder: Container(
+                color: widget.theme.accentColor.withValues(alpha: 0.1),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      widget.theme.accentColor,
+                    ),
+                  ),
                 ),
               ),
+              errorWidget: PhotoUnavailablePlaceholder(
+                backgroundColor: widget.theme.cardColor,
+              ),
             ),
-          ),
-          errorWidget: PhotoUnavailablePlaceholder(
-            backgroundColor: widget.theme.cardColor,
-          ),
+            // Re-upload affordance: when the first photo is a local file path
+            // that no longer exists on disk (a legacy trophy saved with a
+            // temporary cache path instead of a Storage URL), surface a
+            // tappable prompt to re-upload via the Edit Trophy screen instead
+            // of leaving the user looking at a bare "Photo unavailable"
+            // placeholder with no recourse.
+            if (_isStaleLocalPhoto(photos.first))
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  child: InkWell(
+                    onTap: _editTrophy,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.cloud_upload_rounded,
+                              color: widget.theme.accentColor, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Photo no longer available — tap to re-upload',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  /// Returns true when [photoPath] is a local filesystem path (not an
+  /// http(s) URL) whose file no longer exists on disk — the signature of a
+  /// legacy trophy saved with a temporary cache path. AdaptiveImage already
+  /// renders the placeholder in that case; this flag adds a re-upload CTA.
+  bool _isStaleLocalPhoto(String photoPath) {
+    if (photoPath.isEmpty) return false;
+    if (!isLocalImagePath(photoPath)) return false;
+    return !File(normalizeLocalImagePath(photoPath)).existsSync();
   }
 
   Widget _buildDetailsCard() {
