@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
 import '../auth/auth_screen.dart';
 import '../auth/change_password_dialog.dart';
@@ -8,6 +9,7 @@ import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
 import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
 import '../hunter_mode/screens/outfitter_package_creator_screen.dart';
 import '../hunter_mode/screens/outfitter_package_manager_screen.dart';
+import '../hunter_mode/screens/outfitter_price_list_screen.dart';
 import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
@@ -196,6 +198,27 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                                   MaterialPageRoute(
                                     builder:
                                         (_) => OutfitterPackageManagerScreen(
+                                      theme: widget.theme,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Price List - per-farm game species pricing
+                            _buildFeatureCard(
+                              icon: Icons.request_quote_rounded,
+                              title: 'Price List',
+                              description:
+                                  'Manage per-farm game species pricing '
+                                  '(qty + ZAR) for your market listings.',
+                              theme: widget.theme,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => OutfitterPriceListScreen(
                                       theme: widget.theme,
                                     ),
                                   ),
@@ -530,6 +553,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   onTap: () => ChangePasswordDialog.show(context),
                 ),
                 const SizedBox(height: 16),
+                const CopyrightFooter(),
               ],
             ),
           ),

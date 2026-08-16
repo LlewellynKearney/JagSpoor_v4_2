@@ -198,6 +198,17 @@ service cloud.firestore {
         || isOwnerOf('userId');
     }
 
+    // Per-farm game price lists (outfitterId). Each entry is a single
+    // game-species line item (species name + qty + price in ZAR) linked to a
+    // farmId and stamped with the owning outfitter's uid. Read is open to any
+    // signed-in user (so the marketplace / custom-package builder can display
+    // a farm's pricing); writes are owner-scoped (the owning outfitter or an
+    // admin).
+    match /farm_pricelists/{entryId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if ownerOrAdmin('outfitterId');
+    }
+
     // Ammunition inventory (ownerId). Top-level collection is readable by any
     // signed-in user (catalog/load-type selection); writes owner-scoped. Most
     // ammunition is stored as a subcollection of firearms (see below).

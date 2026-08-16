@@ -5,6 +5,7 @@ import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/services/user_role_provider.dart';
 import 'theme/app_theme.dart';
+import 'widgets/copyright_footer.dart';
 
 class SplashScreen extends StatefulWidget {
   final ThemeController theme;
@@ -182,6 +183,8 @@ class _SplashScreenState extends State<SplashScreen>
                       strokeWidth: 3,
                     ),
                   ),
+                  const SizedBox(height: 48),
+                  const CopyrightFooter(),
                 ],
               ),
             ),

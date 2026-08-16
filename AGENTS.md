@@ -6205,3 +6205,30 @@ payment is received.
 - No Firestore rules / index / Storage / pubspec changes (pure client-side
   state machine + UI; the existing `bookings` rules already permit the
   outfitter to flip `status` via `statusUpdateAllowed`).
+
+
+## Phase — Copyright footer + Outfitter Price List feature (added 2026-08-16)
+
+Two requested features: (1) a "© 2026 JagSpoor. All Rights Reserved." footer on the auth / splash / hunter settings & profile / outfitter settings screens, and (2) a "Price List" feature in the Outfitter Dashboard.
+
+### 1. Copyright footer
+- New reusable `lib/core/widgets/copyright_footer.dart` (`CopyrightFooter`): theme-aware (Day/Night via `Theme.of(context).brightness`), centered, small muted caption. Two constructors: default (top:24 padding) + `CopyrightFooter.tight` (top:8).
+- Placed as the last child of the scrollable body Column on:
+  - `lib/core/splash_screen.dart` (after the loading spinner).
+  - `lib/features/auth/auth_screen.dart` login/register card (after the switch-mode TextButton) AND the "Forgot Password?" reset dialog (`_PasswordResetDialog` content Column tail).
+  - `lib/features/hunter_mode/hunter_profile_screen.dart` (Hunter settings + profile are the same screen -- the settings icon navigates here) -- after the Danger Zone.
+  - `lib/features/outfitter_mode/outfitter_dashboard.dart` `_showSettingsBottomSheet` (Outfitter settings bottom sheet tail).
+- The hunter "settings" icon (hunter dashboard AppBar) navigates to the Hunter Profile Screen, so the footer there covers both "Hunter Settings" and "Hunter Profile". The outfitter settings is a bottom sheet (footer added to its Column tail).
+
+### 2. Outfitter Price List feature
+- New `lib/features/hunter_mode/models/farm_game_price_entry.dart`:
+  - `FarmGamePriceEntry` model: `id`, `farmId`, `outfitterId`, `speciesName`, `qty` (int), `priceZAR` (double), `createdAt`/`updatedAt`. Tolerates field aliases on read (`name`/`speciesName`, `quantity`/`qty`, `price`/`priceZAR`/`priceRands`); numeric strings parsed; trims species. `fromMap` (snapshot-free, unit-testable) + `fromFirestore` + `toMap` + `copyWith`.
+  - `FarmGamePriceValidator` pure validators: `validateSpecies` (required, <=80 chars), `validateQty` (required, whole number, >=0), `validatePrice` (required, number, >=0, strips R/r/spaces).
+- New `lib/features/hunter_mode/services/farm_game_price_list_manager.dart` (`FarmGamePriceListManager.instance`): owner-scoped `farm_pricelists` Firestore collection. `getFarmPriceListStream(farmId)` (reactive, `Stream.empty()` for null uid/empty farmId), `getFarmPriceList`, `addEntry` (validates auth + species + qty>=0 + price>=0), `updateEntry` (partial update), `deleteEntry`. Writes stamp `outfitterId`/`farmId` + server timestamps.
+- New `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart` (`OutfitterPriceListScreen`): farm dropdown (loaded from `OutfitterEnterpriseManager.getMyFarms()`), reactive price-list `StreamBuilder`, per-entry card (species, qty chip, R price chip, edit + delete buttons), FAB add entry, add/edit bottom sheet (validated form), empty-farm / empty-list / error states, copyright footer. SafeArea-aware bottom padding via `SafeBottomInset`. Delete confirmation dialog.
+- Outfitter dashboard card added below "Manage My Packages": `Icons.request_quote_rounded` "Price List" -> `OutfitterPriceListScreen`.
+- **Firestore rules**: new `match /farm_pricelists/{entryId}` block -- `read: isSignedIn()` (signed-in users can browse pricing), `create, update, delete: ownerOrAdmin('outfitterId')` (owner-scoped writes). Mirrors the `trophies` read-open / write-owner-scoped pattern.
+- **Tests**: `test/farm_game_price_entry_test.dart` (21 tests, all pass): `fromMap`/`toMap` round-trip (timestamps compared via `millisecondsSinceEpoch` to be timezone-independent -- Firestore `Timestamp.toDate()` returns local), alias tolerance, numeric-string parsing, missing-field defaults, species trim, `copyWith`; + full validator suites (species/qty/price accept + reject cases).
+- **Verification**: `flutter analyze` -> 0 errors, 0 warnings (306 infos, all pre-existing). `flutter test` -> **482 passed** (was 461; +21 = new price list tests; no regressions).
+- Files: `lib/core/widgets/copyright_footer.dart` (NEW), `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`, `lib/features/hunter_mode/hunter_profile_screen.dart`, `lib/features/outfitter_mode/outfitter_dashboard.dart`, `lib/features/hunter_mode/models/farm_game_price_entry.dart` (NEW), `lib/features/hunter_mode/services/farm_game_price_list_manager.dart` (NEW), `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart` (NEW), `firestore.rules`, `test/farm_game_price_entry_test.dart` (NEW), `AGENTS.md`.
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a credentialed env to activate the new `farm_pricelists` rules. Until deployed the writes are denied (the add/edit/delete flow surfaces a snackbar).

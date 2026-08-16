@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/copyright_footer.dart';
 import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
@@ -962,6 +963,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ],
                     ),
                   ),
+                  const CopyrightFooter(),
                 ],
               ),
             ),

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/copyright_footer.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
@@ -641,6 +642,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 12.0),
+                    const CopyrightFooter(),
                   ],
                 ),
               ),
@@ -1153,6 +1156,8 @@ class _PasswordResetDialogState extends State<_PasswordResetDialog> {
               text: _errorMsg!,
             ),
           ],
+          const SizedBox(height: 16),
+          const CopyrightFooter(),
         ],
       ),
       actions: [
