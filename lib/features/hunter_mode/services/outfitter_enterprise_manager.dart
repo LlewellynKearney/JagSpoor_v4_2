@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/booking_status.dart';
 import '../models/farm_config.dart';
 
 class OutfitterEnterpriseManager {
@@ -347,13 +348,13 @@ class OutfitterEnterpriseManager {
   // ==========================================
   // APPROVE / DECLINE BOOKING TRANSACTIONS
   // ==========================================
-  /// Updates the status of a booking request (Approve or Decline).
+  /// Updates the status of a booking request (Approve, Decline, etc.).
   ///
   /// Parameters:
   /// - [bookingId]: Firestore document ID of the booking
-  /// - [newStatus]: New status ('Approved' or 'Declined')
+  /// - [newStatus]: New status (a [BookingStatus] constant)
   ///
-  /// Valid statuses: 'Pending Approval', 'Approved', 'Declined', 'Completed', 'Cancelled'
+  /// Valid statuses: see [BookingStatus.allStatuses].
   ///
   /// Returns: void (updates Firestore 'bookings' collection)
   ///
@@ -370,13 +371,12 @@ class OutfitterEnterpriseManager {
       throw Exception('Booking ID cannot be empty');
     }
 
-    // Validate status transitions
-    const validStatuses = [
-      'Pending Approval',
+    // Validate status transitions -- accept the canonical off-platform
+    // lifecycle statuses plus the legacy 'Approved' (so a caller updating an
+    // old booking isn't rejected).
+    final validStatuses = [
+      ...BookingStatus.allStatuses,
       'Approved',
-      'Declined',
-      'Completed',
-      'Cancelled',
     ];
 
     if (!validStatuses.contains(newStatus)) {
@@ -459,7 +459,7 @@ class OutfitterEnterpriseManager {
     return await _firestore
         .collection('bookings')
         .where('outfitterId', isEqualTo: _currentUserId)
-        .where('status', isEqualTo: 'Pending Approval')
+        .where('status', isEqualTo: BookingStatus.pendingApproval)
         .orderBy('bookingTimestamp', descending: true)
         .get();
   }

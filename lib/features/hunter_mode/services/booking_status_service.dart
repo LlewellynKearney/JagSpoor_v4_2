@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../models/booking_status.dart';
+
 class BookingStatusService {
   static final BookingStatusService _instance =
       BookingStatusService._internal();
@@ -98,10 +100,17 @@ class BookingStatusService {
     if (currentStatus != null && currentStatus != _lastKnownStatus) {
       _lastKnownStatus = currentStatus;
 
-      // Only trigger notifications for status changes to Approved or Declined
-      if (currentStatus == 'Approved') {
+      // Notify the hunter on the key off-platform-booking transitions:
+      //  - approved (outfitter accepted; payment now required) -- covers both
+      //    the new `Awaiting Payment` status and the legacy `Approved`.
+      //  - payment verified (outfitter confirmed direct payment received).
+      //  - declined.
+      if (currentStatus == BookingStatus.approvedAwaitingPayment ||
+          currentStatus == 'Approved') {
         _showBookingApprovedNotification(bookingId, packageName, data);
-      } else if (currentStatus == 'Declined') {
+      } else if (currentStatus == BookingStatus.confirmed) {
+        _showPaymentConfirmedNotification(bookingId, packageName);
+      } else if (currentStatus == BookingStatus.declined) {
         _showBookingDeclinedNotification(bookingId, packageName);
       }
     }
@@ -142,7 +151,50 @@ class BookingStatusService {
     await _notifications.show(
       bookingId.hashCode,
       '✅ BOOKING APPROVED!',
-      'Your $packageName booking has been approved!\nTotal: R ${totalPrice.toStringAsFixed(2)} ZAR',
+      'Your $packageName booking has been approved!\n'
+          'Total: R ${totalPrice.toStringAsFixed(2)} ZAR\n'
+          'Please arrange payment with the outfitter.',
+      details,
+      payload: bookingId,
+    );
+  }
+
+  /// Notification shown when the outfitter verifies they received the direct
+  /// (off-platform) payment -- the booking transitions to `Confirmed`.
+  Future<void> _showPaymentConfirmedNotification(
+    String bookingId,
+    String packageName,
+  ) async {
+    final androidDetails = AndroidNotificationDetails(
+      'booking_status_channel',
+      'Booking Status',
+      channelDescription: 'Notifications for booking status updates',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      color: const Color(0xFF2E7D32), // Green
+      enableLights: true,
+      ledColor: const Color(0xFF2E7D32),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _notifications.show(
+      bookingId.hashCode,
+      '✅ PAYMENT CONFIRMED',
+      'Your $packageName booking is confirmed. '
+          'The outfitter has verified your payment.',
       details,
       payload: bookingId,
     );

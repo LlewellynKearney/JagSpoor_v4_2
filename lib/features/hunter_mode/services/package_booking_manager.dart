@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 
 class PackageBookingManager {
@@ -276,7 +277,7 @@ class PackageBookingManager {
         if (packageName != null) 'packageName': packageName,
         'basePriceRands': basePriceRands,
         'totalHunterPriceRands': totalHunterPrice,
-        'status': 'Pending Approval',
+        'status': BookingStatus.pendingApproval,
         'bookingTimestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -426,8 +427,7 @@ class PackageBookingManager {
 
   /// Update booking status (for outfitters).
   ///
-  /// When an outfitter approves a booking, the status transitions to
-  /// `Approved`.
+  /// Accepts any value in [BookingStatus.allStatuses].
   Future<void> updateBookingStatus({
     required String bookingId,
     required String newStatus,
@@ -436,15 +436,7 @@ class PackageBookingManager {
       throw Exception('User must be authenticated');
     }
 
-    const validStatuses = [
-      'Pending Approval',
-      'Approved',
-      'Declined',
-      'Completed',
-      'Cancelled',
-    ];
-
-    if (!validStatuses.contains(newStatus)) {
+    if (!BookingStatus.allStatuses.contains(newStatus)) {
       throw Exception('Invalid booking status: $newStatus');
     }
 
@@ -454,9 +446,14 @@ class PackageBookingManager {
     });
   }
 
-  /// Marks a booking as approved. Stores the resolved total price on the
-  /// booking (the hunter pays the base package cost; there is no platform
-  /// commission and no deposit split).
+  /// Marks a booking as approved -- transitions the status to
+  /// [BookingStatus.approvedAwaitingPayment] ("Awaiting Payment"). The hunter
+  /// is then expected to pay the outfitter directly (off-platform). Revenue is
+  /// NOT yet realized (the booking only counts toward revenue once the
+  /// outfitter verifies payment via [confirmPaymentReceived]).
+  ///
+  /// Stores the resolved total price on the booking (the hunter pays the base
+  /// package cost; there is no platform commission and no deposit split).
   Future<void> approveBookingAndRequestDeposit({
     required String bookingId,
   }) async {
@@ -476,9 +473,57 @@ class PackageBookingManager {
     final totalPrice = basePrice;
 
     await bookingRef.update({
-      'status': 'Approved',
+      'status': BookingStatus.approvedAwaitingPayment,
       'totalHunterPriceRands': totalPrice,
       'approvedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Outfitter verifies that they have received the direct (off-platform)
+  /// payment from the hunter. Transitions the booking from
+  /// [BookingStatus.approvedAwaitingPayment] to [BookingStatus.confirmed].
+  ///
+  /// `confirmed` is the first **earned** revenue state -- the booking now
+  /// counts toward the outfitter's realized revenue. The booking
+  /// automatically moves out of the active-requests view (it is no longer
+  /// pending approval or awaiting payment) and into the archived / completed
+  /// view.
+  ///
+  /// Only callable on a booking currently in the `approvedAwaitingPayment`
+  /// (or legacy `Approved`) state; a booking in any other state is rejected
+  /// (the outfitter cannot confirm payment on a request that hasn't been
+  /// approved, or re-confirm an already-confirmed booking).
+  Future<void> confirmPaymentReceived({
+    required String bookingId,
+  }) async {
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated');
+    }
+
+    final bookingRef = _firestore.collection('bookings').doc(bookingId);
+    final snap = await bookingRef.get();
+    if (!snap.exists) {
+      throw Exception('Booking not found');
+    }
+
+    final data = snap.data() as Map<String, dynamic>;
+    final currentStatus = data['status'] as String? ?? '';
+    // Allow confirmation from the canonical awaiting-payment state, plus the
+    // legacy 'Approved' status (pre-payment-verification-flow bookings that
+    // were approved under the old lifecycle).
+    if (currentStatus != BookingStatus.approvedAwaitingPayment &&
+        currentStatus != 'Approved') {
+      throw Exception(
+        'Payment can only be verified on a booking awaiting payment '
+        '(current status: "$currentStatus").',
+      );
+    }
+
+    await bookingRef.update({
+      'status': BookingStatus.confirmed,
+      'paymentVerifiedAt': FieldValue.serverTimestamp(),
+      'paymentVerified': true,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

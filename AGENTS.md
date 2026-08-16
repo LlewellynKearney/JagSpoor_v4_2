@@ -6082,3 +6082,126 @@ dependency removal.
   (`google_generative_ai` removed), `test/farm_config_test.dart` (parser
   test groups removed), `AGENTS.md`. Deleted: the 7 scanner/service/test
   files listed above.
+
+
+## Off-platform booking flow & payment verification state machine (added 2026-08-16)
+
+Implemented the off-platform (direct) booking + payment-verification state
+machine across the Hunter and Outfitter modules. The hunter pays the
+outfitter directly (off-platform: cash / EFT / WhatsApp); the app tracks the
+booking through a clear lifecycle and the outfitter manually verifies when
+payment is received.
+
+### Centralized `BookingStatus` model (NEW)
+- `lib/features/hunter_mode/models/booking_status.dart` -- the single source
+  of truth for booking-status string constants + the state-machine transition
+  rules. Off-platform lifecycle:
+  `Pending Approval` -> `Awaiting Payment` -> `Confirmed` -> `Completed`
+  with `Declined` / `Cancelled` as dead-ends.
+  - Constants: `pendingApproval`, `approvedAwaitingPayment`, `confirmed`,
+    `completed`, `declined`, `cancelled`.
+  - `earnedStatuses` = `[confirmed, completed]` -- only payment-verified
+    bookings count toward realized outfitter revenue. `Awaiting Payment` is
+    explicitly NOT earned (payment not yet verified).
+  - `activeRequestStatuses` = `[pendingApproval, approvedAwaitingPayment]`
+    (outfitter must act); `archivedStatuses` = the terminal four.
+  - Pure transition guards: `canApprove`, `canConfirmPayment`, `canCancel`,
+    `canComplete` -- encode the state-machine rules so they are unit-testable
+    without the Firestore emulator. `canConfirmPayment` accepts the legacy
+    `'Approved'` status so pre-flow bookings can be migrated forward.
+  - `hunterBadgeLabel(status)` -- hunter-facing badge text per status.
+
+### `PackageBookingManager` (updated)
+- `bookPackage` / `submitCustomPackageBooking` now write
+  `status: BookingStatus.pendingApproval` (hunter-created bookings default to
+  pending approval).
+- `approveBookingAndRequestDeposit` now transitions to
+  `BookingStatus.approvedAwaitingPayment` ("Awaiting Payment") instead of the
+  old `'Approved'`. Revenue is NOT yet realized.
+- NEW `confirmPaymentReceived({bookingId})` -- outfitter verifies the direct
+  payment was received. Transitions `Awaiting Payment` (or legacy `Approved`)
+  -> `Confirmed`. Guards: rejects if the booking is not in an awaiting-payment
+  state. Writes `paymentVerifiedAt` + `paymentVerified: true`.
+- `updateBookingStatus` validates against `BookingStatus.allStatuses`.
+
+### `OutfitterAnalyticsService` (updated)
+- `earnedBookingStatuses` now delegates to `BookingStatus.earnedStatuses`
+  (`[Confirmed, Completed]`). The revenue summary `whereIn` query + monthly
+  chart now count only payment-verified bookings -- `Awaiting Payment` no
+  longer inflates revenue.
+- `getPendingBookingsCountStream` queries `pendingApproval`.
+- `getMonthlyBookingStats` categorizes `approvedAwaitingPayment` / `confirmed`
+  / `completed` / legacy `Approved` as "approved".
+
+### Outfitter booking dashboard (updated)
+- Added a 2-tab `TabBar`: **Active Requests** (Pending Approval + Awaiting
+  Payment) and **Archived** (Confirmed / Completed / Declined / Cancelled).
+  Bookings are split in-memory by status so the outfitter sees actionable
+  requests separately from history.
+- `_buildActionButtons(status)` renders context-specific actions:
+  - `Pending Approval`: DECLINE + APPROVE REQUEST + Chat/WhatsApp Hunter row.
+  - `Awaiting Payment` (or legacy `Approved`): prominent
+    VERIFY / CONFIRM PAYMENT RECEIVED button (green FilledButton, confirmation
+    dialog -> `confirmPaymentReceived`) + Chat/WhatsApp Hunter + EXPORT INVOICE.
+  - Archived: EXPORT INVOICE only.
+- NEW `_confirmPaymentReceived()` -- confirmation dialog + calls
+  `PackageBookingManager.confirmPaymentReceived`.
+- NEW `_contactHunterWhatsApp()` -- launches `https://wa.me/<phone>?text=...`
+  (SMS fallback) pre-filled with the booking + payment details.
+- `_getStatusColor` updated for the new statuses (Awaiting Payment = amber,
+  Confirmed = green).
+
+### Hunter marketplace (updated)
+- `_HunterBookingCard` status badge now uses
+  `BookingStatus.hunterBadgeLabel(status)` (e.g. "Payment Required" for
+  Awaiting Payment, "Confirmed" for confirmed).
+- NEW direct action buttons: IN-APP CHAT (toggles the chat drawer) +
+  WHATSAPP OUTFITTER (`_contactOutfitterWhatsApp` -- launches wa.me with the
+  booking + payment-arrangement message).
+- `_getStatusColor` + status default updated for the new statuses.
+- Date-change request visibility extended to post-approval states
+  (approved / awaiting payment / confirmed).
+
+### Notifications (`booking_status_service.dart`)
+- Notifications fire on: approval (Awaiting Payment / legacy Approved) ->
+  "BOOKING APPROVED! ... Please arrange payment with the outfitter.";
+  payment verified (Confirmed) -> "PAYMENT CONFIRMED ... outfitter has
+  verified your payment."; declined.
+- NEW `_showPaymentConfirmedNotification`.
+
+### Admin analytics + exporters (updated)
+- `admin_analytics_service.dart`: active-bookings count + financial-period
+  revenue sum now query `whereIn: BookingStatus.earnedStatuses` (was the
+  removed `'Paid'` status).
+- `outfitter_invoice_exporter.dart`, `revenue_analytics_report_exporter.dart`,
+  `outfitter_revenue_screen.dart`, `outfitter_enterprise_manager.dart`,
+  `pricelist_scanner_service.dart`: all `'Pending Approval'` literals
+  replaced with `BookingStatus.pendingApproval`.
+
+### Tests
+- `test/outfitter_revenue_summary_test.dart` rewritten: 19 tests (was 5)
+  covering the earned-status filter contract, the full `BookingStatus`
+  lifecycle (allStatuses / isEarned / isActiveRequest / isArchived /
+  hunterBadgeLabel), and the state-machine transition rules (canApprove /
+  canConfirmPayment / canCancel / canComplete + the happy-path lifecycle +
+  the "revenue not realized at awaiting-payment" invariant).
+- `flutter analyze`: 0 errors, 0 warnings, 306 infos (all pre-existing).
+- `flutter test`: **461 passed** (was 447; +14 new, no regressions).
+
+### Files
+- NEW: `lib/features/hunter_mode/models/booking_status.dart`.
+- Updated: `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`,
+  `lib/features/hunter_mode/services/booking_status_service.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`,
+  `lib/features/hunter_mode/services/outfitter_invoice_exporter.dart`,
+  `lib/features/hunter_mode/services/revenue_analytics_report_exporter.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `lib/features/admin/services/admin_analytics_service.dart`,
+  `test/outfitter_revenue_summary_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  state machine + UI; the existing `bookings` rules already permit the
+  outfitter to flip `status` via `statusUpdateAllowed`).

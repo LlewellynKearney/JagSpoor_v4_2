@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
+import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 
 /// Booking invoice / confirmation PDF rendered through the universal
@@ -33,7 +34,7 @@ class OutfitterInvoiceExporter {
     final totalPrice =
         (bookingData['totalHunterPriceRands'] as num?)?.toDouble() ??
             basePrice;
-    final status = bookingData['status']?.toString() ?? 'Pending Approval';
+    final status = bookingData['status']?.toString() ?? BookingStatus.pendingApproval;
 
     // Fetch the linked package to recover the itemized breakdown.
     PackagePricing? pricing;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/offline_stream_guard.dart';
+import '../models/booking_status.dart';
 import 'pricing_math.dart';
 
 class OutfitterAnalyticsService {
@@ -13,16 +14,18 @@ class OutfitterAnalyticsService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Booking statuses that represent an **earned** outfitter booking — i.e.
-  /// one where the outfitter has a confirmed claim on the base price. This
-  /// excludes the pre-approval (`Pending Approval`) and dead-end
-  /// (`Declined`, `Cancelled`) states. After the outfitter approves a booking
-  /// its status transitions `Approved → Completed`, both of which count as
-  /// earned revenue.
-  static const List<String> earnedBookingStatuses = [
-    'Approved',
-    'Completed',
-  ];
+  /// Booking statuses that represent **realized** outfitter revenue -- i.e.
+  /// the outfitter has a confirmed claim on the base price because payment
+  /// has been verified.
+  ///
+  /// The off-platform booking lifecycle is:
+  ///   `Pending Approval` -> `Awaiting Payment` -> `Confirmed` -> `Completed`
+  ///
+  /// Only `Confirmed` (payment verified) and `Completed` (hunt delivered)
+  /// count toward realized revenue. `Pending Approval` and
+  /// `Awaiting Payment` are explicitly excluded -- the payment has not yet
+  /// been verified, so the revenue is not realized.
+  static const List<String> earnedBookingStatuses = BookingStatus.earnedStatuses;
 
   // ==========================================
   // OUTFITTER FINANCIAL SUMMARY AGGREGATION
@@ -158,13 +161,14 @@ class OutfitterAnalyticsService {
   // UTILITY METHODS
   // ==========================================
 
-  /// Get pending bookings count for an outfitter
+  /// Get pending bookings count for an outfitter -- bookings awaiting the
+  /// outfitter's approval (`Pending Approval`).
   Stream<int> getPendingBookingsCountStream(String outfitterId) {
     return OfflineStreamGuard.offlineResilient(
       _firestore
           .collection('bookings')
           .where('outfitterId', isEqualTo: outfitterId)
-          .where('status', isEqualTo: 'Pending Approval')
+          .where('status', isEqualTo: BookingStatus.pendingApproval)
           .snapshots()
           .map((snapshot) => snapshot.size),
       fallback: 0,
@@ -249,13 +253,20 @@ class OutfitterAnalyticsService {
       final status = data['status'] as String? ?? '';
 
       if (stats.containsKey(monthKey)) {
-        if (status == 'Approved') {
+        // "approved" counts bookings where the outfitter has accepted the
+        // request (awaiting payment or payment-verified). "pending" counts
+        // un-reviewed requests. "declined" counts rejections. Cancelled /
+        // completed are not categorized here.
+        if (status == BookingStatus.approvedAwaitingPayment ||
+            status == BookingStatus.confirmed ||
+            status == BookingStatus.completed ||
+            status == 'Approved') {
           stats[monthKey]!['approved'] =
               (stats[monthKey]!['approved'] ?? 0) + 1;
-        } else if (status == 'Declined') {
+        } else if (status == BookingStatus.declined) {
           stats[monthKey]!['declined'] =
               (stats[monthKey]!['declined'] ?? 0) + 1;
-        } else if (status == 'Pending Approval') {
+        } else if (status == BookingStatus.pendingApproval) {
           stats[monthKey]!['pending'] = (stats[monthKey]!['pending'] ?? 0) + 1;
         }
       }

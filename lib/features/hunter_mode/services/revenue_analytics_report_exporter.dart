@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
+import '../models/booking_status.dart';
 import '../services/outfitter_analytics_service.dart';
 
 /// Revenue & Farm Analytics report PDF, rendered through the universal
@@ -62,7 +63,7 @@ class RevenueAnalyticsReportExporter {
     final pendingSnap = await FirebaseFirestore.instance
         .collection('bookings')
         .where('outfitterId', isEqualTo: outfitterId)
-        .where('status', isEqualTo: 'Pending Approval')
+        .where('status', isEqualTo: BookingStatus.pendingApproval)
         .get();
     final pendingBookings = pendingSnap.docs.length;
 

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/booking_status.dart';
 import '../models/farm_config.dart';
 
 /// Custom Package Builder service.
@@ -124,7 +125,7 @@ class PricelistScannerService {
       'observerCount': observerCount,
       'basePriceRands': basePrice,
       'totalHunterPriceRands': combinedTotalZAR,
-      'status': 'Pending Approval',
+      'status': BookingStatus.pendingApproval,
       'bookingTimestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

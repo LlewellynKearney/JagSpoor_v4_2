@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
@@ -21,13 +23,22 @@ class OutfitterBookingDashboardScreen extends StatefulWidget {
 }
 
 class _OutfitterBookingDashboardScreenState
-    extends State<OutfitterBookingDashboardScreen> {
+    extends State<OutfitterBookingDashboardScreen>
+    with SingleTickerProviderStateMixin {
   late Query _bookingQuery;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _buildBookingQuery();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _buildBookingQuery() {
@@ -61,6 +72,22 @@ class _OutfitterBookingDashboardScreenState
         backgroundColor: widget.theme.backgroundColor,
         foregroundColor: widget.theme.textColor,
         elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: widget.theme.accentColor,
+          unselectedLabelColor: widget.theme.subtitleColor,
+          indicatorColor: widget.theme.accentColor,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.pending_actions_rounded),
+              text: 'Active Requests',
+            ),
+            Tab(
+              icon: Icon(Icons.archive_rounded),
+              text: 'Archived',
+            ),
+          ],
+        ),
       ),
       body: StreamBuilder(
         stream: _bookingQuery.snapshots(),
@@ -94,52 +121,90 @@ class _OutfitterBookingDashboardScreenState
             final bTime = b['bookingTimestamp'] ?? 0;
             return bTime.compareTo(aTime);
           });
-          final bookings = docs;
 
-          if (bookings.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.inbox_rounded,
-                    color: widget.theme.accentColor.withValues(alpha: 0.5),
-                    size: 64,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No booking requests',
-                    style: TextStyle(
-                      color: widget.theme.textColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Booking requests will appear here',
-                    style: TextStyle(color: widget.theme.subtitleColor),
-                  ),
-                ],
-              ),
-            );
+          // Split bookings into active requests (need outfitter action) and
+          // archived (confirmed / completed / declined / cancelled).
+          final activeBookings = <QueryDocumentSnapshot>[];
+          final archivedBookings = <QueryDocumentSnapshot>[];
+          for (final doc in docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final status = data['status'] as String? ?? '';
+            // Active: pending approval (needs approve/decline) or awaiting
+            // payment (needs verify-payment-received). Includes the legacy
+            // 'Approved' status which predates the payment-verification flow
+            // (treat as awaiting payment so the outfitter can confirm it).
+            if (status == BookingStatus.pendingApproval ||
+                status == BookingStatus.approvedAwaitingPayment ||
+                status == 'Approved') {
+              activeBookings.add(doc);
+            } else {
+              archivedBookings.add(doc);
+            }
           }
 
-          return ListView.builder(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
-            itemCount: bookings.length,
-            itemBuilder: (context, index) {
-              final booking = bookings[index];
-              final data = booking.data() as Map<String, dynamic>;
-              return _BookingCard(
-                bookingId: booking.id,
-                data: data,
-                theme: widget.theme,
-              );
-            },
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _buildBookingList(activeBookings, isArchived: false),
+              _buildBookingList(archivedBookings, isArchived: true),
+            ],
           );
         },
       ),
+    );
+  }
+
+  /// Renders a list of booking cards, or an empty-state placeholder.
+  Widget _buildBookingList(
+    List<QueryDocumentSnapshot> bookings, {
+    required bool isArchived,
+  }) {
+    if (bookings.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isArchived
+                  ? Icons.archive_rounded
+                  : Icons.inbox_rounded,
+              color: widget.theme.accentColor.withValues(alpha: 0.5),
+              size: 64,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isArchived ? 'No archived bookings' : 'No active requests',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isArchived
+                  ? 'Confirmed and completed bookings will appear here'
+                  : 'New booking requests will appear here',
+              style: TextStyle(color: widget.theme.subtitleColor),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+      itemCount: bookings.length,
+      itemBuilder: (context, index) {
+        final booking = bookings[index];
+        final data = booking.data() as Map<String, dynamic>;
+        return _BookingCard(
+          bookingId: booking.id,
+          data: data,
+          theme: widget.theme,
+        );
+      },
     );
   }
 }
@@ -173,9 +238,11 @@ class _BookingCardState extends State<_BookingCard> {
     });
 
     try {
-      // On approval, transition the booking to the Approved state (the
-      // outfitter confirms the booking; there is no deposit split).
-      if (newStatus == 'Approved') {
+      // On approval, transition the booking to the Awaiting Payment state
+      // (the outfitter accepts the request; the hunter must now pay directly
+      // off-platform). Revenue is NOT yet realized.
+      if (newStatus == BookingStatus.approvedAwaitingPayment ||
+          newStatus == 'Approved') {
         await PackageBookingManager.instance
             .approveBookingAndRequestDeposit(bookingId: widget.bookingId);
       } else {
@@ -186,15 +253,16 @@ class _BookingCardState extends State<_BookingCard> {
       }
 
       if (mounted) {
+        final isApprove = newStatus == BookingStatus.approvedAwaitingPayment ||
+            newStatus == 'Approved';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              newStatus == 'Approved'
-                  ? '✅ Booking approved!'
+              isApprove
+                  ? '✅ Booking approved! Awaiting hunter payment.'
                   : '❌ Booking declined',
             ),
-            backgroundColor:
-                newStatus == 'Approved' ? Colors.green : Colors.red,
+            backgroundColor: isApprove ? Colors.green : Colors.red,
           ),
         );
       }
@@ -209,6 +277,113 @@ class _BookingCardState extends State<_BookingCard> {
         setState(() {
           _isProcessing = false;
         });
+      }
+    }
+  }
+
+  /// Outfitter verifies that the direct (off-platform) payment has been
+  /// received from the hunter. Shows a confirmation dialog first; on confirm,
+  /// transitions the booking to `Confirmed` (realized revenue) and the booking
+  /// moves to the Archived tab.
+  Future<void> _confirmPaymentReceived() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify Payment Received'),
+        content: const Text(
+          'Confirm that payment has been received directly from the hunter?\n\n'
+          'This will mark the booking as Confirmed and move it to the '
+          'Archived tab.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.check_circle_rounded),
+            label: const Text('CONFIRM PAYMENT'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.green),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      await PackageBookingManager.instance
+          .confirmPaymentReceived(bookingId: widget.bookingId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Payment verified! Booking confirmed.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  /// Opens WhatsApp (or SMS fallback) pre-populated with a message to the
+  /// hunter regarding their booking / off-platform payment.
+  Future<void> _contactHunterWhatsApp() async {
+    final data = widget.data;
+    // Prefer an explicit hunter phone; fall back to the hunterId (not a
+    // phone, but url_launcher will simply fail gracefully).
+    final phone = (data['hunterPhone'] as String?) ??
+        (data['hunterPhoneNumber'] as String?) ??
+        '';
+    final packageName =
+        data['packageName'] as String? ?? 'hunting package';
+    final totalPrice =
+        (data['totalHunterPriceRands'] as num?)?.toDouble() ??
+            (data['basePriceRands'] as num?)?.toDouble() ??
+            0.0;
+    final status = data['status'] as String? ?? '';
+
+    final message = 'Hello, regarding your $packageName booking on JagSpoor '
+        '(R ${totalPrice.toStringAsFixed(2)}). '
+        '${status == BookingStatus.approvedAwaitingPayment || status == 'Approved' ? 'Please arrange payment so we can confirm your booking.' : 'Please be in touch regarding your booking.'}';
+
+    // Build a WhatsApp deep link; falls back to an sms: link if the phone is
+    // blank / WhatsApp is unavailable.
+    final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+    final Uri uri = cleanPhone.isNotEmpty
+        ? Uri.parse(
+            'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}')
+        : Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open WhatsApp. No phone number on file.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open WhatsApp.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     }
   }
@@ -287,15 +462,19 @@ class _BookingCardState extends State<_BookingCard> {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Pending Approval':
+      case BookingStatus.pendingApproval:
         return Colors.orange;
-      case 'Approved':
+      case BookingStatus.approvedAwaitingPayment:
+        return Colors.amber.shade700;
+      case 'Approved': // legacy -- treat like awaiting payment
+        return Colors.amber.shade700;
+      case BookingStatus.confirmed:
         return Colors.green;
-      case 'Declined':
-        return Colors.red;
-      case 'Completed':
+      case BookingStatus.completed:
         return Colors.blue;
-      case 'Cancelled':
+      case BookingStatus.declined:
+        return Colors.red;
+      case BookingStatus.cancelled:
         return Colors.grey;
       default:
         return Colors.grey;
@@ -485,7 +664,7 @@ class _BookingCardState extends State<_BookingCard> {
   @override
   Widget build(BuildContext context) {
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
-    final status = widget.data['status'] ?? 'Pending Approval';
+    final status = widget.data['status'] ?? BookingStatus.pendingApproval;
     final packageId = widget.data['packageId'] ?? 'Unknown';
     final hunterId = widget.data['hunterId'] ?? 'Unknown';
 
@@ -677,110 +856,10 @@ class _BookingCardState extends State<_BookingCard> {
           ],
           const SizedBox(height: 16),
 
-          // Action Buttons
+          // Action Buttons -- context-specific per booking status.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child:
-                status == 'Pending Approval'
-                    ? Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed:
-                                _isProcessing
-                                    ? null
-                                    : () => _updateStatus('Declined'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.red,
-                              side: const BorderSide(color: Colors.red),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            icon:
-                                _isProcessing
-                                    ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.red,
-                                      ),
-                                    )
-                                    : const Icon(Icons.close_rounded),
-                            label: const Text(
-                              'DECLINE',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            onPressed:
-                                _isProcessing
-                                    ? null
-                                    : () => _updateStatus('Approved'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            icon:
-                                _isProcessing
-                                    ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                    : const Icon(Icons.check_circle_rounded),
-                            label: const Text(
-                              'APPROVE & REQUEST DEPOSIT',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                    : status == 'Approved'
-                    ? SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _isExporting ? null : _exportInvoice,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1565C0),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        icon:
-                            _isExporting
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : const Icon(Icons.picture_as_pdf_rounded),
-                        label: const Text(
-                          'EXPORT INVOICE',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    )
-                    : const SizedBox.shrink(),
+            child: _buildActionButtons(status),
           ),
 
           // 💬 Chat & Negotiation Thread Panel
@@ -789,6 +868,252 @@ class _BookingCardState extends State<_BookingCard> {
           const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  /// Toggles the embedded chat drawer open/closed.
+  void _toggleChatDrawer() {
+    setState(() {
+      _isChatExpanded = !_isChatExpanded;
+    });
+  }
+
+  /// Builds the context-specific action buttons for a booking card.
+  ///
+  /// - `Pending Approval`: DECLINE + APPROVE REQUEST (outfitter accepts the
+  ///   hunter's request; the booking moves to `Awaiting Payment`).
+  /// - `Awaiting Payment` (or legacy `Approved`): a prominent
+  ///   VERIFY / CONFIRM PAYMENT RECEIVED button (outfitter confirms the
+  ///   direct off-platform payment; the booking moves to `Confirmed` /
+  ///   Archived) plus a Chat / WhatsApp Hunter row + an EXPORT INVOICE.
+  /// - Archived (Confirmed / Completed / Declined / Cancelled): EXPORT INVOICE
+  ///   only (plus the chat drawer above).
+  Widget _buildActionButtons(String status) {
+    final isPending = status == BookingStatus.pendingApproval;
+    final isAwaitingPayment = status == BookingStatus.approvedAwaitingPayment ||
+        status == 'Approved';
+
+    if (isPending) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isProcessing
+                      ? null
+                      : () => _updateStatus(BookingStatus.declined),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: _isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.red,
+                          ),
+                        )
+                      : const Icon(Icons.close_rounded),
+                  label: const Text(
+                    'DECLINE',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _isProcessing
+                      ? null
+                      : () => _updateStatus(BookingStatus.approvedAwaitingPayment),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: _isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_rounded),
+                  label: const Text(
+                    'APPROVE REQUEST',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildContactHunterRow(),
+        ],
+      );
+    }
+
+    if (isAwaitingPayment) {
+      return Column(
+        children: [
+          // Prominent verify-payment button.
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isProcessing ? null : _confirmPaymentReceived,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green,
+                disabledBackgroundColor: Colors.green.withValues(alpha: 0.5),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: _isProcessing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.verified_rounded),
+              label: const Text(
+                'VERIFY / CONFIRM PAYMENT RECEIVED',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildContactHunterRow(),
+          const SizedBox(height: 8),
+          // Secondary: export the invoice (e.g. to send with the payment
+          // request).
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isExporting ? null : _exportInvoice,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1565C0),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: _isExporting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.picture_as_pdf_rounded),
+              label: const Text(
+                'EXPORT INVOICE',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Archived / completed / declined / cancelled: export invoice only.
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _isExporting ? null : _exportInvoice,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1565C0),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        icon: _isExporting
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.picture_as_pdf_rounded),
+        label: const Text(
+          'EXPORT INVOICE',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  /// "Chat / WhatsApp Hunter" action button row -- lets the outfitter
+  /// communicate with the hunter regarding the off-platform payment. The
+  /// in-app chat opens the embedded chat drawer; WhatsApp launches the
+  /// external app with a pre-filled message.
+  Widget _buildContactHunterRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _toggleChatDrawer,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: widget.theme.accentColor,
+              side: BorderSide(color: widget.theme.accentColor),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(Icons.chat_rounded),
+            label: const Text(
+              'CHAT',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: _contactHunterWhatsApp,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366), // WhatsApp green
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(Icons.message_rounded),
+            label: const Text(
+              'WHATSAPP HUNTER',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

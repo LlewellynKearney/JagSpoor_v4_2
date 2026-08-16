@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/booking_status.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/revenue_analytics_report_exporter.dart';
 
@@ -611,7 +612,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         await FirebaseFirestore.instance
             .collection('bookings')
             .where('outfitterId', isEqualTo: _currentUserId)
-            .where('status', isEqualTo: 'Pending Approval')
+            .where('status', isEqualTo: BookingStatus.pendingApproval)
             .get();
     return snapshot.docs.length;
   }

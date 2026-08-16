@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
@@ -1380,15 +1382,19 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Pending Approval':
+      case BookingStatus.pendingApproval:
         return Colors.orange;
-      case 'Approved':
+      case BookingStatus.approvedAwaitingPayment:
+        return Colors.amber.shade700;
+      case 'Approved': // legacy -- treat like awaiting payment
+        return Colors.amber.shade700;
+      case BookingStatus.confirmed:
         return Colors.green;
-      case 'Declined':
-        return Colors.red;
-      case 'Completed':
+      case BookingStatus.completed:
         return Colors.blue;
-      case 'Cancelled':
+      case BookingStatus.declined:
+        return Colors.red;
+      case BookingStatus.cancelled:
         return Colors.grey;
       default:
         return Colors.grey;
@@ -1407,6 +1413,58 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     setState(() {
       _isChatExpanded = !_isChatExpanded;
     });
+  }
+
+  /// Opens WhatsApp (or SMS fallback) pre-populated with a message to the
+  /// outfitter regarding the hunter's booking / off-platform payment. Lets the
+  /// hunter coordinate the direct payment outside the app.
+  Future<void> _contactOutfitterWhatsApp() async {
+    final data = widget.data;
+    // Prefer an explicit outfitter phone; fall back to an empty SMS link.
+    final phone = (data['outfitterPhone'] as String?) ??
+        (data['outfitterPhoneNumber'] as String?) ??
+        (data['contactNumber'] as String?) ??
+        '';
+    final packageName =
+        data['packageName'] as String? ?? 'hunting package';
+    final totalPrice =
+        PricingMath.resolveHunterTotal(
+          totalHunterPrice: (data['totalHunterPriceRands'] as num?)?.toDouble(),
+          basePrice: (data['basePriceRands'] as num?)?.toDouble() ?? 0.0,
+        );
+    final status = data['status'] as String? ?? BookingStatus.pendingApproval;
+
+    final message = 'Hello, regarding my $packageName booking on JagSpoor '
+        '(R ${totalPrice.toStringAsFixed(2)}). '
+        '${status == BookingStatus.approvedAwaitingPayment || status == 'Approved' ? 'I would like to arrange payment for my booking.' : 'Please be in touch regarding my booking.'}';
+
+    final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+    final Uri uri = cleanPhone.isNotEmpty
+        ? Uri.parse(
+            'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}')
+        : Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Unable to open WhatsApp. No outfitter phone number on file.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open WhatsApp.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
   }
 
   /// Unread-message envelope indicator for the card header.
@@ -1433,7 +1491,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.data['status'] as String? ?? 'Pending Approval';
+    final status = widget.data['status'] as String? ?? BookingStatus.pendingApproval;
     final packageName =
         widget.data['packageName'] as String? ?? 'Custom Package';
     final basePrice =
@@ -1450,8 +1508,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     final statusLower = status.toLowerCase();
 
     // Date-change request visibility: hunter may request a date change once
-    // the booking is approved (i.e. dates matter). Hide if a request is
-    // already pending.
+    // the booking has been accepted by the outfitter (awaiting payment or
+    // confirmed -- i.e. dates matter). Hide if a request is already pending.
     final dateChangePending =
         (widget.data['dateChangeRequestPending'] as bool?) ?? false;
     final dateChangeMap =
@@ -1459,8 +1517,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     final dateChange = dateChangeMap != null
         ? DateChangeRequest.fromMap(dateChangeMap)
         : null;
-    final canRequestDateChange =
-        statusLower == 'approved' && !dateChangePending;
+    final isPostApproval = statusLower == 'approved' ||
+        statusLower == 'awaiting payment' ||
+        statusLower == 'confirmed';
+    final canRequestDateChange = isPostApproval && !dateChangePending;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1516,7 +1576,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          status.toUpperCase(),
+                          BookingStatus.hunterBadgeLabel(status).toUpperCase(),
                           style: TextStyle(
                             color: _getStatusColor(status),
                             fontSize: 10,
@@ -1579,6 +1639,54 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 ),
               ),
             ),
+
+          // 💬 / 📱 Direct action buttons for off-platform payment
+          // communication: in-app chat + WhatsApp the outfitter. These let the
+          // hunter coordinate the direct payment with the outfitter.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _toggleChatDrawer,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: widget.theme.accentColor,
+                      side: BorderSide(color: widget.theme.accentColor),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chat_rounded, size: 20),
+                    label: const Text(
+                      'IN-APP CHAT',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _contactOutfitterWhatsApp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.message_rounded, size: 20),
+                    label: const Text(
+                      'WHATSAPP OUTFITTER',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

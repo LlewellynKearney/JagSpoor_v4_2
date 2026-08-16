@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../auth/services/user_role_provider.dart';
+import '../../hunter_mode/models/booking_status.dart';
 import 'admin_auth_guard.dart';
 
 /// Aggregated metrics for the master admin analytics dashboard.
@@ -89,8 +90,12 @@ class AdminAnalyticsService {
       _safeCount(() => _countQuery(
           _db.collection('users').where('role', isEqualTo: 'hunter'))),
       _safeCount(() => _count(_db.collection('packages'))),
-      _safeCount(() => _countQuery(
-          _db.collection('bookings').where('status', isEqualTo: 'Paid'))),
+      // Active bookings = realized (earned) bookings, i.e. payment verified
+      // (Confirmed) or hunt delivered (Completed). The legacy 'Paid' status
+      // no longer exists in the off-platform booking lifecycle.
+      _safeCount(() => _countQuery(_db
+          .collection('bookings')
+          .where('status', whereIn: BookingStatus.earnedStatuses))),
       _safeCount(() => _count(_db.collection('trophies'))),
       _safeCount(() => _count(_db.collection('users'))),
     ]);
@@ -132,7 +137,8 @@ class AdminAnalyticsService {
 
   /// Sums gross booking revenue for bookings whose `bookingTimestamp`
   /// (falling back to `createdAt`) falls within the window `[start, end)`.
-  /// Only paid bookings contribute to realized revenue. There is no platform
+  /// Only realized (earned) bookings contribute -- i.e. payment verified
+  /// (Confirmed) or hunt delivered (Completed). There is no platform
   /// commission; the outfitter net equals the gross booking revenue.
   ///
   /// Returns a zeroed period on any failure (permission denied, missing index)
@@ -146,7 +152,7 @@ class AdminAnalyticsService {
       try {
         snap = await _db
             .collection('bookings')
-            .where('status', isEqualTo: 'Paid')
+            .where('status', whereIn: BookingStatus.earnedStatuses)
             .where('bookingTimestamp', isGreaterThanOrEqualTo: startTs)
             .where('bookingTimestamp', isLessThan: endTs)
             .get();
@@ -154,7 +160,7 @@ class AdminAnalyticsService {
         // Fall back to `createdAt` if `bookingTimestamp` is not indexed/absent.
         snap = await _db
             .collection('bookings')
-            .where('status', isEqualTo: 'Paid')
+            .where('status', whereIn: BookingStatus.earnedStatuses)
             .where('createdAt', isGreaterThanOrEqualTo: startTs)
             .where('createdAt', isLessThan: endTs)
             .get();
