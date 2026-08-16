@@ -7,7 +7,7 @@ import 'package:jagspoor/features/hunter_mode/services/pricing_math.dart';
 /// The card renders a prominent `ElevatedButton.icon` "Pay 25% Deposit
 /// (<formatted>)" when the booking is in the deposit-due state. These tests
 /// exercise the real code paths the button relies on:
-/// - `PricingMath.resolveDeposit` (computes the 25% charge off the marked-up
+/// - `PricingMath.resolveDeposit` (computes the 25% charge off the booking
 ///   total, with the stored-deposit fast path for docs where
 ///   `approveBookingAndRequestDeposit` already stamped the split).
 /// - `PricingMath.formatCurrency` (formats the ZAR deposit label).
@@ -19,8 +19,8 @@ import 'package:jagspoor/features/hunter_mode/services/pricing_math.dart';
 void main() {
   group('PricingMath.formatCurrency — PayFast deposit label', () {
     test('formats a typical deposit with two decimals', () {
-      // 25% of a R10 000 marked-up (×1.075 = R10 750) total = R2 687.50.
-      expect(PricingMath.formatCurrency(2687.5), 'R 2\u202F687.50');
+      // 25% of a R10 000 total = R2 500.
+      expect(PricingMath.formatCurrency(2500), 'R 2\u202F500.00');
     });
 
     test('groups thousands with a thin space', () {
@@ -42,34 +42,34 @@ void main() {
     });
   });
 
-  group('PricingMath.resolveDeposit — 25% charge off marked-up total', () {
+  group('PricingMath.resolveDeposit — 25% charge off the booking total', () {
     test('uses the stored deposit when present (approveBookingAndRequestDeposit '
         'stamps the split)', () {
       // `approveBookingAndRequestDeposit` writes depositAmountRands =
       // totalPrice × 0.25. The card reads it back verbatim.
       final deposit = PricingMath.resolveDeposit(
-        storedDeposit: 2687.5,
-        markedUpTotalValue: 10750,
+        storedDeposit: 2500,
+        total: 10000,
       );
-      expect(deposit, 2687.5);
+      expect(deposit, 2500);
     });
 
-    test('derives 25% off the marked-up total when the stored split is absent '
+    test('derives 25% off the total when the stored split is absent '
         '(legacy booking)', () {
       final deposit = PricingMath.resolveDeposit(
         storedDeposit: null,
-        markedUpTotalValue: 10750, // R10 000 base × 1.075
+        total: 10000,
       );
-      expect(deposit, closeTo(2687.5, 0.001));
+      expect(deposit, closeTo(2500, 0.001));
     });
 
-    test('derives 25% off the marked-up total when the stored split is 0 '
+    test('derives 25% off the total when the stored split is 0 '
         '(legacy booking)', () {
       final deposit = PricingMath.resolveDeposit(
         storedDeposit: 0,
-        markedUpTotalValue: 10750,
+        total: 10000,
       );
-      expect(deposit, closeTo(2687.5, 0.001));
+      expect(deposit, closeTo(2500, 0.001));
     });
 
     test('the card-label deposit matches the PayFast charge amount', () {
@@ -77,16 +77,14 @@ void main() {
       // `PricingMath.formatCurrency(depositAmount)` in the label; the same
       // value is passed to `PayfastCheckout.launchDeposit(amount:)`. Assert
       // the label and the charge agree.
-      final markedUpTotal = 10750.0;
+      const total = 10000.0;
       final deposit = PricingMath.resolveDeposit(
         storedDeposit: null,
-        markedUpTotalValue: markedUpTotal,
+        total: total,
       );
       final label = 'Pay 25% Deposit (${PricingMath.formatCurrency(deposit)})';
-      // The formatted deposit uses a thin-space thousands separator
-      // (e.g. 'R 2\u202F687.50'); assert on the formatted value directly.
       expect(label, contains(PricingMath.formatCurrency(deposit)));
-      expect(deposit, closeTo(markedUpTotal * 0.25, 0.001));
+      expect(deposit, closeTo(total * 0.25, 0.001));
     });
   });
 
@@ -135,7 +133,7 @@ void main() {
       final deposit = 0.0;
       expect(isDepositDueStatus(status) && deposit > 0, isFalse);
 
-      final depositPositive = 2687.5;
+      final depositPositive = 2500.0;
       expect(isDepositDueStatus(status) && depositPositive > 0, isTrue);
     });
   });

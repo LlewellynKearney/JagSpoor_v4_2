@@ -13,8 +13,8 @@ import 'bulk_csv_import_screen.dart';
 /// sections:
 ///   - Entity Overview (counts of outfitters, hunters, packages, bookings,
 ///     trophies).
-///   - Financial Analytics (daily/weekly/monthly/yearly gross booking revenue
-///     vs. platform commission, in ZAR).
+///   - Financial Analytics (daily/weekly/monthly/yearly gross booking revenue,
+///     in ZAR).
 ///   - User Engagement (registered users and active sessions).
 ///
 /// Also provides entry points to manual account creation and bulk CSV import.
@@ -274,10 +274,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             Expanded(
               child: _financialValue('Gross', p.grossBookingRevenue, Colors.green),
-            ),
-            Expanded(
-              child: _financialValue(
-                  'Commission', p.platformCommission, widget.theme.accentColor),
             ),
             Expanded(
               child: _financialValue('Net', p.outfitterNet, widget.theme.subtitleColor),

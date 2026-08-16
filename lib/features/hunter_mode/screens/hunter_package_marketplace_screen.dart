@@ -440,9 +440,10 @@ class _PackageCard extends StatelessWidget {
     final title = data['title'] as String? ?? 'Untitled Package';
     final description = data['description'] as String? ?? '';
     final price = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    // Hunter-facing total: prefer the stored marked-up total; for legacy
-    // documents without `totalPriceZAR`, apply the 7.5% markup to the base so
-    // the card never shows the unmarked-up outfitter base price to a hunter.
+    // Hunter-facing total: equals the base package cost (there is no platform
+    // commission). For legacy documents that carry a marked-up `totalPriceZAR`
+    // (written by a prior version that applied a 7.5% commission), the base
+    // price is preferred so the card reflects the base package cost.
     final totalPrice = PricingMath.resolveHunterTotal(
       totalHunterPrice: (data['totalPriceZAR'] as num?)?.toDouble(),
       basePrice: price,
@@ -829,15 +830,14 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
     final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    // Hunter-facing total + 25% deposit — both derived from the marked-up
-    // total via the single-source PricingMath helper. The 7.5% platform fee
-    // is fully absorbed; no explicit "Platform Fee" line is rendered to the
-    // hunter.
+    // Hunter-facing total + 25% deposit — both derived via the single-source
+    // PricingMath helper. The total equals the base package cost (there is no
+    // platform commission); no "Platform Fee" line is rendered to the hunter.
     final totalPrice = PricingMath.resolveHunterTotal(
       totalHunterPrice: (widget.data['totalPriceZAR'] as num?)?.toDouble(),
       basePrice: basePrice,
     );
-    final depositAmount = PricingMath.depositFromMarkedUpTotal(totalPrice);
+    final depositAmount = PricingMath.depositFromTotal(totalPrice);
 
     final pricing = PackagePricing.fromMap(widget.data);
     final inclusions = List<String>.from(widget.data['inclusions'] ?? []);
@@ -927,10 +927,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
               ),
               child: Column(
                 children: [
-                  // Hunter-facing total only — the outfitter base price and
-                  // 7.5% platform-fee split are hidden from the hunter for
-                  // marketplace privacy. The total remains inclusive of the
-                  // 7.5% fee; only the line items are concealed.
+                  // Hunter-facing total — the total equals the base package
+                  // cost (there is no platform commission).
                   _PriceRow(
                     label: 'Total Price',
                     value: _formatZAR(totalPrice),
@@ -1500,10 +1498,11 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         widget.data['packageName'] as String? ?? 'Custom Package';
     final basePrice =
         (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    // Hunter-facing total: prefer the stored marked-up total; for legacy
-    // bookings without `totalHunterPriceRands`, apply the 7.5% markup to the
-    // base so the card never renders the unmarked-up outfitter base price
-    // (or R0) to a hunter.
+    // Hunter-facing total: equals the base booking cost (there is no platform
+    // commission). For legacy bookings that carry a marked-up
+    // `totalHunterPriceRands` (written by a prior version that applied a 7.5%
+    // commission), the base price is preferred so the card reflects the base
+    // booking cost.
     final totalPrice = PricingMath.resolveHunterTotal(
       totalHunterPrice: (widget.data['totalHunterPriceRands'] as num?)?.toDouble(),
       basePrice: basePrice,
@@ -1512,13 +1511,13 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     // Deposit flow: when the outfitter approves, the booking moves to
     // `Pending Deposit` and the hunter pays the 25% non-refundable deposit
     // via PayFast. The deposit amount is stored on the booking; if it is
-    // missing (legacy bookings), derive it off the marked-up total.
+    // missing (legacy bookings), derive it off the total.
     final depositAmount = PricingMath.resolveDeposit(
       storedDeposit: (widget.data['depositAmountRands'] as num?)?.toDouble(),
-      markedUpTotalValue: totalPrice,
+      total: totalPrice,
     );
     final balanceAmount = (widget.data['balanceAmountRands'] as num?)?.toDouble() ??
-        PricingMath.balanceFromMarkedUpTotal(totalPrice);
+        PricingMath.balanceFromTotal(totalPrice);
     final statusLower = status.toLowerCase();
 
     // PayFast checkout eligibility: render the Pay button when the booking is

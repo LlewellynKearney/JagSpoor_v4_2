@@ -175,7 +175,7 @@ class _BookingCardState extends State<_BookingCard> {
     try {
       // On approval, transition to the deposit-pending state so the hunter is
       // prompted to pay the 25% non-refundable deposit. This also recomputes
-      // the 7.5% commission + deposit split on the booking.
+      // the deposit split on the booking.
       if (newStatus == 'Approved') {
         await PackageBookingManager.instance
             .approveBookingAndRequestDeposit(bookingId: widget.bookingId);
@@ -488,8 +488,6 @@ class _BookingCardState extends State<_BookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    final basePrice = (widget.data['basePriceRands'] ?? 0).toDouble();
-    final commission = (widget.data['platformCommissionRands'] ?? 0).toDouble();
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
     final depositAmount =
         (widget.data['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
@@ -670,22 +668,7 @@ class _BookingCardState extends State<_BookingCard> {
             child: Column(
               children: [
                 _FinancialRow(
-                  label: 'Outfitter Base Price',
-                  value:
-                      'R ${basePrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                  theme: widget.theme,
-                ),
-                const Divider(height: 16),
-                _FinancialRow(
-                  label: '7.5% Platform Fee',
-                  value:
-                      'R ${commission.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                  theme: widget.theme,
-                  isFee: true,
-                ),
-                const Divider(height: 16),
-                _FinancialRow(
-                  label: 'Total (incl. 7.5% fee)',
+                  label: 'Total',
                   value:
                       'R ${totalPrice.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   theme: widget.theme,
@@ -1262,14 +1245,12 @@ class _FinancialRow extends StatelessWidget {
   final String label;
   final String value;
   final ThemeController theme;
-  final bool isFee;
   final bool isTotal;
 
   const _FinancialRow({
     required this.label,
     required this.value,
     required this.theme,
-    this.isFee = false,
     this.isTotal = false,
   });
 
@@ -1290,9 +1271,7 @@ class _FinancialRow extends StatelessWidget {
           value,
           style: TextStyle(
             color:
-                isFee
-                    ? Colors.amber.shade700
-                    : isTotal
+                isTotal
                     ? Colors.green
                     : theme.textColor,
             fontSize: isTotal ? 18 : 14,

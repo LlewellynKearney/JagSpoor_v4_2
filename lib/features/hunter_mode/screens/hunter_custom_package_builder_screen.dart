@@ -19,9 +19,10 @@ import '../widgets/booking_chat_thread.dart';
 /// - Lodging / catering / vehicle fee lines from the same price list.
 ///
 /// All per-item prices use the price list's `hunterDisplayPriceZAR`, which
-/// already includes the **absorbed** 7.5% platform markup (base × 1.075). The
-/// hunter therefore sees only line-item prices and a grand total — there is
-/// no explicit "Platform Fee" row exposed to the hunter.
+/// equals the item's base price (there is no platform commission / markup).
+/// The hunter sees line-item prices and a grand total that simply reflects
+/// the base booking cost — there is no "Platform Fee" row exposed to the
+/// hunter.
 ///
 /// On submit the request is written to the Firestore `bookings` collection
 /// with `isCustomPackage: true` and `status: 'Pending Approval'`, the 25%
@@ -873,8 +874,9 @@ class _HunterCustomPackageBuilderScreenState
 
 /// A price-list line row with a quantity stepper + per-line total.
 ///
-/// The unit price shown is the `hunterDisplayPriceZAR` (base × 1.075) — the
-/// 7.5% platform markup is absorbed into it, so no separate fee row appears.
+/// The unit price shown is the `hunterDisplayPriceZAR`, which equals the
+/// item's base price (there is no platform commission), so no separate fee
+/// row appears.
 class _ItemQtyRow extends StatelessWidget {
   final Map<String, dynamic> item;
   final int qty;

@@ -25,7 +25,7 @@ class PricelistItem {
   /// Empty when the price list does not size-tier the animal.
   final String trophySizeRange;
 
-  /// Base outfitter price in ZAR (before the 7.5% platform commission).
+  /// Base outfitter price in ZAR.
   final double priceZAR;
 
   /// 'species' for trophy/game line items, 'fee' for daily/slaughter/etc.

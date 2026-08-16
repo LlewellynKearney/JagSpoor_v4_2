@@ -342,8 +342,11 @@ class _OutfitterPackageManagerScreenState
     final status =
         PackageStatus.fromString(data['status'] as String?);
     final basePrice = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
+    // The total equals the base package cost (there is no platform
+    // commission); for legacy docs carrying a marked-up `totalPriceZAR`, the
+    // base price is preferred.
     final total = (data['totalPriceZAR'] as num?)?.toDouble() ??
-        basePrice * (1 + PackageBookingManager.platformCommissionRate);
+        basePrice;
     final depositPct = (data['depositPercentage'] as num?)?.toDouble() ?? 25;
     final quantityAvailable =
         PackageQuantity.fromData(data['quantityAvailable']);

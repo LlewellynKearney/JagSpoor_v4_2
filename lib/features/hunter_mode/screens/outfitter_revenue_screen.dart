@@ -127,7 +127,6 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                   );
 
                   final grossEarnings = revenue['grossEarnings'] ?? 0.0;
-                  final platformFees = revenue['platformFees'] ?? 0.0;
                   final netEarnings = revenue['netEarnings'] ?? 0.0;
                   final totalBookings =
                       (revenue['totalBookings'] ?? 0.0).toInt();
@@ -275,22 +274,18 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             ),
                           ),
                           ContextualInfoIcon(
-                            title: 'Gross Revenue vs Platform Commission',
+                            title: 'Gross Revenue vs Net Earnings',
                             iconColor: widget.theme.accentColor,
                             description:
-                                'JagSpoor charges a flat 7.5% platform administration fee on every earned booking. The figures below break down how the total collected from hunters becomes the outfitter\'s net earnings. Only approved, deposit-pending, paid and completed bookings are counted.',
+                                'The total collected from hunters across all earned bookings equals the outfitter\'s net earnings — there is no platform commission deducted. Only approved, deposit-pending, paid and completed bookings are counted.',
                             concepts: const [
                               ExplanationConcept(
                                 label: 'Gross Revenue',
-                                detail: 'Total paid by hunters across all earned bookings (inclusive of the 7.5% platform fee).',
-                              ),
-                              ExplanationConcept(
-                                label: 'Platform Fee',
-                                detail: '7.5% of each booking\'s outfitter base price — the JagSpoor administration commission retained per booking.',
+                                detail: 'Total paid by hunters across all earned bookings (the base booking cost).',
                               ),
                               ExplanationConcept(
                                 label: 'Net Earnings',
-                                detail: 'gross − platformFee — the amount the outfitter actually receives (the base listing price, net of fees).',
+                                detail: 'The amount the outfitter actually receives — equal to gross revenue (no platform fee is deducted).',
                               ),
                             ],
                           ),
@@ -314,11 +309,11 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: _RevenueMetricCard(
-                              title: 'Platform Fees',
-                              subtitle: '7.5% Admin',
-                              value: platformFees,
-                              icon: Icons.percent_rounded,
-                              color: Colors.amber,
+                              title: 'Net Earnings',
+                              subtitle: 'ZAR',
+                              value: netEarnings,
+                              icon: Icons.payments_rounded,
+                              color: Colors.green,
                               theme: widget.theme,
                             ),
                           ),
@@ -525,7 +520,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings minus the 7.5% platform administration fee collected by JagSpoor.',
+                              'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings paid by hunters (the full booking amount; no platform commission is deducted).',
                               style: TextStyle(
                                 color: widget.theme.subtitleColor,
                                 fontSize: 13,
@@ -656,10 +651,9 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         }
         monthlyData[monthKey]!['bookings'] =
             (monthlyData[monthKey]!['bookings'] as int) + 1;
-        // Outfitter revenue = base price NET of the 7.5% platform fee (the
-        // outfitter's actual earnings), NOT the hunter-facing marked-up total.
-        // This protects the outfitter revenue summary from overstating
-        // earnings by the platform commission.
+        // Outfitter revenue = the booking total, which equals the base price
+        // (there is no platform commission). The base price is preferred so
+        // legacy marked-up totals do not overstate revenue.
         final basePrice =
             (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
         monthlyData[monthKey]!['revenue'] =

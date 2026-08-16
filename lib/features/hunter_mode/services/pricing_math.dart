@@ -1,84 +1,43 @@
 /// Pure, dependency-free pricing arithmetic for the JagSpoor marketplace.
 ///
-/// Single source of truth for the **absorbed** 7.5% platform markup and the
-/// 25% non-refundable deposit. Every hunter-facing surface (package cards,
-/// booking sheets, custom-package builder, PayFast checkout) and every
-/// outfitter financial surface (revenue summary, payout reports) routes
-/// through these functions so the markup, deposit, and net-earnings math can
-/// never drift between screens.
+/// Single source of truth for the 25% non-refundable deposit. Every
+/// hunter-facing surface (package cards, booking sheets, custom-package
+/// builder, PayFast checkout) and every outfitter financial surface
+/// (revenue summary, payout reports) routes through these functions so the
+/// deposit and totals math can never drift between screens.
 ///
 /// Semantics (the canonical data model written to every `bookings` document
 /// by `PackageBookingManager`):
-/// - `basePriceRands`      — the outfitter's listed base price, **net of
-///   fees** (this is what the outfitter receives).
-/// - `platformCommissionRands` = `basePriceRands × 0.075` — the JagSpoor
-///   administration commission.
-/// - `totalHunterPriceRands` = `basePriceRands × 1.075` — the **marked-up**
-///   hunter-facing total (the markup is fully absorbed; no explicit
-///   "Platform Fee" line is ever shown to the hunter).
+/// - `basePriceRands` — the outfitter's listed base price. This IS the
+///   total the hunter pays; there is no platform commission / markup.
+/// - `totalHunterPriceRands` = `basePriceRands` — the hunter-facing total
+///   (kept as a separate field for read compatibility with legacy docs).
 /// - `depositAmountRands` = `totalHunterPriceRands × 0.25` — the 25%
-///   non-refundable deposit, computed **off the marked-up total**.
+///   non-refundable deposit.
 /// - `balanceAmountRands` = `totalHunterPriceRands − depositAmountRands`.
 ///
-/// For an outfitter financial dashboard the outfitter's **net earnings** are
-/// the base price (`basePriceRands`), and the "gross revenue" figure is the
-/// total collected from hunters (`totalHunterPriceRands`); the difference is
-/// the platform fee. So: `netEarnings = grossRevenue − platformFee` and also
-/// `netEarnings == basePriceRands`.
+/// There is no platform fee / commission: the total amount simply reflects
+/// the base package/booking cost. The outfitter's net earnings equal the
+/// gross revenue collected from hunters.
 class PricingMath {
   PricingMath._();
-
-  /// The flat JagSpoor platform administration commission rate (7.5%).
-  static const double platformCommissionRate = 0.075;
 
   /// The non-refundable deposit fraction charged on approval (25%).
   static const double depositFraction = 0.25;
 
-  /// The hunter-facing markup multiplier (base × 1.075).
-  static const double markupMultiplier = 1.0 + platformCommissionRate;
+  /// The 25% non-refundable deposit computed off the booking [total].
+  static double depositFromTotal(double total) => total * depositFraction;
 
-  /// The hunter-facing marked-up total for a given [basePrice]
-  /// (`basePrice × 1.075`). Absorbs the 7.5% platform fee — no separate fee
-  /// line is shown to the hunter.
-  static double markedUpTotal(double basePrice) =>
-      basePrice * markupMultiplier;
-
-  /// The 7.5% platform commission for a given [basePrice]
-  /// (`basePrice × 0.075`).
-  static double commissionFromBase(double basePrice) =>
-      basePrice * platformCommissionRate;
-
-  /// The 25% non-refundable deposit computed off the **marked-up** total
-  /// (`markedUpTotal × 0.25`). Use this when you only have the base price.
-  static double depositFromBase(double basePrice) =>
-      markedUpTotal(basePrice) * depositFraction;
-
-  /// The 25% non-refundable deposit computed off an already-marked-up
-  /// [markedUpTotal] (`markedUpTotal × 0.25`). Use this when the marked-up
-  /// total is already known (e.g. read from a booking document's
-  /// `totalHunterPriceRands`).
-  static double depositFromMarkedUpTotal(double markedUpTotal) =>
-      markedUpTotal * depositFraction;
-
-  /// The balance remaining after the deposit, off the marked-up total.
-  static double balanceFromMarkedUpTotal(double markedUpTotal) =>
-      markedUpTotal * (1.0 - depositFraction);
-
-  /// The outfitter's net earnings given the gross revenue collected from
-  /// hunters and the platform fee (`grossRevenue − platformFee`). This equals
-  /// the outfitter's base price.
-  static double netEarnings({
-    required double grossRevenue,
-    required double platformFee,
-  }) =>
-      grossRevenue - platformFee;
+  /// The balance remaining after the deposit, off the booking [total].
+  static double balanceFromTotal(double total) =>
+      total * (1.0 - depositFraction);
 
   /// Formats a ZAR money amount for hunter-facing display, e.g.
   /// `formatCurrency(1234.5)` → `'R 1 234.50'`, `formatCurrency(0)` →
   /// `'R 0.00'`. Locale-independent (no external intl dep): groups
   /// thousands with a thin space and always emits two decimals so prices
   /// line up. Single source of truth for the marketplace / booking-card
-  /// deposit labels. (v4.5 to-do Item #7.)
+  /// deposit labels.
   static String formatCurrency(double amount) {
     final neg = amount < 0;
     final abs = amount.abs();
@@ -111,89 +70,75 @@ class PricingMath {
     return String.fromCharCodes(s.runes.toList().reversed);
   }
 
-  /// Resolves a stored booking/package document's hunter-facing total,
-  /// applying the 7.5% markup to the base price when the precomputed
-  /// `totalHunterPriceRands` / `totalPriceZAR` field is absent (legacy docs).
+  /// Resolves a stored booking/package document's hunter-facing total.
   ///
-  /// [totalHunterPrice] is the stored marked-up total (may be `null`/`0` for
-  /// legacy documents); [basePrice] is the stored base price (always present).
-  /// Returns the marked-up total, computing it from the base when the stored
-  /// marked-up value is missing.
+  /// There is no platform markup: the total equals the base price. For
+  /// legacy documents that carry a marked-up `totalHunterPriceRands` /
+  /// `totalPriceZAR` (written by a prior version that applied a 7.5%
+  /// commission), the base price is preferred so the displayed total
+  /// reflects the base booking cost with no platform cut. When the base
+  /// price is absent, the stored total is used as a non-zero fallback.
+  ///
+  /// [totalHunterPrice] is the stored total (may be `null`/`0` for legacy
+  /// documents); [basePrice] is the stored base price.
   static double resolveHunterTotal({
     required double? totalHunterPrice,
     required double basePrice,
   }) {
+    if (basePrice > 0) return basePrice;
     if (totalHunterPrice != null && totalHunterPrice > 0) {
       return totalHunterPrice;
     }
-    return markedUpTotal(basePrice);
+    return 0.0;
   }
 
   /// Resolves a stored booking document's 25% deposit, computing it off the
-  /// marked-up total when the precomputed `depositAmountRands` field is
-  /// absent (legacy docs). Always derived from the marked-up total.
+  /// booking [total] when the precomputed `depositAmountRands` field is
+  /// absent (legacy docs). Always derived from the total.
   static double resolveDeposit({
     required double? storedDeposit,
-    required double markedUpTotalValue,
+    required double total,
   }) {
     if (storedDeposit != null && storedDeposit > 0) {
       return storedDeposit;
     }
-    return depositFromMarkedUpTotal(markedUpTotalValue);
+    return depositFromTotal(total);
   }
 
   /// Aggregates a list of booking records into the outfitter financial
-  /// summary used by the revenue dashboard, applying the net-revenue
-  /// protection rules:
-  /// - `grossRevenue` = sum of the hunter-facing marked-up totals (total
-  ///   collected from hunters, incl. the 7.5% fee).
-  /// - `platformFees` = sum of the 7.5% commissions (derived from the base
-  ///   when the stored commission is missing).
-  /// - `netEarnings` = `grossRevenue − platformFees` = the outfitter's base
-  ///   earnings, net of fees (e.g. R10 000 for a R10 000 base listing — NOT
-  ///   R10 750 and NOT R9 250).
+  /// summary used by the revenue dashboard.
   ///
-  /// Each record is a map with optional `basePriceRands`,
-  /// `totalHunterPriceRands`, and `platformCommissionRands` fields (the
-  /// shape written to `bookings` documents). Pure / dependency-free so the
-  /// aggregation can be unit-tested without the Firestore emulator.
+  /// - `grossRevenue` = sum of the booking totals (total collected from
+  ///   hunters = the base price; there is no platform commission).
+  /// - `netEarnings` = `grossRevenue` (the outfitter receives the full
+  ///   booking amount; no platform cut is deducted).
+  ///
+  /// Each record is a map with optional `basePriceRands` and
+  /// `totalHunterPriceRands` fields (the shape written to `bookings`
+  /// documents). Pure / dependency-free so the aggregation can be
+  /// unit-tested without the Firestore emulator.
   static ({
     double grossRevenue,
-    double platformFees,
     double netEarnings,
     int totalBookings,
   }) aggregateRevenueSummary(Iterable<Map<String, dynamic>> bookings) {
     double grossRevenue = 0.0;
-    double platformFees = 0.0;
     var totalBookings = 0;
 
     for (final data in bookings) {
       final basePrice = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
       final storedTotal =
           (data['totalHunterPriceRands'] as num?)?.toDouble();
-      final storedCommission =
-          (data['platformCommissionRands'] as num?)?.toDouble();
-
       grossRevenue += resolveHunterTotal(
         totalHunterPrice: storedTotal,
         basePrice: basePrice,
       );
-      platformFees +=
-          (storedCommission != null && storedCommission > 0)
-              ? storedCommission
-              : commissionFromBase(basePrice);
       totalBookings++;
     }
 
-    final net = netEarnings(
-      grossRevenue: grossRevenue,
-      platformFee: platformFees,
-    );
-
     return (
       grossRevenue: grossRevenue,
-      platformFees: platformFees,
-      netEarnings: net,
+      netEarnings: grossRevenue,
       totalBookings: totalBookings,
     );
   }

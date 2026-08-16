@@ -9,9 +9,11 @@ import '../models/package_pricing.dart';
 /// Produces a standardized invoice with:
 ///  - the itemized line-item breakdown (or all-inclusive total) sourced from
 ///    the linked hunting package,
-///  - the 7.5% platform commission row,
 ///  - the 25% non-refundable deposit status + balance, and
 ///  - the date-change history for the booking (if any).
+///
+/// There is no platform commission; the total package value equals the base
+/// price.
 class OutfitterInvoiceExporter {
   /// Generates and shares the invoice PDF.
   ///
@@ -29,10 +31,9 @@ class OutfitterInvoiceExporter {
     final farmName = bookingData['farmName'] as String? ?? 'Outfitter Farm';
     final hunterName = bookingData['hunterName'] as String? ?? 'Hunter';
     final basePrice = (bookingData['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    final platformFee =
-        (bookingData['platformCommissionRands'] as num?)?.toDouble() ?? 0.0;
     final totalPrice =
-        (bookingData['totalHunterPriceRands'] as num?)?.toDouble() ?? 0.0;
+        (bookingData['totalHunterPriceRands'] as num?)?.toDouble() ??
+            basePrice;
     final depositAmount =
         (bookingData['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
     final balanceAmount =
@@ -71,8 +72,6 @@ class OutfitterInvoiceExporter {
         packageName: packageName,
         farmName: farmName,
         hunterName: hunterName,
-        basePrice: basePrice,
-        platformFee: platformFee,
         totalPrice: totalPrice,
         depositAmount: depositAmount,
         balanceAmount: balanceAmount,
@@ -95,8 +94,6 @@ class OutfitterInvoiceExporter {
     required String packageName,
     required String farmName,
     required String hunterName,
-    required double basePrice,
-    required double platformFee,
     required double totalPrice,
     required double depositAmount,
     required double balanceAmount,
@@ -209,13 +206,8 @@ class OutfitterInvoiceExporter {
           ],
         ],
         JagSpoorPdfTheme.detailBox([
-          JagSpoorPdfTheme.currencyRow('Outfitter Base Price', basePrice),
           JagSpoorPdfTheme.currencyRow(
-              'Platform Commission (7.5%)', platformFee,
-              emphasis: true),
-          pw.Divider(color: JagSpoorPdfTheme.divider, height: 8),
-          JagSpoorPdfTheme.currencyRow(
-              'Total Package Value', basePrice + platformFee,
+              'Total Package Value', totalPrice,
               bold: true),
         ]),
 

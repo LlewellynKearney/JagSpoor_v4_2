@@ -3,8 +3,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 class InvoicePdfService {
-  static const double markup = 1.075; // 7.5% marketplace commission
-
   static Future<Uint8List> generateInvoice({
     required String clientName,
     required String packageName,
@@ -17,7 +15,8 @@ class InvoicePdfService {
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
-          double totalAmount = (packageBasePrice * markup);
+          // The total equals the base package cost (no platform commission).
+          double totalAmount = packageBasePrice;
 
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -47,7 +46,7 @@ class InvoicePdfService {
               ),
               pw.SizedBox(height: 24),
               pw.Text(
-                '1. Base Package (Includes 7.5% Commission)',
+                '1. Base Package',
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
               pw.TableHelper.fromTextArray(
@@ -71,22 +70,21 @@ class InvoicePdfService {
                 ],
                 data:
                     extras.map((item) {
-                      final double rawPrice =
+                      final double unitPrice =
                           (item['price'] is num)
                               ? (item['price'] as num).toDouble()
                               : 0.0;
-                      final double hunterPrice = rawPrice * markup;
                       final int qty =
                           (item['multiplier'] is num)
                               ? (item['multiplier'] as num).toInt()
                               : 1;
-                      final double subtotal = hunterPrice * qty;
+                      final double subtotal = unitPrice * qty;
                       totalAmount += subtotal;
 
                       return [
                         item['name'] ?? 'Extra Item',
                         qty.toString(),
-                        'R ${hunterPrice.toStringAsFixed(2)}',
+                        'R ${unitPrice.toStringAsFixed(2)}',
                         'R ${subtotal.toStringAsFixed(2)}',
                       ];
                     }).toList(),

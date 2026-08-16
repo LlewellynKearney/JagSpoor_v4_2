@@ -9,7 +9,7 @@ import 'outfitter_package_creator_screen.dart';
 /// Renders a reactive list of the authenticated outfitter's past AI-scanned
 /// price lists (sourced from the `scanned_pricelists` Firestore collection,
 /// scoped by `outfitterId`). Each entry shows the scan date, source farm,
-/// item count, and total value (incl. 7.5% platform fee). A details sheet lets
+/// item count, and total value. A details sheet lets
 /// the outfitter view the full parsed species/line-item breakdown, re-export
 /// the price list as a shareable summary, or jump to the package publisher to
 /// apply the scanned prices to an active package.
@@ -194,23 +194,21 @@ class _ScannedPriceListHistoryScreenState
       ..writeln('Scanned: ${_formatDate(data['createdAt'])}')
       ..writeln('Source: ${data['sourceImage'] ?? 'unknown'}')
       ..writeln('Items: ${data['totalItems'] ?? items.length}')
-      ..writeln('Platform fee: 7.5%')
       ..writeln('=====================================');
     double baseTotal = 0;
     for (final item in items) {
       final name = item['name'] ?? 'Unknown';
       final base = (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+      // The hunter-facing price equals the base price (no platform commission).
       final display = (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ??
-          base * 1.075;
+          base;
       baseTotal += base;
       buffer.writeln(
           '$name — Base R${base.toStringAsFixed(2)} | Hunter R${display.toStringAsFixed(2)}');
     }
     buffer.writeln('=====================================');
     buffer.writeln(
-        'Base total: R${baseTotal.toStringAsFixed(2)}');
-    buffer.writeln(
-        'Total incl. 7.5% fee: R${(baseTotal * 1.075).toStringAsFixed(2)}');
+        'Total: R${baseTotal.toStringAsFixed(2)}');
 
     showModalBottomSheet(
       context: context,
@@ -382,7 +380,8 @@ class _ScanHistoryCard extends StatelessWidget {
       baseTotal +=
           (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
     }
-    final grandTotal = baseTotal * 1.075;
+    // The grand total equals the base total (no platform commission).
+    final grandTotal = baseTotal;
     final farmName = data['farmName'] as String? ?? data['farmId'] as String?;
     final status = data['status'] as String? ?? 'active';
 
@@ -477,15 +476,7 @@ class _ScanHistoryCard extends StatelessWidget {
                     ),
                     Expanded(
                       child: _MetricChip(
-                        label: 'BASE TOTAL',
-                        value:
-                            'R ${baseTotal.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                        theme: theme,
-                      ),
-                    ),
-                    Expanded(
-                      child: _MetricChip(
-                        label: 'INCL. 7.5%',
+                        label: 'TOTAL',
                         value:
                             'R ${grandTotal.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                         theme: theme,
@@ -596,8 +587,9 @@ class _MetricChip extends StatelessWidget {
 }
 
 /// Details bottom sheet for a single scanned price list — shows the full
-/// parsed species/line-item breakdown (base price, 7.5% commission, hunter
-/// display price) plus re-export and apply-to-package actions.
+/// parsed species/line-item breakdown (the hunter display price equals the
+/// item base price; there is no platform commission) plus re-export and
+/// apply-to-package actions.
 class _ScanDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> data;
   final ThemeController theme;
@@ -618,16 +610,15 @@ class _ScanDetailsSheet extends StatelessWidget {
     final farmName = data['farmName'] as String? ?? 'Unknown farm';
 
     double baseTotal = 0;
-    double commissionTotal = 0;
     double displayTotal = 0;
     for (final item in items) {
       final base =
           (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+      // The hunter-facing price equals the base price (no platform commission).
       final display = (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ??
-          base * 1.075;
+          base;
       baseTotal += base;
       displayTotal += display;
-      commissionTotal += (display - base);
     }
 
     return DraggableScrollableSheet(
@@ -713,15 +704,6 @@ class _ScanDetailsSheet extends StatelessWidget {
                     ),
                     Expanded(
                       child: _SummaryCell(
-                        label: '7.5% Fee',
-                        value:
-                            'R ${commissionTotal.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                        theme: theme,
-                        color: Colors.amber.shade700,
-                      ),
-                    ),
-                    Expanded(
-                      child: _SummaryCell(
                         label: 'Hunter Total',
                         value:
                             'R ${displayTotal.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
@@ -746,15 +728,13 @@ class _ScanDetailsSheet extends StatelessWidget {
                   final name = item['name'] ?? 'Unknown';
                   final base =
                       (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+                  // The hunter-facing price equals the base price (no platform commission).
                   final display =
                       (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ??
-                          base * 1.075;
-                  final commission = display - base;
+                          base;
                   return _DetailItemRow(
                     index: index + 1,
                     name: name.toString(),
-                    basePrice: base,
-                    commission: commission,
                     displayPrice: display,
                     theme: theme,
                   );
@@ -863,16 +843,12 @@ class _SummaryCell extends StatelessWidget {
 class _DetailItemRow extends StatelessWidget {
   final int index;
   final String name;
-  final double basePrice;
-  final double commission;
   final double displayPrice;
   final ThemeController theme;
 
   const _DetailItemRow({
     required this.index,
     required this.name,
-    required this.basePrice,
-    required this.commission,
     required this.displayPrice,
     required this.theme,
   });
@@ -919,27 +895,13 @@ class _DetailItemRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'R ${basePrice.toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: theme.subtitleColor,
-                  fontSize: 12,
-                  decoration: TextDecoration.lineThrough,
-                  decorationColor: theme.subtitleColor,
-                ),
-              ),
-              Text(
-                'R ${displayPrice.toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          Text(
+            'R ${displayPrice.toStringAsFixed(0)}',
+            style: TextStyle(
+              color: Colors.green,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

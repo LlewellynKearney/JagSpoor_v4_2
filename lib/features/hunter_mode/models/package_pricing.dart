@@ -190,7 +190,7 @@ class PackagePricing {
     this.availabilityEnd,
   });
 
-  /// Outfitter's base price (before the 7.5% platform fee).
+  /// Outfitter's base price (the total the hunter pays; no platform fee).
   double get basePrice {
     switch (mode) {
       case PackagePricingMode.allInclusive:

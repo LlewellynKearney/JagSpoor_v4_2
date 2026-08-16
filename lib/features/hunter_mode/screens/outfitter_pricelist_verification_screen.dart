@@ -54,12 +54,11 @@ class _OutfitterPricelistVerificationScreenState
       }
       if (basePrice != null) {
         _editableItems[index]['outfitterBasePrice'] = basePrice;
-        // Recalculate display price with 7.5% platform fee
-        final double displayPrice = basePrice * 1.075;
+        // The hunter-facing price equals the base price (no platform commission).
+        final double displayPrice = basePrice;
         _editableItems[index]['hunterDisplayPriceZAR'] = displayPrice;
         _editableItems[index]['hunterPriceFormatted'] =
             'R${displayPrice.toStringAsFixed(0)}';
-        _editableItems[index]['commissionZAR'] = displayPrice - basePrice;
       }
       _hasChanges = true;
     });
@@ -74,7 +73,7 @@ class _OutfitterPricelistVerificationScreenState
     setState(() => _isSaving = true);
 
     try {
-      // Build processed items with 7.5% commission split
+      // Build processed items (hunter display price = base price).
       final List<Map<String, dynamic>> processedItems = [];
 
       for (final item in _editableItems) {
@@ -82,8 +81,8 @@ class _OutfitterPricelistVerificationScreenState
         final basePrice =
             (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
 
-        // Calculate display price with 7.5% platform fee
-        final double displayPrice = basePrice * 1.075;
+        // The hunter-facing price equals the base price (no platform commission).
+        final double displayPrice = basePrice;
 
         processedItems.add({
           'name': speciesName,
@@ -99,7 +98,6 @@ class _OutfitterPricelistVerificationScreenState
           'hunterDisplayPriceZAR': displayPrice,
           'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
           'hunterPriceFormatted': 'R${displayPrice.toStringAsFixed(0)}',
-          'commissionZAR': displayPrice - basePrice,
           if (item['quantityLimit'] != null)
             'quantityLimit': item['quantityLimit'],
         });
@@ -217,7 +215,7 @@ class _OutfitterPricelistVerificationScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Review and edit extracted items. 7.5% commission will be applied on save.',
+                    'Review and edit extracted items. The hunter-facing price equals the base price (no platform commission).',
                     style: TextStyle(
                       color: widget.theme.subtitleColor,
                       fontSize: 13,
@@ -423,8 +421,8 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
   Widget build(BuildContext context) {
     final basePrice =
         (widget.item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
-    final displayPrice = basePrice * 1.075;
-    final commission = displayPrice - basePrice;
+    // The hunter-facing price equals the base price (no platform commission).
+    final displayPrice = basePrice;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -456,11 +454,6 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                '7.5% Fee: R${commission.toStringAsFixed(2)}',
-                style: TextStyle(color: Colors.amber.shade700, fontSize: 11),
               ),
             ],
           ),
@@ -649,7 +642,7 @@ class _EditablePriceItemState extends State<_EditablePriceItem> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Hunter Display Price (incl. 7.5%):',
+                  'Hunter Display Price:',
                   style: TextStyle(
                     color: widget.theme.subtitleColor,
                     fontSize: 12,

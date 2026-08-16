@@ -213,10 +213,11 @@ class FarmAnimalListing {
   /// Trophy size range token (e.g. '>50"') or ''.
   final String trophySizeRange;
 
-  /// Outfitter base price per animal in ZAR (before 7.5% commission).
+  /// Outfitter base price per animal in ZAR.
   final double basePriceZAR;
 
-  /// Hunter-facing price per animal in ZAR (base × 1.075, incl. commission).
+  /// Hunter-facing price per animal in ZAR (equals the base price; there is
+  /// no platform commission).
   final double hunterPriceZAR;
 
   /// Max animals available/allowed at this price, or `null` (unlimited).
@@ -288,8 +289,9 @@ class FarmHuntingCatalog {
       final item = Map<String, dynamic>.from(raw);
       final itemType = (item['itemType'] ?? 'species').toString();
       final base = (item['outfitterBasePrice'] as num?)?.toDouble() ?? 0.0;
+      // The hunter price equals the base price (no platform commission).
       final hunter = (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ??
-          base * 1.075;
+          base;
       final qty = item['quantityLimit'] is int
           ? item['quantityLimit'] as int
           : (item['quantityLimit'] is num

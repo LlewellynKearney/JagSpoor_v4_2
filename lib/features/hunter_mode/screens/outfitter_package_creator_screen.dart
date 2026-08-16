@@ -1093,7 +1093,7 @@ class _OutfitterPackageCreatorScreenState
 
             const SizedBox(height: 24),
 
-            // ── DUAL PRICING SUMMARY (7.5% platform fee) ────────────────
+            // ── PRICING SUMMARY ────────────────────────────────────────────
             _buildPricingSummary(theme),
             const SizedBox(height: 24),
 
@@ -1850,11 +1850,11 @@ class _OutfitterPackageCreatorScreenState
     );
   }
 
-  // ── Dual pricing summary: Base + 7.5% = Total ──────────────────────────
+  // ── Pricing summary: Total = base package cost ─────────────────────────
   Widget _buildPricingSummary(ThemeController theme) {
     final base = _resolvedBasePrice;
-    final fee = base * PackageBookingManager.platformCommissionRate;
-    final total = base + fee;
+    // The total equals the base package cost; there is no platform commission.
+    final total = base;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1872,7 +1872,7 @@ class _OutfitterPackageCreatorScreenState
                   color: theme.accentColor, size: 20),
               const SizedBox(width: 8),
               Text(
-                'PACKAGE VALUE (7.5% PLATFORM FEE)',
+                'PACKAGE VALUE',
                 style: TextStyle(
                   color: theme.subtitleColor,
                   fontSize: 12,
@@ -1883,19 +1883,6 @@ class _OutfitterPackageCreatorScreenState
             ],
           ),
           const SizedBox(height: 14),
-          _summaryRow(
-            theme,
-            label: 'Outfitter Base Price',
-            value: 'R ${base.toStringAsFixed(2)}',
-          ),
-          const SizedBox(height: 8),
-          _summaryRow(
-            theme,
-            label: '7.5% Platform Fee',
-            value: 'R ${fee.toStringAsFixed(2)}',
-            valueColor: Colors.amber.shade700,
-          ),
-          const Divider(height: 20),
           _summaryRow(
             theme,
             label: 'Total Package Value',

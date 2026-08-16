@@ -270,7 +270,7 @@ class _OutfitterPricelistScannerScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            'Extracting... Applying 7.5% Platform Fees...',
+            'Extracting prices from price list...',
             style: TextStyle(color: widget.theme.subtitleColor, fontSize: 14),
           ),
         ],
@@ -562,8 +562,9 @@ class _OutfitterPricelistScannerScreenState
                 Expanded(
                   child: Text(
                     'AI extracts species, sex/class, trophy size tiers & ZAR '
-                    'prices from English or Afrikaans price lists, then a 7.5% '
-                    'platform commission is applied. Requires GEMINI_API_KEY.',
+                    'prices from English or Afrikaans price lists. The hunter '
+                    'sees the item base price (no platform commission). '
+                    'Requires GEMINI_API_KEY.',
                     style: TextStyle(
                       color: widget.theme.subtitleColor,
                       fontSize: 13,

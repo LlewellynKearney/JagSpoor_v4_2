@@ -24,19 +24,19 @@ class AdminMetrics {
   });
 }
 
-/// A single financial period's gross vs. commission figures (in ZAR).
+/// A single financial period's gross booking revenue figures (in ZAR).
 class FinancialPeriod {
   final String label;
   final double grossBookingRevenue;
-  final double platformCommission;
 
   const FinancialPeriod({
     required this.label,
     required this.grossBookingRevenue,
-    required this.platformCommission,
   });
 
-  double get outfitterNet => grossBookingRevenue - platformCommission;
+  /// Outfitter net equals gross booking revenue (there is no platform
+  /// commission deducted).
+  double get outfitterNet => grossBookingRevenue;
 }
 
 /// Full financial analytics bundle.
@@ -58,10 +58,9 @@ class FinancialAnalytics {
 ///
 /// Entity counts use Firestore's `count()` aggregation queries so the dashboard
 /// never downloads full collections. Financial figures are derived from the
-/// `bookings` collection using the split-payment fields written by
-/// `PackageBookingManager` (`totalHunterPriceRands` = gross, `basePriceRands` =
-/// outfitter net; commission = the difference, or `platformCommissionRands`
-/// when present).
+/// `bookings` collection using the booking total (`totalHunterPriceRands`,
+/// falling back to `totalPriceZAR` / `basePriceRands`). There is no platform
+/// commission; the outfitter net equals the gross booking revenue.
 class AdminAnalyticsService {
   AdminAnalyticsService._();
   static final AdminAnalyticsService instance = AdminAnalyticsService._();
@@ -131,9 +130,10 @@ class AdminAnalyticsService {
     }
   }
 
-  /// Sums gross booking revenue and platform commission for bookings whose
-  /// `bookingTimestamp` (falling back to `createdAt`) falls within the window
-  /// `[start, end)`. Only paid bookings contribute to realized revenue.
+  /// Sums gross booking revenue for bookings whose `bookingTimestamp`
+  /// (falling back to `createdAt`) falls within the window `[start, end)`.
+  /// Only paid bookings contribute to realized revenue. There is no platform
+  /// commission; the outfitter net equals the gross booking revenue.
   ///
   /// Returns a zeroed period on any failure (permission denied, missing index)
   /// so one broken window never blocks the rest of the financial section.
@@ -161,30 +161,24 @@ class AdminAnalyticsService {
       }
 
       double gross = 0;
-      double commission = 0;
       for (final doc in snap.docs) {
         final data = doc.data();
         final grossVal =
             (data['totalHunterPriceRands'] as num?)?.toDouble() ??
                 (data['totalPriceZAR'] as num?)?.toDouble() ??
+                (data['basePriceRands'] as num?)?.toDouble() ??
                 0.0;
-        final commVal =
-            (data['platformCommissionRands'] as num?)?.toDouble() ??
-                (data['platformCommissionZAR'] as num?)?.toDouble() ??
-                (grossVal * 0.05);
         gross += grossVal;
-        commission += commVal;
       }
 
       return FinancialPeriod(
         label: label,
         grossBookingRevenue: gross,
-        platformCommission: commission,
       );
     } catch (_) {
       // Graceful degradation: return a zeroed period instead of throwing.
       return FinancialPeriod(
-          label: label, grossBookingRevenue: 0, platformCommission: 0);
+          label: label, grossBookingRevenue: 0);
     }
   }
 

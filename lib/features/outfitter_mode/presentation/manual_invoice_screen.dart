@@ -1164,7 +1164,8 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
             ..._extras.asMap().entries.map((entry) {
               final idx = entry.key;
               final extra = entry.value;
-              final withMarkup = (extra['price'] as double) * 1.075;
+              // The line price equals the extra's base price (no platform commission).
+              final linePrice = (extra['price'] as double);
               return Card(
                 color: const Color(0xFF1A1A1A),
                 margin: const EdgeInsets.only(bottom: 8),
@@ -1174,7 +1175,7 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
                     style: const TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
-                    'Qty: ${extra['multiplier']} × R ${withMarkup.toStringAsFixed(2)} (incl. 7.5% markup)',
+                    'Qty: ${extra['multiplier']} × R ${linePrice.toStringAsFixed(2)}',
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   trailing: IconButton(
@@ -1216,12 +1217,6 @@ class _ManualInvoiceScreenState extends State<ManualInvoiceScreen> {
             ),
 
             const SizedBox(height: 16),
-            const Center(
-              child: Text(
-                '7.5% marketplace commission included',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ),
           ],
         ),
       ),

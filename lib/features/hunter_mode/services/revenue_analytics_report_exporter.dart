@@ -5,9 +5,9 @@ import '../../../core/services/pdf_document_engine.dart';
 import '../services/outfitter_analytics_service.dart';
 
 /// Revenue & Farm Analytics report PDF, rendered through the universal
-/// [JagSpoorPdfDocument] engine. Aggregates gross revenue, the 7.5% platform
-/// fees, net earnings, plus a farm manager directory, for the signed-in
-/// outfitter.
+/// [JagSpoorPdfDocument] engine. Aggregates gross revenue, net earnings,
+/// plus a farm manager directory, for the signed-in outfitter. There is no
+/// platform commission; net earnings equal gross revenue.
 class RevenueAnalyticsReportExporter {
   /// Generates and shares the revenue & farm analytics report PDF.
   Future<void> generateAndShare() async {
@@ -17,12 +17,11 @@ class RevenueAnalyticsReportExporter {
           'User must be authenticated to export the analytics report');
     }
 
-    // Revenue summary (gross / 7.5% fees / net) from approved bookings.
+    // Revenue summary (gross / net) from approved bookings.
     final revenue = await OutfitterAnalyticsService.instance
         .getRevenueSummaryStream(outfitterId)
         .first;
     final grossEarnings = (revenue['grossEarnings'] ?? 0.0).toDouble();
-    final platformFees = (revenue['platformFees'] ?? 0.0).toDouble();
     final netEarnings = (revenue['netEarnings'] ?? 0.0).toDouble();
     final totalBookings = (revenue['totalBookings'] ?? 0.0).toInt();
 
@@ -76,7 +75,6 @@ class RevenueAnalyticsReportExporter {
       margin: 28,
       content: _buildContent(
         grossEarnings: grossEarnings,
-        platformFees: platformFees,
         netEarnings: netEarnings,
         totalBookings: totalBookings,
         totalFarms: farmNames.length,
@@ -90,14 +88,12 @@ class RevenueAnalyticsReportExporter {
     await doc.saveAndShare(
       filename: 'JagSpoor_Revenue_Analytics_Report',
       shareSubject: 'JagSpoor Revenue & Farm Analytics Report',
-      shareText: 'Outfitter revenue, 7.5% platform fees, net earnings & '
-          'farm manager directory',
+      shareText: 'Outfitter revenue, net earnings & farm manager directory',
     );
   }
 
   pw.Widget _buildContent({
     required double grossEarnings,
-    required double platformFees,
     required double netEarnings,
     required int totalBookings,
     required int totalFarms,
@@ -113,17 +109,13 @@ class RevenueAnalyticsReportExporter {
         JagSpoorPdfTheme.sectionBar('Revenue Summary (ZAR)'),
         JagSpoorPdfTheme.detailBox([
           JagSpoorPdfTheme.currencyRow('Gross Revenue', grossEarnings),
-          JagSpoorPdfTheme.currencyRow(
-              'Platform Fees (7.5%)', platformFees,
-              emphasis: true),
-          pw.Divider(color: JagSpoorPdfTheme.divider, height: 8),
           JagSpoorPdfTheme.currencyRow('Net Earnings', netEarnings,
               bold: true),
         ]),
         pw.SizedBox(height: 4),
         pw.Text(
-            'Net earnings = Gross Revenue - 7.5% platform administration fee '
-            'collected by JagSpoor. Based on approved bookings.',
+            'Net earnings equal gross revenue (no platform commission is '
+            'deducted). Based on approved bookings.',
             style: JagSpoorPdfTheme.caption),
 
         // ── Enterprise metrics ──

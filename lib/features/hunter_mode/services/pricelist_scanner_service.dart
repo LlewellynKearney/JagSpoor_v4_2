@@ -25,9 +25,6 @@ class PricelistScannerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Platform commission rate (7.5%)
-  static const double platformCommissionRate = 0.075;
-
   /// The centralized Gemini API-key resolver (dart-define → env → local
   /// storage). The extractor reads its key from here.
   final GeminiConfigService geminiConfig = GeminiConfigService.instance;
@@ -78,7 +75,9 @@ class PricelistScannerService {
 
   Map<String, dynamic> _itemToExtractedMap(PricelistItem item) {
     final basePrice = item.priceZAR;
-    final hunterPrice = basePrice * (1 + platformCommissionRate);
+    // The hunter-facing price equals the base price; there is no platform
+    // commission / markup.
+    final hunterPrice = basePrice;
     return {
       'name': item.displayLabel,
       'displayLabel': item.displayLabel,
@@ -93,7 +92,6 @@ class PricelistScannerService {
       'hunterDisplayPriceZAR': hunterPrice,
       'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
       'hunterPriceFormatted': 'R${hunterPrice.toStringAsFixed(0)}',
-      'commissionZAR': hunterPrice - basePrice,
       if (item.quantityLimit != null) 'quantityLimit': item.quantityLimit,
     };
   }
@@ -117,7 +115,9 @@ class PricelistScannerService {
 
     final processedItems = items.map((item) {
       final basePrice = item.priceZAR;
-      final hunterPrice = basePrice * (1 + platformCommissionRate);
+      // The hunter-facing price equals the base price; there is no platform
+      // commission / markup.
+      final hunterPrice = basePrice;
       return {
         'name': item.displayLabel,
         'displayLabel': item.displayLabel,
@@ -132,7 +132,6 @@ class PricelistScannerService {
         'hunterDisplayPriceZAR': hunterPrice,
         'basePriceFormatted': 'R${basePrice.toStringAsFixed(0)}',
         'hunterPriceFormatted': 'R${hunterPrice.toStringAsFixed(0)}',
-        'commissionZAR': hunterPrice - basePrice,
       };
     }).toList();
 
@@ -162,13 +161,9 @@ class PricelistScannerService {
   /// scanned price list (species/fees with quantities) instead of booking a
   /// pre-defined marketplace package.
   ///
-  /// Pricing model: every line item's `unitPriceHunterZAR` already carries the
-  /// **absorbed** 7.5% platform markup (it is the `hunterDisplayPriceZAR`
-  /// written at scan-save time = `basePrice * 1.075`). The hunter therefore
-  /// never sees an explicit "Platform Fee" line — only per-item prices and the
-  /// grand total. The booking document still stores the underlying
-  /// base/commission split (`basePriceRands`, `platformCommissionRands`) so the
-  /// outfitter financial dashboard retains full commission visibility.
+  /// Pricing model: every line item's `unitPriceHunterZAR` equals its base
+  /// price (there is no platform commission / markup). The hunter sees
+  /// per-item prices and the grand total, which is the base booking cost.
   ///
   /// Parameters:
   /// - [farmId], [farmName]: the concession where the hunt will take place.
@@ -183,8 +178,8 @@ class PricelistScannerService {
   ///   strings, optional).
   /// - [huntingDays]: derived day count (0 when dates are absent).
   /// - [hunterCount], [observerCount]: party size.
-  /// - [combinedTotalZAR]: grand total **incl. the absorbed 7.5% markup**
-  ///   (sum of all line totals). This is the amount the hunter is shown.
+  /// - [combinedTotalZAR]: grand total (sum of all line totals). This is the
+  ///   amount the hunter is shown and equals the base booking cost.
   ///
   /// Writes the `bookings` document with `isCustomPackage: true` and
   /// `status: 'Pending Approval'` (the canonical "pending" state used across
@@ -224,11 +219,8 @@ class PricelistScannerService {
       throw Exception('Total price must be greater than zero');
     }
 
-    // Recover the absorbed commission breakdown for the outfitter financials.
-    // combinedTotalZAR already includes the 7.5% markup, so the base is
-    // total / 1.075 and the commission is the remainder.
-    final double basePrice = combinedTotalZAR / (1 + platformCommissionRate);
-    final double platformFee = combinedTotalZAR - basePrice;
+    // The total equals the base booking cost; there is no platform commission.
+    final double basePrice = combinedTotalZAR;
     final double depositAmount = combinedTotalZAR * 0.25;
     final double balanceAmount = combinedTotalZAR - depositAmount;
 
@@ -267,8 +259,6 @@ class PricelistScannerService {
       'hunterCount': hunterCount,
       'observerCount': observerCount,
       'basePriceRands': basePrice,
-      'platformCommissionRands': platformFee,
-      'platformCommissionRate': platformCommissionRate,
       'totalHunterPriceRands': combinedTotalZAR,
       'depositFraction': 0.25,
       'depositAmountRands': depositAmount,
@@ -429,7 +419,7 @@ class PricelistScannerService {
   ///
   /// Parameters:
   /// - [items]: parsed species/line items with `name`, `outfitterBasePrice`,
-  ///   `hunterDisplayPriceZAR`, `commissionZAR` (7.5% split).
+  ///   `hunterDisplayPriceZAR` (equals the base price).
   /// - [farmId], [farmName], [imageFileName]: provenance metadata.
   Future<String> saveVerifiedPricelist({
     required List<Map<String, dynamic>> items,
@@ -460,12 +450,13 @@ class PricelistScannerService {
     return docRef.id;
   }
 
-  /// Calculates the total for selected price list items including 7.5% platform fee.
+  /// Calculates the total for selected price list items.
   ///
   /// Parameters:
   /// - [selectedItems]: List of selected items with base prices
   ///
-  /// Returns the total price including platform fee
+  /// Returns the total price (the sum of the base prices; there is no
+  /// platform commission).
   double calculateTotalWithFee(List<Map<String, dynamic>> selectedItems) {
     double baseTotal = 0;
 
@@ -474,7 +465,7 @@ class PricelistScannerService {
       baseTotal += basePrice;
     }
 
-    return baseTotal * (1 + platformCommissionRate);
+    return baseTotal;
   }
 
   /// Deletes (archives) a scanned price list by setting status to 'deleted'.

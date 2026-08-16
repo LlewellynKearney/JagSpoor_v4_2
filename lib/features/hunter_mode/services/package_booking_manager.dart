@@ -17,12 +17,6 @@ class PackageBookingManager {
   User? get _currentUser => _auth.currentUser;
   String? get _currentUserId => _currentUser?.uid;
 
-  /// Platform commission rate (7.5%).
-  ///
-  /// Applied to the outfitter's base price; the hunter pays
-  /// `basePrice + (basePrice * 0.075)`.
-  static const double platformCommissionRate = 0.075;
-
   /// Non-refundable deposit fraction charged to the hunter once the outfitter
   /// approves a booking request.
   static const double depositFraction = 0.25;
@@ -47,10 +41,10 @@ class PackageBookingManager {
   /// - [depositPercentage]: Per-package non-refundable deposit percentage
   ///   (0–100, default 25). Stored as the fractional [depositFraction].
   ///
-  /// Commission Calculation (7.5%):
+  /// Pricing:
   /// - `basePriceRands` = resolved base price from [pricing]
-  /// - `platformCommissionZAR` = basePriceRands × 0.075
-  /// - `totalPriceZAR` = basePriceRands + platformCommissionZAR
+  /// - `totalPriceZAR` = `basePriceRands` (the hunter pays the base package
+  ///   cost; there is no platform commission / markup).
   ///
   /// Returns: void (saves to Firestore 'packages' collection)
   ///
@@ -98,18 +92,15 @@ class PackageBookingManager {
     // slot to be bookable.
     final clampedQty = quantityAvailable < 1 ? 1 : quantityAvailable;
 
-    // Calculate commission metrics (7.5%)
-    final double fee = basePriceRands * platformCommissionRate;
-    final double total = basePriceRands + fee;
+    // The hunter pays the base package cost; there is no platform commission.
+    final double total = basePriceRands;
 
     final packageData = {
       'outfitterId': _currentUserId,
       'title': title.trim(),
       'description': description.trim(),
       'basePriceRands': basePriceRands,
-      'platformCommissionZAR': fee,
       'totalPriceZAR': total,
-      'platformCommissionRate': platformCommissionRate,
       'inclusions': inclusions,
       'farmId': farmId,
       'imageUrls': imageUrls,
@@ -129,10 +120,11 @@ class PackageBookingManager {
 
   /// Updates an existing package owned by the current outfitter.
   ///
-  /// Any of the optional fields, when non-null, replace the stored value. The
-  /// 7.5% commission split is recomputed whenever [pricing] (and thus the base
-  /// price) changes. Status is left untouched here — use [setPackageStatus]
-  /// for lifecycle transitions.
+  /// Any of the optional fields, when non-null, replace the stored value.
+  /// `totalPriceZAR` is recomputed to equal `basePriceRands` whenever
+  /// [pricing] (and thus the base price) changes (the hunter pays the base
+  /// package cost; there is no platform commission). Status is left
+  /// untouched here — use [setPackageStatus] for lifecycle transitions.
   ///
   /// Throws: Exception if not authenticated or the update fails.
   Future<void> updatePackage({
@@ -183,14 +175,11 @@ class PackageBookingManager {
         throw Exception(
             'Availability end date cannot be before the start date');
       }
-      final double fee = basePriceRands * platformCommissionRate;
-      final double total = basePriceRands + fee;
+      final double total = basePriceRands;
       update
         ..addAll({
           'basePriceRands': basePriceRands,
-          'platformCommissionZAR': fee,
           'totalPriceZAR': total,
-          'platformCommissionRate': platformCommissionRate,
         })
         ..addAll(pricing.toMap());
     }
@@ -218,10 +207,9 @@ class PackageBookingManager {
   }
 
   // ==========================================
-  // HUNTER - BOOK PACKAGE WITH 7.5% COMMISSION
+  // HUNTER - BOOK PACKAGE
   // ==========================================
-  /// Books a hunting package with automatic 7.5% platform commission
-  /// calculation.
+  /// Books a hunting package.
   ///
   /// Executes as an **atomic Firestore transaction**: it reads the package,
   /// verifies at least one slot remains (`quantityAvailable > 0`), creates the
@@ -237,9 +225,9 @@ class PackageBookingManager {
   /// - [basePriceRands]: Base price of the package in Rand
   /// - [packageName]: Optional package title snapshot (for booking display)
   ///
-  /// Commission Calculation (7.5%):
-  /// - Commission Fee = basePriceRands × 0.075 (7.5%)
-  /// - Total Hunter Price = basePriceRands + commissionFee
+  /// Pricing:
+  /// - Total Hunter Price = `basePriceRands` (the hunter pays the base package
+  ///   cost; there is no platform commission).
   ///
   /// Returns: void (saves to Firestore 'bookings' collection + updates package)
   ///
@@ -271,9 +259,8 @@ class PackageBookingManager {
       throw Exception('Base price must be greater than zero');
     }
 
-    // Calculate platform split metrics (7.5% commission)
-    final double commissionFee = basePriceRands * platformCommissionRate;
-    final double totalHunterPrice = basePriceRands + commissionFee;
+    // The hunter pays the base package cost; there is no platform commission.
+    final double totalHunterPrice = basePriceRands;
 
     final packageRef = _firestore.collection('packages').doc(packageId.trim());
 
@@ -308,8 +295,6 @@ class PackageBookingManager {
         'hunterId': _currentUserId,
         if (packageName != null) 'packageName': packageName,
         'basePriceRands': basePriceRands,
-        'platformCommissionRands': commissionFee,
-        'platformCommissionRate': platformCommissionRate,
         'totalHunterPriceRands': totalHunterPrice,
         'depositFraction': depositFraction,
         'depositAmountRands': totalHunterPrice * depositFraction,
@@ -376,16 +361,15 @@ class PackageBookingManager {
   // UTILITY METHODS
   // ==========================================
 
-  /// Calculate commission, totals, and deposit split without saving.
-  /// Returns a map with the full commission + deposit breakdown.
-  Map<String, double> calculateCommission(double basePriceRands) {
-    final double commissionFee = basePriceRands * platformCommissionRate;
-    final double totalPrice = basePriceRands + commissionFee;
+  /// Calculate totals and deposit split without saving. Returns a map with
+  /// the deposit breakdown. There is no platform commission: the total
+  /// equals the base price.
+  Map<String, double> calculatePricing(double basePriceRands) {
+    final double totalPrice = basePriceRands;
     final double depositAmount = totalPrice * depositFraction;
 
     return {
       'basePriceRands': basePriceRands,
-      'commissionFee': commissionFee,
       'totalHunterPriceRands': totalPrice,
       'depositAmountRands': depositAmount,
       'balanceAmountRands': totalPrice - depositAmount,
@@ -522,14 +506,12 @@ class PackageBookingManager {
 
     final data = snap.data() as Map<String, dynamic>;
     final basePrice = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    final commissionFee = basePrice * platformCommissionRate;
-    final totalPrice = basePrice + commissionFee;
+    // The hunter pays the base package cost; there is no platform commission.
+    final totalPrice = basePrice;
     final depositAmount = totalPrice * depositFraction;
 
     await bookingRef.update({
       'status': 'Pending Deposit',
-      'platformCommissionRate': platformCommissionRate,
-      'platformCommissionRands': commissionFee,
       'totalHunterPriceRands': totalPrice,
       'depositFraction': depositFraction,
       'depositAmountRands': depositAmount,

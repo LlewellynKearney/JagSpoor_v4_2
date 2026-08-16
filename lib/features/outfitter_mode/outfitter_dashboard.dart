@@ -276,7 +276,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                               icon: Icons.bar_chart_rounded,
                               title: 'Financial Revenue Summary',
                               description:
-                                  'View gross earnings, platform fees, and net disbursed revenue.',
+                                  'View gross earnings and net disbursed revenue.',
                               theme: widget.theme,
                               onTap: () {
                                 Navigator.push(

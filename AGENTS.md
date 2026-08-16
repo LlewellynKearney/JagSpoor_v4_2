@@ -5764,3 +5764,80 @@ catalog.
   (PayFast guard on selection + scan actions),
   `firestore.rules` (`farm_managers` read widened), `AGENTS.md`. No
   pubspec / index / Storage / manifest changes.
+
+
+## Phase 54 -- Remove platform fee (7.5% commission) from the entire codebase (added 2026-08-16)
+
+Removed every platform-commission / 7.5% markup calculation, variable, and
+UI text from the codebase. Total amounts now reflect the base
+package/booking cost with NO platform cut. Legitimate itemized service fees
+(guide / vehicle / slaughter / accommodation fees that are part of package
+pricing) are retained — only the platform commission was removed.
+
+### Single-source PricingMath
+- Removed: platformCommissionRate (0.075), markupMultiplier (1.075),
+  markedUpTotal, commissionFromBase, depositFromBase,
+  depositFromMarkedUpTotal, balanceFromMarkedUpTotal, netEarnings,
+  resolveDeposit(markedUpTotalValue:).
+- New API: depositFromTotal(total), balanceFromTotal(total),
+  resolveDeposit(storedDeposit:, total:). resolveHunterTotal now PREFERS
+  the base price (so legacy marked-up totals do not surface a platform
+  cut); falls back to the stored total only when the base is absent.
+  aggregateRevenueSummary returns (grossRevenue, netEarnings,
+  totalBookings) where netEarnings == grossRevenue (no platform cut).
+
+### PackageBookingManager
+- calculatePricing(basePriceRands) now returns totalPrice = basePrice
+  (no x markup), depositAmount = totalPrice x 0.25,
+  balanceAmount = totalPrice - depositAmount. No platformCommissionRands
+  field written.
+
+### Screens (hunter-facing + outfitter-facing)
+- hunter_package_marketplace_screen: deposit/total derived from
+  PricingMath.resolveHunterTotal + resolveDeposit/balanceFromTotal; no
+  Platform Fee UI row; PayFast charge = 25% deposit off the total.
+- hunter_custom_package_builder_screen: hunterDisplayPriceZAR = base;
+  grand total = sum(qty x base); deposit = total x 0.25.
+- outfitter_booking_dashboard_screen: removed commission variable,
+  Platform Commission row, isFee param from _FinancialRow.
+- outfitter_revenue_screen: removed platformFees var + card; Gross + Net
+  only (net = gross); monthly stats sum basePriceRands.
+- outfitter_package_creator_screen: _buildPricingSummary simplified.
+- outfitter_package_manager_screen: total fallback uses basePriceRands.
+- outfitter_pricelist_scanner_screen: removed Applying 7.5% text.
+- outfitter_pricelist_verification_screen: hunterDisplayPriceZAR =
+  basePrice; removed commission row + fee label.
+- scanned_pricelist_history_screen: single TOTAL chip; _DetailItemRow
+  reduced to a single price (base = display); removed commission +
+  basePrice fields.
+
+### PDF exporters + admin
+- outfitter_invoice_exporter: removed platformFee + Platform Commission
+  row; fee breakdown shows only Total Package Value.
+- revenue_analytics_report_exporter: removed platformFees; net = gross.
+- invoice_pdf_service: removed markup = 1.075 constant; total = base;
+  extras use unit price directly.
+- carcass_record: calculateHunterTotal = (weight x rate) + slaughterFee.
+- manual_invoice_screen: line price = base; removed 7.5% footer.
+- admin_analytics_service: FinancialPeriod lost platformCommission;
+  outfitterNet == grossBookingRevenue.
+- admin_dashboard_screen: financial row lost Commission column.
+- outfitter_dashboard: financial-card description lost platform fees.
+- farm_config: FarmAnimalListing.hunterPriceZAR doc + fromPricelist
+  fallback (base instead of base x 1.075).
+- pricelist_text_parser + package_pricing: doc comments cleaned.
+
+### Tests (rewritten for the no-commission model)
+- pricing_math_test, custom_package_pricing_test,
+  payfast_deposit_button_test, financial_engine_test, farm_config_test
+  all rewritten to assert the no-commission contract.
+
+### Verification
+- flutter analyze (lib/ + test/): 0 errors, 0 warnings.
+- flutter test (full suite): All 559 tests passed, zero failures.
+- Final grep: no x 1.075 / * 1.075 / 0.075 commission constants remain
+  (the only 0.075 is the physics airDensity constant in
+  ballistics_calculator.dart); all remaining platform commission text is
+  explanatory comments stating there is no platform commission.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side pricing + UI + test logic).

@@ -168,7 +168,7 @@ void main() {
           'sexLabel': 'Bul',
           'trophySizeRange': '>50"',
           'outfitterBasePrice': 18500,
-          'hunterDisplayPriceZAR': 19887.5,
+          'hunterDisplayPriceZAR': 18500,
           'quantityLimit': 3,
         },
         {
@@ -176,7 +176,7 @@ void main() {
           'feeType': 'daily',
           'displayLabel': 'Dagfooi',
           'outfitterBasePrice': 1500,
-          'hunterDisplayPriceZAR': 1612.5,
+          'hunterDisplayPriceZAR': 1500,
         },
       ]));
       expect(catalog.farmId, 'farm1');
@@ -190,7 +190,7 @@ void main() {
       expect(kudu.displayLabel, 'Koedoe Bul >50"');
       expect(kudu.sex, 'Male');
       expect(kudu.basePriceZAR, 18500);
-      expect(kudu.hunterPriceZAR, 19887.5);
+      expect(kudu.hunterPriceZAR, 18500);
       expect(kudu.quantityLimit, 3);
       final daily = catalog.fees.first;
       expect(daily.feeType, 'daily');
@@ -207,7 +207,8 @@ void main() {
           'outfitterBasePrice': 2000,
         },
       ]));
-      expect(catalog.animals.first.hunterPriceZAR, closeTo(2150, 0.01));
+      // hunterPriceZAR equals the base price (no platform commission).
+      expect(catalog.animals.first.hunterPriceZAR, closeTo(2000, 0.01));
     });
 
     test('null / non-positive quantityLimit collapses to null', () {

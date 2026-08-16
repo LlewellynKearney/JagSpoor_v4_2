@@ -33,16 +33,11 @@ class OutfitterAnalyticsService {
   /// bookings ([earnedBookingStatuses]).
   ///
   /// Calculates:
-  /// - grossEarnings: Sum of `totalHunterPriceRands` (the marked-up total
-  ///   collected from hunters, incl. the 7.5% platform fee) across earned
-  ///   bookings. For legacy documents without `totalHunterPriceRands`, the
-  ///   marked-up total is derived from `basePriceRands × 1.075`.
-  /// - platformFees: Sum of `platformCommissionRands` (the 7.5% JagSpoor
-  ///   administration commission). Derived from `basePriceRands × 0.075`
-  ///   for legacy documents.
-  /// - netEarnings: `grossEarnings − platformFees` — the outfitter's actual
-  ///   earnings (the base price, net of fees). For a R10,000 base listing
-  ///   this is R10,000 (NOT R10,750 and NOT R9,250).
+  /// - grossEarnings: Sum of the booking totals collected from hunters across
+  ///   earned bookings. The total equals the base price (there is no platform
+  ///   commission); for legacy documents the base price is preferred.
+  /// - netEarnings: `grossEarnings` (the outfitter receives the full booking
+  ///   amount; no platform cut is deducted).
   /// - totalBookings: Count of earned bookings.
   ///
   /// Parameters:
@@ -62,14 +57,12 @@ class OutfitterAnalyticsService {
             );
             return {
               'grossEarnings': summary.grossRevenue,
-              'platformFees': summary.platformFees,
               'netEarnings': summary.netEarnings,
               'totalBookings': summary.totalBookings.toDouble(),
             };
           }),
       fallback: const <String, double>{
         'grossEarnings': 0.0,
-        'platformFees': 0.0,
         'netEarnings': 0.0,
         'totalBookings': 0.0,
       },
