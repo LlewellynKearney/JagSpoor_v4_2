@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/features/hunter_mode/firearm_safe_screen.dart';
 import 'package:jagspoor/screens/animal_list_screen.dart';
 import 'trophy_room_screen.dart';
@@ -483,6 +484,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 if (i > 0) const SizedBox(height: 16),
                 _buildCard(context, theme, features[i]),
               ],
+              const CopyrightFooter(),
             ],
           ),
         );

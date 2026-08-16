@@ -52,6 +52,7 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
   bool _isLoadingGps = false;
   final List<File> _selectedPhotos = [];
   final List<String> _tags = [];
+  bool _isSaving = false;
 
   // Species selection state
   Animal? _selectedAnimal;
@@ -363,8 +364,36 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
     setState(() => _selectedPhotos.removeAt(index));
   }
 
-  void _saveTrophy() {
-    if (_formKey.currentState?.validate() ?? false) {
+  Future<void> _uploadPhotosAndSave() async {
+    if (_isSaving) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _isSaving = true);
+    try {
+      // Upload each selected photo to Firebase Storage so the persisted `photos`
+      // array carries durable download URLs (not local file paths, which break
+      // on app reinstall / device change / cross-device sync and render as
+      // "Photo unavailable"). Mirrors the package-creator + bug-report upload
+      // pattern. Storage path `trophy_photos/{uid}/{timestamp}_{i}.jpg` is
+      // owner-scoped in `storage.rules`.
+      final String? uid = _currentUserId;
+      final List<String> photoUrls = [];
+      if (uid != null && _selectedPhotos.isNotEmpty) {
+        for (var i = 0; i < _selectedPhotos.length; i++) {
+          try {
+            final url = await ImageService.uploadCompressedPhoto(
+              imageFile: _selectedPhotos[i],
+              storagePath:
+                  'trophy_photos/$uid/${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
+            );
+            photoUrls.add(url);
+          } catch (e) {
+            // Best-effort: a failed upload is logged + skipped (the rest still
+            // persist) so a single storage error never blocks the whole trophy.
+            debugPrint('Trophy photo upload failed for index $i: $e');
+          }
+        }
+      }
+
       final trophy = {
         'species': _selectedAnimal?.name ?? _speciesController.text,
         'speciesId': _selectedAnimal?.id,
@@ -388,10 +417,21 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
         'firearmUsed': _selectedFirearmDisplay ?? '',
         'firearmId': _selectedFirearmId,
         'tags': _tags,
-        'photos': _selectedPhotos.map((f) => f.path).toList(),
+        'photos': photoUrls,
       };
 
-      Navigator.pop(context, trophy);
+      if (mounted) Navigator.pop(context, trophy);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save trophy: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -846,7 +886,7 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                                 : Colors.white,
                       ),
                       label: Text(
-                        'SAVE TROPHY',
+                        _isSaving ? 'SAVING…' : 'SAVE TROPHY',
                         style: TextStyle(
                           color:
                               widget.theme.isDarkMode
@@ -856,7 +896,7 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
                           fontSize: 16,
                         ),
                       ),
-                      onPressed: _saveTrophy,
+                      onPressed: _isSaving ? null : _uploadPhotosAndSave,
                     ),
                   ),
                   const SizedBox(height: 16),

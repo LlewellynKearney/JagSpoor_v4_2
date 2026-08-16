@@ -42,6 +42,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
   bool _isLoadingGps = false;
   final List<File> _selectedPhotos = [];
   final List<String> _tags = [];
+  bool _isSaving = false;
   String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   @override
@@ -277,8 +278,38 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
     setState(() => _tags.remove(tag));
   }
 
-  void _saveTrophy() {
-    if (_formKey.currentState?.validate() ?? false) {
+  Future<void> _uploadPhotosAndSave() async {
+    if (_isSaving) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _isSaving = true);
+    try {
+      // Preserve any already-uploaded photo URLs from the existing trophy
+      // (they are durable Storage URLs), then upload any newly-picked local
+      // photos so the persisted `photos` array never carries local file
+      // paths (which break on reinstall / device change and render as
+      // "Photo unavailable"). Mirrors the add-trophy + package-creator
+      // upload pattern.
+      final List<String> photoUrls = <String>[];
+      final existing = widget.trophy['photos'];
+      if (existing is List) {
+        photoUrls.addAll(existing.whereType<String>());
+      }
+      final String? uid = _currentUserId;
+      if (uid != null && _selectedPhotos.isNotEmpty) {
+        for (var i = 0; i < _selectedPhotos.length; i++) {
+          try {
+            final url = await ImageService.uploadCompressedPhoto(
+              imageFile: _selectedPhotos[i],
+              storagePath:
+                  'trophy_photos/$uid/${DateTime.now().millisecondsSinceEpoch}_edit_$i.jpg',
+            );
+            photoUrls.add(url);
+          } catch (e) {
+            debugPrint('Trophy photo upload failed for index $i: $e');
+          }
+        }
+      }
+
       final updatedTrophy = {
         ...widget.trophy,
         'species': _speciesController.text,
@@ -302,13 +333,21 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
         'firearmUsed': _selectedFirearmDisplay ?? '',
         'firearmId': _selectedFirearmId,
         'tags': _tags,
-        'photos':
-            _selectedPhotos.isNotEmpty
-                ? _selectedPhotos.map((f) => f.path).toList()
-                : (widget.trophy['photos'] ?? []),
+        'photos': photoUrls,
       };
 
-      Navigator.pop(context, updatedTrophy);
+      if (mounted) Navigator.pop(context, updatedTrophy);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save trophy: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -741,7 +780,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                                 : Colors.white,
                       ),
                       label: Text(
-                        'SAVE CHANGES',
+                        _isSaving ? 'SAVING…' : 'SAVE CHANGES',
                         style: TextStyle(
                           color:
                               widget.theme.isDarkMode
@@ -751,7 +790,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                           fontSize: 16,
                         ),
                       ),
-                      onPressed: _saveTrophy,
+                      onPressed: _isSaving ? null : _uploadPhotosAndSave,
                     ),
                   ),
                   const SizedBox(height: 16),

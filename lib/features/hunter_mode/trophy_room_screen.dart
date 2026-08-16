@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_theme.dart';
+import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import '../../services/location_resolver_service.dart';
 import '../../utils/image_helper.dart';
 import 'trophy_detail_screen.dart';
@@ -280,16 +281,24 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
   }
 
   Widget _buildTrophyList(List<Map<String, dynamic>> trophies) {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 0.75,
-      ),
-      itemCount: trophies.length,
-      itemBuilder: (context, index) => _buildPremiumTrophyCard(trophies[index]),
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: trophies.length,
+            itemBuilder: (context, index) =>
+                _buildPremiumTrophyCard(trophies[index]),
+          ),
+        ),
+        const CopyrightFooter(),
+      ],
     );
   }
 

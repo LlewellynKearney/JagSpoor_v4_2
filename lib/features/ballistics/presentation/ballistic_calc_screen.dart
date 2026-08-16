@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import '../../ballistics/data/ballistics_engine.dart';
 
 /// JagspoorTheme provides dynamic theme colors that can be overridden
@@ -661,6 +662,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
               // Analytics Summary Footer Card (v17.1)
               _buildAnalyticsSummaryCard(),
+              const CopyrightFooter(),
             ],
           ),
         ),

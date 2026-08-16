@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
@@ -267,6 +268,7 @@ class _HunterPackageMarketplaceScreenState
             },
           ),
         ),
+        const CopyrightFooter(),
       ],
     );
   }
@@ -344,20 +346,27 @@ class _HunterPackageMarketplaceScreenState
           );
         }
 
-        return ListView.builder(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
-          itemCount: bookings.length,
-          itemBuilder: (context, index) {
-            final booking = bookings[index];
-            final data = booking.data() as Map<String, dynamic>;
-            final bookingId = booking.id;
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+                itemCount: bookings.length,
+                itemBuilder: (context, index) {
+                  final booking = bookings[index];
+                  final data = booking.data() as Map<String, dynamic>;
+                  final bookingId = booking.id;
 
-            return _HunterBookingCard(
-              bookingId: bookingId,
-              data: data,
-              theme: theme,
-            );
-          },
+                  return _HunterBookingCard(
+                    bookingId: bookingId,
+                    data: data,
+                    theme: theme,
+                  );
+                },
+              ),
+            ),
+            const CopyrightFooter(),
+          ],
         );
       },
     );

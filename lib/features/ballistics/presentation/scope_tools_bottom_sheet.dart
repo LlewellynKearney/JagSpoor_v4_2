@@ -2,8 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
-import 'package:jagspoor/features/ballistics/presentation/ballistic_calc_screen.dart'
-    show JagspoorTheme;
+import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -262,6 +261,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 ],
               ),
             ),
+            const CopyrightFooter.tight(),
             _buildFooter(),
           ],
         ),
@@ -327,7 +327,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               child: Text(
                 'OFFLINE SAFE MODULE ACTIVE',
                 style: TextStyle(
-                  color: JagspoorTheme.thermalGlow,
+                  color: _accent,
                   fontSize: 14,
                 ),
               ),
@@ -365,7 +365,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
               child: Text(
                 'NO REGISTERED FIREARMS',
                 style: TextStyle(
-                  color: JagspoorTheme.thermalGlow,
+                  color: _accent,
                   fontSize: 14,
                 ),
               ),
@@ -389,11 +389,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                       isExpanded: true,
                       hint: Text(
                         'CHOOSE FIREARM',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
+                        style: TextStyle(color: _textHint),
                       ),
-                      dropdownColor: JagspoorTheme.hudCardBackground,
+                      dropdownColor: _panelBlack,
                       value: effectiveValue,
                       items: userDocs
                           .map((doc) {
@@ -414,10 +412,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                               value: doc.id,
                               child: Text(
                                 '$make $model • [$caliber]',
-                                style: TextStyle(
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                ),
+                                style: TextStyle(color: _textPrimary),
                               ),
                             );
                           })
@@ -451,9 +446,15 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     );
   }
 
-  /// The tactical-HUD container that wraps every hardware selector in the
-  /// ballistic calculator — copied verbatim so the Scope Settings sheet
-  /// matches that screen's proven look + layout.
+  /// The tactical-HUD container that wraps the firearm selector. Theme-aware
+  /// (uses the State's theme getters, NOT the hardcoded `JagspoorTheme` static
+  /// colors) so the box + text adapt to the Day/Night toggle — dark card with
+  /// light text in Night mode, white card with dark text in Day mode. This
+  /// avoids the dark-box/dark-text contrast failure the ported ballistic-calc
+  /// pattern produced in light mode (that screen only stays legible because it
+  /// re-paints `JagspoorTheme`'s mutable statics via `applyHunterTheme` on
+  /// every build; this sheet does not, so it sources `Theme.of(context)`
+  /// directly instead).
   Widget _buildHardwareDropdownContainer({
     required String label,
     required Widget child,
@@ -462,9 +463,9 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: JagspoorTheme.hudCardBackground,
+        color: _panelBlack,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+        border: Border.all(color: _accentDim),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -472,7 +473,7 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
           Text(
             label,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface,
+              color: _textSecondary,
               fontSize: 12,
               letterSpacing: 1.2,
             ),
