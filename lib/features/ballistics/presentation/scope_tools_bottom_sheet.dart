@@ -1,6 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
-import 'package:jagspoor/widgets/firearm_dropdown_selector.dart';
+import 'package:jagspoor/features/ballistics/presentation/ballistic_calc_screen.dart'
+    show JagspoorTheme;
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
@@ -33,7 +36,14 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   static const Color _goGreen = Color(0xFF4CAF6A);
 
   final InventoryBridge _inventoryBridge = InventoryBridge();
-  late Stream<List<RifleProfile>> _firearmsStream;
+
+  /// Raw Firestore stream over the owner's `firearms` collection — mirrors
+  /// the proven tactical-HUD selector in `BallisticCalcScreen` (a
+  /// `StreamBuilder<QuerySnapshot>` over the same query, with the three
+  /// fallback/loading branches + `_buildHardwareDropdownContainer`). Kept as
+  /// a broadcast stream so a re-mounting `StreamBuilder` never throws
+  /// "Stream has already been listened to".
+  late Stream<QuerySnapshot> _firearmsStream;
 
   // Firearm linkage
   String? _selectedRifleId;
@@ -72,12 +82,19 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    // asBroadcastStream() so the cached stream tolerates multiple listeners
-    // and re-subscription (listen → cancel → re-listen) — a raw Firestore
-    // snapshots() stream is single-subscription and throws
-    // "Bad state: Stream has already been listened to" if its StreamBuilder
-    // is ever re-mounted while the State persists.
-    _firearmsStream = _inventoryBridge.watchSafeFirearms().asBroadcastStream();
+    // Raw Firestore stream over the owner's firearms — the exact query the
+    // ballistic calculator's tactical-HUD dropdown uses. asBroadcastStream()
+    // so the cached stream tolerates multiple listeners and re-subscription
+    // (listen → cancel → re-listen) — a raw Firestore snapshots() stream is
+    // single-subscription and throws "Bad state: Stream has already been
+    // listened to" if its StreamBuilder is ever re-mounted while the State
+    // persists.
+    final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    _firearmsStream = FirebaseFirestore.instance
+        .collection('firearms')
+        .where('ownerId', isEqualTo: currentUid)
+        .snapshots()
+        .asBroadcastStream();
   }
 
   @override
@@ -95,10 +112,19 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     super.dispose();
   }
 
-  void _onRifleSelected(List<RifleProfile> rifles, String? rifleId) {
+  /// Handles a firearm selection from the tactical-HUD dropdown. Mirrors the
+  /// ballistic calculator's `onChanged` but hydrates a [RifleProfile] from the
+  /// selected Firestore doc (via [RifleProfile.fromFirestore]) so the optic
+  /// binding + save flow (`_saveOptic` → `InventoryBridge.saveOpticProfile`)
+  /// continues to work unchanged.
+  void _onRifleDocSelected(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String? rifleId,
+  ) {
     if (rifleId == null) return;
-    final rifle = rifles.where((r) => r.id == rifleId).firstOrNull;
-    if (rifle == null) return;
+    final doc = docs.where((d) => d.id == rifleId).firstOrNull;
+    if (doc == null) return;
+    final rifle = RifleProfile.fromFirestore(doc);
     setState(() {
       _selectedRifleId = rifleId;
       _selectedRifle = rifle;
@@ -274,36 +300,187 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
     );
   }
 
+  /// Tactical-HUD firearm selector — a verbatim port of the proven dropdown
+  /// in `BallisticCalcScreen`: a `StreamBuilder<QuerySnapshot>` over the
+  /// owner's `firearms` collection with three branches (offline/error +
+  /// empty docs, no real registered firearms, and the live dropdown), all
+  /// rendered through `_buildHardwareDropdownContainer` with the raw
+  /// `DropdownButton<String>` + `DropdownButtonHideUnderline` +
+  /// `JagspoorTheme.hudCardBackground` styling.
+  ///
+  /// On selection the chosen `QueryDocumentSnapshot` is hydrated into a
+  /// [RifleProfile] via `RifleProfile.fromFirestore` so the optic-binding +
+  /// save flow (`_saveOptic` → `InventoryBridge.saveOpticProfile`) keeps
+  /// working unchanged.
   Widget _buildFirearmLink() {
-    return StreamBuilder<List<RifleProfile>>(
-      stream: _firearmsStream,
-      builder: (context, snapshot) {
-        final rifles = snapshot.data ?? const <RifleProfile>[];
-        final isEmpty = rifles.isEmpty;
-        // Turret-unit context badge (read-only; not a navigation trigger).
-        // Only meaningful once a host firearm is linked, so it is passed as
-        // the selector's `trailing` widget and hidden while loading / empty.
-        final turretBadge = Chip(
-          label: Text(_optic.turretUnitLabel,
-              style: TextStyle(fontSize: 11, color: _textPrimary)),
-          backgroundColor: _accent,
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-        );
-        return Container(
-          margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-          child: FirearmDropdownSelector(
-            selectedFirearmId: _selectedRifleId,
-            firearms: rifles,
-            isLoading: snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData,
-            onChanged: (id) => _onRifleSelected(rifles, id),
-            leadingIcon: Icons.link,
-            // The selector hides `trailing` itself while loading / empty.
-            trailing: isEmpty ? null : turretBadge,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: StreamBuilder<QuerySnapshot>(
+        stream: _firearmsStream,
+        builder: (context, snapshot) {
+          // Branch 1 — error / no data / empty docs: offline safe module state.
+          if (snapshot.hasError ||
+              !snapshot.hasData ||
+              snapshot.data!.docs.isEmpty) {
+            return _buildHardwareDropdownContainer(
+              label: 'Select Firearm Vault Location',
+              child: Text(
+                'OFFLINE SAFE MODULE ACTIVE',
+                style: TextStyle(
+                  color: JagspoorTheme.thermalGlow,
+                  fontSize: 14,
+                ),
+              ),
+            );
+          }
+
+          final docs = snapshot.data!.docs;
+
+          // Filter out demo/seeded rifles - only show the user's real registered
+          // firearms (mirrors the ballistic calculator filter).
+          final userDocs =
+              docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final serial =
+                        (data['serialNumber']?.toString().toUpperCase() ??
+                            '');
+                    final name =
+                        (data['name']?.toString().toLowerCase() ?? '');
+                    // Exclude demo rifles with TIKKA-, SAKO- prefixes.
+                    if (serial.startsWith('TIKKA-') ||
+                        serial.startsWith('SAKO-')) {
+                      return false;
+                    }
+                    // Exclude rifles with "Unknown" in the name.
+                    if (name.contains('unknown')) {
+                      return false;
+                    }
+                    return true;
+                  }).toList();
+
+          // Branch 2 — no real registered firearms.
+          if (userDocs.isEmpty) {
+            return _buildHardwareDropdownContainer(
+              label: 'Select Firearm Vault Location',
+              child: Text(
+                'NO REGISTERED FIREARMS',
+                style: TextStyle(
+                  color: JagspoorTheme.thermalGlow,
+                  fontSize: 14,
+                ),
+              ),
+            );
+          }
+
+          // Branch 3 — the live firearm dropdown.
+          // Guard the selected id against a just-deleted firearm so the
+          // DropdownButton never hits the "value not in items" assertion.
+          final effectiveValue = userDocs.any((d) => d.id == _selectedRifleId)
+              ? _selectedRifleId
+              : null;
+
+          return _buildHardwareDropdownContainer(
+            label: 'Select Firearm Vault Location',
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      hint: Text(
+                        'CHOOSE FIREARM',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      dropdownColor: JagspoorTheme.hudCardBackground,
+                      value: effectiveValue,
+                      items: userDocs
+                          .map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final String make = (data['make'] ??
+                                    data['brand'] ??
+                                    data['manufacturer'] ??
+                                    'Unknown')
+                                .toString();
+                            final String model = (data['model'] ??
+                                    data['modelName'] ??
+                                    data['name'] ??
+                                    'Firearm')
+                                .toString();
+                            final String caliber =
+                                (data['caliber'] ?? 'N/A').toString();
+                            return DropdownMenuItem<String>(
+                              value: doc.id,
+                              child: Text(
+                                '$make $model • [$caliber]',
+                                style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
+                            );
+                          })
+                          .toList(),
+                      onChanged: (id) => _onRifleDocSelected(
+                        userDocs.cast<
+                            QueryDocumentSnapshot<Map<String, dynamic>>>(),
+                        id,
+                      ),
+                    ),
+                  ),
+                ),
+                // Turret-unit context badge (read-only). Only meaningful once
+                // a host firearm is linked, so it is hidden until a selection
+                // exists.
+                if (_selectedRifleId != null) ...[
+                  const SizedBox(width: 8),
+                  Chip(
+                    label: Text(_optic.turretUnitLabel,
+                        style: TextStyle(fontSize: 11, color: _textPrimary)),
+                    backgroundColor: _accent,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// The tactical-HUD container that wraps every hardware selector in the
+  /// ballistic calculator — copied verbatim so the Scope Settings sheet
+  /// matches that screen's proven look + layout.
+  Widget _buildHardwareDropdownContainer({
+    required String label,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: JagspoorTheme.hudCardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 12,
+              letterSpacing: 1.2,
+            ),
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
     );
   }
 
