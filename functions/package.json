@@ -1,6 +1,6 @@
 {
   "name": "jagspoor-functions",
-  "description": "Firebase Cloud Functions for the JagSpoor marketplace (PayFast ITN, admin provisioning).",
+  "description": "Firebase Cloud Functions for the JagSpoor marketplace (admin provisioning, FCM notifications).",
   "private": true,
   "engines": { "node": "22" },
   "main": "lib/index.js",

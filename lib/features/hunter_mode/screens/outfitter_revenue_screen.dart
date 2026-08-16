@@ -277,7 +277,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             title: 'Gross Revenue vs Net Earnings',
                             iconColor: widget.theme.accentColor,
                             description:
-                                'The total collected from hunters across all earned bookings equals the outfitter\'s net earnings — there is no platform commission deducted. Only approved, deposit-pending, paid and completed bookings are counted.',
+                                'The total collected from hunters across all earned bookings equals the outfitter\'s net earnings — there is no platform commission deducted. Only approved and completed bookings are counted.',
                             concepts: const [
                               ExplanationConcept(
                                 label: 'Gross Revenue',

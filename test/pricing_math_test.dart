@@ -3,43 +3,12 @@ import 'package:jagspoor/features/hunter_mode/services/pricing_math.dart';
 
 /// Unit tests for the single-source pricing arithmetic (`PricingMath`).
 ///
-/// Contract (post platform-commission removal):
-/// - There is no platform commission / markup. The hunter-facing total equals
-///   the base package/booking cost.
-/// - The 25% non-refundable deposit is computed off the total
-///   (`total × 0.25`).
+/// Contract (post platform-commission + deposit removal):
+/// - There is no platform commission / markup and no deposit split. The
+///   hunter-facing total equals the base package/booking cost.
 /// - The outfitter's net earnings equal the gross revenue collected from
 ///   hunters (no platform cut is deducted).
 void main() {
-  group('PricingMath constants', () {
-    test('deposit fraction is 25%', () {
-      expect(PricingMath.depositFraction, 0.25);
-    });
-  });
-
-  group('PricingMath.depositFromTotal', () {
-    test('25% of the supplied total', () {
-      expect(PricingMath.depositFromTotal(10000), closeTo(2500, 0.001));
-      expect(PricingMath.depositFromTotal(2500), closeTo(625, 0.001));
-    });
-
-    test('zero total yields zero deposit', () {
-      expect(PricingMath.depositFromTotal(0), 0);
-    });
-  });
-
-  group('PricingMath.balanceFromTotal', () {
-    test('total minus the 25% deposit (75%)', () {
-      expect(PricingMath.balanceFromTotal(10000), closeTo(7500, 0.001));
-      // deposit + balance == total
-      expect(
-        PricingMath.depositFromTotal(10000) +
-            PricingMath.balanceFromTotal(10000),
-        closeTo(10000, 0.001),
-      );
-    });
-  });
-
   group('PricingMath.resolveHunterTotal (no commission)', () {
     test('uses the base price when present (total = base)', () {
       expect(
@@ -106,68 +75,16 @@ void main() {
     });
   });
 
-  group('PricingMath.resolveDeposit (legacy fallback)', () {
-    test('uses the stored deposit when present', () {
-      expect(
-        PricingMath.resolveDeposit(
-          storedDeposit: 2500,
-          total: 10000,
-        ),
-        closeTo(2500, 0.001),
-      );
-    });
-
-    test('derives 25% of the total when stored deposit is missing', () {
-      expect(
-        PricingMath.resolveDeposit(
-          storedDeposit: null,
-          total: 10000,
-        ),
-        closeTo(2500, 0.001),
-      );
-      expect(
-        PricingMath.resolveDeposit(
-          storedDeposit: 0,
-          total: 10000,
-        ),
-        closeTo(2500, 0.001),
-      );
-    });
-  });
-
-  group('PayFast deposit alignment', () {
-    test('the PayFast charge amount equals the 25% deposit off the total', () {
-      // The amount submitted to PayFast must be the 25% deposit off the total
-      // — the same value rendered on the hunter-facing "25% Deposit" row.
-      const base = 10000.0;
-      final total = PricingMath.resolveHunterTotal(
-        totalHunterPrice: base,
-        basePrice: base,
-      );
-      final displayedDeposit = PricingMath.depositFromTotal(total); // 2500
-      final payFastAmount = PricingMath.resolveDeposit(
-        storedDeposit: null, // legacy booking → derived
-        total: total,
-      );
-      expect(payFastAmount, equals(displayedDeposit));
-      expect(payFastAmount, closeTo(2500, 0.001));
-    });
-  });
-
   group('End-to-end booking pricing contract', () {
-    test('a R10 000 base listing produces a R10 000 total + R2 500 deposit', () {
+    test('a R10 000 base listing produces a R10 000 total', () {
       const base = 10000.0;
       final hunterTotal = PricingMath.resolveHunterTotal(
         totalHunterPrice: base,
         basePrice: base,
       );
-      final deposit = PricingMath.depositFromTotal(hunterTotal);
-      final balance = PricingMath.balanceFromTotal(hunterTotal);
 
-      // Hunter sees: R10 000 total, R2 500 deposit (no Platform Fee line).
+      // Hunter sees: R10 000 total (no Platform Fee line, no deposit split).
       expect(hunterTotal, closeTo(10000, 0.001));
-      expect(deposit, closeTo(2500, 0.001));
-      expect(balance, closeTo(7500, 0.001));
     });
   });
 

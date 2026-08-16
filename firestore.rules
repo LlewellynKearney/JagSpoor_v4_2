@@ -138,17 +138,13 @@ service cloud.firestore {
       }
       // A hunter booking the package may only: lower quantityAvailable by >=1,
       // optionally set status to 'sold_out', and bump updatedAt. Every other
-      // field (price, title, outfitter identity, commission) must be unchanged.
+      // field (price, title, outfitter identity) must be unchanged.
       function isInventoryDecrement() {
         return isSignedIn()
           && request.resource.data.outfitterId == resource.data.outfitterId
           && request.resource.data.title == resource.data.title
           && request.resource.data.basePriceRands == resource.data.basePriceRands
           && request.resource.data.totalPriceZAR == resource.data.totalPriceZAR
-          && request.resource.data.platformCommissionZAR
-              == resource.data.platformCommissionZAR
-          && request.resource.data.depositPercentage
-              == resource.data.depositPercentage
           && request.resource.data.quantityAvailable
               < resource.data.quantityAvailable
           && (request.resource.data.status == resource.data.status

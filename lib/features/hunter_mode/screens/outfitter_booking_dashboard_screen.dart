@@ -173,9 +173,8 @@ class _BookingCardState extends State<_BookingCard> {
     });
 
     try {
-      // On approval, transition to the deposit-pending state so the hunter is
-      // prompted to pay the 25% non-refundable deposit. This also recomputes
-      // the deposit split on the booking.
+      // On approval, transition the booking to the Approved state (the
+      // outfitter confirms the booking; there is no deposit split).
       if (newStatus == 'Approved') {
         await PackageBookingManager.instance
             .approveBookingAndRequestDeposit(bookingId: widget.bookingId);
@@ -191,7 +190,7 @@ class _BookingCardState extends State<_BookingCard> {
           SnackBar(
             content: Text(
               newStatus == 'Approved'
-                  ? '✅ Booking approved! Hunter prompted to pay 25% deposit.'
+                  ? '✅ Booking approved!'
                   : '❌ Booking declined',
             ),
             backgroundColor:
@@ -291,10 +290,7 @@ class _BookingCardState extends State<_BookingCard> {
       case 'Pending Approval':
         return Colors.orange;
       case 'Approved':
-      case 'Pending Deposit':
         return Colors.green;
-      case 'Paid':
-        return Colors.teal;
       case 'Declined':
         return Colors.red;
       case 'Completed':
@@ -489,10 +485,6 @@ class _BookingCardState extends State<_BookingCard> {
   @override
   Widget build(BuildContext context) {
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
-    final depositAmount =
-        (widget.data['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
-    final balanceAmount =
-        (widget.data['balanceAmountRands'] as num?)?.toDouble() ?? 0.0;
     final status = widget.data['status'] ?? 'Pending Approval';
     final packageId = widget.data['packageId'] ?? 'Unknown';
     final hunterId = widget.data['hunterId'] ?? 'Unknown';
@@ -674,22 +666,6 @@ class _BookingCardState extends State<_BookingCard> {
                   theme: widget.theme,
                   isTotal: true,
                 ),
-                if (depositAmount > 0) ...[
-                  const Divider(height: 16),
-                  _FinancialRow(
-                    label: '25% Deposit Due (non-refundable)',
-                    value:
-                        'R ${depositAmount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                    theme: widget.theme,
-                  ),
-                  const Divider(height: 16),
-                  _FinancialRow(
-                    label: 'Balance (settled with hunter)',
-                    value:
-                        'R ${balanceAmount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                    theme: widget.theme,
-                  ),
-                ],
               ],
             ),
           ),
@@ -774,9 +750,7 @@ class _BookingCardState extends State<_BookingCard> {
                         ),
                       ],
                     )
-                    : status == 'Approved' ||
-                        status == 'Pending Deposit' ||
-                        status == 'Paid'
+                    : status == 'Approved'
                     ? SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(

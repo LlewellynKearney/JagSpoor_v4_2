@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
-import '../../../core/services/payfast_checkout.dart';
-import '../models/farm_config.dart';
-import '../services/outfitter_enterprise_manager.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../widgets/booking_chat_thread.dart';
 
@@ -25,10 +22,8 @@ import '../widgets/booking_chat_thread.dart';
 /// hunter.
 ///
 /// On submit the request is written to the Firestore `bookings` collection
-/// with `isCustomPackage: true` and `status: 'Pending Approval'`, the 25%
-/// non-refundable deposit is computed (`total × 0.25`) and made payable via
-/// the PayFast sandbox, and the standard [BookingChatThread] is embedded for
-/// hunter↔outfitter negotiation.
+/// with `isCustomPackage: true` and `status: 'Pending Approval'`, and the
+/// standard [BookingChatThread] is embedded for hunter↔outfitter negotiation.
 class HunterCustomPackageBuilderScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -142,8 +137,6 @@ class _HunterCustomPackageBuilderScreenState
     return diff > 0 ? diff : 0;
   }
 
-  double get _deposit => _grandTotal * 0.25;
-
   String _formatZAR(double value) =>
       'R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
 
@@ -248,33 +241,6 @@ class _HunterCustomPackageBuilderScreenState
     });
   }
 
-  Future<void> _payDeposit() async {
-    final bookingId = _createdBookingId;
-    if (bookingId == null) return;
-    // Route the deposit to the farm's attached PayFast merchant account when
-    // one is configured; otherwise fall back to the platform default.
-    FarmPayFastProfile? farmProfile;
-    try {
-      farmProfile =
-          await OutfitterEnterpriseManager.instance.getFarmPayFastProfile(
-              widget.farmId);
-      if (!farmProfile.isConfigured) farmProfile = null;
-    } catch (_) {
-      farmProfile = null;
-    }
-    final ok = await PayfastCheckout.launchDeposit(
-      bookingId: bookingId,
-      amount: _deposit,
-      itemName: 'JagSpoor Custom Package Deposit $bookingId',
-      farmProfile: farmProfile,
-    );
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open PayFast checkout')),
-      );
-    }
-  }
-
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
@@ -307,7 +273,7 @@ class _HunterCustomPackageBuilderScreenState
     );
   }
 
-  // ── Confirmation view (post-submit): deposit + chat ───────────────────────
+  // ── Confirmation view (post-submit): chat ────────────────────────────────
   Widget _buildConfirmationView(ThemeController theme) {
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
@@ -327,13 +293,13 @@ class _HunterCustomPackageBuilderScreenState
         Text(
           'Your custom package request for ${widget.farmName} has been sent to '
           'the outfitter for approval. You can negotiate details in the chat '
-          'below; the 25% deposit becomes due once the outfitter approves.',
+          'below.',
           textAlign: TextAlign.center,
           style: TextStyle(color: theme.subtitleColor, fontSize: 13),
         ),
         const SizedBox(height: 20),
 
-        // Price summary (no platform-fee line shown to the hunter).
+        // Price summary (the total price only).
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -345,32 +311,7 @@ class _HunterCustomPackageBuilderScreenState
             children: [
               _summaryRow(theme, 'Grand Total', _formatZAR(_grandTotal),
                   emphasize: true),
-              const Divider(height: 20),
-              _summaryRow(theme, '25% Deposit (due on approval)',
-                  _formatZAR(_deposit)),
-              const SizedBox(height: 4),
-              _summaryRow(theme, 'Balance (settled with outfitter)',
-                  _formatZAR(_grandTotal - _deposit)),
             ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // 💳 PayFast deposit checkout.
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.payment_rounded, color: Colors.white),
-            label: Text(
-                'Pay 25% Deposit (${_formatZAR(_deposit)}) via PayFast'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: _payDeposit,
           ),
         ),
         const SizedBox(height: 20),
@@ -817,21 +758,6 @@ class _HunterCustomPackageBuilderScreenState
                       fontSize: 22,
                       fontWeight: FontWeight.bold),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Deposit hint (no separate fee line shown to the hunter).
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('25% deposit due on approval',
-                    style: TextStyle(
-                        color: theme.subtitleColor, fontSize: 12)),
-                Text(_formatZAR(_deposit),
-                    style: TextStyle(
-                        color: Colors.green,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 16),

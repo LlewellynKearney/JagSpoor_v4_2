@@ -347,7 +347,6 @@ class _OutfitterPackageManagerScreenState
     // base price is preferred.
     final total = (data['totalPriceZAR'] as num?)?.toDouble() ??
         basePrice;
-    final depositPct = (data['depositPercentage'] as num?)?.toDouble() ?? 25;
     final quantityAvailable =
         PackageQuantity.fromData(data['quantityAvailable']);
     final imageUrls = data['imageUrls'];
@@ -431,7 +430,7 @@ class _OutfitterPackageManagerScreenState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '$speciesCount species • $depositPct% deposit\n'
+                        '$speciesCount species\n'
                         '${PackageQuantity.remainingLabel(quantityAvailable)}',
                         style: TextStyle(
                             color: theme.subtitleColor, fontSize: 12),

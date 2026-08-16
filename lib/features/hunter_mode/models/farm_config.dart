@@ -112,87 +112,10 @@ class FarmExtraOption {
       );
 }
 
-/// Per-farm PayFast merchant profile for direct payout routing.
-///
-/// When attached to a farm, hunter deposit payments for custom packages built
-/// against that farm are routed to this farm's PayFast merchant account
-/// (instead of the platform default sandbox merchant). Stored as a nested
-/// `payfastProfile` map on the `farms/{farmId}` document; owner-scoped write
-/// via the existing `farms` Firestore rule.
-///
-/// **Security note**: the merchant key + passphrase are credentials. They are
-/// stored on the owner-scoped farm document (only the outfitter can write;
-/// reads are signed-in for the marketplace farm-selection flow). For a
-/// production hardening pass, prefer routing deposits through a Cloud Function
-/// that holds the passphrase server-side and signs the PayFast request, so the
-/// passphrase never reaches the client. The per-farm profile here enables the
-/// direct-routing MVP requested by the task.
-class FarmPayFastProfile {
-  /// PayFast merchant ID.
-  final String merchantId;
-
-  /// PayFast merchant key.
-  final String merchantKey;
-
-  /// PayFast passphrase (used for signature generation). May be empty when the
-  /// merchant account has no passphrase set.
-  final String passphrase;
-
-  /// When true, use the PayFast **live** host instead of the sandbox host for
-  /// this farm's deposits.
-  final bool useLive;
-
-  const FarmPayFastProfile({
-    required this.merchantId,
-    required this.merchantKey,
-    this.passphrase = '',
-    this.useLive = false,
-  });
-
-  /// A profile is considered configured (usable for direct routing) when it
-  /// has a non-empty merchant id + key.
-  bool get isConfigured =>
-      merchantId.trim().isNotEmpty && merchantKey.trim().isNotEmpty;
-
-  static const FarmPayFastProfile empty =
-      FarmPayFastProfile(merchantId: '', merchantKey: '');
-
-  Map<String, dynamic> toMap() => {
-        'merchantId': merchantId,
-        'merchantKey': merchantKey,
-        if (passphrase.isNotEmpty) 'passphrase': passphrase,
-        'useLive': useLive,
-      };
-
-  static FarmPayFastProfile fromMap(Map<String, dynamic>? map) {
-    if (map == null) return FarmPayFastProfile.empty;
-    return FarmPayFastProfile(
-      merchantId: (map['merchantId'] as String?) ?? '',
-      merchantKey: (map['merchantKey'] as String?) ?? '',
-      passphrase: (map['passphrase'] as String?) ?? '',
-      useLive: (map['useLive'] as bool?) ?? false,
-    );
-  }
-
-  FarmPayFastProfile copyWith({
-    String? merchantId,
-    String? merchantKey,
-    String? passphrase,
-    bool? useLive,
-  }) =>
-      FarmPayFastProfile(
-        merchantId: merchantId ?? this.merchantId,
-        merchantKey: merchantKey ?? this.merchantKey,
-        passphrase: passphrase ?? this.passphrase,
-        useLive: useLive ?? this.useLive,
-      );
-}
-
 /// Sentinel `FieldValue` helpers for merging nested farm config maps without
 /// clobbering sibling fields. Kept here so the manager + UI share one shape.
 class FarmConfigField {
   static const String costConfig = 'costConfig';
-  static const String payfastProfile = 'payfastProfile';
 }
 
 /// A single animal available for hunting at a farm, derived from the farm's

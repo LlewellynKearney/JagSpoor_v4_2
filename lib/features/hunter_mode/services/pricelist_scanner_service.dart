@@ -184,9 +184,8 @@ class PricelistScannerService {
   /// Writes the `bookings` document with `isCustomPackage: true` and
   /// `status: 'Pending Approval'` (the canonical "pending" state used across
   /// the booking lifecycle), so the request surfaces in the outfitter's
-  /// Incoming Booking Requests list with APPROVE / DECLINE actions. The 25%
-  /// non-refundable deposit split is stored so the hunter can pay it via
-  /// PayFast once the outfitter approves.
+  /// Incoming Booking Requests list with APPROVE / DECLINE actions. The total
+  /// price is stored as the booking cost (no deposit split).
   Future<String> submitCustomPackageBooking({
     required String farmId,
     required String outfitterId,
@@ -221,8 +220,6 @@ class PricelistScannerService {
 
     // The total equals the base booking cost; there is no platform commission.
     final double basePrice = combinedTotalZAR;
-    final double depositAmount = combinedTotalZAR * 0.25;
-    final double balanceAmount = combinedTotalZAR - depositAmount;
 
     // Normalise a line item into the shape the outfitter booking dashboard
     // already renders (`name` + `hunterPrice` + `quantity`).
@@ -260,9 +257,6 @@ class PricelistScannerService {
       'observerCount': observerCount,
       'basePriceRands': basePrice,
       'totalHunterPriceRands': combinedTotalZAR,
-      'depositFraction': 0.25,
-      'depositAmountRands': depositAmount,
-      'balanceAmountRands': balanceAmount,
       'status': 'Pending Approval',
       'bookingTimestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
@@ -275,8 +269,7 @@ class PricelistScannerService {
     print(
       '✅ Custom package booking submitted: '
       '${selectedItems.length + lodgingCatering.length} items, '
-      'Total: R${combinedTotalZAR.toStringAsFixed(2)}, '
-      'Deposit: R${depositAmount.toStringAsFixed(2)}',
+      'Total: R${combinedTotalZAR.toStringAsFixed(2)}',
     );
     return docRef.id;
   }

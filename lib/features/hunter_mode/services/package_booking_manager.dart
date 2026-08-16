@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import '../models/package_pricing.dart';
-import 'deposit_payment_simulator.dart';
 
 class PackageBookingManager {
   static final PackageBookingManager _instance =
@@ -16,10 +14,6 @@ class PackageBookingManager {
 
   User? get _currentUser => _auth.currentUser;
   String? get _currentUserId => _currentUser?.uid;
-
-  /// Non-refundable deposit fraction charged to the hunter once the outfitter
-  /// approves a booking request.
-  static const double depositFraction = 0.25;
 
   // ==========================================
   // OUTFITTER - PUBLISH PACKAGE
@@ -38,8 +32,6 @@ class PackageBookingManager {
   ///   package is immediately listed; pass [PackageStatus.draft] to save an
   ///   unlisted work-in-progress).
   /// - [imageUrls]: Download URLs of uploaded package gallery images.
-  /// - [depositPercentage]: Per-package non-refundable deposit percentage
-  ///   (0–100, default 25). Stored as the fractional [depositFraction].
   ///
   /// Pricing:
   /// - `basePriceRands` = resolved base price from [pricing]
@@ -57,7 +49,6 @@ class PackageBookingManager {
     String? farmId,
     PackageStatus status = PackageStatus.active,
     List<String> imageUrls = const [],
-    double depositPercentage = 25,
     int quantityAvailable = PackageQuantity.defaultQuantity,
   }) async {
     // Validate authentication
@@ -85,9 +76,6 @@ class PackageBookingManager {
           'Availability end date cannot be before the start date');
     }
 
-    // Per-package deposit percentage, clamped to [0, 100].
-    final clampedDeposit = depositPercentage.clamp(0, 100);
-
     // Bookable slot count, clamped to >= 1. A package must offer at least one
     // slot to be bookable.
     final clampedQty = quantityAvailable < 1 ? 1 : quantityAvailable;
@@ -104,8 +92,6 @@ class PackageBookingManager {
       'inclusions': inclusions,
       'farmId': farmId,
       'imageUrls': imageUrls,
-      'depositPercentage': clampedDeposit,
-      'depositFraction': clampedDeposit / 100,
       'quantityAvailable': clampedQty,
       ...pricing.toMap(),
       'status': status.label,
@@ -135,7 +121,6 @@ class PackageBookingManager {
     List<String>? inclusions,
     String? farmId,
     List<String>? imageUrls,
-    double? depositPercentage,
     int? quantityAvailable,
   }) async {
     if (_currentUserId == null) {
@@ -151,11 +136,6 @@ class PackageBookingManager {
     if (inclusions != null) update['inclusions'] = inclusions;
     if (farmId != null) update['farmId'] = farmId;
     if (imageUrls != null) update['imageUrls'] = imageUrls;
-    if (depositPercentage != null) {
-      final clamped = depositPercentage.clamp(0, 100);
-      update['depositPercentage'] = clamped;
-      update['depositFraction'] = clamped / 100;
-    }
     if (quantityAvailable != null) {
       // Clamp to >= 1; the outfitter may restock a sold-out package by
       // raising the count back above 0 (the sold-out → active transition is
@@ -296,9 +276,6 @@ class PackageBookingManager {
         if (packageName != null) 'packageName': packageName,
         'basePriceRands': basePriceRands,
         'totalHunterPriceRands': totalHunterPrice,
-        'depositFraction': depositFraction,
-        'depositAmountRands': totalHunterPrice * depositFraction,
-        'balanceAmountRands': totalHunterPrice * (1 - depositFraction),
         'status': 'Pending Approval',
         'bookingTimestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
@@ -361,18 +338,15 @@ class PackageBookingManager {
   // UTILITY METHODS
   // ==========================================
 
-  /// Calculate totals and deposit split without saving. Returns a map with
-  /// the deposit breakdown. There is no platform commission: the total
-  /// equals the base price.
+  /// Calculate the booking totals without saving. Returns a map with the
+  /// total price. There is no platform commission and no deposit split: the
+  /// total equals the base price.
   Map<String, double> calculatePricing(double basePriceRands) {
     final double totalPrice = basePriceRands;
-    final double depositAmount = totalPrice * depositFraction;
 
     return {
       'basePriceRands': basePriceRands,
       'totalHunterPriceRands': totalPrice,
-      'depositAmountRands': depositAmount,
-      'balanceAmountRands': totalPrice - depositAmount,
     };
   }
 
@@ -453,9 +427,7 @@ class PackageBookingManager {
   /// Update booking status (for outfitters).
   ///
   /// When an outfitter approves a booking, the status transitions to
-  /// `Pending Deposit`, which prompts the hunter to pay the 25%
-  /// non-refundable deposit. Once the deposit is paid (PayFast ITN), the
-  /// status flips to `Paid`.
+  /// `Approved`.
   Future<void> updateBookingStatus({
     required String bookingId,
     required String newStatus,
@@ -464,13 +436,9 @@ class PackageBookingManager {
       throw Exception('User must be authenticated');
     }
 
-    // Valid statuses. `Pending Deposit` is the post-approval state that
-    // prompts the hunter for the 25% non-refundable deposit.
     const validStatuses = [
       'Pending Approval',
       'Approved',
-      'Pending Deposit',
-      'Paid',
       'Declined',
       'Completed',
       'Cancelled',
@@ -486,11 +454,9 @@ class PackageBookingManager {
     });
   }
 
-  /// Marks a booking as approved and transitions it to the deposit-pending
-  /// state so the hunter is prompted to pay the 25% non-refundable deposit.
-  ///
-  /// Stores the computed deposit/balance amounts on the booking so the hunter
-  /// PayFast checkout charges exactly the deposit.
+  /// Marks a booking as approved. Stores the resolved total price on the
+  /// booking (the hunter pays the base package cost; there is no platform
+  /// commission and no deposit split).
   Future<void> approveBookingAndRequestDeposit({
     required String bookingId,
   }) async {
@@ -508,58 +474,13 @@ class PackageBookingManager {
     final basePrice = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
     // The hunter pays the base package cost; there is no platform commission.
     final totalPrice = basePrice;
-    final depositAmount = totalPrice * depositFraction;
 
     await bookingRef.update({
-      'status': 'Pending Deposit',
+      'status': 'Approved',
       'totalHunterPriceRands': totalPrice,
-      'depositFraction': depositFraction,
-      'depositAmountRands': depositAmount,
-      'balanceAmountRands': totalPrice - depositAmount,
       'approvedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  // ==========================================
-  // DEBUG PAYMENT SIMULATOR (kDebugMode only)
-  // ==========================================
-  /// **Debug-only** simulator that flips a booking's status directly to `Paid`
-  /// and stamps `depositPaidAt`, mirroring the state the deployed PayFast ITN
-  /// handler writes when a `payment_status==COMPLETE` ITN is reconciled.
-  ///
-  /// Gated behind `kDebugMode` (stripped from release builds) so it can never
-  /// ship. The pure decision logic lives in `DepositPaymentSimulator`; this
-  /// method appends the server-timestamp fields (which require
-  /// `FieldValue.serverTimestamp()` and so are not pure) and performs the
-  /// Firestore write.
-  ///
-  /// **Production security note**: the `bookings` Firestore rule only permits
-  /// the outfitter (or the Admin-SDK-backed ITN Cloud Function, which bypasses
-  /// rules entirely) to flip the `status` field. A hunter-triggered debug
-  /// write that flips `status` to `Paid` is therefore permission-denied under
-  /// the production rules. Use as the outfitter/admin sandbox tester or in a
-  /// locally-relaxed rules env. (v4.5 to-do Item #10.)
-  Future<void> simulateDepositPaid({required String bookingId}) async {
-    assert(kDebugMode,
-        'DepositPaymentSimulator is a debug-only feature and must not run in release builds.');
-    if (!kDebugMode) {
-      throw StateError(
-          'DepositPaymentSimulator is disabled outside debug mode.');
-    }
-    if (_currentUserId == null) {
-      throw Exception('User must be authenticated');
-    }
-
-    final update = <String, dynamic>{
-      ...DepositPaymentSimulator.simulateUpdateMap(),
-      DepositPaymentSimulator.depositPaidAtField:
-          FieldValue.serverTimestamp(),
-      'paymentTimestamp': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-
-    await _firestore.collection('bookings').doc(bookingId).update(update);
   }
 
   // ==========================================

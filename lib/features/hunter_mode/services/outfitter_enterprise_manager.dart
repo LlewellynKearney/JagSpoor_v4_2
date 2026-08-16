@@ -25,11 +25,6 @@ class OutfitterEnterpriseManager {
   /// - [name]: Farm or concession name (e.g., "Kgalagadi Game Farm")
   /// - [district]: District or region name
   /// - [province]: Province (e.g., "Northern Cape")
-  /// - [payfastProfile]: Optional PayFast payout profile attached to the farm
-  ///   on creation (merchant id / key / passphrase / live toggle). When
-  ///   provided and configured, deposits for packages/pricelists built
-  ///   against this farm route to the farm's PayFast account. Stored as a
-  ///   nested `payfastProfile` map on the same `farms` document.
   ///
   /// Returns: void (saves to Firestore 'farms' collection)
   ///
@@ -38,7 +33,6 @@ class OutfitterEnterpriseManager {
     required String name,
     required String district,
     required String province,
-    FarmPayFastProfile? payfastProfile,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to add a farm');
@@ -58,25 +52,7 @@ class OutfitterEnterpriseManager {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    if (payfastProfile != null && payfastProfile.isConfigured) {
-      farmData[FarmConfigField.payfastProfile] = payfastProfile.toMap();
-    }
-
     await _firestore.collection('farms').add(farmData);
-  }
-
-  /// Returns true when [farmData] (a raw `farms` doc map) carries a
-  /// configured PayFast payout profile (non-empty merchant id + key). Used by
-  /// the package creator + pricelist scanner guards to block creation when
-  /// the selected farm has no PayFast credentials. Pure + synchronous so it
-  /// can run off the already-loaded farm list with no extra Firestore read.
-  static bool farmHasPayFastConfigured(Map<String, dynamic>? farmData) {
-    if (farmData == null) return false;
-    final raw = farmData[FarmConfigField.payfastProfile];
-    if (raw is! Map) return false;
-    return FarmPayFastProfile.fromMap(
-            Map<String, dynamic>.from(raw.cast<String, dynamic>()))
-        .isConfigured;
   }
 
   // ==========================================
@@ -153,65 +129,6 @@ class OutfitterEnterpriseManager {
       FarmConfigField.costConfig: costConfig.toMap(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  // ==========================================
-  // PER-FARM PAYFAST PROFILE
-  // ==========================================
-  /// Attaches a PayFast merchant profile (merchant id / key / passphrase) to
-  /// a farm so hunter deposit payments for custom packages built against that
-  /// farm route directly to the farm's PayFast account. Stored as a nested
-  /// `payfastProfile` map on the farm document.
-  ///
-  /// **Security note**: the merchant key + passphrase are credentials stored
-  /// on the owner-scoped farm document. For a production hardening pass,
-  /// prefer a Cloud Function that holds the passphrase server-side and signs
-  /// the PayFast request. This MVP enables the direct-routing requested.
-  ///
-  /// Throws: Exception if the user is not authenticated, [farmId] is empty,
-  /// or the write fails.
-  Future<void> updateFarmPayFastProfile({
-    required String farmId,
-    required FarmPayFastProfile profile,
-  }) async {
-    if (_currentUserId == null) {
-      throw Exception('User must be authenticated to update PayFast profile');
-    }
-    if (farmId.trim().isEmpty) {
-      throw Exception('Farm ID cannot be empty');
-    }
-    await _firestore.collection('farms').doc(farmId).update({
-      FarmConfigField.payfastProfile: profile.toMap(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  /// Clears the PayFast profile from a farm (reverts deposits to the platform
-  /// default merchant). Removes the `payfastProfile` field entirely.
-  Future<void> clearFarmPayFastProfile({required String farmId}) async {
-    if (_currentUserId == null) {
-      throw Exception('User must be authenticated to clear PayFast profile');
-    }
-    if (farmId.trim().isEmpty) {
-      throw Exception('Farm ID cannot be empty');
-    }
-    await _firestore.collection('farms').doc(farmId).update({
-      FarmConfigField.payfastProfile: FieldValue.delete(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  /// Reads the PayFast profile attached to [farmId], or
-  /// [FarmPayFastProfile.empty] when none is configured. Used by the Custom
-  /// Package Builder to route the deposit to the farm's merchant account.
-  Future<FarmPayFastProfile> getFarmPayFastProfile(String farmId) async {
-    if (farmId.trim().isEmpty) return FarmPayFastProfile.empty;
-    final doc = await _firestore.collection('farms').doc(farmId).get();
-    if (!doc.exists) return FarmPayFastProfile.empty;
-    final data = doc.data();
-    final raw = data?[FarmConfigField.payfastProfile];
-    if (raw is! Map) return FarmPayFastProfile.empty;
-    return FarmPayFastProfile.fromMap(Map<String, dynamic>.from(raw));
   }
 
   // ==========================================

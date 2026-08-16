@@ -1,21 +1,14 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
-import '../../../core/services/payfast_checkout.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
 import '../services/pricing_math.dart';
-import '../services/deposit_payment_simulator.dart';
-
-// PayFast sandbox configuration now lives in a single source:
-// `lib/core/services/payfast_checkout.dart` (`PayfastCheckout`), which both
-// the marketplace checkout and the custom-package builder route through.
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -29,14 +22,7 @@ class HunterPackageMarketplaceScreen extends StatefulWidget {
 
 class _HunterPackageMarketplaceScreenState
     extends State<HunterPackageMarketplaceScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  String? _selectedProvince;
-  late TabController _tabController;
-
-  /// Set `true` when a PayFast browser checkout is launched so the app-resume
-  /// lifecycle listener can detect that the user returned from the external
-  /// browser and prompt a booking-status refresh. (v4.5 to-do Item #10.)
-  bool _awaitingPayfastReturn = false;
+    with SingleTickerProviderStateMixin {
 
   // South African provinces
   static const List<String> _provinces = [
@@ -52,41 +38,19 @@ class _HunterPackageMarketplaceScreenState
     'Northern Cape',
   ];
 
+  late final TabController _tabController;
+  String? _selectedProvince;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // App-resume PayFast return detection (v4.5 to-do Item #10): when the app
-    // resumes from the background (the user returned from the external
-    // PayFast browser checkout) and a checkout was launched, prompt the user
-    // to refresh/fetch the latest booking status. The bookings list is
-    // already a reactive Firestore `snapshots()` stream, so the data auto-
-    // updates on resume; this SnackBar is the explicit prompt the spec wants.
-    if (state == AppLifecycleState.resumed && _awaitingPayfastReturn) {
-      _awaitingPayfastReturn = false;
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Welcome back! Verifying your latest booking status from the '
-            'PayFast checkout...',
-          ),
-          duration: Duration(seconds: 4),
-        ),
-      );
-    }
   }
 
   @override
@@ -390,8 +354,6 @@ class _HunterPackageMarketplaceScreenState
               bookingId: bookingId,
               data: data,
               theme: theme,
-              onPayFastCheckoutLaunched: () =>
-                  _awaitingPayfastReturn = true,
             );
           },
         );
@@ -830,14 +792,13 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
     final basePrice = (widget.data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
-    // Hunter-facing total + 25% deposit — both derived via the single-source
-    // PricingMath helper. The total equals the base package cost (there is no
-    // platform commission); no "Platform Fee" line is rendered to the hunter.
+    // Hunter-facing total — derived via the single-source PricingMath helper.
+    // The total equals the base package cost (there is no platform commission
+    // and no deposit split).
     final totalPrice = PricingMath.resolveHunterTotal(
       totalHunterPrice: (widget.data['totalPriceZAR'] as num?)?.toDouble(),
       basePrice: basePrice,
     );
-    final depositAmount = PricingMath.depositFromTotal(totalPrice);
 
     final pricing = PackagePricing.fromMap(widget.data);
     final inclusions = List<String>.from(widget.data['inclusions'] ?? []);
@@ -935,15 +896,6 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                     theme: widget.theme,
                     isTotal: true,
                   ),
-                  const Divider(height: 20),
-
-                  // Deposit due on approval
-                  _PriceRow(
-                    label:
-                        '25% Deposit (due on approval · non-refundable)',
-                    value: _formatZAR(depositAmount),
-                    theme: widget.theme,
-                  ),
                 ],
               ),
             ),
@@ -963,8 +915,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Booking request is sent for outfitter approval. On approval '
-                      'a 25% non-refundable deposit is due to confirm your dates.',
+                      'Booking request is sent for outfitter approval. On '
+                      'approval the total price is due to confirm your dates.',
                       style: TextStyle(
                         color: Colors.amber.shade700,
                         fontSize: 13,
@@ -1411,17 +1363,10 @@ class _HunterBookingCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final ThemeController theme;
 
-  /// Invoked when a PayFast browser checkout is launched from this card so the
-  /// marketplace screen's app-resume lifecycle listener can detect the user's
-  /// return from the external browser and prompt a booking-status refresh.
-  /// (v4.5 to-do Item #10.)
-  final VoidCallback? onPayFastCheckoutLaunched;
-
   const _HunterBookingCard({
     required this.bookingId,
     required this.data,
     required this.theme,
-    this.onPayFastCheckoutLaunched,
   });
 
   @override
@@ -1430,8 +1375,6 @@ class _HunterBookingCard extends StatefulWidget {
 
 class _HunterBookingCardState extends State<_HunterBookingCard> {
   bool _isChatExpanded = false;
-  bool _isPaying = false;
-  bool _isSimulating = false;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
 
@@ -1440,10 +1383,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       case 'Pending Approval':
         return Colors.orange;
       case 'Approved':
-      case 'Pending Deposit':
         return Colors.green;
-      case 'Paid':
-        return Colors.teal;
       case 'Declined':
         return Colors.red;
       case 'Completed':
@@ -1507,38 +1447,11 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       totalHunterPrice: (widget.data['totalHunterPriceRands'] as num?)?.toDouble(),
       basePrice: basePrice,
     );
-
-    // Deposit flow: when the outfitter approves, the booking moves to
-    // `Pending Deposit` and the hunter pays the 25% non-refundable deposit
-    // via PayFast. The deposit amount is stored on the booking; if it is
-    // missing (legacy bookings), derive it off the total.
-    final depositAmount = PricingMath.resolveDeposit(
-      storedDeposit: (widget.data['depositAmountRands'] as num?)?.toDouble(),
-      total: totalPrice,
-    );
-    final balanceAmount = (widget.data['balanceAmountRands'] as num?)?.toDouble() ??
-        PricingMath.balanceFromTotal(totalPrice);
     final statusLower = status.toLowerCase();
 
-    // PayFast checkout eligibility: render the Pay button when the booking is
-    // awaiting the deposit. The canonical post-approval status is
-    // `'Pending Deposit'` (space-separated, written by
-    // `approveBookingAndRequestDeposit`), so the check is case-insensitive on
-    // the space form. The legacy `approved` / `pending_payment` spellings are
-    // retained as fallbacks for older booking documents. (v4.5 to-do Item #7
-    // — previously this checked the underscore form `'pending_deposit'`,
-    // which never matched the canonical space-spelled status, so the deposit
-    // button silently failed to render on `Pending Deposit` bookings.)
-    final isDepositDueStatus = statusLower == 'pending deposit' ||
-        statusLower == 'pending_deposit' ||
-        statusLower == 'approved' ||
-        statusLower == 'pending_payment';
-    final payfastAmount = depositAmount;
-    final showPayButton = isDepositDueStatus && payfastAmount > 0;
-
     // Date-change request visibility: hunter may request a date change once
-    // the booking is approved / awaiting deposit / paid (i.e. dates matter).
-    // Hide if a request is already pending.
+    // the booking is approved (i.e. dates matter). Hide if a request is
+    // already pending.
     final dateChangePending =
         (widget.data['dateChangeRequestPending'] as bool?) ?? false;
     final dateChangeMap =
@@ -1547,10 +1460,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         ? DateChangeRequest.fromMap(dateChangeMap)
         : null;
     final canRequestDateChange =
-        (statusLower == 'pending_deposit' ||
-            statusLower == 'approved' ||
-            statusLower == 'paid') &&
-            !dateChangePending;
+        statusLower == 'approved' && !dateChangePending;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1631,124 +1541,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
             ),
           ),
 
-          // Deposit breakdown banner (when approved / awaiting deposit).
-          if (showPayButton && depositAmount > 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.green.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    _depositRow('Total Price', totalPrice),
-                    const SizedBox(height: 4),
-                    _depositRow(
-                        '25% Non-Refundable Deposit Due', depositAmount,
-                        emphasize: true),
-                    const SizedBox(height: 4),
-                    _depositRow('Balance (settled with outfitter)',
-                        balanceAmount),
-                  ],
-                ),
-              ),
-            ),
-
-          // 💳 PayFast deposit checkout — prominent primary action rendered
-          // directly on the card ABOVE the chat expansion panel so the hunter
-          // can pay the 25% deposit without scrolling past the chat thread.
-          // Shown only for payable bookings (deposit-due status, deposit > 0).
-          // (v4.5 to-do Item #7.)
-          if (showPayButton)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: _isPaying
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.lock_clock_rounded,
-                          color: Colors.white),
-                  label: Text(
-                    depositAmount > 0
-                        ? 'Pay 25% Deposit (${PricingMath.formatCurrency(depositAmount)})'
-                        : 'Pay via PayFast',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.green.shade700
-                        .withValues(alpha: 0.5),
-                    elevation: 2,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: _isPaying
-                      ? null
-                      : () => _initiatePayFastCheckout(
-                            bookingId: widget.bookingId,
-                            amount: payfastAmount,
-                            itemName: packageName,
-                          ),
-                ),
-              ),
-            ),
-
-          // 🐛 DEBUG PayFast payment simulator — a secondary debug action
-          // rendered ONLY in `kDebugMode` for bookings awaiting the deposit.
-          // On tap it calls `_simulatePaymentSuccess`, which writes the
-          // booking document directly to the post-payment state (status ->
-          // `Paid`, `depositPaidAt` server timestamp) — exactly the state the
-          // deployed PayFast ITN handler writes on a COMPLETE payment. This
-          // lets a sandbox tester exercise the full booking-status transition
-          // without going through the browser checkout. (v4.5 to-do Item #10.)
-          if (kDebugMode &&
-              DepositPaymentSimulator.canSimulate(status) &&
-              depositAmount > 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: _isSimulating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.bug_report, size: 20),
-                  label: const Text('Simulate PayFast Deposit (Debug)'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.deepOrange,
-                    side: BorderSide(color: Colors.deepOrange.withValues(alpha: 0.6)),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: _isSimulating
-                      ? null
-                      : () => _simulatePaymentSuccess(widget.bookingId),
-                ),
-              ),
-            ),
-
           // Date-change request status banner.
           if (dateChange != null && !dateChange.isPending)
             Padding(
@@ -1789,32 +1581,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _depositRow(String label, double value, {bool emphasize = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: emphasize
-                ? widget.theme.textColor
-                : widget.theme.subtitleColor,
-            fontSize: emphasize ? 13 : 12,
-            fontWeight: emphasize ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        Text(
-          'R ${value.toStringAsFixed(2)}',
-          style: TextStyle(
-            color: emphasize ? Colors.green : widget.theme.textColor,
-            fontSize: emphasize ? 14 : 12,
-            fontWeight: emphasize ? FontWeight.bold : FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 
@@ -2149,120 +1915,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         ),
       ),
     );
-  }
-
-  /// Builds the PayFast sandbox payment URL from the booking details and
-  /// launches it in the external browser. The booking id is passed as
-  /// `m_payment_id` so the ITN handler can reconcile it back to the booking.
-  /// [itemName] is the package/booking title, surfaced as the PayFast line
-  /// item name. Toggles the in-card [_isPaying] loading state and surfaces a
-  /// confirmation snackbar once the checkout portal has opened (or a failure
-  /// snackbar if the browser hand-off is unavailable). (v4.5 to-do Item #7.)
-  Future<void> _initiatePayFastCheckout({
-    required String bookingId,
-    required double amount,
-    String? itemName,
-  }) async {
-    if (_isPaying) return;
-    setState(() => _isPaying = true);
-    // Signal the marketplace screen's app-resume listener that a browser
-    // checkout is in flight so it can detect the user's return. (v4.5 to-do
-    // Item #10.)
-    widget.onPayFastCheckoutLaunched?.call();
-    // Capture the messenger before the async gap (the widget may unmount
-    // while the browser hand-off is in flight).
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      // Route through the single-source PayFast sandbox launcher so the
-      // sandbox configuration (host / merchant id / key / ITN endpoint)
-      // lives in exactly one place (`PayfastCheckout`). The amount charged
-      // is the 25% marked-up deposit (already resolved off
-      // `totalHunterPriceRands × 0.25`).
-      final launched = await PayfastCheckout.launchDeposit(
-        bookingId: bookingId,
-        amount: amount,
-        itemName: itemName,
-      );
-      if (!mounted) return;
-      if (launched) {
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'PayFast checkout portal opened in your browser — pay your 25% '
-              'deposit to confirm the booking.',
-            ),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      } else {
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Unable to open PayFast checkout — no browser app available. '
-              'Please try again or contact the outfitter.',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        messenger?.showSnackBar(
-          SnackBar(content: Text('PayFast checkout failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isPaying = false);
-      }
-    }
-  }
-
-  /// **Debug-only** PayFast deposit payment simulator (v4.5 to-do Item #10).
-  ///
-  /// Invoked by the "Simulate PayFast Deposit (Debug)" card button
-  /// (`kDebugMode` only, deposit-due bookings). Calls
-  /// `PackageBookingManager.simulateDepositPaid`, which writes the booking
-  /// document directly to the post-payment state (`status` -> `Paid`,
-  /// `depositPaidAt` server timestamp) — exactly the state the deployed PayFast
-  /// ITN handler writes on a COMPLETE payment. The reactive `bookings` stream
-  /// then re-renders the card in the `Paid` state automatically.
-  Future<void> _simulatePaymentSuccess(String bookingId) async {
-    if (_isSimulating) return;
-    setState(() => _isSimulating = true);
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      await PackageBookingManager.instance
-          .simulateDepositPaid(bookingId: bookingId);
-      if (!mounted) return;
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            '✅ [DEBUG] Deposit payment simulated — booking marked Paid.',
-          ),
-          backgroundColor: Colors.teal,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text(
-              '⚠️ [DEBUG] Simulation failed: $e\n'
-              'Note: the bookings rule only permits the outfitter to flip '
-              'the status field — run as the outfitter/admin or relax rules '
-              'in your sandbox.',
-            ),
-            backgroundColor: Colors.deepOrange,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSimulating = false);
-      }
-    }
   }
 
   Widget _buildChatDrawer() {

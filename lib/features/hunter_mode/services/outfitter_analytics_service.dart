@@ -17,12 +17,10 @@ class OutfitterAnalyticsService {
   /// one where the outfitter has a confirmed claim on the base price. This
   /// excludes the pre-approval (`Pending Approval`) and dead-end
   /// (`Declined`, `Cancelled`) states. After the outfitter approves a booking
-  /// its status transitions `Approved → Pending Deposit → Paid → Completed`,
-  /// all of which count as earned revenue.
+  /// its status transitions `Approved → Completed`, both of which count as
+  /// earned revenue.
   static const List<String> earnedBookingStatuses = [
     'Approved',
-    'Pending Deposit',
-    'Paid',
     'Completed',
   ];
 

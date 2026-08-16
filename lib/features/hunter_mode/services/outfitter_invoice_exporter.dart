@@ -8,12 +8,11 @@ import '../models/package_pricing.dart';
 ///
 /// Produces a standardized invoice with:
 ///  - the itemized line-item breakdown (or all-inclusive total) sourced from
-///    the linked hunting package,
-///  - the 25% non-refundable deposit status + balance, and
+///    the linked hunting package, and
 ///  - the date-change history for the booking (if any).
 ///
-/// There is no platform commission; the total package value equals the base
-/// price.
+/// There is no platform commission and no deposit split; the total package
+/// value equals the base price.
 class OutfitterInvoiceExporter {
   /// Generates and shares the invoice PDF.
   ///
@@ -34,10 +33,6 @@ class OutfitterInvoiceExporter {
     final totalPrice =
         (bookingData['totalHunterPriceRands'] as num?)?.toDouble() ??
             basePrice;
-    final depositAmount =
-        (bookingData['depositAmountRands'] as num?)?.toDouble() ?? 0.0;
-    final balanceAmount =
-        (bookingData['balanceAmountRands'] as num?)?.toDouble() ?? 0.0;
     final status = bookingData['status']?.toString() ?? 'Pending Approval';
 
     // Fetch the linked package to recover the itemized breakdown.
@@ -73,8 +68,6 @@ class OutfitterInvoiceExporter {
         farmName: farmName,
         hunterName: hunterName,
         totalPrice: totalPrice,
-        depositAmount: depositAmount,
-        balanceAmount: balanceAmount,
         status: status,
         pricing: pricing,
         dateChange: dateChange,
@@ -95,8 +88,6 @@ class OutfitterInvoiceExporter {
     required String farmName,
     required String hunterName,
     required double totalPrice,
-    required double depositAmount,
-    required double balanceAmount,
     required String status,
     PackagePricing? pricing,
     Map<String, dynamic>? dateChange,
@@ -210,22 +201,6 @@ class OutfitterInvoiceExporter {
               'Total Package Value', totalPrice,
               bold: true),
         ]),
-
-        // ── Deposit status ──
-        JagSpoorPdfTheme.sectionBar('Deposit Status (25% Non-Refundable)'),
-        JagSpoorPdfTheme.detailBox([
-          JagSpoorPdfTheme.currencyRow('Total Package Value', totalPrice),
-          JagSpoorPdfTheme.currencyRow(
-              '25% Non-Refundable Deposit', depositAmount,
-              emphasis: true),
-          pw.Divider(color: JagSpoorPdfTheme.divider, height: 8),
-          JagSpoorPdfTheme.currencyRow('Balance Due on Arrival', balanceAmount),
-        ]),
-        pw.SizedBox(height: 4),
-        pw.Text(
-            'A 25% non-refundable deposit secures this booking. The balance is '
-            'payable directly to the outfitter on arrival.',
-            style: JagSpoorPdfTheme.caption),
 
         // ── Date change history ──
         if (dateChange != null) ...[

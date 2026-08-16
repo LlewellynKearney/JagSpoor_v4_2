@@ -1,6 +1,5 @@
 import { logger } from "firebase-functions/v2";
 import {
-  onRequest,
   onCall,
   HttpsError,
   type CallableRequest,
@@ -9,153 +8,11 @@ import {
   onDocumentCreated,
   onDocumentUpdated,
 } from "firebase-functions/v2/firestore";
-import type { Request, Response } from "express";
-import { type Firestore, FieldValue } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { firestore, auth, getAdmin } from "./firebase";
-import {
-  parseItnBody,
-  verifySignature,
-  validateWithPayFast,
-  PAYFAST_CONFIRMATION_TOKEN,
-} from "./payfast";
 
 // ────────────────────────────────────────────────────────────────────────────
-// 1. PayFast Instant Transaction Notification (ITN) handler
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * payfastITNHandler
- *
- * HTTPS (onRequest) Cloud Function registered at:
- *   <region>-<project>.cloudfunctions.net/payfastITNHandler
- *
- * Receives a `application/x-www-form-urlencoded` POST from PayFast after a
- * payment is processed. Verifies the md5 signature, then performs a
- * server-to-server validation call back to PayFast's validate endpoint.
- * On a confirmed `COMPLETE` payment it updates the booking document.
- *
- * Booking linkage: the Flutter client passes the Firestore booking id as
- * `m_payment_id` when constructing the PayFast payment request; PayFast
- * echoes it back in the ITN unchanged.
- *
- * Environment variables:
- *   - PAYFAST_PASSPHRASE (optional): the merchant pass phrase. Set in
- *     Firebase console → Functions → Configuration.
- */
-export const payfastITNHandler = onRequest(
-  {
-    region: "us-central1",
-    maxInstances: 10,
-    // PayFast sends form-urlencoded bodies; default Cloud Functions parser
-    // handles it, but we set invocationType to public (no auth).
-    invoker: "public",
-  },
-  async (req: Request, res: Response) => {
-    // PayFast only uses POST. Reject everything else early.
-    if (req.method !== "POST") {
-      res.status(405).type("text/plain").send("Method Not Allowed");
-      return;
-    }
-
-    // We deliberately read the *raw* body to guarantee byte-exact signature
-    // verification. firebase-functions v2 exposes the raw body via
-    // `req.rawBody` (a Buffer) when the content type is form-urlencoded.
-    const rawReq = req as Request & { rawBody?: Buffer | string };
-    const rawBody: string =
-      rawReq.rawBody instanceof Buffer
-        ? rawReq.rawBody.toString("utf8")
-        : typeof req.body === "string"
-          ? req.body
-          : new URLSearchParams(req.body ?? "").toString();
-
-    const params = parseItnBody(rawBody);
-
-    // ── Step 1: signature verification ────────────────────────────────
-    if (!verifySignature(params)) {
-      logger.warn("PayFast ITN: signature verification failed", {
-        m_payment_id: params.m_payment_id,
-      });
-      // Still 200 to stop PayFast retrying; but do not confirm.
-      res.status(200).type("text/plain").send("signature_invalid");
-      return;
-    }
-
-    // ── Step 2: server-to-server validation ────────────────────────────
-    const validation = await validateWithPayFast(params);
-    if (!validation.valid) {
-      logger.warn("PayFast ITN: server validation failed", {
-        m_payment_id: params.m_payment_id,
-        raw: validation.rawResponse,
-      });
-      res.status(200).type("text/plain").send("validation_failed");
-      return;
-    }
-
-    // ── Step 3: process the payment status ─────────────────────────────
-    const bookingId = params.m_payment_id;
-    const pfPaymentId = params.pf_payment_id;
-    const itemName = params.item_name;
-    const paymentStatus = (params.payment_status ?? "").toUpperCase();
-
-    if (!bookingId) {
-      logger.error("PayFast ITN: missing m_payment_id", { params });
-      res.status(200).type("text/plain").send(PAYFAST_CONFIRMATION_TOKEN);
-      return;
-    }
-
-    if (paymentStatus !== "COMPLETE") {
-      logger.info("PayFast ITN: non-complete status, no booking update", {
-        bookingId,
-        paymentStatus,
-      });
-      // Confirm receipt so PayFast stops retrying.
-      res.status(200).type("text/plain").send(PAYFAST_CONFIRMATION_TOKEN);
-      return;
-    }
-
-    // ── Step 4: update the booking document to `Paid` ─────────────────
-    try {
-      const bookingRef = firestore().collection("bookings").doc(bookingId);
-      const snap = await bookingRef.get();
-
-      if (!snap.exists) {
-        logger.error("PayFast ITN: booking not found", { bookingId });
-        // Confirm anyway to halt retries; an orphan ITN should be logged.
-        res.status(200).type("text/plain").send(PAYFAST_CONFIRMATION_TOKEN);
-        return;
-      }
-
-      await bookingRef.update({
-        status: "Paid",
-        paymentTimestamp: FieldValue.serverTimestamp(),
-        payfastpfPaymentId: pfPaymentId ?? null,
-        itemName: itemName ?? null,
-        paymentStatus,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-
-      logger.info("PayFast ITN: booking marked Paid", {
-        bookingId,
-        pfPaymentId,
-        itemName,
-      });
-    } catch (err) {
-      logger.error("PayFast ITN: booking update failed", {
-        bookingId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // Return 500 so PayFast retries the ITN; we want the write to land.
-      res.status(500).type("text/plain").send("booking_update_failed");
-      return;
-    }
-
-    // ── Step 5: confirm receipt to PayFast ─────────────────────────────
-    res.status(200).type("text/plain").send(PAYFAST_CONFIRMATION_TOKEN);
-  }
-);
-
-// ────────────────────────────────────────────────────────────────────────────
-// 2. Admin: create outfitter account + document + custom claims
+// 1. Admin: create outfitter account + document + custom claims
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -467,11 +324,10 @@ export const onNewChatMessage = onDocumentCreated(
  * Fires only when the `status` field changes between the before/after
  * snapshots. The recipient is the "other" party:
  *   - if the hunter changed it (`updatedBy == hunterId`) → alert the outfitter
- *   - otherwise (outfitter or system, e.g. the PayFast ITN webhook) → alert
- *     the hunter.
+ *   - otherwise (outfitter or system) → alert the hunter.
  * When `updatedBy` is absent, the hunter is alerted by default, since most
- * status transitions (approval, payment, decline) are outfitter/system
- * initiated and the hunter is the interested party.
+ * status transitions (approval, decline) are outfitter/system initiated and
+ * the hunter is the interested party.
  *
  * Push payload:
  *   - title: "Booking Status Update"

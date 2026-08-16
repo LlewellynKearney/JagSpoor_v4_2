@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jagspoor/core/services/payfast_checkout.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_config.dart';
 import 'package:jagspoor/features/hunter_mode/services/pricelist_text_parser.dart';
 
@@ -54,98 +53,6 @@ void main() {
       final updated = base.copyWith(guideFee: 1200);
       expect(updated.dailyRateHunter, 1500);
       expect(updated.guideFee, 1200);
-    });
-  });
-
-  group('FarmPayFastProfile', () {
-    test('empty profile is not configured', () {
-      expect(FarmPayFastProfile.empty.isConfigured, isFalse);
-    });
-
-    test('isConfigured requires non-empty merchant id + key', () {
-      expect(
-          const FarmPayFastProfile(
-                  merchantId: '10000100', merchantKey: 'key')
-              .isConfigured,
-          isTrue);
-      expect(
-          const FarmPayFastProfile(merchantId: '', merchantKey: 'key')
-              .isConfigured,
-          isFalse);
-      expect(
-          const FarmPayFastProfile(merchantId: '10000100', merchantKey: '')
-              .isConfigured,
-          isFalse);
-    });
-
-    test('toMap omits empty passphrase', () {
-      final map = const FarmPayFastProfile(
-              merchantId: 'id', merchantKey: 'key')
-          .toMap();
-      expect(map.containsKey('passphrase'), isFalse);
-      expect(map['useLive'], isFalse);
-    });
-
-    test('toMap includes passphrase when set', () {
-      final map = const FarmPayFastProfile(
-              merchantId: 'id', merchantKey: 'key', passphrase: 'secret')
-          .toMap();
-      expect(map['passphrase'], 'secret');
-    });
-
-    test('fromMap round-trips all fields', () {
-      const original = FarmPayFastProfile(
-          merchantId: 'id', merchantKey: 'key', passphrase: 'p', useLive: true);
-      final restored = FarmPayFastProfile.fromMap(original.toMap());
-      expect(restored.merchantId, 'id');
-      expect(restored.merchantKey, 'key');
-      expect(restored.passphrase, 'p');
-      expect(restored.useLive, isTrue);
-    });
-
-    test('fromMap(null) returns empty profile', () {
-      expect(FarmPayFastProfile.fromMap(null).isConfigured, isFalse);
-    });
-  });
-
-  group('PayfastCheckout.resolveEndpoint', () {
-    test('uses platform default sandbox when no profile', () {
-      final ep = PayfastCheckout.resolveEndpoint(null);
-      expect(ep.isLive, isFalse);
-      expect(ep.merchantId, '10000100');
-    });
-
-    test('uses farm profile when configured (sandbox)', () {
-      final ep = PayfastCheckout.resolveEndpoint(const FarmPayFastProfile(
-          merchantId: 'FARM_MID', merchantKey: 'FARM_KEY'));
-      expect(ep.merchantId, 'FARM_MID');
-      expect(ep.merchantKey, 'FARM_KEY');
-      expect(ep.isLive, isFalse);
-    });
-
-    test('uses live host when farm profile useLive', () {
-      final ep = PayfastCheckout.resolveEndpoint(const FarmPayFastProfile(
-          merchantId: 'FARM_MID', merchantKey: 'FARM_KEY', useLive: true));
-      expect(ep.isLive, isTrue);
-    });
-
-    test('falls back to default when farm profile not configured', () {
-      final ep = PayfastCheckout.resolveEndpoint(FarmPayFastProfile.empty);
-      expect(ep.merchantId, '10000100');
-    });
-  });
-
-  group('PayfastCheckout.buildReturnUrl', () {
-    test('encodes booking id + success flag', () {
-      final url = PayfastCheckout.buildReturnUrl('booking-123');
-      expect(url, startsWith('jagspoor://payment-return?'));
-      expect(url, contains('booking_id=booking-123'));
-      expect(url, contains('status=success'));
-    });
-
-    test('percent-encodes special characters', () {
-      final url = PayfastCheckout.buildReturnUrl('a b/c&d');
-      expect(url, contains('a%20b%2Fc%26d'));
     });
   });
 

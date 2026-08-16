@@ -11,7 +11,6 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../core/services/image_service.dart';
 import '../../../models/animal.dart';
 import '../models/package_pricing.dart';
-import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 
 class OutfitterPackageCreatorScreen extends StatefulWidget {
@@ -43,18 +42,12 @@ class _OutfitterPackageCreatorScreenState
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
-  final _depositController = TextEditingController(text: '25');
   final _quantityController = TextEditingController(text: '1');
   final List<String> _inclusions = [];
   final _inclusionController = TextEditingController();
 
   String? _selectedFarmId;
   bool _isLoading = false;
-
-  /// Cached farm docs loaded by the BIND TO FARM `StreamBuilder` so the
-  /// PayFast guard can resolve the selected farm's payout profile
-  /// synchronously without an extra Firestore read.
-  Map<String, Map<String, dynamic>> _farmDataById = const {};
 
   // Image gallery (up to 5). Mix of newly-picked local files and previously
   // uploaded remote URLs (when editing an existing package).
@@ -103,7 +96,6 @@ class _OutfitterPackageCreatorScreenState
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _depositController.dispose();
     _quantityController.dispose();
     _inclusionController.dispose();
     super.dispose();
@@ -130,11 +122,6 @@ class _OutfitterPackageCreatorScreenState
 
     _selectedFarmId = pkg['farmId'] as String?;
     _saveStatus = PackageStatus.fromString(pkg['status'] as String?);
-
-    final depPct = pkg['depositPercentage'];
-    if (depPct is num) {
-      _depositController.text = depPct.toDouble().toStringAsFixed(0);
-    }
 
     // Available quantity / slots (defaults to 1 for legacy packages).
     _quantityController.text =
@@ -662,30 +649,6 @@ class _OutfitterPackageCreatorScreenState
     });
   }
 
-  /// Returns true when the currently-selected farm has a configured PayFast
-  /// payout profile. When it returns false, [showPayFastRequiredMessage]
-  /// surfaces the blocking snackbar so the outfitter cannot publish a package
-  /// against a farm with no payout credentials.
-  bool _selectedFarmHasPayFast() {
-    if (_selectedFarmId == null) return false;
-    return OutfitterEnterpriseManager.farmHasPayFastConfigured(
-        _farmDataById[_selectedFarmId]);
-  }
-
-  void _showPayFastRequiredMessage() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'PayFast details are required. Please edit this farm to add a '
-          'PayFast Payout Profile before adding packages or price lists.',
-        ),
-        backgroundColor: Colors.red,
-        duration: Duration(seconds: 5),
-      ),
-    );
-  }
-
   Future<void> _publishPackage() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -696,13 +659,6 @@ class _OutfitterPackageCreatorScreenState
           backgroundColor: Colors.orange,
         ),
       );
-      return;
-    }
-
-    // PayFast guard — block package creation when the selected farm has no
-    // payout profile configured.
-    if (!_selectedFarmHasPayFast()) {
-      _showPayFastRequiredMessage();
       return;
     }
 
@@ -722,20 +678,6 @@ class _OutfitterPackageCreatorScreenState
         const SnackBar(
           content: Text(
               'Package price must be greater than zero. Add a price or at least one itemized line.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // Deposit percentage validation (0–100, defaults to 25%).
-    final depositPct =
-        double.tryParse(_depositController.text.trim().replaceAll('%', '')) ??
-            25;
-    if (depositPct < 0 || depositPct > 100) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Deposit percentage must be between 0 and 100'),
           backgroundColor: Colors.red,
         ),
       );
@@ -784,7 +726,6 @@ class _OutfitterPackageCreatorScreenState
           inclusions: List<String>.from(_inclusions),
           farmId: _selectedFarmId,
           imageUrls: imageUrls,
-          depositPercentage: depositPct,
           quantityAvailable: quantityAvailable,
         );
         // Reflect the chosen lifecycle status (e.g. re-activate a draft).
@@ -801,7 +742,6 @@ class _OutfitterPackageCreatorScreenState
           farmId: _selectedFarmId,
           status: _saveStatus,
           imageUrls: imageUrls,
-          depositPercentage: depositPct,
           quantityAvailable: quantityAvailable,
         );
       }
@@ -877,13 +817,6 @@ class _OutfitterPackageCreatorScreenState
               builder: (context, snapshot) {
                 final farms = snapshot.data?.docs ?? [];
 
-                // Cache the farm docs by id so the PayFast guard can resolve
-                // the selected farm's payout profile synchronously.
-                _farmDataById = {
-                  for (final doc in farms)
-                    doc.id: (doc.data() as Map).cast<String, dynamic>(),
-                };
-
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Container(
                     padding: const EdgeInsets.all(16),
@@ -945,14 +878,6 @@ class _OutfitterPackageCreatorScreenState
                     setState(() {
                       _selectedFarmId = value;
                     });
-                    // PayFast guard — warn the outfitter the moment they
-                    // pick a farm with no payout profile so they know the
-                    // package cannot be published until the farm is edited.
-                    if (value != null &&
-                        !OutfitterEnterpriseManager.farmHasPayFastConfigured(
-                            _farmDataById[value])) {
-                      _showPayFastRequiredMessage();
-                    }
                   },
                 );
               },
@@ -1095,36 +1020,6 @@ class _OutfitterPackageCreatorScreenState
 
             // ── PRICING SUMMARY ────────────────────────────────────────────
             _buildPricingSummary(theme),
-            const SizedBox(height: 24),
-
-            // ── DEPOSIT PERCENTAGE (per-package, non-refundable) ─────────
-            _buildSectionLabel('DEPOSIT PERCENTAGE (%)', theme),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _depositController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(color: theme.textColor),
-              decoration: _inputDecoration(
-                hint: 'e.g., 25',
-                suffix: '%',
-                theme: theme,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-              ],
-              validator: (value) {
-                final raw = value?.trim().replaceAll('%', '') ?? '';
-                final pct = double.tryParse(raw);
-                if (pct == null) {
-                  return 'Enter a valid deposit percentage';
-                }
-                if (pct < 0 || pct > 100) {
-                  return 'Deposit must be between 0 and 100';
-                }
-                return null;
-              },
-            ),
             const SizedBox(height: 24),
 
             // ── AVAILABLE QUANTITY / SLOTS ───────────────────────────────

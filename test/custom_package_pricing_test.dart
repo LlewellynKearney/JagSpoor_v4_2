@@ -4,12 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// The builder's grand total is the sum of (quantity × `hunterDisplayPriceZAR`)
 /// across all selected species + lodging/catering lines. There is no platform
-/// commission / markup: `hunterDisplayPriceZAR` equals the item base price, so
-/// the hunter-facing total is simply the sum of the base costs (no explicit
-/// "Platform Fee" row). The 25% non-refundable deposit is `total × 0.25`.
+/// commission / markup and no deposit split: `hunterDisplayPriceZAR` equals
+/// the item base price, so the hunter-facing total is simply the sum of the
+/// base costs (no explicit "Platform Fee" row, no deposit row).
 void main() {
-  const double depositFraction = 0.25;
-
   // hunterDisplayPriceZAR equals the base price (no platform markup).
   double hunterPrice(double base) => base;
 
@@ -26,13 +24,6 @@ void main() {
     // Verify there is no markup: base sum == total.
     final baseSum = 10000 * 2 + 2500;
     expect(total, closeTo(baseSum, 0.001));
-  });
-
-  test('deposit is exactly 25% of the grand total', () {
-    final total = grandTotal([(base: 8000, qty: 1)]);
-    final deposit = total * depositFraction;
-    expect(deposit, closeTo(8000 * 0.25, 0.001));
-    expect(deposit, closeTo(2000.0, 0.001));
   });
 
   test('a single species line prices correctly with quantity', () {

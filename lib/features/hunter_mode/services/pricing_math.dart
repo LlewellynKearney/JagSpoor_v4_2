@@ -1,10 +1,10 @@
 /// Pure, dependency-free pricing arithmetic for the JagSpoor marketplace.
 ///
-/// Single source of truth for the 25% non-refundable deposit. Every
+/// Single source of truth for the hunter-facing total price. Every
 /// hunter-facing surface (package cards, booking sheets, custom-package
-/// builder, PayFast checkout) and every outfitter financial surface
-/// (revenue summary, payout reports) routes through these functions so the
-/// deposit and totals math can never drift between screens.
+/// builder) and every outfitter financial surface (revenue summary, payout
+/// reports) routes through these functions so the totals math can never drift
+/// between screens.
 ///
 /// Semantics (the canonical data model written to every `bookings` document
 /// by `PackageBookingManager`):
@@ -12,32 +12,19 @@
 ///   total the hunter pays; there is no platform commission / markup.
 /// - `totalHunterPriceRands` = `basePriceRands` — the hunter-facing total
 ///   (kept as a separate field for read compatibility with legacy docs).
-/// - `depositAmountRands` = `totalHunterPriceRands × 0.25` — the 25%
-///   non-refundable deposit.
-/// - `balanceAmountRands` = `totalHunterPriceRands − depositAmountRands`.
 ///
-/// There is no platform fee / commission: the total amount simply reflects
-/// the base package/booking cost. The outfitter's net earnings equal the
-/// gross revenue collected from hunters.
+/// There is no platform fee / commission and no deposit split: the total
+/// amount simply reflects the base package/booking cost. The outfitter's net
+/// earnings equal the gross revenue collected from hunters.
 class PricingMath {
   PricingMath._();
-
-  /// The non-refundable deposit fraction charged on approval (25%).
-  static const double depositFraction = 0.25;
-
-  /// The 25% non-refundable deposit computed off the booking [total].
-  static double depositFromTotal(double total) => total * depositFraction;
-
-  /// The balance remaining after the deposit, off the booking [total].
-  static double balanceFromTotal(double total) =>
-      total * (1.0 - depositFraction);
 
   /// Formats a ZAR money amount for hunter-facing display, e.g.
   /// `formatCurrency(1234.5)` → `'R 1 234.50'`, `formatCurrency(0)` →
   /// `'R 0.00'`. Locale-independent (no external intl dep): groups
   /// thousands with a thin space and always emits two decimals so prices
   /// line up. Single source of truth for the marketplace / booking-card
-  /// deposit labels.
+  /// price labels.
   static String formatCurrency(double amount) {
     final neg = amount < 0;
     final abs = amount.abs();
@@ -90,19 +77,6 @@ class PricingMath {
       return totalHunterPrice;
     }
     return 0.0;
-  }
-
-  /// Resolves a stored booking document's 25% deposit, computing it off the
-  /// booking [total] when the precomputed `depositAmountRands` field is
-  /// absent (legacy docs). Always derived from the total.
-  static double resolveDeposit({
-    required double? storedDeposit,
-    required double total,
-  }) {
-    if (storedDeposit != null && storedDeposit > 0) {
-      return storedDeposit;
-    }
-    return depositFromTotal(total);
   }
 
   /// Aggregates a list of booking records into the outfitter financial

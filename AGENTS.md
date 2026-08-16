@@ -5841,3 +5841,124 @@ pricing) are retained — only the platform commission was removed.
   explanatory comments stating there is no platform commission.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side pricing + UI + test logic).
+
+
+## Phase 55 -- Remove all deposit mentions + strip out PayFast payment integration (added 2026-08-16)
+
+Task 2 of the two-task cleanup (Task 1 = remove 7.5% platform fee, already
+done in Phase 54). The system now deals ONLY with the total price — there is
+no deposit split (deposit amount / percentage / deposit+balance) and no
+PayFast payment integration anywhere in the codebase.
+
+### Deposit removal (UI + logic + data)
+- **outfitter_booking_dashboard_screen.dart**: removed the deposit + balance
+  `_FinancialRow`s from the booking financial breakdown (only "Total"
+  remains); removed `'Pending Deposit'` / `'Paid'` from the EXPORT INVOICE
+  status gate (now only `'Approved'`).
+- **outfitter_analytics_service.dart**: `earnedBookingStatuses` reduced from
+  `['Approved','Pending Deposit','Paid','Completed']` to
+  `['Approved','Completed']` (the post-approval lifecycle is now just
+  `Approved -> Completed`); docstring updated.
+- **outfitter_revenue_screen.dart**: info-dialog copy updated to "Only
+  approved and completed bookings are counted."
+- **outfitter_package_manager_screen.dart**: removed the per-card
+  `depositPct` read + the "$depositPct% deposit" meta chip text.
+- **outfitter_package_creator_screen.dart**: removed the `_depositController`
+  field + its dispose, the deposit-percentage prefill, the deposit validation
+  block, the `depositPercentage:` arg pass-through to `publishPackage` /
+  `updatePackage`, and the entire "DEPOSIT PERCENTAGE (%)" form section.
+  Also removed the now-unused `OutfitterEnterpriseManager` import + the
+  unused `_farmDataById` cache field + its StreamBuilder assignment
+  (pre-existing dead code surfaced by the edit).
+- **outfitter_invoice_exporter.dart**: removed the `depositAmount` /
+  `balanceAmount` reads, the `_buildContent` params, and the entire
+  "Deposit Status (25% Non-Refundable)" PDF section + its caption.
+- **hunter_package_marketplace_screen.dart**: restored the `_tabController`
+  + `_selectedProvince` field declarations that had been accidentally
+  dropped during the prior session's PayFast cleanup (the
+  `WidgetsBindingObserver` / app-resume listener / PayFast button /
+  `_initiatePayFastCheckout` / `_simulatePaymentSuccess` / deposit rows
+  were already removed in the prior session).
+- **package_booking_manager.dart**: `approveBookingAndRequestDeposit` method
+  NAME retained for backward-compat but its body now just sets `status:
+  'Approved'` + the total price (no deposit fields); `depositFraction` /
+  `depositPercentage` param / `simulateDepositPaid` were already removed in
+  the prior session.
+- **pricing_math.dart**: deposit methods already removed in the prior
+  session; docstring confirmed clean.
+- **firestore.rules**: removed the `depositPercentage` + `platformCommissionZAR`
+  field-freeze checks from the `packages` `isInventoryDecrement()` function
+  (those fields are no longer written).
+
+### PayFast integration fully stripped
+- **Deleted** `lib/core/services/payfast_checkout.dart` (the sandbox launcher
+  + `buildReturnUrl` + `resolveEndpoint`).
+- **Deleted** `lib/features/hunter_mode/services/deposit_payment_simulator.dart`
+  (the kDebugMode simulator).
+- **Deleted** `test/deposit_payment_simulator_test.dart` +
+  `test/payfast_deposit_button_test.dart`.
+- **functions/src/index.ts**: removed the entire `payfastITNHandler`
+  onRequest Cloud Function + its `payfast.ts` imports (`parseItnBody`,
+  `verifySignature`, `validateWithPayFast`, `PAYFAST_CONFIRMATION_TOKEN`).
+  Removed the now-unused `onRequest`, `Request`, `Response`, `Firestore`
+  type imports. `FieldValue` retained (used by `adminCreateOutfitter`).
+  Cleaned the stale "PayFast ITN webhook" comment in `onBookingUpdated`.
+- **Deleted** `functions/src/payfast.ts` (the signature/validate helpers).
+- **functions/.env.example**: replaced the PayFast passphrase/mode env vars
+  with a note that no payment-gateway env vars are required.
+- **functions/package.json**: description updated (removed "PayFast ITN").
+- **android/app/src/main/AndroidManifest.xml**: removed the
+  `jagspoor://payment-return` custom-scheme intent filter (no longer
+  needed without the browser checkout return flow).
+
+### Test updates
+- **test/farm_config_test.dart**: removed the `FarmPayFastProfile` +
+  `PayfastCheckout` test groups + the `payfast_checkout` import (the
+  classes/services were deleted).
+- **test/pricing_math_test.dart**: removed the `depositFraction` /
+  `depositFromTotal` / `balanceFromTotal` / `resolveDeposit` / "PayFast
+  deposit alignment" test groups (methods deleted); kept
+  `resolveHunterTotal` + `aggregateRevenueSummary` + `formatCurrency`.
+- **test/custom_package_pricing_test.dart**: removed the
+  `depositFraction` const + the "deposit is 25% of grand total" test.
+- **test/outfitter_revenue_summary_test.dart**: updated the
+  `earnedBookingStatuses` assertions from 4 statuses to 2
+  (`['Approved','Completed']`).
+
+### Firestore farm_managers read access (verified)
+- `firestore.rules` `match /farm_managers/{managerId}` already allows
+  `read: if isSignedIn()` (more permissive than the minimum
+  `request.auth.uid == managerId` requirement) — so the outfitter
+  dashboard / enterprise panel can list managers without a
+  PERMISSION_DENIED crash. All other outfitter collections (`farms`,
+  `packages`, `scanned_pricelists`, `outfitters`, `lodging`, `fleet`)
+  also allow signed-in reads; no read-blocks that would crash Outfitter
+  Mode. Rules structurally validated (brace/paren balance 0, default-deny
+  present).
+
+### Verification
+- `flutter analyze` (local Flutter 3.47.0 stable): **0 errors, 0 warnings,
+  308 infos** (all pre-existing `avoid_print` / `deprecated_member_use`
+  style hints; no new issues). `analysis_options.yaml` auto-touched by the
+  analyzer was reverted before commit.
+- `flutter test` (full suite): **All 499 tests passed**, zero failures.
+- Final grep across `lib/` + `test/` + `functions/` + `android/` + `ios/`:
+  no `payfast` / `PayFast` / `deposit_payment_simulator` /
+  `DepositPaymentSimulator` / `simulateDepositPaid` / `depositFromTotal` /
+  `balanceFromTotal` / `resolveDeposit` / `depositFraction` /
+  `depositPercentage` / `depositAmountRands` / `balanceAmountRands` /
+  `_depositController` / `FarmPayFastProfile` / `Pending Deposit` /
+  `pending_deposit` / `payfast_checkout` / `PayfastCheckout` references
+  remain (the only matches are explanatory comments stating "no deposit
+  split" / "PayFast ITN integration has been removed").
+- Files: 18 modified, 4 deleted (`payfast_checkout.dart`,
+  `deposit_payment_simulator.dart`, `functions/src/payfast.ts`, + 2 test
+  files). No pubspec / Storage / index changes (pure client + functions +
+  rules + manifest cleanup).
+- Deploy reminder: `npx firebase-tools deploy --only functions,firestore:rules`
+  in a credentialed env to activate the Cloud Function removal + rules
+  update. The `payfastITNHandler` function will be deleted from the
+  deployed project; any existing booking docs carrying legacy
+  `depositAmountRands` / `balanceAmountRands` / `status: 'Paid'` /
+  `status: 'Pending Deposit'` fields are harmless (ignored by the app; the
+  revenue summary now counts only `Approved` + `Completed`).
