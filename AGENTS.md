@@ -6282,3 +6282,24 @@ Refactored the farm-level itemized service-rate model + form UI to carry explici
 - `flutter test` (full suite): All 567 tests passed, zero failures. New: `farm_service_rate_test.dart` (7->9 categories, unit semantics, legacy-key migration, rate() legacy resolution, copyWith key) + `farm_price_list_pdf_exporter_test.dart` "itemized service filtering" group (10 tests: null/zero-qty/zero-rate/both-zero/all-zero/blank-null-stored/order/all-9/unit-label/buildContent-active).
 - Files: `lib/features/hunter_mode/models/farm_service_rate.dart`, `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart`, `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`, `lib/features/hunter_mode/services/farm_price_list_pdf_exporter.dart`, `test/farm_service_rate_test.dart`, `test/farm_price_list_pdf_exporter_test.dart`.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure model + UI + pure filter helper). Existing `farm_service_rates` docs migrate automatically on read via `migrateLegacyKey`.
+
+## Phase — Scope Settings firearm dropdown replaced with ballistic calculator tactical-HUD pattern (added 2026-08-16)
+
+The Scope Settings & Tools sheet (`lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`) previously used the reusable `FirearmDropdownSelector` widget (`lib/widgets/firearm_dropdown_selector.dart`) backed by `InventoryBridge.watchSafeFirearms()` (`Stream<List<RifleProfile>>`). It was reported as broken — replaced with a verbatim port of the proven tactical-HUD dropdown from `BallisticCalcScreen` (`lib/features/ballistics/presentation/ballistic_calc_screen.dart`).
+
+### Changes
+- `_firearmsStream` changed from `Stream<List<RifleProfile>>` (`InventoryBridge.watchSafeFirearms()`) to `Stream<QuerySnapshot>` over raw Firestore `firearms` collection `.where(ownerId, isEqualTo: uid).snapshots().asBroadcastStream()` — the exact query the ballistic calculator uses.
+- `_buildFirearmLink()` rewritten as a `StreamBuilder<QuerySnapshot>` with the three ballistic-calc branches: (1) error/no-data/empty docs -> "OFFLINE SAFE MODULE ACTIVE"; (2) no real registered firearms (after filtering demo TIKKA-/SAKO- serials + "Unknown" names) -> "NO REGISTERED FIREARMS"; (3) the live raw `DropdownButton<String>` + `DropdownButtonHideUnderline` + `JagspoorTheme.hudCardBackground` dropdown labelled "Select Firearm Vault Location", items rendered as "make model • [caliber]". The selected id is guarded against a just-deleted firearm (`effectiveValue` null-coalesce) so the DropdownButton never hits the "value not in items" assertion.
+- New `_buildHardwareDropdownContainer({label, child})` helper copied verbatim from the ballistic calculator (Container with `JagspoorTheme.hudCardBackground`, walnut border, label + child Column).
+- New `_onRifleDocSelected(docs, id)` replaces `_onRifleSelected(rifles, id)` — on selection it hydrates a `RifleProfile` via `RifleProfile.fromFirestore(doc)` so the optic-binding + save flow (`_saveOptic` -> `InventoryBridge.saveOpticProfile`) continues to work unchanged. The turret-unit badge is retained as a trailing `Chip` shown only when a firearm is selected.
+- Imports: added `cloud_firestore`, `firebase_auth`, and `show JagspoorTheme` from `ballistic_calc_screen.dart`; removed the `firearm_dropdown_selector.dart` import (no longer used by this screen). `RifleProfile` + `InventoryBridge` imports retained (still used by `_onRifleDocSelected` + `_saveOptic`).
+
+### Notes
+- `FirearmDropdownSelector` widget itself is NOT deleted — it remains in use by the Shot Group Target Analyzer screen (`shot_group_analyzer_screen.dart`) + its test (`firearm_dropdown_selector_test.dart`, 6 tests). Only the Scope Settings screen switched to the tactical-HUD pattern.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure UI + stream-source swap; the `firearms` read is already owner-scoped).
+
+### Verification
+- `flutter analyze` (lib/ + test/): 0 errors, 0 warnings (306 pre-existing infos, unchanged baseline; the changed file is analyzer-clean — "No issues found").
+- `flutter test` (full suite): All 567 tests passed, zero failures. `optic_tools_test.dart` (33) covers the `OpticProfile`/`RifleProfile` models the dropdown reads through; `firearm_dropdown_selector_test.dart` (6) still covers the reusable widget (unchanged).
+- Environment note: re-cloned Flutter stable (3.47.0) + installed `unzip` + `libsqlite3-dev` (the SDK + system deps had been removed since the prior session).
+- Files: `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart` (only file changed), `AGENTS.md`.
