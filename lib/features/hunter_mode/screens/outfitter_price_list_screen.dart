@@ -9,8 +9,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_game_price_entry.dart';
+import '../models/farm_service_rate.dart';
+import '../models/package_pricing.dart';
 import '../services/farm_game_price_csv_importer.dart';
 import '../services/farm_game_price_list_manager.dart';
+import '../services/farm_price_list_pdf_exporter.dart';
 import '../services/outfitter_enterprise_manager.dart';
 
 /// Outfitter "Price List" management screen.
@@ -34,11 +37,18 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
       OutfitterEnterpriseManager.instance;
   final FarmGamePriceListManager _priceListManager =
       FarmGamePriceListManager.instance;
+  final FarmPriceListPdfExporter _pdfExporter = FarmPriceListPdfExporter();
 
   List<Map<String, dynamic>> _farms = const [];
   String? _selectedFarmId;
   bool _loadingFarms = true;
   String? _farmsError;
+
+  /// Latest snapshot of the selected farm's itemized service-rate config,
+  /// cached from the services StreamBuilder so the PDF exporter can read it
+  /// synchronously without re-fetching.
+  FarmServiceRates? _currentServiceRates;
+  bool _exportingPdf = false;
 
   @override
   void initState() {
@@ -210,6 +220,11 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            icon: Icon(Icons.picture_as_pdf_rounded, color: theme.accentColor),
+            tooltip: 'Export to PDF',
+            onPressed: _exportingPdf ? null : _exportPdf,
+          ),
+          IconButton(
             icon: Icon(Icons.upload_file_rounded, color: theme.accentColor),
             tooltip: 'Import CSV',
             onPressed: _importCsv,
@@ -259,9 +274,11 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         children: [
           _buildFarmSelector(),
           const SizedBox(height: 16),
-          if (_selectedFarmId != null)
-            _buildPriceListSection(_selectedFarmId!)
-          else
+          if (_selectedFarmId != null) ...[
+            _buildPriceListSection(_selectedFarmId!),
+            const SizedBox(height: 16),
+            _buildItemizedServicesSection(_selectedFarmId!),
+          ] else
             _buildNoFarmSelectedHint(),
           const SizedBox(height: 24),
           const CopyrightFooter(),
@@ -474,6 +491,393 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         SnackBar(content: Text('Delete failed: $e')),
       );
     }
+  }
+
+  // ── PDF export ────────────────────────────────────────────────────────────
+
+  /// Exports the currently selected farm's game price list + itemized
+  /// service rates to a branded PDF and invokes the OS share sheet. Fetches
+  /// the latest species list synchronously from Firestore, pairs it with the
+  /// cached service rates, and hands both to the [FarmPriceListPdfExporter].
+  Future<void> _exportPdf() async {
+    if (_selectedFarmId == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final farmName = _selectedFarmName ?? 'Unknown Farm';
+    final farmId = _selectedFarmId!;
+
+    setState(() => _exportingPdf = true);
+    try {
+      final species = await _priceListManager.getFarmPriceList(farmId);
+      if (!mounted) return;
+      await _pdfExporter.generateAndShare(
+        farmName: farmName,
+        species: species,
+        services: _currentServiceRates,
+        farmId: farmId,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Price list for "$farmName" exported.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('PDF export failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
+  // ── Itemized services section ───────────────────────────────────────────
+
+  Widget _buildItemizedServicesSection(String farmId) {
+    final theme = widget.theme;
+    return StreamBuilder<FarmServiceRates>(
+      stream: _priceListManager.getFarmServiceRatesStream(farmId),
+      builder: (context, snapshot) {
+        final rates = snapshot.data;
+        if (rates != null) _currentServiceRates = rates;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionLabel('ITEMIZED SERVICES', theme),
+            const SizedBox(height: 8),
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                rates == null)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: CircularProgressIndicator(color: theme.accentColor),
+                ),
+              )
+            else
+              ...ItemizedBreakdownCategory.all.map((category) {
+                final rate = rates?.rate(category.key) ??
+                    FarmServiceRate(
+                      key: category.key,
+                      label: category.label,
+                      quantity: 0,
+                      pricePerUnit: 0,
+                    );
+                return _serviceRateRow(theme, category, rate);
+              }),
+            const SizedBox(height: 4),
+            Text(
+              'Tap any service to set its quantity & rate. Rates are saved to '
+              'this farm and included in the PDF export.',
+              style: TextStyle(
+                color: theme.subtitleColor,
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _serviceRateRow(
+    ThemeController theme,
+    ItemizedBreakdownCategory category,
+    FarmServiceRate rate,
+  ) {
+    final configured = rate.isConfigured;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: configured
+              ? theme.accentColor.withValues(alpha: 0.4)
+              : theme.accentColor.withValues(alpha: 0.15),
+        ),
+      ),
+      child: ListTile(
+        onTap: () => _editServiceRate(category, rate),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        title: Text(
+          category.label,
+          style: TextStyle(
+            color: theme.textColor,
+            fontSize: 14,
+            fontWeight: configured ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        subtitle: configured
+            ? Text(
+                'Qty ${rate.quantity} × R ${rate.pricePerUnit.toStringAsFixed(2)} '
+                '= R ${rate.total.toStringAsFixed(2)}',
+                style: TextStyle(color: theme.accentColor, fontSize: 12),
+              )
+            : Text(
+                'Tap to add quantity & rate',
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+        trailing: Icon(
+          configured ? Icons.edit_rounded : Icons.add_circle_outline_rounded,
+          color: configured ? theme.accentColor : theme.subtitleColor,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
+  /// Edit sheet for a single service rate (mirrors the Publish Package
+  /// line-item editor). Persists via [FarmGamePriceListManager.upsertFarmServiceRate]
+  /// (or [removeFarmServiceRate] when cleared).
+  void _editServiceRate(
+    ItemizedBreakdownCategory category,
+    FarmServiceRate existing,
+  ) {
+    final qtyController = TextEditingController(
+      text: existing.quantity > 0 ? existing.quantity.toString() : '',
+    );
+    final priceController = TextEditingController(
+      text: existing.pricePerUnit > 0
+          ? existing.pricePerUnit.toStringAsFixed(2)
+          : '',
+    );
+    final formKey = GlobalKey<FormState>();
+    bool saving = false;
+    final farmId = _selectedFarmId;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: widget.theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return SafeArea(
+              bottom: true,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+                ),
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: widget.theme.subtitleColor
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        category.label,
+                        style: TextStyle(
+                          color: widget.theme.textColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: qtyController,
+                        keyboardType: TextInputType.number,
+                        style: TextStyle(color: widget.theme.textColor),
+                        decoration: InputDecoration(
+                          labelText: 'Quantity',
+                          labelStyle:
+                              TextStyle(color: widget.theme.subtitleColor),
+                          prefixIcon: const Icon(
+                              Icons.confirmation_number_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        validator: (v) {
+                          final n = int.tryParse(v?.trim() ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid quantity (0 or more).';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: priceController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        style: TextStyle(color: widget.theme.textColor),
+                        decoration: InputDecoration(
+                          labelText: 'Rate per unit (ZAR)',
+                          labelStyle:
+                              TextStyle(color: widget.theme.subtitleColor),
+                          prefixIcon: const Icon(Icons.payments_outlined),
+                          prefixText: 'R ',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                        ],
+                        validator: (v) {
+                          final n = double.tryParse(v?.trim() ?? '');
+                          if (n == null || n < 0) {
+                            return 'Enter a valid rate (0 or more).';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          if (existing.isConfigured)
+                            TextButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      if (farmId == null) return;
+                                      try {
+                                        await _priceListManager
+                                            .removeFarmServiceRate(
+                                          farmId: farmId,
+                                          key: category.key,
+                                        );
+                                        if (!ctx.mounted) return;
+                                        Navigator.pop(ctx);
+                                      } catch (e) {
+                                        if (!ctx.mounted) return;
+                                        ScaffoldMessenger.of(ctx).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Remove failed: $e'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.red),
+                              label: const Text('Remove',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text('Cancel',
+                                style: TextStyle(
+                                    color: widget.theme.subtitleColor)),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: saving
+                                ? null
+                                : () async {
+                                    if (farmId == null) return;
+                                    if (!formKey.currentState!.validate()) {
+                                      return;
+                                    }
+                                    final qty =
+                                        int.tryParse(qtyController.text.trim()) ??
+                                            0;
+                                    final price = double.tryParse(
+                                            priceController.text.trim()) ??
+                                        0.0;
+                                    if (qty <= 0 || price <= 0) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Enter a quantity and rate greater than 0.'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    setSheetState(() => saving = true);
+                                    try {
+                                      await _priceListManager
+                                          .upsertFarmServiceRate(
+                                        farmId: farmId,
+                                        rate: FarmServiceRate(
+                                          key: category.key,
+                                          label: category.label,
+                                          quantity: qty,
+                                          pricePerUnit: price,
+                                        ),
+                                      );
+                                      if (!ctx.mounted) return;
+                                      Navigator.pop(ctx);
+                                    } catch (e) {
+                                      setSheetState(() => saving = false);
+                                      if (!ctx.mounted) return;
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Save failed: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: widget.theme.accentColor,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: const Text('SAVE'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionLabel(String label, ThemeController theme) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.2,
+        color: theme.subtitleColor,
+      ),
+    );
   }
 }
 

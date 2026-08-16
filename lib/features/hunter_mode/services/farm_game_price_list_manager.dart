@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/farm_game_price_entry.dart';
+import '../models/farm_service_rate.dart';
+import '../models/package_pricing.dart';
 
 /// Manages the per-farm game price list (`farm_pricelists` Firestore
 /// collection).
@@ -209,5 +211,119 @@ class FarmGamePriceListManager {
     }
     await batch.commit();
     return entries.length;
+  }
+
+  // ── Itemized service rates ──────────────────────────────────────────────
+
+  /// Reactive stream of the farm's itemized service-rate configuration. Emits
+  /// a [FarmServiceRates.empty] (all 7 standard categories zeroed) when the
+  /// farm has no configured doc yet so the UI can render the full list
+  /// immediately. Returns an empty-state rates object for an unauthenticated
+  /// caller (never throws).
+  Stream<FarmServiceRates> getFarmServiceRatesStream(String farmId) {
+    final uid = _currentUserId;
+    if (uid == null || farmId.isEmpty) {
+      return Stream.value(FarmServiceRates.empty(farmId, ''));
+    }
+    return _firestore
+        .collection('farm_service_rates')
+        .doc(farmId)
+        .snapshots()
+        .map((snap) {
+      if (!snap.exists) {
+        return FarmServiceRates.empty(farmId, uid);
+      }
+      final data = snap.data() ?? const <String, dynamic>{};
+      // Re-stamp the authenticated uid for ownership scoping in case the doc
+      // is stale / migrated.
+      return FarmServiceRates.fromMap(
+        {'outfitterId': uid, ...data},
+        farmId: farmId,
+      );
+    });
+  }
+
+  /// One-shot fetch of the farm's service-rate configuration (null when no doc
+  /// exists / unauthenticated).
+  Future<FarmServiceRates?> getFarmServiceRates(String farmId) async {
+    final uid = _currentUserId;
+    if (uid == null || farmId.isEmpty) return null;
+    final snap = await _firestore.collection('farm_service_rates').doc(farmId).get();
+    if (!snap.exists) return FarmServiceRates.empty(farmId, uid);
+    final data = snap.data() ?? const <String, dynamic>{};
+    return FarmServiceRates.fromMap(
+      {'outfitterId': uid, ...data},
+      farmId: farmId,
+    );
+  }
+
+  /// Persists the full set of itemized service rates for a farm as a single
+  /// merged document (`farm_service_rates/{farmId}`). Stamps the authenticated
+  /// caller's uid as `outfitterId` for ownership scoping. Throws [StateError]
+  /// if unauthenticated or [ArgumentError] if [farmId] is empty.
+  Future<void> saveFarmServiceRates({
+    required String farmId,
+    required FarmServiceRates rates,
+  }) async {
+    final uid = _currentUserId;
+    if (uid == null) {
+      throw StateError('User must be authenticated to manage service rates.');
+    }
+    if (farmId.trim().isEmpty) {
+      throw ArgumentError('Farm ID is required.');
+    }
+    // Always re-stamp the authenticated caller as the owner so a stale / shared
+    // doc cannot be hijacked by a different outfitter's data.
+    final stamped = FarmServiceRates(
+      farmId: farmId,
+      outfitterId: uid,
+      rates: rates.rates,
+      updatedAt: DateTime.now(),
+    );
+    await _firestore.collection('farm_service_rates').doc(farmId).set(
+          {
+            'farmId': farmId,
+            'outfitterId': uid,
+            'rates': {
+              for (final r in stamped.rates.values) r.key: r.toMap(),
+            },
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+  }
+
+  /// Convenience: upserts a single service rate into the farm's configuration
+  /// without clobbering the other rates. Reads the existing doc (or seeds the
+  /// 7 standard categories), applies the [rate], and merges it back.
+  Future<void> upsertFarmServiceRate({
+    required String farmId,
+    required FarmServiceRate rate,
+  }) async {
+    final existing = await getFarmServiceRates(farmId);
+    final base = existing ?? FarmServiceRates.empty(farmId, _currentUserId ?? '');
+    base.rates[rate.key] = rate;
+    await saveFarmServiceRates(farmId: farmId, rates: base);
+  }
+
+  /// Removes a single service rate (sets it back to zeroed) from the farm's
+  /// configuration.
+  Future<void> removeFarmServiceRate({
+    required String farmId,
+    required String key,
+  }) async {
+    final existing = await getFarmServiceRates(farmId);
+    if (existing == null) return;
+    final cat = ItemizedBreakdownCategory.all.firstWhere(
+      (c) => c.key == key,
+      orElse: () => ItemizedBreakdownCategory(key, key),
+    );
+    existing.rates[key] = FarmServiceRate(
+      key: key,
+      label: cat.label,
+      quantity: 0,
+      pricePerUnit: 0,
+    );
+    await saveFarmServiceRates(farmId: farmId, rates: existing);
   }
 }
