@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_game_price_entry.dart';
+import '../services/farm_game_price_csv_importer.dart';
 import '../services/farm_game_price_list_manager.dart';
 import '../services/outfitter_enterprise_manager.dart';
 
@@ -82,6 +87,111 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     return (farm['name'] as String?) ?? 'Unknown Farm';
   }
 
+  /// Opens the native file picker for a CSV, parses it, and bulk-imports the
+  /// valid rows into the currently selected farm's price list. Rows missing a
+  /// Species Name or Price are skipped and surfaced in a snackbar.
+  Future<void> _importCsv() async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_selectedFarmId == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Please select a farm before importing a CSV.'),
+        ),
+      );
+      return;
+    }
+    final farmId = _selectedFarmId!;
+    final outfitterId = _priceListManager.currentUserId ?? '';
+    if (outfitterId.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You must be signed in to import.')),
+      );
+      return;
+    }
+
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv', 'txt'],
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('File picker failed: $e')));
+      return;
+    }
+    if (result == null || result.files.isEmpty) return; // user cancelled
+    final picked = result.files.first;
+    if (picked.bytes == null && picked.path == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not read the selected file.')),
+      );
+      return;
+    }
+
+    // Prefer the in-memory bytes (web / some mobile pickers); fall back to the
+    // cached filesystem path.
+    String csvContent;
+    try {
+      if (picked.bytes != null) {
+        csvContent = utf8.decode(picked.bytes!);
+      } else {
+        // ignore: avoid_slow_async_io
+        csvContent = await File(picked.path!).readAsString();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not read CSV file: $e')),
+      );
+      return;
+    }
+
+    final parsed = FarmGamePriceCsvImporter.parse(
+      csvContent,
+      farmId: farmId,
+      outfitterId: outfitterId,
+    );
+
+    if (parsed.entries.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            parsed.totalRows == 0
+                ? 'No rows found in the CSV.'
+                : 'No valid rows found. '
+                    '${parsed.skippedCount} row(s) skipped '
+                    '(missing Species Name or Price).',
+          ),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final created = await _priceListManager.bulkAddEntries(
+        farmId: farmId,
+        entries: parsed.entries,
+      );
+      if (!mounted) return;
+      final skippedMsg = parsed.hasSkips
+          ? '  (${parsed.skippedCount} row(s) skipped: '
+              '${parsed.skippedRows.join(', ')})'
+          : '';
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Imported $created entries.$skippedMsg'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
@@ -99,6 +209,11 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
+          IconButton(
+            icon: Icon(Icons.upload_file_rounded, color: theme.accentColor),
+            tooltip: 'Import CSV',
+            onPressed: _importCsv,
+          ),
           IconButton(
             icon: Icon(Icons.refresh, color: theme.accentColor),
             tooltip: 'Refresh farms',

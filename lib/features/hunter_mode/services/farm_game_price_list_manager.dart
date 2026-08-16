@@ -23,6 +23,11 @@ class FarmGamePriceListManager {
   User? get _currentUser => FirebaseAuth.instance.currentUser;
   String? get _currentUserId => _currentUser?.uid;
 
+  /// Public accessor for the current authenticated user's uid, used by
+  /// callers (e.g. the CSV import flow) that need to stamp the outfitter id
+  /// before a batch write. Returns null when unauthenticated.
+  String? get currentUserId => _currentUserId;
+
   /// Reactive stream of price-list entries for a single farm, ordered by
   /// species name. Returns an empty stream for an unauthenticated caller so
   /// the consuming `StreamBuilder` never throws.
@@ -161,5 +166,48 @@ class FarmGamePriceListManager {
       throw ArgumentError('Entry ID is required.');
     }
     await _firestore.collection('farm_pricelists').doc(entryId).delete();
+  }
+
+  /// Bulk-creates price-list entries for a farm in a single `WriteBatch`
+  /// (one round-trip, atomic on the server side). Each entry's `farmId` /
+  /// `outfitterId` are re-stamped from the authenticated caller + [farmId] so
+  /// a CSV import cannot cross-write into another outfitter's collection.
+  /// Returns the number of documents created. Throws [StateError] if
+  /// unauthenticated or [ArgumentError] if [farmId] / [entries] are empty.
+  Future<int> bulkAddEntries({
+    required String farmId,
+    required List<FarmGamePriceEntry> entries,
+  }) async {
+    final uid = _currentUserId;
+    if (uid == null) {
+      throw StateError('User must be authenticated to manage a price list.');
+    }
+    if (farmId.trim().isEmpty) {
+      throw ArgumentError('Farm ID is required.');
+    }
+    if (entries.isEmpty) {
+      throw ArgumentError('No entries to import.');
+    }
+
+    final batch = _firestore.batch();
+    final now = FieldValue.serverTimestamp();
+    for (final e in entries) {
+      final ref = _firestore.collection('farm_pricelists').doc();
+      batch.set(ref, {
+        'farmId': farmId,
+        'outfitterId': uid,
+        'speciesName': e.speciesName.trim(),
+        'qty': e.qty,
+        'price': e.priceZAR,
+        'gender': e.gender,
+        'hornTuskUnit': HornTuskUnit.normalize(e.hornTuskUnit),
+        if (e.hornTuskLength.trim().isNotEmpty)
+          'hornTuskLength': e.hornTuskLength.trim(),
+        'createdAt': now,
+        'updatedAt': now,
+      });
+    }
+    await batch.commit();
+    return entries.length;
   }
 }
