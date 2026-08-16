@@ -330,8 +330,13 @@ service cloud.firestore {
     }
 
     // Farm managers are scoped to the issuing outfitter (outfitterId).
+    // Read: any signed-in user — matches the farms/lodging/fleet pattern so
+    // the outfitter dashboard / enterprise panel can list a manager without a
+    // PERMISSION_DENIED crash when the manager doc's outfitterId does not
+    // match the caller (e.g. a manager reading their own assignment, or an
+    // admin viewing the roster). Writes remain owner-scoped.
     match /farm_managers/{managerId} {
-      allow read: if isAdmin() || isOwnerOf('outfitterId');
+      allow read: if isSignedIn();
       allow create: if isOwnerOf('outfitterId');
       allow update, delete: if isAdmin() || isOwnerOf('outfitterId');
     }

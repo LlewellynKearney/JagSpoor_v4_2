@@ -49,6 +49,14 @@ class _OutfitterEnterprisePanelScreenState
   final _payfastPassphraseController = TextEditingController();
   bool _payfastUseLive = false;
 
+  // Per-farm PayFast profile controllers (Register New Farm form). Kept
+  // separate from the edit-sheet controllers so the always-visible create
+  // form never shows stale values left over from an edit.
+  final _createPayfastMerchantIdController = TextEditingController();
+  final _createPayfastMerchantKeyController = TextEditingController();
+  final _createPayfastPassphraseController = TextEditingController();
+  bool _createPayfastUseLive = false;
+
   String? _selectedFarmId;
   bool _isAddingFarm = false;
   bool _isAssigningManager = false;
@@ -77,6 +85,9 @@ class _OutfitterEnterprisePanelScreenState
     _payfastMerchantIdController.dispose();
     _payfastMerchantKeyController.dispose();
     _payfastPassphraseController.dispose();
+    _createPayfastMerchantIdController.dispose();
+    _createPayfastMerchantKeyController.dispose();
+    _createPayfastPassphraseController.dispose();
     super.dispose();
   }
 
@@ -88,16 +99,32 @@ class _OutfitterEnterprisePanelScreenState
     });
 
     try {
+      // PayFast payout profile is mandatory on farm registration
+      // (validated by the form fields). Build it from the create-form
+      // controllers so deposits for packages/pricelists built against this
+      // farm route to the outfitter's PayFast account.
+      final payfastProfile = FarmPayFastProfile(
+        merchantId: _createPayfastMerchantIdController.text.trim(),
+        merchantKey: _createPayfastMerchantKeyController.text.trim(),
+        passphrase: _createPayfastPassphraseController.text.trim(),
+        useLive: _createPayfastUseLive,
+      );
+
       await OutfitterEnterpriseManager.instance.addFarm(
         name: _farmNameController.text.trim(),
         district: _districtController.text.trim(),
         province: _provinceController.text.trim(),
+        payfastProfile: payfastProfile,
       );
 
       if (mounted) {
         _farmNameController.clear();
         _districtController.clear();
         _provinceController.clear();
+        _createPayfastMerchantIdController.clear();
+        _createPayfastMerchantKeyController.clear();
+        _createPayfastPassphraseController.clear();
+        setState(() => _createPayfastUseLive = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Farm registered successfully!'),
@@ -455,102 +482,67 @@ class _OutfitterEnterprisePanelScreenState
                         ],
                       ),
                       const SizedBox(height: 24),
-                      _sectionHeader(theme, 'PAYFAST PAYOUT PROFILE',
-                          Icons.account_balance_wallet_outlined),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Attach a PayFast merchant account to route this farm\'s '
-                        'deposits directly to the outfitter. Leave blank to use '
-                        'the platform default.',
-                        style:
-                            TextStyle(color: theme.subtitleColor, fontSize: 11),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _payfastMerchantIdController,
-                        style: TextStyle(color: theme.textColor),
-                        textInputAction: TextInputAction.next,
-                        decoration: _inputDecoration(
-                          hint: '10000100',
-                          label: 'PayFast Merchant ID',
-                          theme: theme,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _payfastMerchantKeyController,
-                        style: TextStyle(color: theme.textColor),
-                        textInputAction: TextInputAction.next,
-                        decoration: _inputDecoration(
-                          hint: 'merchant key',
-                          label: 'PayFast Merchant Key',
-                          theme: theme,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _payfastPassphraseController,
-                        style: TextStyle(color: theme.textColor),
-                        textInputAction: TextInputAction.next,
-                        decoration: _inputDecoration(
-                          hint: 'optional passphrase',
-                          label: 'PayFast Passphrase',
-                          theme: theme,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'Use LIVE PayFast host (uncheck for sandbox)',
-                          style:
-                              TextStyle(color: theme.textColor, fontSize: 13),
-                        ),
-                        value: _payfastUseLive,
-                        onChanged: (v) =>
+                      // PayFast Payout Profile (mandatory when saving farm
+                      // edits — the farm cannot host packages / pricelists
+                      // without a configured payout profile).
+                      _buildPayFastSection(
+                        theme: theme,
+                        merchantIdController: _payfastMerchantIdController,
+                        merchantKeyController: _payfastMerchantKeyController,
+                        passphraseController: _payfastPassphraseController,
+                        useLive: _payfastUseLive,
+                        onUseLiveChanged: (v) =>
                             setSheetState(() => _payfastUseLive = v),
-                        activeColor: theme.accentColor,
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => PayfastCheckout.openPayFastRegistration(),
-                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                        label: const Text(
-                            'Register a new PayFast account'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: theme.accentColor,
-                          side: BorderSide(
-                              color: theme.accentColor.withValues(alpha: 0.5)),
-                        ),
+                        mandatory: true,
                       ),
                       const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: _isUpdatingFarm
-                            ? null
-                            : () => _submitFarmEdit(
-                                  farmId,
-                                  editFormKey,
-                                  setSheetState,
-                                ),
-                        icon: _isUpdatingFarm
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_rounded),
-                        label: Text(
-                          _isUpdatingFarm ? 'SAVING…' : 'SAVE CHANGES',
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.accentColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      // SAVE CHANGES — wrapped in a bottom SafeArea so the
+                      // button clears the Android 3-button / iOS gesture nav
+                      // bar on every device, with adequate padding + a
+                      // high-contrast white-on-accent label (bold).
+                      SafeArea(
+                        top: false,
+                        bottom: true,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: FilledButton.icon(
+                            onPressed: _isUpdatingFarm
+                                ? null
+                                : () => _submitFarmEdit(
+                                      farmId,
+                                      editFormKey,
+                                      setSheetState,
+                                    ),
+                            icon: _isUpdatingFarm
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_rounded),
+                            label: Text(
+                              _isUpdatingFarm ? 'SAVING…' : 'SAVE CHANGES',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: theme.accentColor,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor:
+                                  theme.accentColor.withValues(alpha: 0.5),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -683,6 +675,126 @@ class _OutfitterEnterprisePanelScreenState
     return double.tryParse(t);
   }
 
+  /// Shared PayFast Payout Profile section (header + Merchant ID / Merchant
+  /// Key / Passphrase fields + Live/Sandbox toggle + "Register a new PayFast
+  /// account" link). Used by both the Register New Farm form and the Edit
+  /// Farm Details sheet so the two surfaces stay visually identical.
+  ///
+  /// When [mandatory] is true the three credential fields carry validators
+  /// that reject empty input, so the parent `Form` cannot be saved without a
+  /// complete PayFast profile (the farm-registration + edit-farm contracts).
+  Widget _buildPayFastSection({
+    required ThemeController theme,
+    required TextEditingController merchantIdController,
+    required TextEditingController merchantKeyController,
+    required TextEditingController passphraseController,
+    required bool useLive,
+    required ValueChanged<bool> onUseLiveChanged,
+    bool mandatory = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionHeader(theme, 'PAYFAST PAYOUT PROFILE',
+            Icons.account_balance_wallet_outlined),
+        const SizedBox(height: 4),
+        Text(
+          mandatory
+              ? 'A PayFast merchant account is required so hunter deposits '
+                  'route to this farm. Register one at payfast.co.za if you '
+                  'do not yet have credentials.'
+              : 'Attach a PayFast merchant account to route this farm\'s '
+                  'deposits directly to the outfitter. Leave blank to use '
+                  'the platform default.',
+          style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: merchantIdController,
+          style: TextStyle(color: theme.textColor),
+          textInputAction: TextInputAction.next,
+          decoration: _inputDecoration(
+            hint: '10000100',
+            label: mandatory ? 'PayFast Merchant ID *' : 'PayFast Merchant ID',
+            theme: theme,
+          ),
+          validator: mandatory
+              ? (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'PayFast Merchant ID is required';
+                  }
+                  return null;
+                }
+              : null,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: merchantKeyController,
+          style: TextStyle(color: theme.textColor),
+          textInputAction: TextInputAction.next,
+          decoration: _inputDecoration(
+            hint: 'merchant key',
+            label: mandatory
+                ? 'PayFast Merchant Key *'
+                : 'PayFast Merchant Key',
+            theme: theme,
+          ),
+          validator: mandatory
+              ? (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'PayFast Merchant Key is required';
+                  }
+                  return null;
+                }
+              : null,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: passphraseController,
+          style: TextStyle(color: theme.textColor),
+          textInputAction: TextInputAction.next,
+          decoration: _inputDecoration(
+            hint: mandatory ? 'passphrase' : 'optional passphrase',
+            label: mandatory
+                ? 'PayFast Passphrase *'
+                : 'PayFast Passphrase',
+            theme: theme,
+          ),
+          validator: mandatory
+              ? (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'PayFast Passphrase is required';
+                  }
+                  return null;
+                }
+              : null,
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Use LIVE PayFast host (uncheck for sandbox)',
+            style: TextStyle(color: theme.textColor, fontSize: 13),
+          ),
+          value: useLive,
+          onChanged: onUseLiveChanged,
+          activeColor: theme.accentColor,
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => PayfastCheckout.openPayFastRegistration(),
+          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+          label: const Text('Register a new PayFast account'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.accentColor,
+            side:
+                BorderSide(color: theme.accentColor.withValues(alpha: 0.5)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _sectionHeader(
       ThemeController theme, String label, IconData icon) {
     return Row(
@@ -783,6 +895,18 @@ class _OutfitterEnterprisePanelScreenState
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 24),
+                  // PayFast Payout Profile (mandatory on farm registration).
+                  _buildPayFastSection(
+                    theme: theme,
+                    merchantIdController: _createPayfastMerchantIdController,
+                    merchantKeyController: _createPayfastMerchantKeyController,
+                    passphraseController: _createPayfastPassphraseController,
+                    useLive: _createPayfastUseLive,
+                    onUseLiveChanged: (v) =>
+                        setState(() => _createPayfastUseLive = v),
+                    mandatory: true,
                   ),
                   const SizedBox(height: 16),
                   SizedBox(

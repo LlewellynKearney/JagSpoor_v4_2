@@ -11,6 +11,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../core/services/image_service.dart';
 import '../../../models/animal.dart';
 import '../models/package_pricing.dart';
+import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 
 class OutfitterPackageCreatorScreen extends StatefulWidget {
@@ -49,6 +50,11 @@ class _OutfitterPackageCreatorScreenState
 
   String? _selectedFarmId;
   bool _isLoading = false;
+
+  /// Cached farm docs loaded by the BIND TO FARM `StreamBuilder` so the
+  /// PayFast guard can resolve the selected farm's payout profile
+  /// synchronously without an extra Firestore read.
+  Map<String, Map<String, dynamic>> _farmDataById = const {};
 
   // Image gallery (up to 5). Mix of newly-picked local files and previously
   // uploaded remote URLs (when editing an existing package).
@@ -656,6 +662,30 @@ class _OutfitterPackageCreatorScreenState
     });
   }
 
+  /// Returns true when the currently-selected farm has a configured PayFast
+  /// payout profile. When it returns false, [showPayFastRequiredMessage]
+  /// surfaces the blocking snackbar so the outfitter cannot publish a package
+  /// against a farm with no payout credentials.
+  bool _selectedFarmHasPayFast() {
+    if (_selectedFarmId == null) return false;
+    return OutfitterEnterpriseManager.farmHasPayFastConfigured(
+        _farmDataById[_selectedFarmId]);
+  }
+
+  void _showPayFastRequiredMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'PayFast details are required. Please edit this farm to add a '
+          'PayFast Payout Profile before adding packages or price lists.',
+        ),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 5),
+      ),
+    );
+  }
+
   Future<void> _publishPackage() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -666,6 +696,13 @@ class _OutfitterPackageCreatorScreenState
           backgroundColor: Colors.orange,
         ),
       );
+      return;
+    }
+
+    // PayFast guard — block package creation when the selected farm has no
+    // payout profile configured.
+    if (!_selectedFarmHasPayFast()) {
+      _showPayFastRequiredMessage();
       return;
     }
 
@@ -840,6 +877,13 @@ class _OutfitterPackageCreatorScreenState
               builder: (context, snapshot) {
                 final farms = snapshot.data?.docs ?? [];
 
+                // Cache the farm docs by id so the PayFast guard can resolve
+                // the selected farm's payout profile synchronously.
+                _farmDataById = {
+                  for (final doc in farms)
+                    doc.id: (doc.data() as Map).cast<String, dynamic>(),
+                };
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Container(
                     padding: const EdgeInsets.all(16),
@@ -901,6 +945,14 @@ class _OutfitterPackageCreatorScreenState
                     setState(() {
                       _selectedFarmId = value;
                     });
+                    // PayFast guard — warn the outfitter the moment they
+                    // pick a farm with no payout profile so they know the
+                    // package cannot be published until the farm is edited.
+                    if (value != null &&
+                        !OutfitterEnterpriseManager.farmHasPayFastConfigured(
+                            _farmDataById[value])) {
+                      _showPayFastRequiredMessage();
+                    }
                   },
                 );
               },

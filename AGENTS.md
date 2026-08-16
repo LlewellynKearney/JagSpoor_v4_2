@@ -5690,3 +5690,77 @@ catalog.
   functions), `test/adaptive_image_pipeline_test.dart` (rewritten, 22
   tests), `context.md` (16.13), `AGENTS.md`. No Firestore / Storage /
   rules / index / pubspec / manifest changes (pure logic + tests).
+
+## Phase 54 -- Enforce PayFast Payout Profile on farm registration, edits & package/pricelist creation (added 2026-08-16)
+
+- **Goal**: guarantee every farm carries a configured PayFast payout profile
+  (merchant id + key + passphrase) so hunter deposits for packages /
+  pricelists built against a farm route to that farm's PayFast account, and
+  block package/pricelist creation when the selected farm has no profile.
+- **1. Register New Farm** (`outfitter_enterprise_panel_screen.dart`):
+  added a "PAYFAST PAYOUT PROFILE" section to the always-visible create
+  form (Merchant ID / Merchant Key / Passphrase fields + Live/Sandbox
+  toggle + "Register a new PayFast account" link), rendered via a new
+  shared `_buildPayFastSection` helper. The three credential fields carry
+  **mandatory validators** (reject empty input) so the `Form` cannot be
+  submitted without a complete profile. `_addFarm` builds a
+  `FarmPayFastProfile` from dedicated create-form controllers and passes
+  it to `OutfitterEnterpriseManager.addFarm` (extended to accept +
+  persist `payfastProfile` in the same `farms` doc write).
+- **2. Edit Farm Details** (`_showEditFarmSheet`): replaced the inline
+  (optional) PayFast fields with the same shared `_buildPayFastSection`
+  helper in `mandatory: true` mode, so saving farm edits now also requires
+  a complete PayFast profile. The `clearFarmPayFastProfile` branch in
+  `_submitFarmEdit` is retained as a safety net but unreachable while the
+  validators are mandatory.
+- **3. SAVE CHANGES button fix** (Edit Farm sheet): wrapped the button in
+  `SafeArea(top: false, bottom: true)` + `EdgeInsets.all(16)` padding so it
+  clears the Android 3-button / iOS gesture nav bar; the label is now
+  explicit `Colors.white` + `FontWeight.bold` for high contrast against
+  the accent background (was relying on the default `foregroundColor`).
+- **4. Package & Pricelist creation guards**:
+  - New static `OutfitterEnterpriseManager.farmHasPayFastConfigured(
+    Map?)` pure helper resolves a farm doc's `payfastProfile.isConfigured`
+    synchronously (no extra Firestore read).
+  - `outfitter_package_creator_screen.dart`: the BIND TO FARM
+    `StreamBuilder` now caches the loaded farm docs into `_farmDataById`;
+    selecting a farm with no PayFast profile fires the blocking snackbar
+    immediately, and `_publishPackage` re-checks before creating (defense
+    in depth). The snackbar reads: "PayFast details are required. Please
+    edit this farm to add a PayFast Payout Profile before adding packages
+    or price lists."
+  - `outfitter_pricelist_scanner_screen.dart`: `_takePhoto` +
+    `_chooseFromGallery` now block (snackbar + return) when the selected
+    farm has no PayFast profile; the farm dropdown `onChanged` also fires
+    the warning on selection so the outfitter knows before attempting a
+    scan.
+- **5. Firestore `farm_managers` PERMISSION_DENIED fix** (`firestore.rules`):
+  widened `match /farm_managers/{managerId}` read from
+  `isAdmin() || isOwnerOf('outfitterId')` to `isSignedIn()`, matching the
+  `farms` / `lodging` / `fleet` / `packages` / `scanned_pricelists` pattern
+  so the outfitter dashboard / enterprise panel can list managers without
+  a crash when the manager doc's `outfitterId` does not match the caller
+  (e.g. a manager reading their own assignment). Writes remain
+  owner-scoped. Reviewed the rest of the file: all other
+  outfitter-related collections already permit `isSignedIn()` reads, so
+  `farm_managers` was the only outlier.
+- **Verification**: `flutter analyze` (local Flutter 3.47.0) -> **0 errors,
+  0 warnings**, only the documented pre-existing deprecation `info`s
+  (`activeColor`, `DropdownButtonFormField.value` on Flutter ≥3.33 only;
+  CI pin 3.29.1 does not flag them). `flutter test` -> **562 pass, 0 fail**
+  (installed `libsqlite3-dev` so the SQLite-FFI integration tests
+  resolve `libsqlite3.so`). The `firestore_rules_seeding_test` (14) +
+  `farm_config_test` (47) both green.
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate the `farm_managers` read widening.
+- Files: `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`
+  (`addFarm` + `farmHasPayFastConfigured`),
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`
+  (create-form PayFast section + shared helper + edit-sheet mandatory +
+  SAVE CHANGES SafeArea/contrast),
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  (cached farms + PayFast guard on selection + publish),
+  `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`
+  (PayFast guard on selection + scan actions),
+  `firestore.rules` (`farm_managers` read widened), `AGENTS.md`. No
+  pubspec / index / Storage / manifest changes.

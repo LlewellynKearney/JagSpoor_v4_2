@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../core/services/gemini_config_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/image_service.dart';
+import '../services/outfitter_enterprise_manager.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../services/user_role_resolver.dart';
 import 'outfitter_pricelist_verification_screen.dart';
@@ -99,6 +100,12 @@ class _OutfitterPricelistScannerScreenState
       _showError('Please select a farm first');
       return;
     }
+    // PayFast guard — block pricelist creation when the selected farm has no
+    // payout profile configured.
+    if (!_selectedFarmHasPayFast()) {
+      _showPayFastRequiredMessage();
+      return;
+    }
 
     try {
       final File? image = await ImageService.pickAndCompressImage(
@@ -116,6 +123,12 @@ class _OutfitterPricelistScannerScreenState
   Future<void> _chooseFromGallery() async {
     if (_selectedFarmId == null) {
       _showError('Please select a farm first');
+      return;
+    }
+    // PayFast guard — block pricelist creation when the selected farm has no
+    // payout profile configured.
+    if (!_selectedFarmHasPayFast()) {
+      _showPayFastRequiredMessage();
       return;
     }
 
@@ -185,6 +198,34 @@ class _OutfitterPricelistScannerScreenState
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
+    );
+  }
+
+  /// Returns true when the currently-selected farm has a configured PayFast
+  /// payout profile. When false, [_showPayFastRequiredMessage] surfaces the
+  /// blocking message so the outfitter cannot scan / create a price list
+  /// against a farm with no payout credentials.
+  bool _selectedFarmHasPayFast() {
+    if (_selectedFarmId == null) return false;
+    final farm = _farms.firstWhere(
+      (f) => f['id'] == _selectedFarmId,
+      orElse: () => const {},
+    );
+    return OutfitterEnterpriseManager.farmHasPayFastConfigured(
+        farm.isEmpty ? null : farm);
+  }
+
+  void _showPayFastRequiredMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'PayFast details are required. Please edit this farm to add a '
+          'PayFast Payout Profile before adding packages or price lists.',
+        ),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 5),
+      ),
     );
   }
 
@@ -454,6 +495,15 @@ class _OutfitterPricelistScannerScreenState
                             _selectedFarmId = value;
                             _selectedFarmName = farm['name'] as String?;
                           });
+                          // PayFast guard — warn the outfitter the moment
+                          // they pick a farm with no payout profile so they
+                          // know pricelists cannot be scanned until the farm
+                          // is edited.
+                          if (value != null &&
+                              !OutfitterEnterpriseManager
+                                  .farmHasPayFastConfigured(farm)) {
+                            _showPayFastRequiredMessage();
+                          }
                         },
                       ),
                     ),

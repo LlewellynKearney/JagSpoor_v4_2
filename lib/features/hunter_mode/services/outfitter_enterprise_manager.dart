@@ -25,6 +25,11 @@ class OutfitterEnterpriseManager {
   /// - [name]: Farm or concession name (e.g., "Kgalagadi Game Farm")
   /// - [district]: District or region name
   /// - [province]: Province (e.g., "Northern Cape")
+  /// - [payfastProfile]: Optional PayFast payout profile attached to the farm
+  ///   on creation (merchant id / key / passphrase / live toggle). When
+  ///   provided and configured, deposits for packages/pricelists built
+  ///   against this farm route to the farm's PayFast account. Stored as a
+  ///   nested `payfastProfile` map on the same `farms` document.
   ///
   /// Returns: void (saves to Firestore 'farms' collection)
   ///
@@ -33,6 +38,7 @@ class OutfitterEnterpriseManager {
     required String name,
     required String district,
     required String province,
+    FarmPayFastProfile? payfastProfile,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to add a farm');
@@ -42,7 +48,7 @@ class OutfitterEnterpriseManager {
       throw Exception('Farm name cannot be empty');
     }
 
-    final farmData = {
+    final farmData = <String, dynamic>{
       'outfitterId': _currentUserId,
       'name': name.trim(),
       'district': district.trim(),
@@ -52,7 +58,25 @@ class OutfitterEnterpriseManager {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    if (payfastProfile != null && payfastProfile.isConfigured) {
+      farmData[FarmConfigField.payfastProfile] = payfastProfile.toMap();
+    }
+
     await _firestore.collection('farms').add(farmData);
+  }
+
+  /// Returns true when [farmData] (a raw `farms` doc map) carries a
+  /// configured PayFast payout profile (non-empty merchant id + key). Used by
+  /// the package creator + pricelist scanner guards to block creation when
+  /// the selected farm has no PayFast credentials. Pure + synchronous so it
+  /// can run off the already-loaded farm list with no extra Firestore read.
+  static bool farmHasPayFastConfigured(Map<String, dynamic>? farmData) {
+    if (farmData == null) return false;
+    final raw = farmData[FarmConfigField.payfastProfile];
+    if (raw is! Map) return false;
+    return FarmPayFastProfile.fromMap(
+            Map<String, dynamic>.from(raw.cast<String, dynamic>()))
+        .isConfigured;
   }
 
   // ==========================================
