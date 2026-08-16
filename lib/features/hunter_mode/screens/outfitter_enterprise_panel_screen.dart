@@ -26,6 +26,17 @@ class _OutfitterEnterprisePanelScreenState
   final _managerNameController = TextEditingController();
   final _managerCellController = TextEditingController();
 
+  // Create-farm sheet controllers (size / contact / registration / cost rates).
+  final _createSizeHectaresController = TextEditingController();
+  final _createContactNumberController = TextEditingController();
+  final _createRegistrationNumberController = TextEditingController();
+  final _createDailyRateHunterController = TextEditingController();
+  final _createDailyRateObserverController = TextEditingController();
+  final _createAccommodationController = TextEditingController();
+  final _createCateringController = TextEditingController();
+  final _createVehicleFeeController = TextEditingController();
+  final _createGuideFeeController = TextEditingController();
+
   // Edit-farm sheet controllers (reused across edits; populated on open).
   final _editFarmNameController = TextEditingController();
   final _editDistrictController = TextEditingController();
@@ -55,6 +66,15 @@ class _OutfitterEnterprisePanelScreenState
     _managerEmailController.dispose();
     _managerNameController.dispose();
     _managerCellController.dispose();
+    _createSizeHectaresController.dispose();
+    _createContactNumberController.dispose();
+    _createRegistrationNumberController.dispose();
+    _createDailyRateHunterController.dispose();
+    _createDailyRateObserverController.dispose();
+    _createAccommodationController.dispose();
+    _createCateringController.dispose();
+    _createVehicleFeeController.dispose();
+    _createGuideFeeController.dispose();
     _editFarmNameController.dispose();
     _editDistrictController.dispose();
     _editProvinceController.dispose();
@@ -77,17 +97,76 @@ class _OutfitterEnterprisePanelScreenState
       _isAddingFarm = true;
     });
 
+    double? sizeHectares;
+    final sizeText = _createSizeHectaresController.text.trim();
+    if (sizeText.isNotEmpty) {
+      sizeHectares = double.tryParse(sizeText);
+      if (sizeHectares == null) {
+        setState(() => _isAddingFarm = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Size must be a valid number'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // Parse cost-config fields (blank -> null = not configured).
+    final hasAnyCostRate = [
+      _createDailyRateHunterController,
+      _createDailyRateObserverController,
+      _createAccommodationController,
+      _createCateringController,
+      _createVehicleFeeController,
+      _createGuideFeeController,
+    ].any((c) => c.text.trim().isNotEmpty);
+    final costConfig = hasAnyCostRate
+        ? FarmCostConfig(
+            dailyRateHunter:
+                _parseOptDouble(_createDailyRateHunterController.text),
+            dailyRateObserver:
+                _parseOptDouble(_createDailyRateObserverController.text),
+            accommodationPerNight:
+                _parseOptDouble(_createAccommodationController.text),
+            cateringPerDay: _parseOptDouble(_createCateringController.text),
+            vehicleFee: _parseOptDouble(_createVehicleFeeController.text),
+            guideFee: _parseOptDouble(_createGuideFeeController.text),
+          )
+        : null;
+
     try {
       await OutfitterEnterpriseManager.instance.addFarm(
         name: _farmNameController.text.trim(),
         district: _districtController.text.trim(),
         province: _provinceController.text.trim(),
+        sizeHectares: sizeHectares,
+        contactNumber: _createContactNumberController.text.trim().isEmpty
+            ? null
+            : _createContactNumberController.text.trim(),
+        registrationNumber:
+            _createRegistrationNumberController.text.trim().isEmpty
+                ? null
+                : _createRegistrationNumberController.text.trim(),
+        costConfig: costConfig,
       );
 
       if (mounted) {
         _farmNameController.clear();
         _districtController.clear();
         _provinceController.clear();
+        _createSizeHectaresController.clear();
+        _createContactNumberController.clear();
+        _createRegistrationNumberController.clear();
+        _createDailyRateHunterController.clear();
+        _createDailyRateObserverController.clear();
+        _createAccommodationController.clear();
+        _createCateringController.clear();
+        _createVehicleFeeController.clear();
+        _createGuideFeeController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Farm registered successfully!'),
@@ -621,7 +700,7 @@ class _OutfitterEnterprisePanelScreenState
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
         title: const Text(
-          '🏡 Enterprise Control Panel',
+          '🏡 Farm Control Panel',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: theme.backgroundColor,
@@ -691,6 +770,141 @@ class _OutfitterEnterprisePanelScreenState
                             }
                             return null;
                           },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _createSizeHectaresController,
+                    style: TextStyle(color: theme.textColor),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.next,
+                    decoration: _inputDecoration(
+                      hint: 'e.g. 2500',
+                      label: 'Size (hectares)',
+                      theme: theme,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _createContactNumberController,
+                    style: TextStyle(color: theme.textColor),
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    decoration: _inputDecoration(
+                      hint: '+27 ...',
+                      label: 'Contact Number',
+                      theme: theme,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _createRegistrationNumberController,
+                    style: TextStyle(color: theme.textColor),
+                    textInputAction: TextInputAction.next,
+                    decoration: _inputDecoration(
+                      hint: 'Farm / concession registration no.',
+                      label: 'Registration Number',
+                      theme: theme,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _sectionHeader(theme, 'COST RATES (PACKAGE BUILDER)',
+                      Icons.payments_outlined),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createDailyRateHunterController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Daily Rate / Hunter (R)',
+                            theme: theme,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createDailyRateObserverController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Daily Rate / Observer (R)',
+                            theme: theme,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createAccommodationController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Accommodation / Night (R)',
+                            theme: theme,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createCateringController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Catering / Day (R)',
+                            theme: theme,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createVehicleFeeController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Vehicle Fee (R)',
+                            theme: theme,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _createGuideFeeController,
+                          style: TextStyle(color: theme.textColor),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: _inputDecoration(
+                            hint: '0',
+                            label: 'Guide Fee (R)',
+                            theme: theme,
+                          ),
                         ),
                       ),
                     ],

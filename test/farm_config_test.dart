@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_config.dart';
-import 'package:jagspoor/features/hunter_mode/services/pricelist_text_parser.dart';
 
 void main() {
   group('FarmCostConfig', () {
@@ -163,98 +162,6 @@ void main() {
       final catalog = FarmHuntingCatalog.fromPricelist(pricelist([]));
       expect(catalog.animals, isEmpty);
       expect(catalog.fees, isEmpty);
-    });
-  });
-
-  group('PricelistTextParser quantityLimit extraction', () {
-    final parser = PricelistTextParser();
-
-    test('parses "max N" notation', () {
-      final items = parser.parse('Kudu Bul R18500 max 3');
-      expect(items, isNotEmpty);
-      expect(items.first.speciesName, 'Greater Kudu');
-      expect(items.first.quantityLimit, 3);
-    });
-
-    test('parses "(N avail)" notation', () {
-      final items = parser.parse('Impala Ram R2500 (2 avail)');
-      expect(items, isNotEmpty);
-      expect(items.first.quantityLimit, 2);
-    });
-
-    test('parses "xN" notation', () {
-      final items = parser.parse('Springbok R1500 x4');
-      expect(items, isNotEmpty);
-      expect(items.first.quantityLimit, 4);
-    });
-
-    test('parses "N available" notation', () {
-      final items = parser.parse('Blesbok R2000 5 available');
-      expect(items, isNotEmpty);
-      expect(items.first.quantityLimit, 5);
-    });
-
-    test('returns null when no limit stated', () {
-      final items = parser.parse('Warthog R1200');
-      expect(items, isNotEmpty);
-      expect(items.first.quantityLimit, isNull);
-    });
-
-    test('does not strip the x in 6.5x55 caliber-like tokens', () {
-      // No species here -> no item; but the key assertion is that the parser
-      // does not crash and produces no spurious quantityLimit.
-      final items = parser.parse('6.5x55 R100');
-      // No species token -> empty (no false item).
-      expect(items, isEmpty);
-    });
-
-    test('qty token is removed from the species label', () {
-      final items = parser.parse('Koedoe Koei R9000 max 2');
-      expect(items, isNotEmpty);
-      // The display label preserves the original line, but the species
-      // resolution used the qty-stripped remainder.
-      expect(items.first.speciesName, 'Greater Kudu');
-      expect(items.first.sex, 'Female');
-      expect(items.first.quantityLimit, 2);
-    });
-  });
-
-  group('GeminiResultNormalizer quantityLimit', () {
-    test('carries quantityLimit from structured JSON', () {
-      final items = GeminiResultNormalizer.normalize([
-        {
-          'type': 'species',
-          'species': 'Kudu',
-          'sex': 'Bul',
-          'priceZAR': 18500,
-          'quantityLimit': 3,
-        },
-      ]);
-      expect(items, hasLength(1));
-      expect(items.first.quantityLimit, 3);
-    });
-
-    test('accepts quantityAvailable alias', () {
-      final items = GeminiResultNormalizer.normalize([
-        {
-          'type': 'species',
-          'species': 'Impala',
-          'priceZAR': 2500,
-          'quantityAvailable': 5,
-        },
-      ]);
-      expect(items.first.quantityLimit, 5);
-    });
-
-    test('null / zero / negative quantityLimit collapses to null', () {
-      final items = GeminiResultNormalizer.normalize([
-        {'type': 'species', 'species': 'A', 'priceZAR': 100, 'quantityLimit': 0},
-        {'type': 'species', 'species': 'B', 'priceZAR': 100, 'quantityLimit': -1},
-        {'type': 'species', 'species': 'C', 'priceZAR': 100, 'quantityLimit': null},
-      ]);
-      expect(items[0].quantityLimit, isNull);
-      expect(items[1].quantityLimit, isNull);
-      expect(items[2].quantityLimit, isNull);
     });
   });
 }

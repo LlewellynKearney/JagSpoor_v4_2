@@ -5962,3 +5962,123 @@ PayFast payment integration anywhere in the codebase.
   `depositAmountRands` / `balanceAmountRands` / `status: 'Paid'` /
   `status: 'Pending Deposit'` fields are harmless (ignored by the app; the
   revenue summary now counts only `Approved` + `Completed`).
+
+
+## Phase 54 -- Farm Control Panel rename, Register-farm field sync, 7.5% commission cleanup, AI Price List Scanner removal (added 2026-08-16)
+
+Continues the platform-fee / PayFast removal track. No new Firestore rules /
+index / Storage / pubspec-native changes beyond the `google_generative_ai`
+dependency removal.
+
+### 1. Farm Control Panel rename
+- `outfitter_enterprise_panel_screen.dart` AppBar title changed from
+  'Enterprise Control Panel' to 'Farm Control Panel' (the panel manages
+  farms / managers / trophy stock, not the broader enterprise).
+
+### 2. Register New Farm form synced with Edit Farm Details
+- The "Register New Farm" form previously captured only Farm Name /
+  District / Province. It now matches the Edit Farm Details field set:
+  Size (hectares, decimal-validated), Contact Number (phone), Registration
+  Number, and the full COST RATES (PACKAGE BUILDER) section (Daily Rate
+  Hunter/Observer, Accommodation/Night, Catering/Day, Vehicle Fee, Guide
+  Fee). Each cost-rate field is optional (blank -> null = not configured);
+  Size is parsed + validated (non-numeric -> orange snackbar, no save).
+- `OutfitterEnterpriseManager.addFarm` extended with optional
+  `sizeHectares`, `contactNumber`, `registrationNumber`, `costConfig`
+  params (all omitted -> legacy 3-field behaviour preserved). When
+  `costConfig` is supplied it is written as the nested `costConfig` map
+  (same shape as `updateFarmCosts`), so a farm created with cost rates is
+  immediately consumable by the Custom Package Builder without a separate
+  edit pass. Blank contact/registration strings are stored as `null`
+  (clears stale values) rather than empty strings.
+- New create-form controllers separate from the edit-form controllers so
+  the two sheets never collide on shared `TextEditingController` state.
+  All disposed in `dispose()`.
+
+### 3. Lingering 7.5% commission cleanup in Package Manager UI
+- `outfitter_package_manager_screen.dart` `_PackageCard` total-price
+  resolution was inverted: it preferred the legacy marked-up
+  `totalPriceZAR` over `basePriceRands`, so a package created under the
+  prior 7.5%-commission regime could still display the marked-up total.
+  Fixed to prefer `basePriceRands` (the unmarked-up base cost; the hunter
+  pays the base package cost -- there is no platform commission) and only
+  fall back to `totalPriceZAR` when the base price is absent (very old
+  docs). This mirrors `PricingMath.resolveHunterTotal` (already correct)
+  and the marketplace price resolution. No `1.075` / `0.075` multiplier
+  remains anywhere in `lib/`.
+
+### 4. AI Price List Scanner completely removed
+- Deleted (scanner-specific):
+  - `lib/features/hunter_mode/screens/outfitter_pricelist_scanner_screen.dart`
+  - `lib/features/hunter_mode/screens/outfitter_pricelist_verification_screen.dart`
+  - `lib/features/hunter_mode/screens/scanned_pricelist_history_screen.dart`
+  - `lib/features/hunter_mode/services/pricelist_text_parser.dart`
+  - `lib/features/hunter_mode/services/gemini_vision_extractor.dart`
+  - `lib/core/services/gemini_config_service.dart`
+  - `test/gemini_config_service_test.dart`, `test/pricelist_text_parser_test.dart`
+- `pricelist_scanner_service.dart` refactored: removed the scanner-specific
+  methods (`extractPricelistItems`, `processAndUploadPricelistImage`,
+  `saveVerifiedPricelist`, `getMyPriceListsStream`, `getMyPriceLists`,
+  `getPriceListsForFarm`, `deletePriceList`, `parseRawText`,
+  `isAiExtractionAvailable`, the `geminiConfig` / `_gemini` fields) and the
+  `dart:io` / `gemini_config_service` / `offline_stream_guard` /
+  `gemini_vision_extractor` / `pricelist_text_parser` imports. Kept the
+  Custom Package Builder methods (`submitCustomPackageBooking`,
+  `getAllActivePricelists`, `getActivePricelistForFarm`,
+  `getFarmHuntingCatalog`, `calculateTotalWithFee`) so the custom-package
+  flow is unaffected. The `scanned_pricelists` collection remains the
+  custom-package catalog data source (readable by signed-in hunters);
+  price lists may be seeded by an admin or a future import flow.
+- `outfitter_dashboard.dart`: removed the "AI Scan Paper Price List" +
+  "Scan History Log" feature cards and their imports.
+- `main.dart`: removed the `GeminiConfigService.instance.init()` startup
+  call + import (the scanner was its only consumer).
+- `pubspec.yaml` / `pubspec.lock`: removed the `google_generative_ai`
+  dependency (no remaining consumers).
+- `test/farm_config_test.dart`: removed the two test groups that exercised
+  the deleted `PricelistTextParser` / `GeminiResultNormalizer` + the
+  `pricelist_text_parser` import. The `FarmCostConfig` +
+  `FarmHuntingCatalog` groups (testing `farm_config.dart`, still present)
+  are retained.
+- The auth_screen + splash_screen `scanned_pricelists` comment references
+  (listing owner-scoped outfitter collections) are left as-is -- they
+  accurately describe the collection, which is still read by the custom
+  builder.
+
+### 5. Edit Farm SAVE button (already correct -- verified)
+- The `_showEditFarmSheet` SAVE CHANGES button was already wrapped in
+  `SafeArea(top: false, bottom: true)` with `EdgeInsets.all(16)` padding
+  and a high-contrast white-on-accent (`theme.accentColor`) bold label
+  (implemented in a prior phase). No separate `edit_farm_screen.dart`
+  exists -- the edit UI is the modal sheet in
+  `outfitter_enterprise_panel_screen.dart`. Verified, no change needed.
+
+### 6. Firestore farm_managers / farms / packages read rules (already correct -- verified)
+- `firestore.rules` already permits signed-in reads on `farm_managers`
+  (`allow read: if isSignedIn()`), `farms` (`allow read: if isSignedIn()`),
+  and `packages` (`allow read: if isSignedIn()`), so entering Outfitter
+  Mode does not trigger a `PERMISSION_DENIED` crash on the
+  dashboard / enterprise-panel / marketplace list queries. Writes remain
+  owner-scoped. No rules change needed.
+
+### Verification
+- `flutter analyze` (local Flutter 3.47.0 stable): 0 errors, 0 warnings,
+  306 infos (all pre-existing `avoid_print` debug calls +
+  `deprecated_member_use` + style hints; no new issues introduced). The
+  `analysis_options.yaml` auto-touched by `flutter pub get` was reverted
+  before commit.
+- `flutter test` (full suite): All 447 tests passed (exit 0). The
+  deleted `gemini_config_service_test` (20) + `pricelist_text_parser_test`
+  (22) + the 11 parser/normalizer tests removed from `farm_config_test`
+  account for the count delta vs the prior 500-pass baseline; no
+  regressions in the retained suites.
+- Files: `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`
+  (rename + create-form field sync), `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`
+  (`addFarm` extended), `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`
+  (price resolution fixed), `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (scanner methods removed, builder methods kept), `lib/features/outfitter_mode/outfitter_dashboard.dart`
+  (scanner cards + imports removed), `lib/main.dart` (GeminiConfigService
+  init removed), `pubspec.yaml` / `pubspec.lock`
+  (`google_generative_ai` removed), `test/farm_config_test.dart` (parser
+  test groups removed), `AGENTS.md`. Deleted: the 7 scanner/service/test
+  files listed above.

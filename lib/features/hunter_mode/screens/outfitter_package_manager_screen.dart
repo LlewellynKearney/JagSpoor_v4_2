@@ -343,10 +343,12 @@ class _OutfitterPackageManagerScreenState
         PackageStatus.fromString(data['status'] as String?);
     final basePrice = (data['basePriceRands'] as num?)?.toDouble() ?? 0.0;
     // The total equals the base package cost (there is no platform
-    // commission); for legacy docs carrying a marked-up `totalPriceZAR`, the
-    // base price is preferred.
-    final total = (data['totalPriceZAR'] as num?)?.toDouble() ??
-        basePrice;
+    // commission). Prefer the unmarked-up `basePriceRands`; only fall back
+    // to `totalPriceZAR` when the base price is absent (very old docs) so
+    // a legacy marked-up total is never surfaced.
+    final total = basePrice > 0
+        ? basePrice
+        : (data['totalPriceZAR'] as num?)?.toDouble() ?? 0.0;
     final quantityAvailable =
         PackageQuantity.fromData(data['quantityAvailable']);
     final imageUrls = data['imageUrls'];

@@ -33,6 +33,10 @@ class OutfitterEnterpriseManager {
     required String name,
     required String district,
     required String province,
+    double? sizeHectares,
+    String? contactNumber,
+    String? registrationNumber,
+    FarmCostConfig? costConfig,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to add a farm');
@@ -47,6 +51,14 @@ class OutfitterEnterpriseManager {
       'name': name.trim(),
       'district': district.trim(),
       'province': province.trim(),
+      'sizeHectares': sizeHectares,
+      'contactNumber': contactNumber?.trim().isEmpty ?? true
+          ? null
+          : contactNumber!.trim(),
+      'registrationNumber': registrationNumber?.trim().isEmpty ?? true
+          ? null
+          : registrationNumber!.trim(),
+      if (costConfig != null) FarmConfigField.costConfig: costConfig.toMap(),
       'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
