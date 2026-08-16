@@ -282,8 +282,7 @@ service cloud.firestore {
     // Read: hunter who placed the booking OR outfitter who owns the package.
     // Create: the hunter placing it (hunterId must be caller).
     // Update: outfitter may flip the status field; either party may update
-    //         non-status fields. The PayFast ITN Cloud Function uses the
-    //         Admin SDK so it bypasses these rules entirely.
+    //         non-status fields.
     // Delete: admin only.
     match /bookings/{bookingId} {
       function isBookingParty() {
