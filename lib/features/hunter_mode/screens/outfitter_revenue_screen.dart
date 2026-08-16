@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../services/outfitter_analytics_service.dart';
@@ -531,6 +532,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                           ],
                         ),
                       ),
+                      const CopyrightFooter(),
                     ],
                   );
                 },

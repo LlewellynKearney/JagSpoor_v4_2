@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../core/services/image_service.dart';
 import '../../../models/animal.dart';
@@ -1197,6 +1198,7 @@ class _OutfitterPackageCreatorScreenState
               ),
             ),
             const SizedBox(height: 16),
+            const CopyrightFooter(),
           ],
         ),
       ),

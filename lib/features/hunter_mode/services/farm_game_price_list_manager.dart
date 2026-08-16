@@ -56,7 +56,8 @@ class FarmGamePriceListManager {
   /// Adds a new game-species entry to the farm's price list. Requires
   /// authentication + a non-empty [speciesName]; [qty] must be ‚â• 0 and
   /// [priceZAR] must be ‚â• 0. [gender] defaults to 'Any' and [hornTuskLength]
-  /// is optional (omitted from the doc when empty).
+  /// is optional (omitted from the doc when empty). [hornTuskUnit] defaults
+  /// to 'inches' and is always persisted.
   ///
   /// Returns the new document id. Throws [StateError] if unauthenticated or
   /// [ArgumentError] if the species name is empty.
@@ -67,6 +68,7 @@ class FarmGamePriceListManager {
     required double priceZAR,
     String gender = 'Any',
     String hornTuskLength = '',
+    String hornTuskUnit = HornTuskUnit.inches,
   }) async {
     final uid = _currentUserId;
     if (uid == null) {
@@ -93,6 +95,7 @@ class FarmGamePriceListManager {
       'qty': qty,
       'price': priceZAR,
       'gender': gender,
+      'hornTuskUnit': HornTuskUnit.normalize(hornTuskUnit),
       if (hornTuskLength.trim().isNotEmpty)
         'hornTuskLength': hornTuskLength.trim(),
       'createdAt': now,
@@ -111,6 +114,7 @@ class FarmGamePriceListManager {
     double? priceZAR,
     String? gender,
     String? hornTuskLength,
+    String? hornTuskUnit,
   }) async {
     if (_currentUserId == null) {
       throw StateError('User must be authenticated to manage a price list.');
@@ -133,6 +137,9 @@ class FarmGamePriceListManager {
     if (qty != null) updates['qty'] = qty;
     if (priceZAR != null) updates['price'] = priceZAR;
     if (gender != null) updates['gender'] = gender;
+    if (hornTuskUnit != null) {
+      updates['hornTuskUnit'] = HornTuskUnit.normalize(hornTuskUnit);
+    }
     if (hornTuskLength != null) {
       final trimmed = hornTuskLength.trim();
       if (trimmed.isEmpty) {

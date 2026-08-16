@@ -22,6 +22,7 @@ void main() {
         priceZAR: 2500.0,
         gender: 'Male',
         hornTuskLength: '28"+',
+        hornTuskUnit: HornTuskUnit.cm,
         createdAt: created,
         updatedAt: created,
       );
@@ -33,6 +34,7 @@ void main() {
       expect(map['price'], 2500.0);
       expect(map['gender'], 'Male');
       expect(map['hornTuskLength'], '28"+');
+      expect(map['hornTuskUnit'], HornTuskUnit.cm);
       expect(map['createdAt'], isA<Timestamp>());
       expect(map['updatedAt'], isA<Timestamp>());
 
@@ -45,6 +47,7 @@ void main() {
       expect(restored.priceZAR, 2500.0);
       expect(restored.gender, 'Male');
       expect(restored.hornTuskLength, '28"+');
+      expect(restored.hornTuskUnit, HornTuskUnit.cm);
       // Firestore Timestamp.toDate() returns a local DateTime, so compare via
       // millisecondsSinceEpoch (timezone-independent).
       expect(restored.createdAt?.millisecondsSinceEpoch,
@@ -294,6 +297,136 @@ void main() {
     });
     test('accepts zero', () {
       expect(FarmGamePriceValidator.validatePrice('0'), isNull);
+    });
+  });
+
+  group('HornTuskUnit', () {
+    test('normalize accepts canonical values', () {
+      expect(HornTuskUnit.normalize('inches'), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('cm'), HornTuskUnit.cm);
+    });
+    test('normalize accepts common aliases case-insensitively', () {
+      expect(HornTuskUnit.normalize('IN'), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('in.'), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('inch'), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('"'), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('Centimeters'), HornTuskUnit.cm);
+      expect(HornTuskUnit.normalize('centimetre'), HornTuskUnit.cm);
+    });
+    test('normalize defaults to inches for null/unknown/legacy', () {
+      expect(HornTuskUnit.normalize(null), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize(''), HornTuskUnit.inches);
+      expect(HornTuskUnit.normalize('parsecs'), HornTuskUnit.inches);
+    });
+    test('label returns short selector text', () {
+      expect(HornTuskUnit.label(HornTuskUnit.inches), 'in');
+      expect(HornTuskUnit.label(HornTuskUnit.cm), 'cm');
+    });
+    test('suffix returns display suffix with leading space', () {
+      expect(HornTuskUnit.suffix(HornTuskUnit.inches), ' (in)');
+      expect(HornTuskUnit.suffix(HornTuskUnit.cm), ' cm');
+    });
+    test('options lists inches then cm', () {
+      expect(HornTuskUnit.options, [HornTuskUnit.inches, HornTuskUnit.cm]);
+    });
+  });
+
+  group('FarmGamePriceEntry.hornTuskDisplayLabel', () {
+    test('appends the unit suffix to the length value', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+        hornTuskLength: '28"+',
+        hornTuskUnit: HornTuskUnit.inches,
+      );
+      expect(entry.hornTuskDisplayLabel, '28"+ (in)');
+    });
+    test('appends cm suffix when unit is cm', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+        hornTuskLength: '70',
+        hornTuskUnit: HornTuskUnit.cm,
+      );
+      expect(entry.hornTuskDisplayLabel, '70 cm');
+    });
+    test('returns empty string when no length is set', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+      );
+      expect(entry.hornTuskDisplayLabel, '');
+    });
+    test('defaults to inches when unit is unset', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+        hornTuskLength: '40',
+      );
+      expect(entry.hornTuskUnit, HornTuskUnit.inches);
+      expect(entry.hornTuskDisplayLabel, '40 (in)');
+    });
+  });
+
+  group('FarmGamePriceEntry.hornTuskUnit persistence', () {
+    test('fromMap reads hornTuskUnit + defaults to inches when absent', () {
+      final restored = FarmGamePriceEntry.fromMap(
+        {'speciesName': 'Impala', 'qty': 2, 'price': 500, 'hornTuskLength': '30"'},
+        id: 'e',
+      );
+      expect(restored.hornTuskUnit, HornTuskUnit.inches);
+    });
+    test('fromMap normalizes a stored cm value', () {
+      final restored = FarmGamePriceEntry.fromMap(
+        {'speciesName': 'Impala', 'qty': 2, 'price': 500, 'hornTuskUnit': 'centimeters'},
+        id: 'e',
+      );
+      expect(restored.hornTuskUnit, HornTuskUnit.cm);
+    });
+    test('copyWith updates hornTuskUnit only', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+        hornTuskLength: '40',
+      );
+      final updated = entry.copyWith(hornTuskUnit: HornTuskUnit.cm);
+      expect(updated.hornTuskUnit, HornTuskUnit.cm);
+      expect(updated.speciesName, 'Kudu');
+      expect(updated.hornTuskLength, '40');
+    });
+    test('toMap always writes hornTuskUnit even when length is empty', () {
+      final entry = FarmGamePriceEntry(
+        id: 'e',
+        farmId: 'f',
+        outfitterId: 'o',
+        speciesName: 'Kudu',
+        qty: 1,
+        priceZAR: 1000,
+        hornTuskUnit: HornTuskUnit.cm,
+      );
+      final map = entry.toMap();
+      expect(map['hornTuskUnit'], HornTuskUnit.cm);
+      expect(map.containsKey('hornTuskLength'), isFalse);
     });
   });
 }

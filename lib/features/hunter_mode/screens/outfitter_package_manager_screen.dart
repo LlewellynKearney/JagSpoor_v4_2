@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
@@ -302,8 +303,11 @@ class _OutfitterPackageManagerScreenState
                 }
                 return ListView.builder(
                   padding: EdgeInsets.fromLTRB(12, 12, 12, SafeBottomInset.of(context)),
-                  itemCount: docs.length,
+                  itemCount: docs.length + 1,
                   itemBuilder: (context, index) {
+                    if (index == docs.length) {
+                      return const CopyrightFooter();
+                    }
                     final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
                     return _packageCard(theme, data, doc.id);

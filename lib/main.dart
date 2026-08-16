@@ -1,6 +1,7 @@
 // ADDED
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -204,7 +205,15 @@ class JagspoorApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: themeController,
       builder: (context, _) {
-        return MaterialApp(
+        // Wrap the app in an AnnotatedRegion so the system status-bar icon
+        // contrast (dark icons on the light theme, light icons on the dark
+        // theme) is applied app-wide and updates instantly when the user
+        // toggles Day/Night. This guarantees the phone's battery / Wi-Fi /
+        // clock icons are legible against the active theme background, even
+        // on screens that use a transparent AppBar.
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: themeController.systemOverlayStyle,
+          child: MaterialApp(
           title: 'Jagspoor',
           debugShowCheckedModeBanner: false,
           theme: themeController.lightTheme,
@@ -252,6 +261,7 @@ class JagspoorApp extends StatelessWidget {
                       {},
                 ),
           },
+          ),
         );
       },
     );

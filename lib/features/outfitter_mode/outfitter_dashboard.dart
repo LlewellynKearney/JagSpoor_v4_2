@@ -296,6 +296,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             },
                           ),
                         ],
+                          const CopyrightFooter(),
                         ],
                       ),
                         ), // Padding

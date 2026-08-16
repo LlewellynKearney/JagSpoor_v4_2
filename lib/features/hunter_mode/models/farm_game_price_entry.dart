@@ -26,6 +26,12 @@ class FarmGamePriceEntry {
   /// Optional trophy descriptor, e.g. '28"+', 'Trophy', 'Cull'. May be empty.
   final String hornTuskLength;
 
+  /// Measurement unit for [hornTuskLength]: 'inches' or 'cm'. Defaults to
+  /// 'inches' (the Rowland Ward convention). Only meaningful when
+  /// [hornTuskLength] is non-empty; always persisted so the display can append
+  /// the correct unit suffix.
+  final String hornTuskUnit;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -38,6 +44,7 @@ class FarmGamePriceEntry {
     required this.priceZAR,
     this.gender = 'Any',
     this.hornTuskLength = '',
+    this.hornTuskUnit = HornTuskUnit.inches,
     this.createdAt,
     this.updatedAt,
   });
@@ -59,6 +66,7 @@ class FarmGamePriceEntry {
       gender: _normalizeGender(data['gender'] ?? data['sex']),
       hornTuskLength:
           ((data['hornTuskLength'] as String?) ?? (data['horn'] as String?) ?? (data['tusk'] as String?) ?? '').trim(),
+      hornTuskUnit: HornTuskUnit.normalize(data['hornTuskUnit']),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -79,6 +87,7 @@ class FarmGamePriceEntry {
       gender: _normalizeGender(data['gender'] ?? data['sex']),
       hornTuskLength:
           ((data['hornTuskLength'] as String?) ?? (data['horn'] as String?) ?? (data['tusk'] as String?) ?? '').trim(),
+      hornTuskUnit: HornTuskUnit.normalize(data['hornTuskUnit']),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -91,6 +100,7 @@ class FarmGamePriceEntry {
         'qty': qty,
         'price': priceZAR,
         'gender': gender,
+        'hornTuskUnit': hornTuskUnit,
         if (hornTuskLength.isNotEmpty) 'hornTuskLength': hornTuskLength,
         if (createdAt != null)
           'createdAt': Timestamp.fromDate(createdAt!),
@@ -104,6 +114,7 @@ class FarmGamePriceEntry {
     double? priceZAR,
     String? gender,
     String? hornTuskLength,
+    String? hornTuskUnit,
     DateTime? updatedAt,
   }) =>
       FarmGamePriceEntry(
@@ -115,9 +126,18 @@ class FarmGamePriceEntry {
         priceZAR: priceZAR ?? this.priceZAR,
         gender: gender ?? this.gender,
         hornTuskLength: hornTuskLength ?? this.hornTuskLength,
+        hornTuskUnit: hornTuskUnit ?? this.hornTuskUnit,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
+
+  /// A display-ready horn/tusk length string with the unit suffix appended,
+  /// e.g. '28"+ (in)' / '70 cm'. Returns an empty string when no length is
+  /// set so callers can gate the badge on `isNotEmpty`.
+  String get hornTuskDisplayLabel {
+    if (hornTuskLength.isEmpty) return '';
+    return '$hornTuskLength${HornTuskUnit.suffix(hornTuskUnit)}';
+  }
 
   static int _parseInt(dynamic v) {
     if (v is int) return v;
@@ -169,7 +189,67 @@ class FarmGamePriceEntry {
   String toString() =>
       'FarmGamePriceEntry(id: $id, farmId: $farmId, species: $speciesName, '
       'qty: $qty, priceZAR: $priceZAR, gender: $gender, '
-      'hornTuskLength: $hornTuskLength)';
+      'hornTuskLength: $hornTuskLength, hornTuskUnit: $hornTuskUnit)';
+}
+
+/// Measurement-unit helper for the horn / tusk length field. Stores the unit
+/// as a canonical string ('inches' / 'cm') on the document so the display can
+/// append the correct suffix without re-parsing the free-text value.
+class HornTuskUnit {
+  HornTuskUnit._();
+
+  static const String inches = 'inches';
+  static const String cm = 'cm';
+
+  /// The two selectable unit values, in display order.
+  static const List<String> options = [inches, cm];
+
+  /// Short label for the segmented selector.
+  static String label(String unit) {
+    switch (unit) {
+      case cm:
+        return 'cm';
+      case inches:
+      default:
+        return 'in';
+    }
+  }
+
+  /// Display suffix appended to a length value, e.g. ' (in)' / ' cm'.
+  static String suffix(String unit) {
+    switch (unit) {
+      case cm:
+        return ' cm';
+      case inches:
+      default:
+        return ' (in)';
+    }
+  }
+
+  /// Normalises a raw stored unit value to one of [inches] / [cm]. Accepts
+  /// case-insensitive input + common aliases ('in', '"', 'centimeters',
+  /// 'centimetres'). Defaults to [inches] (Rowland Ward convention) for
+  /// null / unknown / legacy docs.
+  static String normalize(dynamic v) {
+    if (v == null) return inches;
+    final s = v.toString().trim().toLowerCase();
+    switch (s) {
+      case inches:
+      case 'in':
+      case 'in.':
+      case 'inch':
+      case '"':
+        return inches;
+      case cm:
+      case 'centimeter':
+      case 'centimeters':
+      case 'centimetre':
+      case 'centimetres':
+        return cm;
+      default:
+        return inches;
+    }
+  }
 }
 
 /// Pure validation helpers for the price-list add/edit form. Unit-testable

@@ -434,7 +434,7 @@ class _PriceEntryCard extends StatelessWidget {
                     if (entry.hornTuskLength.isNotEmpty)
                       _chip(
                         icon: Icons.straighten,
-                        label: entry.hornTuskLength,
+                        label: entry.hornTuskDisplayLabel,
                       ),
                   ],
                 ),
@@ -518,6 +518,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
   late final TextEditingController _priceController;
   late final TextEditingController _hornTuskController;
   String _gender = FarmGamePriceValidator.defaultGender;
+  String _hornTuskUnit = HornTuskUnit.inches;
   bool _saving = false;
 
   @override
@@ -537,6 +538,8 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
     _hornTuskController =
         TextEditingController(text: widget.existing?.hornTuskLength ?? '');
     _gender = widget.existing?.gender ?? FarmGamePriceValidator.defaultGender;
+    _hornTuskUnit =
+        widget.existing?.hornTuskUnit ?? HornTuskUnit.inches;
   }
 
   @override
@@ -568,6 +571,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
           priceZAR: price,
           gender: _gender,
           hornTuskLength: hornTusk,
+          hornTuskUnit: _hornTuskUnit,
         );
       } else {
         await widget.manager.updateEntry(
@@ -577,6 +581,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
           priceZAR: price,
           gender: _gender,
           hornTuskLength: hornTusk,
+          hornTuskUnit: _hornTuskUnit,
         );
       }
       if (!mounted) return;
@@ -674,17 +679,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
               const SizedBox(height: 14),
               _buildGenderSelector(theme),
               const SizedBox(height: 14),
-              TextFormField(
-                controller: _hornTuskController,
-                textCapitalization: TextCapitalization.words,
-                style: TextStyle(color: theme.textColor),
-                decoration: _inputDecoration(
-                  theme,
-                  'Horn / Tusk Length',
-                  'e.g. 28", Trophy, Cull',
-                ).copyWith(prefixIcon: const Icon(Icons.straighten)),
-                validator: FarmGamePriceValidator.validateHornTuskLength,
-              ),
+              _buildHornTuskField(theme),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -763,6 +758,77 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
               .toList(),
         ),
       ),
+    );
+  }
+
+  /// Horn / Tusk Length input paired with an inches/cm unit selector.
+  /// The text field takes the free-form descriptor (e.g. '28"+', 'Trophy');
+  /// the `ToggleButtons` picks the unit, which is persisted on the entry so
+  /// the display card can append the correct suffix.
+  Widget _buildHornTuskField(ThemeController theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextFormField(
+          controller: _hornTuskController,
+          textCapitalization: TextCapitalization.words,
+          style: TextStyle(color: theme.textColor),
+          decoration: _inputDecoration(
+            theme,
+            'Horn / Tusk Length',
+            'e.g. 28", Trophy, Cull',
+          ).copyWith(prefixIcon: const Icon(Icons.straighten)),
+          validator: FarmGamePriceValidator.validateHornTuskLength,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              'Unit',
+              style: TextStyle(
+                color: theme.subtitleColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Theme(
+                data: Theme.of(context).copyWith(toggleButtonsTheme: null),
+                child: ToggleButtons(
+                  isSelected: HornTuskUnit.options
+                      .map((u) => u == _hornTuskUnit)
+                      .toList(),
+                  onPressed: (index) {
+                    setState(() {
+                      _hornTuskUnit = HornTuskUnit.options[index];
+                    });
+                  },
+                  borderColor: theme.accentColor.withValues(alpha: 0.4),
+                  selectedBorderColor: theme.accentColor,
+                  selectedColor: Colors.white,
+                  fillColor: theme.accentColor,
+                  color: theme.subtitleColor,
+                  borderRadius: BorderRadius.circular(8),
+                  constraints: const BoxConstraints(minHeight: 32, minWidth: 56),
+                  children: HornTuskUnit.options
+                      .map((u) => Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              HornTuskUnit.label(u),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

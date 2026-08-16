@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_config.dart';
 import '../services/outfitter_enterprise_manager.dart';
@@ -1325,6 +1326,7 @@ class _OutfitterEnterprisePanelScreenState
             ),
           ),
           const SizedBox(height: 16),
+          const CopyrightFooter(),
         ],
       ),
     );

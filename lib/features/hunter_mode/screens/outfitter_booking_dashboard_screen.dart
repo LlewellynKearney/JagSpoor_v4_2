@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
@@ -195,8 +196,11 @@ class _OutfitterBookingDashboardScreenState
 
     return ListView.builder(
       padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
-      itemCount: bookings.length,
+      itemCount: bookings.length + 1,
       itemBuilder: (context, index) {
+        if (index == bookings.length) {
+          return const CopyrightFooter();
+        }
         final booking = bookings[index];
         final data = booking.data() as Map<String, dynamic>;
         return _BookingCard(

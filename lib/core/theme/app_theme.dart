@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// JagSpoor official tactical theme palette.
@@ -130,12 +131,38 @@ class ThemeController extends ChangeNotifier {
   /// Night / Dark tactical theme.
   ThemeData get darkTheme => _buildTheme(Brightness.dark);
 
+  /// The [SystemUiOverlayStyle] that matches the active theme's brightness.
+  /// On the light theme the status-bar icons are dark (so the phone's battery,
+  /// Wi-Fi, and clock are clearly visible against the light background); on
+  /// the dark theme they are light. Exposed so [main]'s `MaterialApp` can wrap
+  /// itself in an `AnnotatedRegion<SystemUiOverlayStyle>` and so individual
+  /// screens with transparent AppBars inherit the right contrast.
+  SystemUiOverlayStyle get systemOverlayStyle =>
+      _isDarkMode ? _darkOverlay : _lightOverlay;
+
+  static const SystemUiOverlayStyle _lightOverlay = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark, // dark icons on light bg
+    statusBarBrightness: Brightness.light, // iOS: light bg -> dark icons
+    systemNavigationBarColor: Color(0xFFF4EFEA),
+    systemNavigationBarIconBrightness: Brightness.dark,
+  );
+
+  static const SystemUiOverlayStyle _darkOverlay = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light, // light icons on dark bg
+    statusBarBrightness: Brightness.dark, // iOS: dark bg -> light icons
+    systemNavigationBarColor: Color(0xFF121212),
+    systemNavigationBarIconBrightness: Brightness.light,
+  );
+
   ThemeData _buildTheme(Brightness brightness) {
     final dark = brightness == Brightness.dark;
     final bg = dark ? AppColors.darkBackground : AppColors.lightBackground;
     final card = dark ? AppColors.darkCard : AppColors.lightCard;
     final accent = dark ? AppColors.darkAccent : AppColors.lightAccent;
     final text = dark ? AppColors.darkText : AppColors.lightText;
+    final overlay = dark ? _darkOverlay : _lightOverlay;
 
     final scheme = ColorScheme(
       brightness: brightness,
@@ -167,6 +194,9 @@ class ThemeController extends ChangeNotifier {
           fontSize: 20,
         ),
         elevation: 0,
+        // Ensures the status-bar icons contrast with the AppBar background
+        // even for screens that don't set their own AnnotatedRegion.
+        systemOverlayStyle: overlay,
       ),
       cardColor: card,
       dividerColor: accent.withValues(alpha: 0.25),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
 import '../services/venison_permit_pdf_exporter.dart';
@@ -94,14 +95,19 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) => _PermitCard(
-                    permit: filtered[index],
-                    theme: theme,
-                    onTap: () => _showDetails(filtered[index]),
-                    onVoid: () => _voidPermit(filtered[index]),
-                    onDelete: () => _confirmDelete(filtered[index]),
-                  ),
+                  itemCount: filtered.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == filtered.length) {
+                      return const CopyrightFooter();
+                    }
+                    return _PermitCard(
+                      permit: filtered[index],
+                      theme: theme,
+                      onTap: () => _showDetails(filtered[index]),
+                      onVoid: () => _voidPermit(filtered[index]),
+                      onDelete: () => _confirmDelete(filtered[index]),
+                    );
+                  },
                 );
               },
             ),
