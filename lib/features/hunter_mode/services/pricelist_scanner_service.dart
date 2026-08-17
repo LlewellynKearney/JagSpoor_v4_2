@@ -20,8 +20,13 @@ class PricelistScannerService {
       PricelistScannerService._internal();
   PricelistScannerService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Lazy getters (not eager field initializers) so constructing the singleton
+  // does NOT touch `FirebaseFirestore.instance` / `FirebaseAuth.instance` --
+  // those throw `[core/no-app]` before `Firebase.initializeApp()` has run
+  // (e.g. in widget tests, or during a cold-launch race). The Firestore/Auth
+  // handles are resolved on first use instead.
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   /// Submits a custom-built package booking request.
   ///

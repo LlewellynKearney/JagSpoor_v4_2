@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../../core/services/offline_stream_guard.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 
@@ -18,31 +20,90 @@ class FarmGamePriceListManager {
   static final FarmGamePriceListManager instance =
       FarmGamePriceListManager._internal();
 
-  FarmGamePriceListManager._internal();
+  FarmGamePriceListManager._internal({
+    this.firestoreForTesting,
+    this.currentUserIdResolverForTesting,
+  });
 
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  User? get _currentUser => FirebaseAuth.instance.currentUser;
-  String? get _currentUserId => _currentUser?.uid;
+  /// Test seam: inject a Firestore instance (e.g. `FakeFirebaseFirestore`) so
+  /// the stream/query contract can be unit-tested without a live Firebase app.
+  /// Defaults to the global instance.
+  @visibleForTesting
+  FirebaseFirestore? firestoreForTesting;
+
+  FirebaseFirestore get _firestore =>
+      firestoreForTesting ?? FirebaseFirestore.instance;
+
+  /// Test seam: inject a uid resolver so the null-uid -> empty-stream branch
+  /// and the owner-scoped query contract can be unit-tested without a real
+  /// signed-in user. Defaults to the current Firebase user (null when no app
+  /// is initialized / no user signed in).
+  @visibleForTesting
+  String? Function()? currentUserIdResolverForTesting;
+
+  String? get _currentUserId {
+    if (currentUserIdResolverForTesting != null) {
+      return currentUserIdResolverForTesting!();
+    }
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+    }
+    return null;
+  }
+
+  /// Test-only constructor: build a fresh, isolated manager bound to an
+  /// injectable Firestore + uid resolver (mirrors `OpticLogService.forTesting`
+  /// / `FeedbackFirebaseService`).
+  @visibleForTesting
+  factory FarmGamePriceListManager.forTesting({
+    required FirebaseFirestore firestore,
+    required String? Function() currentUserIdResolver,
+  }) {
+    return FarmGamePriceListManager._internal(
+      firestoreForTesting: firestore,
+      currentUserIdResolverForTesting: currentUserIdResolver,
+    );
+  }
 
   /// Public accessor for the current authenticated user's uid, used by
   /// callers (e.g. the CSV import flow) that need to stamp the outfitter id
   /// before a batch write. Returns null when unauthenticated.
   String? get currentUserId => _currentUserId;
 
-  /// Reactive stream of price-list entries for a single farm, ordered by
-  /// species name. Returns an empty stream for an unauthenticated caller so
-  /// the consuming `StreamBuilder` never throws.
+  /// Reactive stream of price-list entries for a single farm, sorted by
+  /// species name (client-side). Returns an empty stream for an
+  /// unauthenticated caller so the consuming `StreamBuilder` never throws.
+  ///
+  /// The query intentionally does NOT use `.orderBy('speciesName')`
+  /// server-side: an equality (`.where('farmId')` + `.where('outfitterId')`)
+  /// combined with a server-side `orderBy` requires a Firestore composite
+  /// index; until that index is deployed the server errors with "Missing
+  /// Composite Index" and the stream hangs / surfaces an error. Sorting
+  /// client-side in Dart after the equality-only read (which uses the
+  /// automatic single-field indexes) avoids the missing-index error entirely.
+  /// The stream is wrapped in [OfflineStreamGuard.offlineResilient] so a hard
+  /// error (permissions change, offline with no cache) emits the fallback `[]`
+  /// and completes instead of hanging the `StreamBuilder`.
   Stream<List<FarmGamePriceEntry>> getFarmPriceListStream(String farmId) {
     if (_currentUserId == null || farmId.isEmpty) {
       return const Stream.empty();
     }
-    return _firestore
-        .collection('farm_pricelists')
-        .where('farmId', isEqualTo: farmId)
-        .where('outfitterId', isEqualTo: _currentUserId)
-        .orderBy('speciesName')
-        .snapshots()
-        .map((snap) => snap.docs.map(FarmGamePriceEntry.fromFirestore).toList());
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('farm_pricelists')
+          .where('farmId', isEqualTo: farmId)
+          .where('outfitterId', isEqualTo: _currentUserId)
+          .snapshots()
+          .map((snap) {
+        final entries =
+            snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
+        entries.sort((a, b) => a.speciesName.compareTo(b.speciesName));
+        return entries;
+      }),
+      fallback: const <FarmGamePriceEntry>[],
+      debugLabel: 'farm_pricelists.owner',
+    );
   }
 
   /// One-shot fetch of a farm's price list (newest-first by species).
@@ -71,21 +132,36 @@ class FarmGamePriceListManager {
   // builder screens.
 
   /// Reactive stream of a farm's price-list entries for a hunter browsing the
-  /// Custom Package Builder (no owner-scoped filter). Ordered by species name.
+  /// Custom Package Builder (no owner-scoped filter). Sorted by species name
+  /// client-side to avoid the `farmId` + `speciesName` composite-index
+  /// requirement (see [getFarmPriceListStream]). Wrapped in
+  /// [OfflineStreamGuard.offlineResilient] so a hard error (missing index,
+  /// permissions, offline with no cache) emits the fallback `[]` and completes
+  /// instead of hanging the consuming `StreamBuilder` (which previously
+  /// rendered a blank builder screen).
   Stream<List<FarmGamePriceEntry>> getFarmPriceListStreamForHunter(String farmId) {
     if (_currentUserId == null || farmId.isEmpty) {
       return const Stream.empty();
     }
-    return _firestore
-        .collection('farm_pricelists')
-        .where('farmId', isEqualTo: farmId)
-        .orderBy('speciesName')
-        .snapshots()
-        .map((snap) => snap.docs.map(FarmGamePriceEntry.fromFirestore).toList());
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('farm_pricelists')
+          .where('farmId', isEqualTo: farmId)
+          .snapshots()
+          .map((snap) {
+        final entries =
+            snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
+        entries.sort((a, b) => a.speciesName.compareTo(b.speciesName));
+        return entries;
+      }),
+      fallback: const <FarmGamePriceEntry>[],
+      debugLabel: 'farm_pricelists.hunter',
+    );
   }
 
   /// One-shot fetch of a farm's price list for a hunter (no owner-scoped
-  /// filter). Ordered by species name.
+  /// filter). Sorted by species name client-side (no server-side `orderBy` --
+  /// see [getFarmPriceListStreamForHunter] for the composite-index rationale).
   Future<List<FarmGamePriceEntry>> getFarmPriceListForHunter(String farmId) async {
     if (_currentUserId == null || farmId.isEmpty) {
       return const [];
@@ -93,9 +169,10 @@ class FarmGamePriceListManager {
     final snap = await _firestore
         .collection('farm_pricelists')
         .where('farmId', isEqualTo: farmId)
-        .orderBy('speciesName')
         .get();
-    return snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
+    final entries = snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
+    entries.sort((a, b) => a.speciesName.compareTo(b.speciesName));
+    return entries;
   }
 
   /// Adds a new game-species entry to the farm's price list. Requires
@@ -263,22 +340,29 @@ class FarmGamePriceListManager {
     if (uid == null || farmId.isEmpty) {
       return Stream.value(FarmServiceRates.empty(farmId, ''));
     }
-    return _firestore
-        .collection('farm_service_rates')
-        .doc(farmId)
-        .snapshots()
-        .map((snap) {
-      if (!snap.exists) {
-        return FarmServiceRates.empty(farmId, uid);
-      }
-      final data = snap.data() ?? const <String, dynamic>{};
-      // Re-stamp the authenticated uid for ownership scoping in case the doc
-      // is stale / migrated.
-      return FarmServiceRates.fromMap(
-        {'outfitterId': uid, ...data},
-        farmId: farmId,
-      );
-    });
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('farm_service_rates')
+          .doc(farmId)
+          .snapshots()
+          .map((snap) {
+        if (!snap.exists) {
+          return FarmServiceRates.empty(farmId, uid);
+        }
+        final data = snap.data() ?? const <String, dynamic>{};
+        // Re-stamp the authenticated uid for ownership scoping in case the doc
+        // is stale / migrated.
+        return FarmServiceRates.fromMap(
+          {'outfitterId': uid, ...data},
+          farmId: farmId,
+        );
+      }),
+      // A hard error (permissions change / offline with no cache) yields an
+      // empty rates object so the builder renders an empty service-rates
+      // section instead of hanging the nested StreamBuilder.
+      fallback: FarmServiceRates.empty(farmId, uid),
+      debugLabel: 'farm_service_rates',
+    );
   }
 
   /// One-shot fetch of the farm's service-rate configuration (null when no doc

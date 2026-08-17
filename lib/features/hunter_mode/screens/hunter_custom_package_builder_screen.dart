@@ -371,6 +371,36 @@ class _HunterCustomPackageBuilderScreenState
         return StreamBuilder<FarmServiceRates>(
           stream: _priceListManager.getFarmServiceRatesStream(widget.farmId),
           builder: (context, ratesSnapshot) {
+            // Loading state: either stream is still awaiting its first
+            // emission with no data yet. Without this branch the screen
+            // renders blank (the builder's Column is empty) until the first
+            // snapshot arrives -- which previously looked like a permanently
+            // blank screen when a stream hung on a missing composite index.
+            final speciesLoading =
+                speciesSnapshot.connectionState == ConnectionState.waiting &&
+                    !speciesSnapshot.hasData;
+            final ratesLoading =
+                ratesSnapshot.connectionState == ConnectionState.waiting &&
+                    !ratesSnapshot.hasData;
+            if (speciesLoading || ratesLoading) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: theme.accentColor),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Loading farm price list...',
+                        style: TextStyle(
+                            color: theme.subtitleColor, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             if (speciesSnapshot.hasError || ratesSnapshot.hasError) {
               return _StateBanner(
                 icon: Icons.cloud_off,
