@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -9,7 +10,6 @@ import '../models/package_pricing.dart';
 import '../services/booking_calendar_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
-import '../services/outfitter_invoice_exporter.dart';
 import '../services/user_role_resolver.dart';
 import '../services/chat_and_filter_service.dart';
 
@@ -230,7 +230,6 @@ class _BookingCard extends StatefulWidget {
 
 class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
-  bool _isExporting = false;
   bool _isCustomItemsExpanded = false;
   bool _isChatExpanded = false;
   final TextEditingController _chatController = TextEditingController();
@@ -377,47 +376,17 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
-  Future<void> _exportInvoice() async {
-    setState(() {
-      _isExporting = true;
-    });
-
-    try {
-      await OutfitterInvoiceExporter().generateAndShareInvoice(
-        bookingId: widget.bookingId,
-        bookingData: widget.data,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Invoice exported and shared!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Export failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-        });
-      }
-    }
-  }
-
   /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
   /// details, and package title to the outfitter's device calendar via
   /// [BookingCalendarService]. Surfaces a snackbar on success / "no dates"
   /// / failure so the outfitter always gets feedback.
+  ///
+  /// Delegates to [BookingCalendarService.instance.addToCalendar], which uses
+  /// [BookingCalendarService.buildEventWithPackageFallback] -- so the hunt
+  /// window is resolved the SAME way the hunter card resolves it
+  /// ([BookingCalendarEventBuilder.resolveWindow] on the booking map), with a
+  /// fallback to the linked package's `availabilityStart` / `availabilityEnd`
+  /// when the booking document itself lacks date fields.
   Future<void> _addToCalendar() async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
@@ -841,6 +810,15 @@ class _BookingCardState extends State<_BookingCard> {
             const SizedBox(height: 12),
             _buildDateChangeSection(dateChange, dateChangePending),
           ],
+
+          // Hunt dates banner: surfaces the booking's hunt window
+          // (start -> end) using the SAME resolver the hunter card uses
+          // ([BookingCalendarEventBuilder.resolveWindow]) so the outfitter
+          // sees the dates before tapping "ADD HUNT TO CALENDAR". Hidden
+          // when the booking has no dates on file (and the calendar action's
+          // package fallback will still try to resolve them on tap).
+          _buildHuntDatesBanner(),
+
           const SizedBox(height: 16),
 
           // Action Buttons -- context-specific per booking status.
@@ -865,6 +843,62 @@ class _BookingCardState extends State<_BookingCard> {
     });
   }
 
+  /// Builds the hunt-dates banner for the outfitter booking card.
+  ///
+  /// Surfaces the booking's hunt window (`Hunt dates: <start> → <end>`)
+  /// using [BookingCalendarEventBuilder.resolveWindow] -- the SAME resolver
+  /// the hunter card uses (and the SAME resolver
+  /// [BookingCalendarService.addToCalendar] uses, via
+  /// [BookingCalendarService.buildEventWithPackageFallback]) -- so the
+  /// outfitter sees the exact dates that will be written to the device
+  /// calendar before tapping "ADD HUNT TO CALENDAR". Returns
+  /// [SizedBox.shrink] when the booking has no resolvable dates on file
+  /// (the calendar action's package fallback will still attempt to resolve
+  /// them on tap).
+  Widget _buildHuntDatesBanner() {
+    final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
+    if (window == null) return const SizedBox.shrink();
+    final fmt = DateFormat('d MMM yyyy');
+    // resolveWindow normalizes `end` to the day AFTER the hunt's final day
+    // (so an all-day calendar event spans the full final day). For the
+    // on-card label we show the actual final hunt day (end - 1 day) so the
+    // outfitter reads the real hunt end date, not the calendar-exclusive end.
+    final huntEnd = window.end.subtract(const Duration(days: 1));
+    final sameDay = window.start == huntEnd;
+    final dateLabel = sameDay
+        ? fmt.format(window.start)
+        : '${fmt.format(window.start)}  →  ${fmt.format(huntEnd)}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: widget.theme.accentColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: widget.theme.accentColor.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.event_rounded,
+                color: widget.theme.accentColor, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Hunt dates: $dateLabel',
+                style: TextStyle(
+                  color: widget.theme.textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Builds the context-specific action buttons for a booking card.
   ///
   /// - `Pending Approval`: DECLINE + APPROVE REQUEST (outfitter accepts the
@@ -872,9 +906,10 @@ class _BookingCardState extends State<_BookingCard> {
   /// - `Awaiting Payment` (or legacy `Approved`): a prominent
   ///   VERIFY / CONFIRM PAYMENT RECEIVED button (outfitter confirms the
   ///   direct off-platform payment; the booking moves to `Confirmed` /
-  ///   Archived) plus a Chat Hunter row + an EXPORT INVOICE.
-  /// - Archived (Confirmed / Completed / Declined / Cancelled): EXPORT INVOICE
-  ///   only (plus the chat drawer above).
+  ///   Archived) plus a Chat Hunter row.
+  /// - Archived (Confirmed / Completed): ADD HUNT TO CALENDAR (save the
+  ///   finalized hunt to the native device calendar). Declined / Cancelled
+  ///   render no actions.
   Widget _buildActionButtons(String status) {
     final isPending = status == BookingStatus.pendingApproval;
     final isAwaitingPayment = status == BookingStatus.approvedAwaitingPayment ||
@@ -990,76 +1025,16 @@ class _BookingCardState extends State<_BookingCard> {
           ),
           const SizedBox(height: 8),
           _buildContactHunterRow(),
-          const SizedBox(height: 8),
-          // Secondary: export the invoice (e.g. to send with the payment
-          // request).
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _isExporting ? null : _exportInvoice,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1565C0),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              icon: _isExporting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.picture_as_pdf_rounded),
-              label: const Text(
-                'EXPORT INVOICE',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
         ],
       );
     }
 
-    // Archived / completed / declined / cancelled: export invoice + (for
-    // finalized Confirmed / Completed bookings) save the hunt to the native
-    // device calendar.
+    // Archived / completed / declined / cancelled: (for finalized Confirmed /
+    // Completed bookings) save the hunt to the native device calendar.
     final canAddToCalendar = status == BookingStatus.confirmed ||
         status == BookingStatus.completed;
     return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isExporting ? null : _exportInvoice,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1565C0),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            icon: _isExporting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.picture_as_pdf_rounded),
-            label: const Text(
-              'EXPORT INVOICE',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
         if (canAddToCalendar) ...[
           const SizedBox(height: 8),
           SizedBox(

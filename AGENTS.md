@@ -6956,3 +6956,64 @@ date fields.
   seam + `addToCalendar` delegation),
   `test/booking_calendar_service_test.dart` (+8 package-fallback tests +
   `fake_cloud_firestore` import), `AGENTS.md`.
+
+
+## Phase — Remove Export Invoice from outfitter booking cards + outfitter hunt-dates banner (added 2026-08-17)
+
+JagSpoor does not handle physical sales between hunter and outfitter, so the
+blue "EXPORT INVOICE" button was removed entirely from the outfitter booking
+card, and a hunt-dates banner (mirroring the hunter card) was added so the
+outfitter sees the dates before tapping "ADD HUNT TO CALENDAR".
+
+### Task 1 -- Export Invoice removal
+(`lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`)
+- Removed the "EXPORT INVOICE" `ElevatedButton.icon` from BOTH action-button
+  branches of `_buildActionButtons`:
+  - the `Awaiting Payment` (and legacy `Approved`) branch (was the secondary
+    button under the VERIFY / CONFIRM PAYMENT RECEIVED button);
+  - the Archived branch (Confirmed / Completed / Declined / Cancelled) -- the
+    archived branch now renders ONLY the "ADD HUNT TO CALENDAR" button (for
+    Confirmed / Completed); Declined / Cancelled render no actions.
+- Removed the `_exportInvoice()` method, the `_isExporting` State field, the
+  `outfitter_invoice_exporter.dart` import, and updated the `_buildActionButtons`
+  docstring to drop the EXPORT INVOICE references.
+- Deleted the now-orphaned `lib/features/hunter_mode/services/
+  outfitter_invoice_exporter.dart` service file (zero remaining consumers in
+  `lib/` or `test/` -- confirmed via grep). The booking-card financial
+  breakdown (Total row) is still rendered inline on the card.
+
+### Task 2 -- Calendar fallback + hunt-dates banner
+- The outfitter `_addToCalendar()` already calls
+  `BookingCalendarService.instance.addToCalendar(widget.data)`, which (since
+  the prior phase) delegates to
+  `BookingCalendarService.buildEventWithPackageFallback` -- so the outfitter
+  calendar action ALREADY uses the package availability-window fallback when
+  the booking document itself lacks date fields. No call-site change was
+  needed; the docstring was expanded to document the fallback contract.
+- NEW `_buildHuntDatesBanner()` on the outfitter booking card: renders a
+  `Hunt dates: <start> -> <end>` banner using
+  `BookingCalendarEventBuilder.resolveWindow(widget.data)` -- the SAME
+  resolver the hunter card uses (and the SAME resolver
+  `addToCalendar`/`buildEventWithPackageFallback` uses) -- so the outfitter
+  sees the exact dates that will be written to the device calendar before
+  tapping "ADD HUNT TO CALENDAR". Placed between the date-change section and
+  the action buttons. Returns `SizedBox.shrink` when the booking has no
+  resolvable dates on file (the calendar action's package fallback will still
+  attempt to resolve them on tap). The displayed end date is the actual final
+  hunt day (resolveWindow's `end` minus 1 day, since `end` is the
+  calendar-exclusive next-day for all-day events).
+- Added `package:intl` import (`DateFormat('d MMM yyyy')`).
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (308 pre-existing
+  infos; the changed dashboard is analyzer-clean -- "No issues found").
+- `flutter test` (full suite): **All 649 tests passed**, zero failures. No
+  regressions (the orphaned exporter had no dedicated tests; the calendar
+  service's package-fallback suite from the prior phase still covers
+  `addToCalendar`'s resolution contract).
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure UI
+  removal + a banner widget + a deleted dead service file).
+- Files: `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (export-invoice removal + `_buildHuntDatesBanner` + intl import + docstring),
+  `lib/features/hunter_mode/services/outfitter_invoice_exporter.dart` (DELETED),
+  `AGENTS.md`.
