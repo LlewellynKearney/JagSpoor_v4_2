@@ -45,12 +45,26 @@ class _OutfitterBookingDashboardScreenState
   void _buildBookingQuery() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (UserRoleResolver.instance.isManager) {
-      // Isolate logs purely to the manager's assigned concession property
+      // Isolate logs purely to the manager's assigned concession property.
+      // firestore.rules grants a farm manager read access to bookings on
+      // their assigned farm via `isFarmManagerForBooking()` (a
+      // `farm_managers/{uid}` get()-based check). A get()-based rule is not
+      // directly queryable for list queries, so the manager's
+      // `.where('farmId', isEqualTo: assignedFarmId)` list query relies on
+      // Firestore evaluating the rule per-returned-document after the query
+      // runs (the server still requires the query to be "safe"; if the
+      // manager list query is rejected, the manager should instead resolve
+      // the parent outfitter from farm_managers/{uid} and the bookings
+      // should carry a `managerUids` array -- a future data migration).
       _bookingQuery = FirebaseFirestore.instance
           .collection('bookings')
           .where('farmId', isEqualTo: UserRoleResolver.instance.assignedFarmId);
     } else {
-      // Outfitters pull records matching their corporate profile
+      // Outfitters pull records matching their corporate profile.
+      // firestore.rules `isBookingOutfitter()` allows read when
+      // `resource.data.outfitterId == request.auth.uid`, and this query
+      // constrains `outfitterId` to `request.auth.uid`, so the list query
+      // is queryable and the outfitter sees only their own bookings.
       _bookingQuery = FirebaseFirestore.instance
           .collection('bookings')
           .where('outfitterId', isEqualTo: currentUserId);

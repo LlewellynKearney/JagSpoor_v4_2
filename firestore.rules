@@ -310,17 +310,50 @@ service cloud.firestore {
     }
 
     // ── Bookings ─────────────────────────────────────────────────────────
-    // Read: hunter who placed the booking OR outfitter who owns the package.
+    // Read: the hunter who placed the booking, the outfitter who owns the
+    // package, a farm manager assigned to the booking's farm (enterprise
+    // access — single-doc reads via a farm_managers/{uid} lookup), or an
+    // admin. The outfitter read is the enterprise query path: an
+    // authenticated user whose uid matches `outfitterId` on the booking
+    // document may read/query bookings where they are the outfitter.
     // Create: the hunter placing it (hunterId must be caller).
     // Update: outfitter may flip the status field; either party may update
     //         non-status fields.
     // Delete: admin only.
     match /bookings/{bookingId} {
+      // The hunter who placed the booking.
+      function isBookingHunter() {
+        return isSignedIn() && resource.data.hunterId == request.auth.uid;
+      }
+      // The outfitter who owns the package on the booking. This is the
+      // enterprise query path: the outfitter's dashboard runs
+      // `.where('outfitterId', isEqualTo: currentUserId)`, and Firestore's
+      // query-based security validates that the query constrains `outfitterId`
+      // to `request.auth.uid` -- exactly the field this function checks --
+      // so the outfitter may LIST their own bookings.
+      function isBookingOutfitter() {
+        return isSignedIn() && resource.data.outfitterId == request.auth.uid;
+      }
+      // Hunter OR outfitter on the booking (the two booking parties). Used
+      // for both single-doc reads and the hunter's
+      // `.where('hunterId', isEqualTo: uid)` / outfitter's
+      // `.where('outfitterId', isEqualTo: uid)` list queries.
       function isBookingParty() {
-        return isSignedIn() && (
-          resource.data.hunterId == request.auth.uid ||
-          resource.data.outfitterId == request.auth.uid
-        );
+        return isBookingHunter() || isBookingOutfitter();
+      }
+      // Farm manager assigned to the booking's farm (enterprise access).
+      // Looks up `farm_managers/{uid}` and grants read when the manager's
+      // assigned `farmId` matches the booking's `farmId`. This covers
+      // single-doc reads (e.g. the calendar package-fallback fetch). NOTE:
+      // a get()-based rule is not directly queryable for the manager's
+      // `.where('farmId', isEqualTo: assignedFarmId)` LIST query, so the
+      // manager dashboard should resolve the parent outfitter and query by
+      // `outfitterId` (which IS queryable via isBookingOutfitter) -- see
+      // the dashboard's manager branch comment.
+      function isFarmManagerForBooking() {
+        return isSignedIn() &&
+          get(/databases/$(database)/documents/farm_managers/$(request.auth.uid))
+            .data.farmId == resource.data.farmId;
       }
       // Only the outfitter may change the status field. This prevents a
       // hunter from self-approving their own booking.
@@ -330,7 +363,7 @@ service cloud.firestore {
           && request.resource.data.outfitterId == resource.data.outfitterId
           && request.resource.data.hunterId == resource.data.hunterId;
       }
-      allow read: if isAdmin() || isBookingParty();
+      allow read: if isAdmin() || isBookingParty() || isFarmManagerForBooking();
       allow create: if isSignedIn()
         && request.resource.data.hunterId == request.auth.uid;
       allow update: if statusUpdateAllowed()

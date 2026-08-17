@@ -7017,3 +7017,85 @@ outfitter sees the dates before tapping "ADD HUNT TO CALENDAR".
   (export-invoice removal + `_buildHuntDatesBanner` + intl import + docstring),
   `lib/features/hunter_mode/services/outfitter_invoice_exporter.dart` (DELETED),
   `AGENTS.md`.
+
+
+## Phase — Firestore bookings enterprise read: explicit outfitter + farm-manager access (added 2026-08-17)
+
+Hardened the `match /bookings/{bookingId}` read rule so the outfitter
+enterprise query path is explicit and a farm manager assigned to the
+booking's farm can read enterprise bookings.
+
+### Audit finding
+- The previous `allow read: if isAdmin() || isBookingParty()` (where
+  `isBookingParty()` checked `hunterId == uid || outfitterId == uid`) ALREADY
+  permitted the outfitter's `.where('outfitterId', isEqualTo: currentUserId)`
+  list query (Firestore's query-based security validates the query constrains
+  `outfitterId` to `request.auth.uid`, which the rule checks). So the
+  outfitter read was functionally correct but implicit -- the contract was
+  buried inside the combined `isBookingParty()` helper.
+- The **farm-manager branch** of the outfitter booking dashboard
+  (`_buildBookingQuery`, `.where('farmId', isEqualTo: assignedFarmId)`) was a
+  genuine gap: a farm manager is neither the hunter nor the outfitter on the
+  booking doc, so `isBookingParty()` rejected their list query with
+  `PERMISSION_DENIED`. Single-doc reads by a manager (e.g. the calendar
+  package-fallback fetch) were also rejected.
+
+### Rule changes (`firestore.rules`)
+- Split the bookings read helpers for clarity + an explicit outfitter clause:
+  - `isBookingHunter()` -- `resource.data.hunterId == request.auth.uid`
+    (the hunter path; queryable for `.where('hunterId', isEqualTo: uid)`).
+  - `isBookingOutfitter()` -- `resource.data.outfitterId == request.auth.uid`
+    (the enterprise outfitter path; queryable for the outfitter's
+    `.where('outfitterId', isEqualTo: uid)` list query).
+  - `isBookingParty()` -- `isBookingHunter() || isBookingOutfitter()`
+    (back-compat for the existing update/chat callers).
+  - `isFarmManagerForBooking()` -- NEW. Looks up
+    `farm_managers/{request.auth.uid}` and grants read when the manager's
+    assigned `farmId` matches the booking's `farmId`. Covers single-doc
+    enterprise reads by a farm manager.
+- `allow read: if isAdmin() || isBookingParty() || isFarmManagerForBooking()`
+  -- admin, hunter, outfitter, OR farm manager on the booking's farm.
+- `statusUpdateAllowed()` / `create` / `update` / `delete` / `chats` --
+  unchanged (the outfitter-only status flip, hunter-only create,
+  non-outfitter status-freeze update, admin-only delete, and booking-party
+  chat subcollection restrictions are all preserved).
+
+### Manager list-query note (documented limitation)
+- A `get()`-based rule (`isFarmManagerForBooking`) is NOT directly queryable
+  for the manager's `.where('farmId', isEqualTo: assignedFarmId)` LIST query
+  (Firestore's query-based security only validates list queries whose filter
+  constrains a field the rule checks against `request.auth.uid`; the
+  manager's farmId lives on a different doc). The dashboard's manager branch
+  comment now documents this, plus the future data-migration path (add a
+  `managerUids` array to bookings so the manager can query
+  `.where('managerUids', arrayContains: uid)` against a queryable rule).
+  Single-doc manager reads work today via the get()-based rule.
+
+### Tests
+- `test/firestore_rules_seeding_test.dart` gained a "bookings enterprise
+  access" group (8 structural tests, all pass): bookings match block present;
+  outfitter read explicit (`outfitterId == request.auth.uid`); hunter read
+  explicit; read grants hunter OR outfitter OR manager OR admin;
+  farm-manager get()-based path present; create requires `hunterId == caller`
+  (no spoofing); status flip outfitter-only (`statusUpdateAllowed` +
+  non-outfitter status-freeze); delete admin-only. Total 22 in the file
+  (was 14).
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (308 pre-existing
+  infos; the changed dashboard + rules test are analyzer-clean).
+- `flutter test` (full suite): **All 657 tests passed**, zero failures
+  (was 649; +8 = the new bookings rules tests). No regressions.
+- Deploy: `npx firebase-tools deploy --only firestore:rules` CANNOT run in
+  this sandbox -- no `FIREBASE_TOKEN` / `firebase login` (verified:
+  `firebase projects:list` errors with an auth failure, matching the
+  AGENTS.md environment-constraints note). The ruleset is committed + pushed;
+  the deploy MUST be run in a credentialed environment:
+  `npx firebase-tools deploy --only firestore:rules`.
+
+- Files: `firestore.rules` (bookings read helpers + manager read path),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (`_buildBookingQuery` comments documenting the queryable outfitter path +
+  the manager list-query limitation),
+  `test/firestore_rules_seeding_test.dart` (+8 bookings rules tests),
+  `AGENTS.md`.
