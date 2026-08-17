@@ -6560,3 +6560,121 @@ The Scope Settings & Tools sheet (`lib/features/ballistics/presentation/scope_to
   `lib/features/hunter_mode/services/booking_calendar_service.dart` (NEW),
   `pubspec.yaml` / `pubspec.lock` (`add_2_calendar` dep),
   `test/booking_calendar_service_test.dart` (NEW, 36 tests), `AGENTS.md`.
+
+## Phase — Custom Package Builder blank-screen fix + Shot Group Analyzer firearm dropdown (added 2026-08-17)
+
+### Task 1: Shot Group Target Analyzer firearm dropdown (verified already in place)
+- The Shot Group Target Analyzer screen
+  (`lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart`)
+  already had the firearm dropdown fully implemented (confirmed during this
+  session, no change needed): a `StreamBuilder<List<RifleProfile>>` over
+  `_inventoryBridge.watchSafeFirearms().asBroadcastStream()` (the `ownerId`
+  query fix from Phase 2 removes the missing `.orderBy('name')` so every
+  owner-scoped firearm doc renders) feeding the reusable
+  `FirearmDropdownSelector` widget (`lib/widgets/firearm_dropdown_selector.dart`),
+  rendered ABOVE the gesture canvas (`ShotGroupTargetOverlay`) in the body
+  Column so the overlay's tap detector never intercepts dropdown taps. The
+  selected `_selectedFirearmId` is resolved to a `RifleProfile` via
+  `_resolveRifle()` and stamped onto the saved `TargetSessionLog` as
+  `firearmId` + `firearmLabel` (`rifle.displayName`). The empty-state shows
+  the "No firearms in safe yet — add one in the Digital Firearm Safe" hint.
+  The existing `firearm_dropdown_selector_test.dart` (6 widget tests) covers
+  the selector: live dropdown renders display names; stale id coerces to
+  null (no assertion); empty list renders the disabled hint field; loading
+  renders LinearProgressIndicator; trailing hidden while loading/empty;
+  reports selection via onChanged.
+
+### Task 2: Custom Package Builder blank-screen diagnosis + fix
+- **Diagnosis**: the Custom Package Builder
+  (`lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`)
+  rendered completely blank except the copyright footer because its nested
+  reactive `StreamBuilder`s had NO `ConnectionState.waiting` branch AND the
+  species stream (`FarmGamePriceListManager.getFarmPriceListStreamForHunter`)
+  used a server-side `.where('farmId').orderBy('speciesName').snapshots()` —
+  an equality + orderBy combo requiring a Firestore composite index
+  (`farmId ASC + speciesName ASC`). Until that index is deployed, the server
+  errors with "Missing Composite Index"; combined with no loading branch,
+  the StreamBuilder rendered nothing (blank body). The same composite-index
+  bug affected the owner-scoped `getFarmPriceListStream`.
+- **Fix (`farm_game_price_list_manager.dart`)**:
+  - Removed `.orderBy('speciesName')` from BOTH reactive streams
+    (`getFarmPriceListStream` owner-scoped + `getFarmPriceListStreamForHunter`
+    hunter-readable) AND the one-shot `getFarmPriceListForHunter`. The
+    equality-only `.where('farmId')` query uses the automatic single-field
+    index (no composite index needed); the entries are now sorted client-side
+    in Dart via `entries.sort((a, b) => a.speciesName.compareTo(b.speciesName))`.
+    This mirrors the established project pattern (optic logs, package
+    streams) of avoiding equality+orderBy combos that require composite
+    indexes.
+  - Wrapped BOTH reactive streams (`farm_pricelists` + the single-doc
+    `farm_service_rates` stream) in `OfflineStreamGuard.offlineResilient`
+    so a hard error (missing index, permissions change, offline with no
+    cache) emits the fallback (`[]` / `FarmServiceRates.empty`) and completes
+    instead of hanging the StreamBuilder.
+  - Added injection seams (`firestoreForTesting` /
+    `currentUserIdResolverForTesting` + a `forTesting` factory) mirroring
+    `OpticLogService.forTesting` / `FeedbackFirebaseService`, so the stream
+    contract can be unit-tested against `FakeFirebaseFirestore` without a
+    live Firebase app. The `_currentUserId` getter now wraps
+    `FirebaseAuth.instance.currentUser` in a try/catch so a missing Firebase
+    app (`[core/no-app]` during a cold-launch race or a widget test) resolves
+    to null (-> empty stream) instead of throwing.
+- **Fix (`pricelist_scanner_service.dart`)**: converted the eager field
+  initializers `final FirebaseFirestore _firestore = FirebaseFirestore.instance`
+  / `final FirebaseAuth _auth = FirebaseAuth.instance` to lazy getters. The
+  eager initializers threw `[core/no-app]` when the singleton was constructed
+  before `Firebase.initializeApp()` (cold-launch race / widget test), which
+  crashed the Custom Package Builder screen at State construction (the screen
+  holds `PricelistScannerService.instance` as a field initializer). Lazy
+  getters defer the Firebase access to first use (semantically equivalent for
+  production; robust for cold-launch + testable).
+- **Fix (`hunter_custom_package_builder_screen.dart`)**: added an explicit
+  `ConnectionState.waiting` branch to the builder's nested StreamBuilder
+  (renders a centered `CircularProgressIndicator` + "Loading farm price
+  list..." text) so the first-load state renders a defined widget instead of
+  a blank body. The error branch (`hasError` -> cloud-off banner) and empty
+  branch (no pricing -> "No pricing published yet" banner) were already
+  present. The complete builder UI (dates card, party steppers, species rows
+  with qty steppers, itemized service-rate rows, Grand Total bottom bar,
+  submit button + confirmation view with chat + calendar) was already in
+  place — the only issue was the blank screen from the hanging stream, now
+  fixed.
+
+### Tests
+- `test/custom_package_builder_screen_test.dart` (NEW, 3 widget tests, all
+  pass): renders the Scaffold with the farm name AppBar (not blank); renders
+  the defined "No pricing published yet" empty state (not blank / not a hung
+  spinner) for an unauthenticated caller with no visible pricing; renders the
+  CopyrightFooter.
+- `test/farm_game_price_list_stream_test.dart` (NEW, 6 unit tests, all pass):
+  null uid -> empty stream (no throw, no Firestore access); returns the
+  farm's species sorted by name client-side (non-alphabetical insertion order
+  -> alphabetical output, proving the client sort); only the requested
+  farm's species returned (farmId filter); the one-shot
+  `getFarmPriceListForHunter` sorts client-side too; the owner-scoped
+  `getFarmPriceListStream` filters by outfitterId + sorts client-side.
+- The existing `firearm_dropdown_selector_test.dart` (6 tests) already covers
+  Task 1's dropdown.
+
+### Verification
+- `flutter analyze` (lib/ + test/, Flutter 3.29.1 CI pin): **0 errors, 0
+  warnings** (279 infos, all pre-existing `avoid_print` /
+  `deprecated_member_use` / style hints in unrelated files; the changed
+  files are analyzer-clean — "No issues found").
+- `flutter test` (full suite): **All 627 tests passed**, zero failures
+  (was 618; +9 = 3 new builder widget tests + 6 new stream unit tests). No
+  regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side stream-resilience + testability seams; the equality-only
+  `.where('farmId')` query uses the automatic single-field index so no
+  composite index deployment is required).
+- Commit `1c9bd9f` pushed to `origin/main` (clean fast-forward
+  `6256799..1c9bd9f`); local/origin in sync, working tree clean.
+- Files: `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (removed orderBy + client sort + OfflineStreamGuard + injection seams),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart`
+  (lazy firestore/auth getters),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (loading branch),
+  `test/custom_package_builder_screen_test.dart` (NEW, 3 tests),
+  `test/farm_game_price_list_stream_test.dart` (NEW, 6 tests), `AGENTS.md`.
