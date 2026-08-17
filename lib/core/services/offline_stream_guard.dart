@@ -23,12 +23,24 @@ class OfflineStreamGuard {
   /// Returns a stream that never errors: any error is logged and replaced
   /// with a single [fallback] emission, then the stream completes. Normal
   /// emissions pass through untouched.
+  ///
+  /// The returned stream is a **broadcast** stream. Firestore `snapshots()`
+  /// is single-subscription, and the consumers of this guard feed
+  /// `StreamBuilder`s that can re-subscribe (listen -> cancel -> listen
+  /// again) when their subtree is rebuilt or remounted (e.g. a `TabBarView`
+  /// swapping tabs back to "Packages", a theme toggle rebuilding the app,
+  /// or a parent tree restructure). A single-subscription
+  /// `StreamController` here would throw
+  /// `Bad state: Stream has already been listened to` on the second listen,
+  /// crashing the host screen (e.g. the Package Marketplace). The broadcast
+  /// controller tolerates multiple listeners and listen -> cancel ->
+  /// re-listen without throwing.
   static Stream<T> offlineResilient<T>(
     Stream<T> source, {
     required T fallback,
     String? debugLabel,
   }) {
-    final controller = StreamController<T>();
+    final controller = StreamController<T>.broadcast();
     source.listen(
       controller.add,
       onError: (error, stackTrace) {

@@ -82,5 +82,49 @@ void main() {
       expect(isEmpty, isFalse); // fallback (0) was emitted, so not empty
       await controller.close();
     });
+
+    // Regression: a single-subscription StreamController would throw
+    // `Bad state: Stream has already been listened to` when a StreamBuilder
+    // re-subscribed (listen -> cancel -> listen) on a remount/rebuild
+    // (e.g. the Package Marketplace's TabBarView swapping back to the
+    // "Packages" tab). The guarded stream is broadcast, so re-listen after
+    // cancel must not throw and must keep delivering later emissions.
+    test('supports listen -> cancel -> re-listen (broadcast, no "already listened to")', () async {
+      final source = StreamController<int>.broadcast();
+      final guarded = OfflineStreamGuard.offlineResilient<int>(
+        source.stream,
+        fallback: -1,
+        debugLabel: 'relisten',
+      );
+
+      // First subscription (mimics StreamBuilder mounting).
+      final sub1 = guarded.listen((v) {});
+      source.add(1);
+      await Future<void>.delayed(Duration.zero); // flush microtask delivery
+
+      // StreamBuilder unmounts (cancels) then remounts on the same instance.
+      // A single-subscription stream would throw here; the broadcast guard
+      // must allow the re-listen without error and continue to deliver.
+      await sub1.cancel();
+      Object? caught;
+      final secondValues = <int>[];
+      StreamSubscription<int>? sub2;
+      try {
+        sub2 = guarded.listen(secondValues.add);
+        source.add(2);
+        source.add(3);
+      } catch (e) {
+        caught = e;
+      }
+      await Future<void>.delayed(Duration.zero); // flush microtask delivery
+      await sub2?.cancel();
+
+      expect(caught, isNull,
+          reason: 're-listen after cancel must not throw '
+              '"Bad state: Stream has already been listened to"');
+      expect(secondValues, containsAll(<int>[2, 3]),
+          reason: 'the re-subscribed listener must receive later emissions');
+      await source.close();
+    });
   });
 }
