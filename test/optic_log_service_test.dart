@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/features/ballistics/data/models/optic_profile.dart';
@@ -6,6 +7,16 @@ import 'package:jagspoor/features/ballistics/data/models/rifle_profile.dart';
 import 'package:jagspoor/features/ballistics/data/services/optic_log_service.dart';
 
 void main() {
+  // Construct a FakeFirebaseFirestore FIRST, before any test touches
+  // `FieldValue.serverTimestamp()` (the `OpticLogEntry.toMap` model test below
+  // calls it). fake_cloud_firestore installs its mock `FieldValuePlatform` as
+  // a side-effect of construction; if a production `FieldValue` is realised
+  // first, the platform binds to `MethodChannelFieldValue` and later fakes
+  // throw `type 'MethodChannelFieldValue' is not a subtype of type
+  // 'MockFieldValuePlatform'`. Constructing one fake up-front pins the platform
+  // for the whole process.
+  FakeFirebaseFirestore();
+
   group('OpticLogEntry', () {
     test('toMap carries userId/firearmId/firearmLabel/optic/savedAt', () {
       final optic = OpticProfile.defaults.copyWith(
@@ -129,6 +140,82 @@ void main() {
       final rifle = RifleProfile(id: 'r2', name: '', caliber: '');
       final label = firearmLabelForOpticLog(rifle);
       expect(label, 'Unnamed firearm (—)');
+    });
+  });
+
+  // Regression for "Optic History showing empty after save". Two contracts:
+  //  1. A log written by `logSave` (collection `optic_logs`, field `userId`
+  //     == the caller's uid) must be returned by `getMyOpticLogsStream`
+  //     (same collection, same `userId` filter) -- i.e. the save path and the
+  //     query path use the SAME collection + user identifier, so a saved log
+  //     is never dropped by a field/path mismatch.
+  //  2. The query stream is wrapped in `OfflineStreamGuard.offlineResilient`,
+  //     so a hard error emits the fallback `[]` AND completes (the old
+  //     `.handleError` swallowed errors and never emitted -> the history
+  //     hung on a spinner / appeared empty).
+  group('OpticLogService.getMyOpticLogsStream (save <-> query alignment)', () {
+    test('null uid -> empty stream (renders empty state, no throw)', () async {
+      final service = OpticLogService.forTesting(
+        firestore: FakeFirebaseFirestore(),
+        currentUserIdResolver: () => null,
+      );
+
+      final result = await service.getMyOpticLogsStream().first;
+      expect(result, const <OpticLogEntry>[]);
+    });
+
+    test('a log written by logSave is returned by getMyOpticLogsStream (same collection + userId)', () async {
+      final fake = FakeFirebaseFirestore();
+      const uid = 'user-123';
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => uid,
+      );
+
+      // Write an audit entry exactly as the Optical Suite does on Save Optic.
+      await service.logSave(
+        firearmId: 'rifle-1',
+        firearmLabel: 'Tikka T3x (.308 Win)',
+        optic: OpticProfile.defaults.copyWith(opticName: 'Vortex Razor HD'),
+      );
+
+      // The history screen subscribes to this stream. It must surface the
+      // just-saved entry -- proving the save path (optic_logs / userId: uid)
+      // and the query path (optic_logs.where(userId == uid)) are aligned.
+      final entries = await service.getMyOpticLogsStream().first;
+
+      expect(entries, hasLength(1));
+      expect(entries.first.userId, uid);
+      expect(entries.first.firearmId, 'rifle-1');
+      expect(entries.first.firearmLabel, 'Tikka T3x (.308 Win)');
+      expect(entries.first.optic.opticName, 'Vortex Razor HD');
+    });
+
+    test('only the active user\'s logs are returned (owner-scoped, no cross-user leak)', () async {
+      final fake = FakeFirebaseFirestore();
+      // Seed a doc owned by a DIFFERENT user directly into the fake.
+      await fake.collection('optic_logs').add({
+        'userId': 'other-user',
+        'firearmId': 'rifle-x',
+        'firearmLabel': 'Other',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.now(),
+      });
+      // And one owned by the active user via logSave.
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => 'me',
+      );
+      await service.logSave(
+        firearmId: 'rifle-mine',
+        firearmLabel: 'Mine',
+        optic: OpticProfile.defaults,
+      );
+
+      final entries = await service.getMyOpticLogsStream().first;
+      expect(entries, hasLength(1));
+      expect(entries.first.userId, 'me');
+      expect(entries.first.firearmId, 'rifle-mine');
     });
   });
 }

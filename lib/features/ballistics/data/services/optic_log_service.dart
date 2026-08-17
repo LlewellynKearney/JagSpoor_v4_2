@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/services/offline_stream_guard.dart';
 import '../models/optic_profile.dart';
 import '../models/rifle_profile.dart';
 
@@ -90,11 +91,43 @@ class OpticLogEntry {
 /// the "View Optic History" surface can render the saved optics + their
 /// configuration changes.
 class OpticLogService {
-  OpticLogService._();
+  OpticLogService._({this.firestoreForTesting, this.currentUserIdResolverForTesting});
   static final OpticLogService instance = OpticLogService._();
 
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
+  /// Test seam: inject a Firestore instance (e.g. `FakeFirebaseFirestore`)
+  /// so the stream/query contract can be unit-tested without a live Firebase
+  /// app. Defaults to the global instance.
+  @visibleForTesting
+  FirebaseFirestore? firestoreForTesting;
+
+  FirebaseFirestore get _firestore => firestoreForTesting ?? FirebaseFirestore.instance;
+
+  /// Test seam: inject a uid resolver so the null-uid -> empty-stream branch
+  /// and the owner-scoped query contract can be unit-tested without a real
+  /// signed-in user. Defaults to the current Firebase user.
+  @visibleForTesting
+  String? Function()? currentUserIdResolverForTesting;
+
+  String? get _currentUserId =>
+      currentUserIdResolverForTesting != null
+          ? currentUserIdResolverForTesting!()
+          : FirebaseAuth.instance.currentUser?.uid;
+
+  /// Test-only constructor: build a fresh, isolated service (not the
+  /// process-wide singleton) bound to an injectable Firestore + uid resolver.
+  /// Mirrors the `FeedbackFirebaseService` test pattern so each test owns its
+  /// own fake-backed instance (avoids `FieldValuePlatform` cross-test
+  /// pollution that occurs when the singleton is reused across tests).
+  @visibleForTesting
+  factory OpticLogService.forTesting({
+    required FirebaseFirestore firestore,
+    required String? Function() currentUserIdResolver,
+  }) {
+    return OpticLogService._(
+      firestoreForTesting: firestore,
+      currentUserIdResolverForTesting: currentUserIdResolver,
+    );
+  }
 
   /// Appends an optic save audit entry to `optic_logs/{userId}`-scoped
   /// collection. Best-effort: a write failure is swallowed + logged so it
@@ -123,21 +156,32 @@ class OpticLogService {
   /// Reactive stream of the current user's optic save history (newest first).
   /// Returns an empty stream for an unauthenticated caller so the history
   /// surface renders its empty state instead of throwing.
+  ///
+  /// The Firestore query is wrapped in [OfflineStreamGuard.offlineResilient]
+  /// so a hard error (missing composite index, permissions change, offline
+  /// with no cache) emits the fallback `[]` and completes -- letting the
+  /// consuming `StreamBuilder` exit `ConnectionState.waiting` and render the
+  /// empty state. The previous `.handleError` callback's return value was
+  /// ignored (it only discards the error; it does NOT emit the returned
+  /// list), so an errored stream never emitted and never completed -- the
+  /// history surface showed an indefinite spinner / "empty after save"
+  /// even though `logSave` had written the doc. The resilient guard fixes
+  /// that hang.
   Stream<List<OpticLogEntry>> getMyOpticLogsStream() {
     final uid = _currentUserId;
     if (uid == null) return Stream.value(const <OpticLogEntry>[]);
-    return _firestore
-        .collection('optic_logs')
-        .where('userId', isEqualTo: uid)
-        .orderBy('savedAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => OpticLogEntry.fromFirestore(doc))
-            .toList())
-        .handleError((e) {
-      debugPrint('OpticLogService: error reading optic logs: $e');
-      return const <OpticLogEntry>[];
-    });
+    return OfflineStreamGuard.offlineResilient(
+      _firestore
+          .collection('optic_logs')
+          .where('userId', isEqualTo: uid)
+          .orderBy('savedAt', descending: true)
+          .snapshots()
+          .map((snapshot) => snapshot.docs
+              .map((doc) => OpticLogEntry.fromFirestore(doc))
+              .toList()),
+      fallback: const <OpticLogEntry>[],
+      debugLabel: 'optic_logs',
+    );
   }
 }
 
