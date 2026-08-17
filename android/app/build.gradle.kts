@@ -25,7 +25,7 @@ android {
     defaultConfig {
         applicationId = "com.example.jagspoor"
         // firebase_app_check (and other Firebase plugins) require minSdk 23.
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName
