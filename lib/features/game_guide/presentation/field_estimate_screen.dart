@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
+import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/utils/animal_seeder.dart';
 
 class FieldEstimateScreen extends StatefulWidget {
@@ -75,6 +76,7 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
                 meetsMinimum: meetsMinimum,
                 isComparable: isComparable,
               ),
+              const CopyrightFooter(),
             ],
           ),
         ),

@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
+import '../services/booking_calendar_service.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/chat_and_filter_service.dart';
@@ -1413,56 +1413,39 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     });
   }
 
-  /// Opens WhatsApp (or SMS fallback) pre-populated with a message to the
-  /// outfitter regarding the hunter's booking / off-platform payment. Lets the
-  /// hunter coordinate the direct payment outside the app.
-  Future<void> _contactOutfitterWhatsApp() async {
-    final data = widget.data;
-    // Prefer an explicit outfitter phone; fall back to an empty SMS link.
-    final phone = (data['outfitterPhone'] as String?) ??
-        (data['outfitterPhoneNumber'] as String?) ??
-        (data['contactNumber'] as String?) ??
-        '';
-    final packageName = data['packageName'] as String? ?? 'hunting package';
-    final totalPrice = PricingMath.resolveHunterTotal(
-      totalHunterPrice: (data['totalHunterPriceRands'] as num?)?.toDouble(),
-      basePrice: (data['basePriceRands'] as num?)?.toDouble() ?? 0.0,
-    );
-    final status = data['status'] as String? ?? BookingStatus.pendingApproval;
-
-    final message = 'Hello, regarding my $packageName booking on JagSpoor '
-        '(R ${totalPrice.toStringAsFixed(2)}). '
-        '${status == BookingStatus.approvedAwaitingPayment || status == 'Approved' ? 'I would like to arrange payment for my booking.' : 'Please be in touch regarding my booking.'}';
-
-    final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
-    final Uri uri = cleanPhone.isNotEmpty
-        ? Uri.parse(
-            'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}')
-        : Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
-
+  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
+  /// details, and package title to the device's native calendar via
+  /// [BookingCalendarService]. Surfaces a snackbar on success / "no dates"
+  /// / failure so the hunter always gets feedback.
+  Future<void> _addToCalendar() async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      final launched =
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Unable to open WhatsApp. No outfitter phone number on file.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to open WhatsApp.'),
-            backgroundColor: Colors.orange,
+      final launched = await BookingCalendarService.instance.addToCalendar(
+        widget.data,
+      );
+      if (!mounted) return;
+      final snackBar = SnackBar(
+        content: Text(
+          launched
+              ? 'Opening your calendar to save this hunt...'
+              : 'No hunt dates on file for this booking -- cannot add to calendar.',
+        ),
+        backgroundColor: launched ? Colors.green : Colors.orange,
+      );
+      if (messenger != null) messenger.showSnackBar(snackBar);
+    } catch (e) {
+      if (!mounted) return;
+      if (messenger != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Unable to add to calendar: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
     }
   }
+
 
   /// Unread-message envelope indicator for the card header.
   ///
@@ -1519,6 +1502,11 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         statusLower == 'awaiting payment' ||
         statusLower == 'confirmed';
     final canRequestDateChange = isPostApproval && !dateChangePending;
+    // The "Add to Calendar" action is offered once the booking is finalized
+    // (Confirmed / Completed) -- i.e. the outfitter has verified the direct
+    // payment and the hunt dates are locked in.
+    final canAddToCalendar = statusLower == 'confirmed' ||
+        statusLower == 'completed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1638,9 +1626,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
               ),
             ),
 
-          // 💬 / 📱 Direct action buttons for off-platform payment
-          // communication: in-app chat + WhatsApp the outfitter. These let the
-          // hunter coordinate the direct payment with the outfitter.
+          // 💬 Direct action button for off-platform payment communication:
+          // in-app chat with the outfitter. Lets the hunter coordinate the
+          // direct payment with the outfitter through the booking's embedded
+          // chat thread.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Row(
@@ -1663,28 +1652,36 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _contactOutfitterWhatsApp,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF25D366),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    icon: const Icon(Icons.message_rounded, size: 20),
-                    label: const Text(
-                      'WHATSAPP OUTFITTER',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
+
+          // 📅 Add to Calendar: offered once the booking is finalized
+          // (Confirmed / Completed) so the hunter can save the hunt dates,
+          // farm details, and package title to their phone's native calendar.
+          if (canAddToCalendar)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _addToCalendar,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: const Icon(Icons.event_available_rounded, size: 20),
+                  label: const Text(
+                    'ADD HUNT TO CALENDAR',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

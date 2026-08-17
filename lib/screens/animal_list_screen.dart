@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
+import '../core/widgets/copyright_footer.dart';
 import '../models/animal.dart';
 import '../repositories/animal_repository.dart';
 import 'animal_detail_screen.dart';
@@ -235,10 +236,13 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                           16,
                           16 + MediaQuery.of(context).padding.bottom,
                         ),
-                        itemCount: filtered.length,
+                        itemCount: filtered.length + 1,
                         separatorBuilder:
                             (context, index) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
+                          if (index == filtered.length) {
+                            return const CopyrightFooter();
+                          }
                           final animal = filtered[index];
                           return _AnimalListCard(
                             theme: theme,

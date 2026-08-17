@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/measurement_formatter.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../services/location_resolver_service.dart';
 import 'weather_model.dart';
 import 'weather_repository.dart';
@@ -388,6 +389,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
                           const SizedBox(height: 24),
                           _buildErrorCard(theme, _failureMessage!),
                         ],
+                        const CopyrightFooter(),
                       ],
                     ),
                   ),

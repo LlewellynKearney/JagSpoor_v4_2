@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
+import '../services/booking_calendar_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_invoice_exporter.dart';
@@ -341,56 +341,6 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
-  /// Opens WhatsApp (or SMS fallback) pre-populated with a message to the
-  /// hunter regarding their booking / off-platform payment.
-  Future<void> _contactHunterWhatsApp() async {
-    final data = widget.data;
-    // Prefer an explicit hunter phone; fall back to the hunterId (not a
-    // phone, but url_launcher will simply fail gracefully).
-    final phone = (data['hunterPhone'] as String?) ??
-        (data['hunterPhoneNumber'] as String?) ??
-        '';
-    final packageName =
-        data['packageName'] as String? ?? 'hunting package';
-    final totalPrice =
-        (data['totalHunterPriceRands'] as num?)?.toDouble() ??
-            (data['basePriceRands'] as num?)?.toDouble() ??
-            0.0;
-    final status = data['status'] as String? ?? '';
-
-    final message = 'Hello, regarding your $packageName booking on JagSpoor '
-        '(R ${totalPrice.toStringAsFixed(2)}). '
-        '${status == BookingStatus.approvedAwaitingPayment || status == 'Approved' ? 'Please arrange payment so we can confirm your booking.' : 'Please be in touch regarding your booking.'}';
-
-    // Build a WhatsApp deep link; falls back to an sms: link if the phone is
-    // blank / WhatsApp is unavailable.
-    final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
-    final Uri uri = cleanPhone.isNotEmpty
-        ? Uri.parse(
-            'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}')
-        : Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
-
-    try {
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to open WhatsApp. No phone number on file.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to open WhatsApp.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    }
-  }
 
   /// Resolves a pending hunter date-change request (approve / decline).
   Future<void> _resolveDateChange(bool approved) async {
@@ -460,6 +410,39 @@ class _BookingCardState extends State<_BookingCard> {
         setState(() {
           _isExporting = false;
         });
+      }
+    }
+  }
+
+  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
+  /// details, and package title to the outfitter's device calendar via
+  /// [BookingCalendarService]. Surfaces a snackbar on success / "no dates"
+  /// / failure so the outfitter always gets feedback.
+  Future<void> _addToCalendar() async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final launched = await BookingCalendarService.instance.addToCalendar(
+        widget.data,
+      );
+      if (!mounted) return;
+      final snackBar = SnackBar(
+        content: Text(
+          launched
+              ? 'Opening your calendar to save this hunt...'
+              : 'No hunt dates on file for this booking -- cannot add to calendar.',
+        ),
+        backgroundColor: launched ? Colors.green : Colors.orange,
+      );
+      if (messenger != null) messenger.showSnackBar(snackBar);
+    } catch (e) {
+      if (!mounted) return;
+      if (messenger != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Unable to add to calendar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -889,7 +872,7 @@ class _BookingCardState extends State<_BookingCard> {
   /// - `Awaiting Payment` (or legacy `Approved`): a prominent
   ///   VERIFY / CONFIRM PAYMENT RECEIVED button (outfitter confirms the
   ///   direct off-platform payment; the booking moves to `Confirmed` /
-  ///   Archived) plus a Chat / WhatsApp Hunter row + an EXPORT INVOICE.
+  ///   Archived) plus a Chat Hunter row + an EXPORT INVOICE.
   /// - Archived (Confirmed / Completed / Declined / Cancelled): EXPORT INVOICE
   ///   only (plus the chat drawer above).
   Widget _buildActionButtons(String status) {
@@ -1042,41 +1025,70 @@ class _BookingCardState extends State<_BookingCard> {
       );
     }
 
-    // Archived / completed / declined / cancelled: export invoice only.
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _isExporting ? null : _exportInvoice,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF1565C0),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+    // Archived / completed / declined / cancelled: export invoice + (for
+    // finalized Confirmed / Completed bookings) save the hunt to the native
+    // device calendar.
+    final canAddToCalendar = status == BookingStatus.confirmed ||
+        status == BookingStatus.completed;
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isExporting ? null : _exportInvoice,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1565C0),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.picture_as_pdf_rounded),
+            label: const Text(
+              'EXPORT INVOICE',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ),
-        icon: _isExporting
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
+        if (canAddToCalendar) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _addToCalendar,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              )
-            : const Icon(Icons.picture_as_pdf_rounded),
-        label: const Text(
-          'EXPORT INVOICE',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
+              ),
+              icon: const Icon(Icons.event_available_rounded, size: 20),
+              label: const Text(
+                'ADD HUNT TO CALENDAR',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
-  /// "Chat / WhatsApp Hunter" action button row -- lets the outfitter
-  /// communicate with the hunter regarding the off-platform payment. The
-  /// in-app chat opens the embedded chat drawer; WhatsApp launches the
-  /// external app with a pre-filled message.
+  /// "Chat Hunter" action button row -- lets the outfitter communicate with
+  /// the hunter regarding the off-platform payment via the in-app chat
+  /// drawer (the embedded chat thread for this booking).
   Widget _buildContactHunterRow() {
     return Row(
       children: [
@@ -1094,25 +1106,6 @@ class _BookingCardState extends State<_BookingCard> {
             icon: const Icon(Icons.chat_rounded),
             label: const Text(
               'CHAT',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: _contactHunterWhatsApp,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF25D366), // WhatsApp green
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            icon: const Icon(Icons.message_rounded),
-            label: const Text(
-              'WHATSAPP HUNTER',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),

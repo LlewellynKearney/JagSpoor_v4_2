@@ -6303,3 +6303,122 @@ The Scope Settings & Tools sheet (`lib/features/ballistics/presentation/scope_to
 - `flutter test` (full suite): All 567 tests passed, zero failures. `optic_tools_test.dart` (33) covers the `OpticProfile`/`RifleProfile` models the dropdown reads through; `firearm_dropdown_selector_test.dart` (6) still covers the reusable widget (unchanged).
 - Environment note: re-cloned Flutter stable (3.47.0) + installed `unzip` + `libsqlite3-dev` (the SDK + system deps had been removed since the prior session).
 - Files: `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart` (only file changed), `AGENTS.md`.
+
+
+## Phase — Bullet grain slider 30-500gr, copyright footers, WhatsApp removal, native calendar integration (added 2026-08-17)
+
+### 1. Ballistic Calculator bullet weight slider bounds (fixed)
+- `lib/features/ballistics/presentation/ballistic_calc_screen.dart`: the
+  "Bullet Weight (Grains)" `_buildParameterRow` slider min/max changed from
+  `300`/`500` -> `30`/`500` so users can select lightweight loads (55gr,
+  150gr) as well as heavy ones. The `_bulletWeightGrains` default changed
+  from `300.0` -> `150.0` (a mid-range value inside the new wider band).
+
+### 2. Copyright footers on the three missing screens
+- Added the reusable `CopyrightFooter()` widget as the tail child of the
+  scrollable body on:
+  - Field Estimation screen (`lib/features/game_guide/presentation/field_estimate_screen.dart`)
+  - SA Game Guide / Animal List screen (`lib/screens/animal_list_screen.dart`)
+  - Weather & Wind Tracker screen (`lib/features/hunter_mode/weather/weather_tracker_screen.dart`)
+- Each screen gained the `copyright_footer.dart` import + the widget as the
+  last child of its scrollable. The three screens now match the splash /
+  auth / hunter-profile / outfitter-settings surfaces that already carry it.
+
+### 3. WhatsApp / external chat buttons removed
+- The off-platform payment flow previously exposed a "WhatsApp OUTFITTER"
+  button on the hunter booking card and a "WhatsApp Hunter" button on the
+  outfitter booking dashboard -- both built on `url_launcher`
+  `https://wa.me/<phone>` deep links. Removed so the marketplace + booking
+  management surfaces carry only the clean in-app chat + booking workflow:
+  - `hunter_package_marketplace_screen.dart`: removed the
+    `_contactOutfitterWhatsApp` method + its "WHATSAPP OUTFITTER" button +
+    the `url_launcher` import. The in-app `IN-APP CHAT` button is retained.
+  - `outfitter_booking_dashboard_screen.dart`: removed the
+    `_contactHunterWhatsApp` method + its "WhatsApp Hunter" button (the
+    `_buildContactHunterRow` row now renders only the in-app `IN-APP CHAT`
+    button) + the `url_launcher` import. Docstrings updated to reference
+    the in-app chat drawer only.
+- `url_launcher` remains a pubspec dependency (still used by
+  `support_email_composer.dart` for the support email handoff).
+
+### 4. Native calendar integration for finalized (Confirmed) bookings
+- New `lib/features/hunter_mode/services/booking_calendar_service.dart`:
+  - `BookingCalendarService` (singleton) -- the thin platform wrapper. Its
+    `buildEvent(booking)` constructs an `add_2_calendar` `Event` from a raw
+    booking document map; `addToCalendar(booking)` resolves the event and
+    hands it to `Add2Calendar.addEvent2Cal(event)` which opens the device's
+    native calendar editor pre-populated with the hunt details. Returns
+    `false` when no dates could be resolved (caller surfaces a "no dates on
+    file" snackbar instead of launching an empty event).
+  - `BookingCalendarEventBuilder` (public, pure, Firebase-aware) -- the
+    unit-testable event-construction helper. `resolveDate` handles a
+    Firestore `Timestamp`, ISO-8601 string, `DateTime`, or
+    milliseconds-since-epoch `num`, collapsing each to midnight (Y/M/D).
+    `resolveWindow` resolves the hunt start/end from the booking's date
+    fields in priority order (`confirmedStartDate` -> `checkInDate` ->
+    `availabilityStart` -> `startDate` -> `huntDate`; end: `confirmedEndDate`
+    -> `checkOutDate` -> `availabilityEnd` -> `endDate` -> start). The
+    calendar `end` is the start of the day *after* the hunt's final day so
+    the native all-day event renders the full final day. `buildTitle`
+    ("Package @ Farm"), `buildDescription` (package/farm/outfitter/hunter/
+    total/booking-id block), `buildLocation` (farm + district + province),
+    `buildEvent` (assembles the all-day `Event` with a 12h iOS reminder).
+- New `add_2_calendar: ^3.0.0` dependency in `pubspec.yaml` (pure Dart, no
+  native build -- resolves cleanly on the CI Flutter 3.29.1 pin). `Event.allDay = true`
+  so the hunt renders as an all-day block in the device calendar.
+- Hunter "My Bookings" card
+  (`lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`):
+  added a green `FilledButton.icon` "ADD HUNT TO CALENDAR" button that
+  renders ONLY when the booking status is `Confirmed` or `Completed`
+  (`canAddToCalendar`). `_addToCalendar` captures `ScaffoldMessenger` before
+  the async gap, calls `BookingCalendarService.instance.addToCalendar`,
+  guards `mounted`, and surfaces a green success / orange "no dates" / red
+  failure snackbar. Placed after the in-app chat button.
+- Outfitter booking dashboard
+  (`lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`):
+  the archived-status action panel (`Confirmed` / `Completed` / `Declined` /
+  `Cancelled`) previously rendered only the "EXPORT INVOICE" button. Now
+  also renders the "ADD HUNT TO CALENDAR" green `FilledButton.icon` when
+  the status is `Confirmed` or `Completed`. Same `_addToCalendar` handler +
+  snackbar contract as the hunter card.
+- So both parties can save the hunting dates, farm details, and package
+  title to their phone's native calendar once the outfitter verifies the
+  direct (off-platform) payment and the booking transitions to Confirmed.
+- Tests: `test/booking_calendar_service_test.dart` (36 tests, all pass) --
+    `resolveDate` (Timestamp / ISO / DateTime / num / null / empty /
+    garbage / trim), `resolveWindow` (priority chain, single-day fallback,
+    end-before-start clamp, Timestamp, null when no start), `buildTitle`
+    (package @ farm, defaults, blank tolerance), `buildDescription` (all
+    fields, base-price fallback, zero-omission, alias tolerance, blank
+    omission), `buildLocation` (farm / farm+region / district / province /
+    null), `buildEvent` (null when no window, fully-populated all-day
+    Event), and the `BookingCalendarService` singleton delegation.
+
+### Verification
+- `flutter analyze` (local Flutter 3.29.1, CI pin): 0 errors, 0 warnings
+  (276 pre-existing infos, all `avoid_print` / `deprecated_member_use`
+  style hints in unrelated files; no new issues introduced). The new
+  service + test files are analyzer-clean.
+- `flutter test` (full suite): 595 passed, 2 failed. The 2 failures are the
+  documented pre-existing `fake_cloud_firestore 4.1.1` compile-skew test
+  files (`bug_report_screenshot_test.dart` +
+  `offline_sync_queue_test.dart`) -- verified to fail identically on the
+  clean HEAD baseline (before these changes); the compile error is inside
+  `fake_cloud_firestore`'s own `MockWriteBatch.update` source, not in any
+  file touched by this work. No regressions: +36 vs the prior pass baseline,
+  exactly the new calendar tests.
+- No Firestore rules / index / Storage / manifest changes (pure client-side
+  UI + a new pure service + tests; the `add_2_calendar` plugin uses the
+  platform's own calendar permissions, no app manifest edit required for
+  the add-event flow it drives).
+- Files: `lib/features/ballistics/presentation/ballistic_calc_screen.dart`
+  (slider bounds + default), `lib/features/game_guide/presentation/field_estimate_screen.dart`
+  (footer), `lib/screens/animal_list_screen.dart` (footer),
+  `lib/features/hunter_mode/weather/weather_tracker_screen.dart` (footer),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (WhatsApp removed, calendar button + handler),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (WhatsApp removed, calendar button + handler),
+  `lib/features/hunter_mode/services/booking_calendar_service.dart` (NEW),
+  `pubspec.yaml` / `pubspec.lock` (`add_2_calendar` dep),
+  `test/booking_calendar_service_test.dart` (NEW, 36 tests), `AGENTS.md`.

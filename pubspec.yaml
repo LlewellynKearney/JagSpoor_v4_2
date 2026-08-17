@@ -99,6 +99,9 @@ dependencies:
   flutter_blue_plus: ^2.3.11
   firebase_app_check: ^0.4.6
 
+  # Native calendar event creation for confirmed bookings
+  add_2_calendar: ^3.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

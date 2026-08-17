@@ -211,7 +211,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
   // Muzzle velocity and bullet weight controls (v19.0)
   double _muzzleVelocityFps = 2700.0; // Range: 800-5000 fps, Default: 2700
-  double _bulletWeightGrains = 300.0; // Range: 300-500 grains, Default: 300
+  double _bulletWeightGrains = 150.0; // Range: 30-500 grains, Default: 150
 
   final List<Map<String, dynamic>> _fallbackAmmunitionCatalog = [
     {
@@ -610,7 +610,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     _buildParameterRow(
                       'Bullet Weight (Grains)',
                       _bulletWeightGrains,
-                      300,
+                      30,
                       500,
                       (v) => setState(() => _bulletWeightGrains = v),
                     ),
