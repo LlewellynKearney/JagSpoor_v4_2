@@ -158,15 +158,22 @@ class OpticLogService {
   /// surface renders its empty state instead of throwing.
   ///
   /// The Firestore query is wrapped in [OfflineStreamGuard.offlineResilient]
-  /// so a hard error (missing composite index, permissions change, offline
-  /// with no cache) emits the fallback `[]` and completes -- letting the
-  /// consuming `StreamBuilder` exit `ConnectionState.waiting` and render the
-  /// empty state. The previous `.handleError` callback's return value was
-  /// ignored (it only discards the error; it does NOT emit the returned
-  /// list), so an errored stream never emitted and never completed -- the
-  /// history surface showed an indefinite spinner / "empty after save"
-  /// even though `logSave` had written the doc. The resilient guard fixes
-  /// that hang.
+  /// so a hard error (permissions change, offline with no cache) emits the
+  /// fallback `[]` and completes -- letting the consuming `StreamBuilder` exit
+  /// `ConnectionState.waiting` and render the empty state. The previous
+  /// `.handleError` callback's return value was ignored (it only discards the
+  /// error; it does NOT emit the returned list), so an errored stream never
+  /// emitted and never completed -- the history surface showed an indefinite
+  /// spinner / "empty after save" even though `logSave` had written the doc.
+  ///
+  /// The query intentionally does NOT use `.orderBy('savedAt')` server-side.
+  /// An equality (`.where('userId')`) + orderBy composite requires a Firestore
+  /// composite index; until that index is deployed the server errors with
+  /// "Missing composite index" and (with the prior swallowing `.handleError`)
+  /// the history rendered empty. Sorting client-side in Dart after the
+  /// equality-only read (which uses the automatic single-field index) avoids
+  /// the missing-index error entirely, so the history populates immediately
+  /// on every deployment without a manual index build.
   Stream<List<OpticLogEntry>> getMyOpticLogsStream() {
     final uid = _currentUserId;
     if (uid == null) return Stream.value(const <OpticLogEntry>[]);
@@ -174,11 +181,16 @@ class OpticLogService {
       _firestore
           .collection('optic_logs')
           .where('userId', isEqualTo: uid)
-          .orderBy('savedAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OpticLogEntry.fromFirestore(doc))
-              .toList()),
+          // Sort client-side (newest first) so the equality-only query does
+          // not require the `userId ASC + savedAt DESC` composite index.
+          .map((snapshot) {
+        final logs = snapshot.docs
+            .map((doc) => OpticLogEntry.fromFirestore(doc))
+            .toList();
+        logs.sort((a, b) => b.savedAt.compareTo(a.savedAt));
+        return logs;
+      }),
       fallback: const <OpticLogEntry>[],
       debugLabel: 'optic_logs',
     );

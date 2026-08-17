@@ -270,6 +270,16 @@ class PackageBookingManager {
 
       // Create the booking inside the same transaction.
       final bookingRef = _firestore.collection('bookings').doc();
+      // Copy the package's hunt window (availability dates) + farm reference
+      // onto the booking so the hunter's "My Bookings" card can display the
+      // dates and the "Add to Calendar" action can resolve a hunt window
+      // without a separate package read. The package's availability fields
+      // are stored as Firestore `Timestamp?` (see PackagePricing.toMap); we
+      // pass them through verbatim so they keep their server-accurate
+      // precision on the booking doc.
+      final availabilityStart = pkgData['availabilityStart'];
+      final availabilityEnd = pkgData['availabilityEnd'];
+      final farmId = pkgData['farmId'] as String?;
       transaction.set(bookingRef, {
         'packageId': packageId.trim(),
         'outfitterId': outfitterId.trim(),
@@ -281,6 +291,13 @@ class PackageBookingManager {
         'bookingTimestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        // Hunt window (copied from the package so the booking is
+        // self-contained for the calendar + the booking card).
+        if (availabilityStart != null) 'startDate': availabilityStart,
+        if (availabilityEnd != null) 'endDate': availabilityEnd,
+        if (availabilityStart != null) 'availabilityStart': availabilityStart,
+        if (availabilityEnd != null) 'availabilityEnd': availabilityEnd,
+        if (farmId != null && farmId.isNotEmpty) 'farmId': farmId,
       });
 
       // Decrement the slot count. When the last slot is claimed, flip the

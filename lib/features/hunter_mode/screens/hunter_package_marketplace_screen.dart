@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -1585,6 +1586,54 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 ),
               ],
             ),
+          ),
+
+          // Hunt dates row: surfaces the booking's hunt window (start -> end)
+          // copied from the package's availability dates at booking time so
+          // the hunter can see the dates on the card AND the "Add to
+          // Calendar" action resolves them without a separate package read.
+          // Hidden when the booking has no dates on file.
+          Builder(
+            builder: (context) {
+              final window =
+                  BookingCalendarEventBuilder.resolveWindow(widget.data);
+              if (window == null) return const SizedBox.shrink();
+              final fmt = DateFormat('d MMM yyyy');
+              final sameDay = window.start == window.end;
+              final dateLabel = sameDay
+                  ? fmt.format(window.start)
+                  : '${fmt.format(window.start)}  →  ${fmt.format(window.end)}';
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: widget.theme.accentColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: widget.theme.accentColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.event_rounded,
+                          color: widget.theme.accentColor, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Hunt dates: $dateLabel',
+                          style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
 
           // Date-change request status banner.

@@ -217,5 +217,46 @@ void main() {
       expect(entries.first.userId, 'me');
       expect(entries.first.firearmId, 'rifle-mine');
     });
+
+    test('returns logs sorted newest-first (client-side, no server orderBy)', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => 'u1',
+      );
+
+      // Seed three logs with controlled savedAt timestamps in NON-sorted
+      // insertion order (middle, oldest, newest) directly into the fake so
+      // the snapshot returns them in insertion order -- proving the
+      // client-side sort (not the server) produces newest-first ordering.
+      final base = DateTime(2026, 1, 1);
+      await fake.collection('optic_logs').add({
+        'userId': 'u1',
+        'firearmId': 'r1',
+        'firearmLabel': 'Mid',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.fromDate(base.add(const Duration(days: 5))),
+      });
+      await fake.collection('optic_logs').add({
+        'userId': 'u1',
+        'firearmId': 'r2',
+        'firearmLabel': 'Oldest',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.fromDate(base),
+      });
+      await fake.collection('optic_logs').add({
+        'userId': 'u1',
+        'firearmId': 'r3',
+        'firearmLabel': 'Newest',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.fromDate(base.add(const Duration(days: 10))),
+      });
+
+      final entries = await service.getMyOpticLogsStream().first;
+      expect(entries, hasLength(3));
+      // Newest first.
+      expect(entries.map((e) => e.firearmLabel).toList(),
+          ['Newest', 'Mid', 'Oldest']);
+    });
   });
 }
