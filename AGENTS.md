@@ -6678,3 +6678,111 @@ The Scope Settings & Tools sheet (`lib/features/ballistics/presentation/scope_to
   (loading branch),
   `test/custom_package_builder_screen_test.dart` (NEW, 3 tests),
   `test/farm_game_price_list_stream_test.dart` (NEW, 6 tests), `AGENTS.md`.
+
+## Phase — Re-wire Custom Package Builder off outfitter scanner data (added 2026-08-17)
+
+The Custom Package Builder was reported still rendering empty, with the user
+suspecting an incorrect coupling to the outfitter-named
+`PricelistScannerService` / an outfitter-scoped data source. Audit + fix.
+
+### Audit findings
+- The builder's READ path was ALREADY correctly wired to hunter-readable data:
+  - `hunter_custom_package_builder_screen.dart` streams species via
+    `FarmGamePriceListManager.getFarmPriceListStreamForHunter(farmId)`
+    (queries `farm_pricelists` by `.where('farmId')` only — NO `outfitterId`
+    filter) and itemized fees via `getFarmServiceRatesStream(farmId)` — both
+    readable by any signed-in hunter per `firestore.rules` (`read: isSignedIn()`).
+  - The farm-selection screen (`custom_package_farm_selection_screen.dart`)
+    discovers bookable farms from `farm_pricelists` + `farm_service_rates`
+    (no owner filter) and resolves `farms` docs — also `read: isSignedIn()`.
+  - The Firestore rules for `farm_pricelists`, `farm_service_rates`, and
+    `farms` ALL allow `read: if isSignedIn()` (no outfitter restriction), so a
+    signed-in hunter CAN read published price lists.
+- The REAL coupling the user flagged: the builder's WRITE path imported
+  `PricelistScannerService` (an outfitter-named service) solely to call
+  `submitCustomPackageBooking`. `PricelistScannerService` was the ONLY consumer
+  of that import and was the only place the builder touched an
+  outfitter-named/scanner module — the source of the "incorrectly wired to
+  outfitter scanner data" suspicion. Its remaining methods
+  (`getAllActivePricelists`, `getActivePricelistForFarm`, `getFarmHuntingCatalog`,
+  `calculateTotalWithFee`) were dead code (zero callers; the only
+  `getActivePricelistForFarm` reference was a docstring comment in
+  `farm_config.dart`).
+
+### Fix — consolidate the full hunter read+write path on the price-list manager
+- **Moved `submitCustomPackageBooking` into `FarmGamePriceListManager`**
+  (`lib/features/hunter_mode/services/farm_game_price_list_manager.dart`).
+  The method writes the `bookings` doc with `status: BookingStatus.pendingApproval`,
+  `isCustomPackage: true`, `hunterId: <caller uid>`, `outfitterId`, `farmId`,
+  normalized `selectedItemsList` + `lodgingCateringList`, party/window meta,
+  and the no-commission pricing (`basePriceRands == totalHunterPriceRands`).
+  The submit path now reads the caller uid via the existing injectable
+  `_currentUserId` getter (the same seam the stream queries use), so it is
+  unit-testable without a live `FirebaseAuth` app and is cold-launch-safe
+  (try/catch around `FirebaseAuth.instance` resolves to null instead of
+  throwing `[core/no-app]`).
+- **Builder screen decoupled**: removed the `PricelistScannerService` import
+  + the `_bookingService` field; the submit call now goes through
+  `_priceListManager.submitCustomPackageBooking`. The builder now imports
+  ONLY `FarmGamePriceListManager` for both reads and the write — the full
+  hunter-facing custom-package path is consolidated on the hunter-readable
+  price-list manager.
+- **Deleted `lib/features/hunter_mode/services/pricelist_scanner_service.dart`**
+  entirely — it had no remaining consumers (confirmed via grep: only the
+  builder imported it, and only for the moved method). Eliminates the
+  outfitter-scanner-named module the user flagged as the suspected wrong
+  data source. No `scanned_pricelists` reads remain in `lib/` (the remaining
+  references are docstring comments in `farm_config.dart` / `auth_screen.dart` /
+  `splash_screen.dart` describing owner-scoped outfitter collections — not
+  active code).
+
+### Result
+- The Custom Package Builder now depends on a SINGLE hunter-readable service
+  (`FarmGamePriceListManager`) for: the species stream, the service-rates
+  stream, AND the booking submission. There is no outfitter-scoped /
+  scanner-named dependency anywhere in the builder or its data path. The
+  "still empty" symptom — when it occurs — is now strictly a function of
+  whether the selected farm has published pricing (the defined "No pricing
+  published yet" empty-state banner), never a wrong-data-source / wrong-scope
+  read.
+
+### Tests
+- `test/farm_game_price_list_stream_test.dart` extended with a new
+  `submitCustomPackageBooking (hunter-mode booking write)` group — 5 tests,
+  all pass (via the `forTesting` factory + `FakeFirebaseFirestore`):
+  - writes the booking doc to `bookings` with the full hunter-mode shape
+    (`status: pendingApproval`, `isCustomPackage: true`, `hunterId`,
+    `outfitterId`, `farmId`, `farmName`, `packageId: 'CUSTOM_BUILT'`,
+    `basePriceRands == totalHunterPriceRands` (no commission), party/window
+    meta, both normalized line-item lists, and the returned id matches the
+    written doc);
+  - rejects an unauthenticated caller;
+  - prevents an outfitter from booking their own farm;
+  - rejects an empty selection;
+  - rejects a non-positive total.
+- The existing 6 stream tests (null-uid, client-side sort, farmId filter,
+  owner-scoped filter) still pass — total 11 in the file.
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (278 infos, all
+  pre-existing `avoid_print` / `deprecated_member_use` / style hints; the
+  changed files are analyzer-clean — "No issues found"). The deleted file
+  dropped 1 pre-existing `print` info.
+- `flutter test` (full suite): **All 632 tests passed**, zero failures
+  (was 627; +5 = the new booking-submission tests). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side service consolidation + a deleted dead module; the read rules
+  were already `isSignedIn()` and the `bookings` create rule already permits
+  a signed-in hunter to create a booking under their own `hunterId`).
+- Commit `33d58c2` pushed to `origin/main` (clean fast-forward
+  `869d156..33d58c2`); local/origin in sync, working tree clean. (The push
+  initially hit a stale-token password prompt; the remote URL was re-seeded
+  with the current `GITHUB_TOKEN` and the push succeeded.)
+- Files: `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (`submitCustomPackageBooking` moved here + docstring),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (decoupled — uses `_priceListManager.submitCustomPackageBooking`,
+  `PricelistScannerService` import + field removed),
+  `lib/features/hunter_mode/services/pricelist_scanner_service.dart` (DELETED),
+  `test/farm_game_price_list_stream_test.dart` (+5 booking-submission tests),
+  `AGENTS.md`.
