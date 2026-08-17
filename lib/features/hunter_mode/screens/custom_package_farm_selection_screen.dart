@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
-import '../services/pricelist_scanner_service.dart';
 import 'hunter_custom_package_builder_screen.dart';
 
 /// First step of the Custom Package Builder flow: lets the hunter pick which
 /// outfitter farm to build a custom package against.
 ///
-/// A farm is only eligible when its outfitter has published an **active**
-/// scanned price list for it (so there are species/fees to price the custom
-/// itinerary from). Farms without an active price list are filtered out — the
-/// hunter cannot start a custom build against a farm with no pricing data.
+/// A farm is eligible when its outfitter has published a **game price list**
+/// for it (`farm_pricelists` -- species + per-unit ZAR) and/or an itemized
+/// **service-rate** configuration (`farm_service_rates` -- bakkie /
+/// slaughtering / coldroom / daily / accommodation / catering fees). The
+/// builder draws species lines from the price list and itemized-fee lines
+/// from the service rates so the hunter can assemble a fully-priced custom
+/// trip. Farms with neither are filtered out -- there is nothing to price.
 ///
 /// Selecting a qualifying farm pushes [HunterCustomPackageBuilderScreen] with
-/// the farm + its most recent active price list.
+/// the farm + its outfitter id so the builder can stream both collections.
 class CustomPackageFarmSelectionScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -27,12 +30,9 @@ class CustomPackageFarmSelectionScreen extends StatefulWidget {
 
 class _CustomPackageFarmSelectionScreenState
     extends State<CustomPackageFarmSelectionScreen> {
-  final PricelistScannerService _pricelistService =
-      PricelistScannerService.instance;
-
   bool _isLoading = true;
   String? _error;
-  List<_FarmWithPricelist> _farms = [];
+  List<_BookableFarm> _farms = [];
 
   @override
   void initState() {
@@ -46,20 +46,39 @@ class _CustomPackageFarmSelectionScreenState
       _error = null;
     });
     try {
-      // Active price lists first — the catalog of bookable farms. Readable by
-      // signed-in hunters (the scanned_pricelists read rule).
-      final pricelists = await _pricelistService.getAllActivePricelists();
+      // Discover bookable farms from the farm_pricelists collection (no owner
+      // filter -- any signed-in hunter may read it per firestore.rules). Group
+      // by farmId so each farm appears once even with many species entries.
+      final pricelists = await FirebaseFirestore.instance
+          .collection('farm_pricelists')
+          .get();
 
-      // Index the most-recent active price list per farm (the list is already
-      // ordered by createdAt desc, so first-seen wins).
-      final byFarm = <String, Map<String, dynamic>>{};
-      for (final pl in pricelists) {
-        final farmId = pl['farmId'] as String?;
-        if (farmId == null || farmId.isEmpty) continue;
-        byFarm.putIfAbsent(farmId, () => pl);
+      // farmId -> outfitterId (the first entry that carries a non-empty
+      // outfitterId wins, so a farm with stale entries still resolves).
+      final byFarm = <String, String>{};
+      final speciesCount = <String, int>{};
+      for (final doc in pricelists.docs) {
+        final data = doc.data();
+        final farmId = (data['farmId'] as String?) ?? '';
+        if (farmId.isEmpty) continue;
+        byFarm.putIfAbsent(farmId, () => (data['outfitterId'] as String?) ?? '');
+        speciesCount[farmId] = (speciesCount[farmId] ?? 0) + 1;
       }
-      final farmIds = byFarm.keys.toList();
 
+      // Also consider farms that have a service-rate doc but no species
+      // entries yet -- they are still bookable (lodging/catering only trip).
+      final serviceRates = await FirebaseFirestore.instance
+          .collection('farm_service_rates')
+          .get();
+      for (final doc in serviceRates.docs) {
+        byFarm.putIfAbsent(doc.id, () {
+          final data = doc.data();
+          return (data['outfitterId'] as String?) ?? '';
+        });
+        speciesCount.putIfAbsent(doc.id, () => 0);
+      }
+
+      final farmIds = byFarm.keys.toList();
       if (farmIds.isEmpty) {
         if (mounted) {
           setState(() {
@@ -70,30 +89,33 @@ class _CustomPackageFarmSelectionScreenState
         return;
       }
 
-      // Resolve farm documents for the farms that have a price list. Farms are
-      // readable by any signed-in user (firestore.rules `farms` read).
+      // Resolve farm documents. Farms are readable by any signed-in user.
       final farmsSnapshot = await FirebaseFirestore.instance
           .collection('farms')
           .where(FieldPath.documentId, whereIn: farmIds)
           .get();
 
-      final farms = <_FarmWithPricelist>[];
+      final farms = <_BookableFarm>[];
       for (final doc in farmsSnapshot.docs) {
         final data = doc.data();
         final farmId = doc.id;
-        final pricelist = byFarm[farmId];
-        if (pricelist == null) continue;
-        farms.add(_FarmWithPricelist(
+        final outfitterId = byFarm[farmId] ?? '';
+        farms.add(_BookableFarm(
           farmId: farmId,
           farmName: (data['name'] as String?) ?? 'Unnamed Farm',
           district: data['district'] as String?,
           province: data['province'] as String?,
-          outfitterId: (pricelist['outfitterId'] as String?) ?? '',
-          pricelistId: (pricelist['id'] as String?) ?? '',
-          pricelist: pricelist,
-          itemCount: (pricelist['totalItems'] as num?)?.toInt() ?? 0,
+          outfitterId: outfitterId,
+          speciesCount: speciesCount[farmId] ?? 0,
+          hasServiceRates: serviceRates.docs.any((d) => d.id == farmId),
         ));
       }
+      // Farms with the most priced species first, then alphabetical.
+      farms.sort((a, b) {
+        final cmp = b.speciesCount.compareTo(a.speciesCount);
+        if (cmp != 0) return cmp;
+        return a.farmName.toLowerCase().compareTo(b.farmName.toLowerCase());
+      });
 
       if (mounted) {
         setState(() {
@@ -111,7 +133,7 @@ class _CustomPackageFarmSelectionScreenState
     }
   }
 
-  void _openBuilder(_FarmWithPricelist farm) {
+  void _openBuilder(_BookableFarm farm) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -120,8 +142,6 @@ class _CustomPackageFarmSelectionScreenState
           farmId: farm.farmId,
           farmName: farm.farmName,
           outfitterId: farm.outfitterId,
-          pricelistId: farm.pricelistId,
-          pricelist: farm.pricelist,
         ),
       ),
     );
@@ -145,6 +165,10 @@ class _CustomPackageFarmSelectionScreenState
         color: theme.accentColor,
         onRefresh: _loadFarms,
         child: _buildBody(theme),
+      ),
+      bottomNavigationBar: const SafeArea(
+        top: false,
+        child: CopyrightFooter.tight(),
       ),
     );
   }
@@ -195,6 +219,7 @@ class _CustomPackageFarmSelectionScreenState
     if (_farms.isEmpty) {
       return ListView(
         // ListView so RefreshIndicator works on an empty list.
+        padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
         children: [
           SizedBox(height: MediaQuery.of(context).size.height * 0.25),
           Center(
@@ -214,8 +239,9 @@ class _CustomPackageFarmSelectionScreenState
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
-                    'Outfitters must publish an active price list for a farm '
-                    'before you can build a custom package against it.',
+                    'Outfitters must publish a price list (species + service '
+                    'rates) for a farm before you can build a custom package '
+                    'against it.',
                     style: TextStyle(color: theme.subtitleColor, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
@@ -242,30 +268,28 @@ class _CustomPackageFarmSelectionScreenState
   }
 }
 
-class _FarmWithPricelist {
+class _BookableFarm {
   final String farmId;
   final String farmName;
   final String? district;
   final String? province;
   final String outfitterId;
-  final String pricelistId;
-  final Map<String, dynamic> pricelist;
-  final int itemCount;
+  final int speciesCount;
+  final bool hasServiceRates;
 
-  _FarmWithPricelist({
+  _BookableFarm({
     required this.farmId,
     required this.farmName,
     this.district,
     this.province,
     required this.outfitterId,
-    required this.pricelistId,
-    required this.pricelist,
-    required this.itemCount,
+    required this.speciesCount,
+    required this.hasServiceRates,
   });
 }
 
 class _FarmCard extends StatelessWidget {
-  final _FarmWithPricelist farm;
+  final _BookableFarm farm;
   final ThemeController theme;
   final VoidCallback onTap;
 
@@ -330,8 +354,11 @@ class _FarmCard extends StatelessWidget {
                           if (farm.district != null &&
                               farm.district!.isNotEmpty)
                             _chip(Icons.location_on_outlined, farm.district!),
-                          _chip(Icons.price_check_rounded,
-                              '${farm.itemCount} priced items'),
+                          _chip(Icons.pets_rounded,
+                              '${farm.speciesCount} species'),
+                          if (farm.hasServiceRates)
+                            _chip(Icons.room_service_rounded,
+                                'service rates'),
                         ],
                       ),
                     ],

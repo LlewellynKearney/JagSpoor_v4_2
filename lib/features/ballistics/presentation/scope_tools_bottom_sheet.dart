@@ -1,12 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import '../data/inventory_bridge.dart';
 import '../data/models/optic_profile.dart';
 import '../data/models/rifle_profile.dart';
+import '../data/services/optic_log_service.dart';
 import '../data/scope_calculator.dart';
+import 'optic_history_screen.dart';
 
 /// ScopeToolsBottomSheet is the state-of-the-art optical suite: a 4-tab
 /// interface covering optic profile configuration (linked to a firearm),
@@ -195,16 +198,27 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
   Future<void> _saveOptic() async {
     if (_selectedRifleId == null) return;
     setState(() => _isSaving = true);
+    final opticSnapshot = _optic;
+    final rifleLabel = _selectedRifle?.displayName ?? 'firearm';
     final ok = await _inventoryBridge.saveOpticProfile(
       _selectedRifleId!,
       _optic,
     );
+    // Append an audit entry to the optic save log (best-effort -- a log
+    // write failure never blocks the optic save itself).
+    if (ok) {
+      await OpticLogService.instance.logSave(
+        firearmId: _selectedRifleId!,
+        firearmLabel: rifleLabel,
+        optic: opticSnapshot,
+      );
+    }
     if (mounted) {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ok
-              ? 'Optic profile saved to ${_selectedRifle?.displayName ?? 'firearm'}.'
+              ? 'Optic profile saved to $rifleLabel.'
               : 'Save failed — check connection.'),
           backgroundColor: ok ? _goGreen : _dangerRed,
         ),
@@ -288,6 +302,18 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 2,
+              ),
+            ),
+          ),
+          // View the optic save audit log.
+          IconButton(
+            tooltip: 'View Optic History',
+            icon: Icon(Icons.history, color: _textSecondary),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => OpticHistoryScreen(
+                  theme: ThemeController.instance,
+                ),
               ),
             ),
           ),

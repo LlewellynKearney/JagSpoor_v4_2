@@ -59,6 +59,45 @@ class FarmGamePriceListManager {
     return snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
   }
 
+  // ── Hunter-readable read APIs (no owner-scoped filter) ───────────────────
+  //
+  // The owner-scoped [getFarmPriceList] / [getFarmPriceListStream] above filter
+  // by `outfitterId == currentUserId`, so a hunter browsing the Custom Package
+  // Builder cannot read an outfitter's price list through them. The methods
+  // below query by `farmId` only (the Firestore rule `farm_pricelists` read is
+  // `isSignedIn()`, so any signed-in hunter may read any farm's price list --
+  // mirroring the `packages` / `farms` / `scanned_pricelists` signed-in read
+  // pattern). They are used by the Custom Package Builder farm-selection +
+  // builder screens.
+
+  /// Reactive stream of a farm's price-list entries for a hunter browsing the
+  /// Custom Package Builder (no owner-scoped filter). Ordered by species name.
+  Stream<List<FarmGamePriceEntry>> getFarmPriceListStreamForHunter(String farmId) {
+    if (_currentUserId == null || farmId.isEmpty) {
+      return const Stream.empty();
+    }
+    return _firestore
+        .collection('farm_pricelists')
+        .where('farmId', isEqualTo: farmId)
+        .orderBy('speciesName')
+        .snapshots()
+        .map((snap) => snap.docs.map(FarmGamePriceEntry.fromFirestore).toList());
+  }
+
+  /// One-shot fetch of a farm's price list for a hunter (no owner-scoped
+  /// filter). Ordered by species name.
+  Future<List<FarmGamePriceEntry>> getFarmPriceListForHunter(String farmId) async {
+    if (_currentUserId == null || farmId.isEmpty) {
+      return const [];
+    }
+    final snap = await _firestore
+        .collection('farm_pricelists')
+        .where('farmId', isEqualTo: farmId)
+        .orderBy('speciesName')
+        .get();
+    return snap.docs.map(FarmGamePriceEntry.fromFirestore).toList();
+  }
+
   /// Adds a new game-species entry to the farm's price list. Requires
   /// authentication + a non-empty [speciesName]; [qty] must be ‚â• 0 and
   /// [priceZAR] must be ‚â• 0. [gender] defaults to 'Any' and [hornTuskLength]

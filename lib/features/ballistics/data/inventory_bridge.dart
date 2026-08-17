@@ -65,6 +65,18 @@ class InventoryBridge {
 
   /// Fetches all firearms from the user's collection.
   /// Returns an empty list if no firearms are found or on error.
+  ///
+  /// Note: the query does NOT use `.orderBy(...)` server-side. An equality
+  /// filter (`where('ownerId')`) combined with a server-side `orderBy` on a
+  /// different field requires a composite index AND silently excludes docs
+  /// that lack the ordered field. The Digital Firearm Safe's manual form
+  /// persists `make`/`model`/`caliber`/`serial` (NOT `name`), so a prior
+  /// `.orderBy('name')` either errored with `failed-precondition` (swallowed
+  /// by the caller's `.handleError` into `[]`) or excluded every manually-
+  /// registered firearm -- which is why the Shot Group Analyzer reported
+  /// "No firearms in safe yet" even when firearms existed. The list is
+  /// sorted in-memory by [RifleProfile.displayName] after mapping so the
+  /// dropdown stays alphabetized without a server-side index dependency.
   Future<List<RifleProfile>> fetchSafeFirearms() async {
     try {
       if (_currentUserId == null) {
@@ -76,7 +88,6 @@ class InventoryBridge {
           await _firestore
               .collection('firearms')
               .where('ownerId', isEqualTo: _currentUserId)
-              .orderBy('name')
               .get();
 
       if (snapshot.docs.isEmpty) {
@@ -86,6 +97,8 @@ class InventoryBridge {
 
       final rifles =
           snapshot.docs.map((doc) => RifleProfile.fromFirestore(doc)).toList();
+      rifles.sort((a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
 
       debugPrint('InventoryBridge: Fetched ${rifles.length} firearms for user');
       return rifles;
@@ -230,6 +243,13 @@ class InventoryBridge {
   }
 
   /// Stream of firearms for reactive UI updates.
+  ///
+  /// Note: the query does NOT use `.orderBy(...)` server-side -- see
+  /// [fetchSafeFirearms] for the rationale (an equality `where('ownerId')`
+  /// + server-side `orderBy('name')` requires a composite index AND/OR
+  /// excludes docs lacking the `name` field, which silently emptied the
+  /// Shot Group Analyzer's dropdown). The list is sorted in-memory by
+  /// [RifleProfile.displayName] after mapping.
   Stream<List<RifleProfile>> watchSafeFirearms() {
     if (_currentUserId == null) {
       return Stream.value(<RifleProfile>[]);
@@ -238,12 +258,14 @@ class InventoryBridge {
     return _firestore
         .collection('firearms')
         .where('ownerId', isEqualTo: _currentUserId)
-        .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
+          final rifles = snapshot.docs
               .map((doc) => RifleProfile.fromFirestore(doc))
               .toList();
+          rifles.sort((a, b) =>
+              a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+          return rifles;
         })
         .handleError((error) {
           debugPrint('InventoryBridge: Error watching firearms: $error');

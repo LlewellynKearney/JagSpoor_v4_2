@@ -129,6 +129,30 @@
         { "fieldPath": "hunterId", "order": "ASCENDING" },
         { "fieldPath": "orderTimestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "optic_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "savedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "farm_pricelists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "farmId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "farm_pricelists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outfitterId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

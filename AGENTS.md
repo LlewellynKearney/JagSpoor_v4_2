@@ -6283,6 +6283,144 @@ Refactored the farm-level itemized service-rate model + form UI to carry explici
 - Files: `lib/features/hunter_mode/models/farm_service_rate.dart`, `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart`, `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`, `lib/features/hunter_mode/services/farm_price_list_pdf_exporter.dart`, `test/farm_service_rate_test.dart`, `test/farm_price_list_pdf_exporter_test.dart`.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure model + UI + pure filter helper). Existing `farm_service_rates` docs migrate automatically on read via `migrateLegacyKey`.
 
+## Phase 2 -- Optic Save Log, Shot Group Analyzer firearm fix, Custom Package Builder w/ farm price lists (added 2026-08-17)
+
+Three Phase 2 tasks on top of the Phase 1 baseline (commit 3ae7e82).
+
+### Task 1 -- Optic Save Log with audit history
+- New `lib/features/ballistics/data/services/optic_log_service.dart`
+  (`OpticLogService.instance`) -- owner-scoped `optic_logs` Firestore
+  collection. `logSave({firearmId, firearmLabel, optic})` writes one audit
+  entry per "Save Optic" event carrying the full `OpticProfile` snapshot +
+  the host firearm id + a display label + `FieldValue.serverTimestamp()`.
+  `getLogStream()` returns a reactive newest-first stream scoped by
+  `userId == auth.uid` (null-uid -> `Stream.empty()`).
+- `OpticLogEntry` model: `id`/`userId`/`firearmId`/`firearmLabel`/
+  `optic`/`savedAt`. `fromFirestore` delegates to a snapshot-free
+  `fromMap({id})` (unit-testable without a Firestore emulator); tolerates
+  the `firearmName` legacy alias + `createdAt` timestamp fallback. `toMap`
+  writes `FieldValue.serverTimestamp()` for `savedAt`. `copyWith` +
+  `firearmLabelForOpticLog(RifleProfile?)` helper (renders
+  `RifleProfile.displayName`, "Unknown firearm" for null, "Unnamed firearm
+  (—)" for empty make/model).
+- Wired into `_saveOptic()` in `scope_tools_bottom_sheet.dart`: after
+  `InventoryBridge.saveOpticProfile` persists the optic, the screen calls
+  `OpticLogService.instance.logSave(...)` (best-effort, failure logged via
+  `debugPrint` so a rules/permission error never blocks the optic save).
+  A "View Optic History" `IconButton` (`history_rounded`) in the Optical
+  Suite header pushes the new `OpticHistoryScreen`.
+- New `lib/features/ballistics/presentation/optic_history_screen.dart`:
+  reactive, newest-first log of the user's optic save events. Each card
+  shows the firearm label, optic name, turret unit / click value / focal
+  plane, and the saved-at timestamp. Empty / error / loading states.
+  Themed via `ThemeController.instance` + `CopyrightFooter`.
+- Firestore rules: new `match /optic_logs/{logId}` -- read =
+  `isAdmin() || isOwnerOf('userId')`; create = signed-in + stamps own uid;
+  update/delete = owner or admin. Owner-scoped so a hunter cannot read
+  another hunter's optic log.
+- Firestore indexes: new composite `optic_logs (userId ASC, savedAt DESC)`
+  for the stream query.
+- Tests: `test/optic_log_service_test.dart` (10 tests, all pass) -- `toMap`
+  carries all fields + `savedAt` is a `FieldValue`; `fromMap` round-trip;
+  missing-optic-map defaults; `firearmName` legacy alias; empty-data
+  tolerance; missing-id null; `copyWith`; `firearmLabelForOpticLog`
+  (displayName / null / empty-make-model fallback).
+
+### Task 2 -- Shot Group Analyzer firearm detection fix
+- Root cause: `InventoryBridge.fetchSafeFirearms()` and
+  `watchSafeFirearms()` queried `.where('ownerId').orderBy('name')`. The
+  Digital Firearm Safe manual form persists `make`/`model`/`caliber`/
+  `serial` -- NOT `name` -- so docs without a `name` field were silently
+  excluded by the `orderBy('name')` (Firestore requires the orderBy field
+  to exist on returned docs for an equality+orderBy composite). The Shot
+  Group Target Analyzer's firearm dropdown (which reads through
+  `watchSafeFirearms`) therefore rendered "No firearms in safe" even when
+  the safe had registered rifles.
+- Fix: removed `.orderBy('name')` from both `fetchSafeFirearms()` and
+  `watchSafeFirearms()` in `lib/features/ballistics/data/inventory_bridge.dart`.
+  The dropdown now renders every owner-scoped firearm doc; the
+  `RifleProfile.displayName` getter ("make model (calibre)") already
+  handles the make/model rendering.
+- File: `lib/features/ballistics/data/inventory_bridge.dart`.
+
+### Task 3 -- Custom Package Builder with farm price lists + marketplace booking parity
+- Rewrote the Custom Package Builder to draw species + itemized fees from
+  the outfitter's **manual farm price list** (`farm_pricelists`) +
+  **itemized service rates** (`farm_service_rates`) instead of the legacy
+  AI-scanned `scanned_pricelists`.
+- New hunter-readable read APIs on `FarmGamePriceListManager`:
+  `getFarmPriceListStreamForHunter(farmId)` + `getFarmPriceListForHunter(farmId)`
+  -- query by `farmId` only (no `outfitterId == currentUserId` filter) so a
+  hunter browsing the builder can read any farm's published price list.
+  Permitted by the existing `farm_pricelists` read rule (`isSignedIn()`).
+  The owner-scoped `getFarmPriceList`/`getFarmPriceListStream` (filtered by
+  `outfitterId == currentUserId`) remain for the outfitter's own price-list
+  management screen.
+- `custom_package_farm_selection_screen.dart` rewritten: discovers bookable
+  farms by scanning `farm_pricelists` (grouped by `farmId`) +
+  `farm_service_rates` (doc id == `farmId`), resolves the `farms` docs, and
+  renders each farm with species-count + "service rates" chips. Farms with
+  neither are filtered out. `CopyrightFooter` added.
+- `hunter_custom_package_builder_screen.dart` rewritten:
+  - Streams `farm_pricelists` (species rows with sex/gender + horn/tusk
+    badges + qty stepper capped at the outfitter's `qty`) AND
+    `farm_service_rates` (itemized fee rows with per-category unit
+    semantics "Per vehicle per day" / "Per night" / etc. + qty stepper)
+    reactively through the new hunter-readable getters.
+  - Hunt-window date pickers + hunter/observer party steppers.
+  - Grand total = Σ(qty × unit price); no platform commission / fee row
+    (matches the post-Phase-54 no-commission model).
+  - On submit writes a `bookings` doc via `submitCustomPackageBooking`
+    (`isCustomPackage: true`, `status: BookingStatus.pendingApproval`,
+    `pricelistId: 'farm_pricelists:{farmId}'`), then switches to a
+    **confirmation view** that mirrors the Package Marketplace booking
+    workflow: embedded `BookingChatThread` (hunter↔outfitter negotiation,
+    expanded by default) + a live status badge + an "ADD HUNT TO CALENDAR"
+    `FilledButton` that appears the instant the booking transitions to
+    Confirmed / Completed (subscribes to the booking doc stream so the
+    calendar button + status badge update reactively without a reload).
+    Calendar hook delegates to `BookingCalendarService.instance.addToCalendar`
+    (the same `add_2_calendar` integration the marketplace uses).
+  - `CopyrightFooter` added.
+- Files: `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (hunter-readable read APIs), `custom_package_farm_selection_screen.dart`
+  (rewritten), `hunter_custom_package_builder_screen.dart` (rewritten).
+
+### Verification (Phase 2)
+- `flutter analyze` (local Flutter 3.29.1, CI pin): **0 errors, 0 warnings**,
+  276 infos (all pre-existing `avoid_print` / `deprecated_member_use` style
+  hints; no new issues introduced).
+- `flutter test` (full suite): **605 passed, 2 failed**. The 2 failures are
+  the documented pre-existing `fake_cloud_firestore 4.1.1` /
+  `cloud_firestore 6.8.0` compile skew (`MockWriteBatch.update` declared
+  type variables don't match) in `bug_report_screenshot_test.dart` +
+  `offline_sync_queue_test.dart` -- verified identical on the clean
+  baseline (commit 3ae7e82, stashed my changes); unrelated to Phase 2.
+  +38 net passing tests vs the 567-pass Phase 1 baseline (the new
+  `optic_log_service_test` 10 + the existing farm/booking suites re-run).
+- Files: `lib/features/ballistics/data/services/optic_log_service.dart` (NEW),
+  `lib/features/ballistics/presentation/optic_history_screen.dart` (NEW),
+  `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`
+  (wired `_saveOptic` + history button),
+  `lib/features/ballistics/data/inventory_bridge.dart`
+  (removed `.orderBy('name')`),
+  `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (hunter-readable read APIs),
+  `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`
+  (rewritten),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (rewritten),
+  `firestore.rules` (`optic_logs` owner-scoped block),
+  `firestore.indexes.json` (`optic_logs` + `farm_pricelists` composites),
+  `test/optic_log_service_test.dart` (NEW, 10 tests),
+  `AGENTS.md`.
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules,
+  firestore:indexes` in a credentialed env to activate the `optic_logs`
+  rules + the `optic_logs` / `farm_pricelists` composite indexes. Until
+  deployed the optic-log stream surfaces the index-missing error in-UI
+  (graceful, non-crashing) and optic-log writes are denied (best-effort
+  `debugPrint`, the optic save itself still succeeds).
+
 ## Phase — Scope Settings firearm dropdown replaced with ballistic calculator tactical-HUD pattern (added 2026-08-16)
 
 The Scope Settings & Tools sheet (`lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`) previously used the reusable `FirearmDropdownSelector` widget (`lib/widgets/firearm_dropdown_selector.dart`) backed by `InventoryBridge.watchSafeFirearms()` (`Stream<List<RifleProfile>>`). It was reported as broken — replaced with a verbatim port of the proven tactical-HUD dropdown from `BallisticCalcScreen` (`lib/features/ballistics/presentation/ballistic_calc_screen.dart`).

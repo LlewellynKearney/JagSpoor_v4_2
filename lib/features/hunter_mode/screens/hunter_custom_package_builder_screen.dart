@@ -1,29 +1,43 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/booking_status.dart';
+import '../models/farm_game_price_entry.dart';
+import '../models/farm_service_rate.dart';
+import '../services/booking_calendar_service.dart';
+import '../services/farm_game_price_list_manager.dart';
 import '../services/pricelist_scanner_service.dart';
 import '../widgets/booking_chat_thread.dart';
 
 /// Hunter **Custom Package Builder** form.
 ///
-/// Reached from [CustomPackageFarmSelectionScreen] with a farm + its active
-/// scanned price list. Lets the hunter assemble a custom itinerary:
-/// - Check-in / Check-out dates (+ derived hunting days).
-/// - Number of hunters and observers.
-/// - Species / trophies pulled directly from the farm's price list (with
-///   sex/class and a quantity stepper).
-/// - Lodging / catering / vehicle fee lines from the same price list.
+/// Reached from [CustomPackageFarmSelectionScreen] with a farm + its outfitter
+/// id. Lets the hunter assemble a custom itinerary by browsing the farm's
+/// published game price list (`farm_pricelists` -- species + per-unit ZAR) and
+/// itemized service rates (`farm_service_rates` -- bakkie / slaughtering /
+/// coldroom / daily / accommodation / catering fees), selecting quantities,
+/// and submitting a booking request.
 ///
-/// All per-item prices use the price list's `hunterDisplayPriceZAR`, which
-/// equals the item's base price (there is no platform commission / markup).
-/// The hunter sees line-item prices and a grand total that simply reflects
-/// the base booking cost — there is no "Platform Fee" row exposed to the
-/// hunter.
-///
-/// On submit the request is written to the Firestore `bookings` collection
-/// with `isCustomPackage: true` and `status: 'Pending Approval'`, and the
-/// standard [BookingChatThread] is embedded for hunter↔outfitter negotiation.
+/// The builder:
+/// - Streams the farm's species price list + service rates reactively (so a
+///   newly-added species or rate appears without a reload).
+/// - Renders species rows with sex/class + horn/tusk badges and a quantity
+///   stepper (capped at the outfitter's `qty`).
+/// - Renders itemized service rows with the per-category unit semantics
+///   ("Per vehicle per day", "Per night", etc.) and a quantity stepper.
+/// - Computes a grand total = Σ(qty × unit price). There is no platform
+///   commission / markup, so the hunter sees the base booking cost with no
+///   "Platform Fee" row.
+/// - On submit writes a `bookings` document with `isCustomPackage: true` and
+///   `status: BookingStatus.pendingApproval`, then switches to a confirmation
+///   view that embeds the standard [BookingChatThread] for negotiation and an
+///   "ADD HUNT TO CALENDAR" button once the booking transitions to Confirmed /
+///   Completed -- matching the Package Marketplace booking workflow exactly.
 class HunterCustomPackageBuilderScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -34,20 +48,12 @@ class HunterCustomPackageBuilderScreen extends StatefulWidget {
   /// Outfitter who owns the farm / price list.
   final String outfitterId;
 
-  /// The scanned price list document id the items are drawn from.
-  final String pricelistId;
-
-  /// The full price list document (carries the `items` array).
-  final Map<String, dynamic> pricelist;
-
   const HunterCustomPackageBuilderScreen({
     super.key,
     required this.theme,
     required this.farmId,
     required this.farmName,
     required this.outfitterId,
-    required this.pricelistId,
-    required this.pricelist,
   });
 
   @override
@@ -57,8 +63,9 @@ class HunterCustomPackageBuilderScreen extends StatefulWidget {
 
 class _HunterCustomPackageBuilderScreenState
     extends State<HunterCustomPackageBuilderScreen> {
-  final PricelistScannerService _pricelistService =
-      PricelistScannerService.instance;
+  final FarmGamePriceListManager _priceListManager =
+      FarmGamePriceListManager.instance;
+  final PricelistScannerService _bookingService = PricelistScannerService.instance;
 
   // Form state.
   DateTime? _checkIn;
@@ -66,38 +73,35 @@ class _HunterCustomPackageBuilderScreenState
   int _hunterCount = 1;
   int _observerCount = 0;
 
-  // Item rows (species) + fee rows (lodging/catering/...), each with qty.
-  final Map<String, int> _quantities = {}; // keyed by item index id
-  final List<Map<String, dynamic>> _speciesItems = [];
-  final List<Map<String, dynamic>> _feeItems = [];
+  // Item rows (species) + fee rows (itemized services), each with qty.
+  final Map<String, int> _quantities = {}; // keyed by stable row id
+  List<FarmGamePriceEntry> _speciesItems = const [];
+  List<FarmServiceRate> _feeItems = const [];
 
   // Submission state.
   bool _isSubmitting = false;
   String? _createdBookingId; // when set, switches to confirmation view
+  // Cached booking document for the confirmation view (so the calendar +
+  // status badge can render without re-fetching). Refreshed by the booking
+  // stream subscription below once the booking is created.
+  Map<String, dynamic>? _bookingDoc;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _bookingSub;
 
   @override
   void initState() {
     super.initState();
-    _loadItems();
+    // The farm's price list + service rates are streamed reactively through
+    // the manager's hunter-readable getters (no owner-scoped filter).
   }
 
-  void _loadItems() {
-    final items = widget.pricelist['items'] as List<dynamic>? ?? [];
-    for (var i = 0; i < items.length; i++) {
-      final item = items[i] as Map<String, dynamic>;
-      final type = item['itemType'] as String? ?? 'species';
-      final row = Map<String, dynamic>.from(item);
-      row['_rowId'] = '${widget.pricelistId}_$i';
-      if (type == 'fee') {
-        _feeItems.add(row);
-      } else {
-        _speciesItems.add(row);
-      }
-    }
+  @override
+  void dispose() {
+    _bookingSub?.cancel();
+    super.dispose();
   }
 
-  double _unitPrice(Map<String, dynamic> item) =>
-      (item['hunterDisplayPriceZAR'] as num?)?.toDouble() ?? 0.0;
+  double _unitPriceSpecies(FarmGamePriceEntry e) => e.priceZAR;
+  double _unitPriceRate(FarmServiceRate r) => r.pricePerUnit;
 
   int _qty(String rowId) => _quantities[rowId] ?? 0;
 
@@ -113,20 +117,24 @@ class _HunterCustomPackageBuilderScreenState
 
   double get _grandTotal {
     double total = 0;
-    for (final item in [..._speciesItems, ..._feeItems]) {
-      final rowId = item['_rowId'] as String;
-      final qty = _qty(rowId);
-      if (qty > 0) {
-        total += _unitPrice(item) * qty;
-      }
+    for (final e in _speciesItems) {
+      final qty = _qty(_speciesRowId(e));
+      if (qty > 0) total += _unitPriceSpecies(e) * qty;
+    }
+    for (final r in _feeItems) {
+      final qty = _qty(_feeRowId(r));
+      if (qty > 0) total += _unitPriceRate(r) * qty;
     }
     return total;
   }
 
   int get _totalLineCount {
     var n = 0;
-    for (final item in [..._speciesItems, ..._feeItems]) {
-      if (_qty(item['_rowId'] as String) > 0) n++;
+    for (final e in _speciesItems) {
+      if (_qty(_speciesRowId(e)) > 0) n++;
+    }
+    for (final r in _feeItems) {
+      if (_qty(_feeRowId(r)) > 0) n++;
     }
     return n;
   }
@@ -140,30 +148,53 @@ class _HunterCustomPackageBuilderScreenState
   String _formatZAR(double value) =>
       'R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
 
-  List<Map<String, dynamic>> _collectSelected(List<Map<String, dynamic>> rows) {
+  static String _speciesRowId(FarmGamePriceEntry e) => 'sp_${e.id}';
+  static String _feeRowId(FarmServiceRate r) => 'fee_${r.key}';
+
+  List<Map<String, dynamic>> _collectSelectedSpecies() {
     final out = <Map<String, dynamic>>[];
-    for (final item in rows) {
-      final rowId = item['_rowId'] as String;
-      final qty = _qty(rowId);
+    for (final e in _speciesItems) {
+      final qty = _qty(_speciesRowId(e));
       if (qty <= 0) continue;
-      final unit = _unitPrice(item);
+      final unit = _unitPriceSpecies(e);
       out.add({
-        'name': item['name'] ?? item['displayLabel'] ?? 'Unknown',
-        'displayLabel': item['displayLabel'] ?? item['name'],
-        'speciesId': item['speciesId'],
-        'speciesName': item['speciesName'],
-        'sex': item['sex'],
-        'sexLabel': item['sexLabel'],
-        'trophySizeRange': item['trophySizeRange'],
-        'itemType': item['itemType'],
-        'feeType': item['feeType'],
+        'name': e.speciesName,
+        'displayLabel': e.speciesName,
+        'speciesName': e.speciesName,
+        'sex': e.gender,
+        'sexLabel': e.gender,
+        'hornTuskLength': e.hornTuskLength,
+        'itemType': 'species',
+        'feeType': null,
         'quantity': qty,
         'unitPriceHunterZAR': unit,
         'lineTotal': unit * qty,
-        'outfitterBasePrice': item['outfitterBasePrice'] ?? 0.0,
+        'outfitterBasePrice': unit,
         'hunterDisplayPriceZAR': unit,
-        if (item['quantityLimit'] != null)
-          'quantityLimit': item['quantityLimit'],
+        'quantityLimit': e.qty > 0 ? e.qty : null,
+      });
+    }
+    return out;
+  }
+
+  List<Map<String, dynamic>> _collectSelectedFees() {
+    final out = <Map<String, dynamic>>[];
+    for (final r in _feeItems) {
+      final qty = _qty(_feeRowId(r));
+      if (qty <= 0) continue;
+      final unit = _unitPriceRate(r);
+      out.add({
+        'name': r.label,
+        'displayLabel': r.label,
+        'itemType': 'fee',
+        'feeType': r.key,
+        'feeUnitLabel': r.unitLabel,
+        'quantityNoun': r.quantityNoun,
+        'quantity': qty,
+        'unitPriceHunterZAR': unit,
+        'lineTotal': unit * qty,
+        'outfitterBasePrice': unit,
+        'hunterDisplayPriceZAR': unit,
       });
     }
     return out;
@@ -171,7 +202,7 @@ class _HunterCustomPackageBuilderScreenState
 
   Future<void> _submitBooking() async {
     if (_totalLineCount == 0) {
-      _showError('Please add at least one species or lodging/catering line.');
+      _showError('Please add at least one species or service line.');
       return;
     }
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -182,15 +213,15 @@ class _HunterCustomPackageBuilderScreenState
 
     setState(() => _isSubmitting = true);
     try {
-      final selectedItems = _collectSelected(_speciesItems);
-      final lodgingCatering = _collectSelected(_feeItems);
+      final selectedItems = _collectSelectedSpecies();
+      final lodgingCatering = _collectSelectedFees();
       final total = _grandTotal;
 
-      final bookingId = await _pricelistService.submitCustomPackageBooking(
+      final bookingId = await _bookingService.submitCustomPackageBooking(
         farmId: widget.farmId,
         farmName: widget.farmName,
         outfitterId: widget.outfitterId,
-        pricelistId: widget.pricelistId,
+        pricelistId: 'farm_pricelists:${widget.farmId}',
         selectedItems: selectedItems,
         lodgingCatering: lodgingCatering,
         combinedTotalZAR: total,
@@ -205,6 +236,21 @@ class _HunterCustomPackageBuilderScreenState
         setState(() {
           _createdBookingId = bookingId;
           _isSubmitting = false;
+        });
+        // Subscribe to the booking doc so the confirmation view can render the
+        // live status badge + surface the calendar button the instant the
+        // outfitter confirms the direct payment.
+        _bookingSub = FirebaseFirestore.instance
+            .collection('bookings')
+            .doc(bookingId)
+            .snapshots()
+            .listen((snap) {
+          if (!mounted) return;
+          if (snap.exists) {
+            final data = Map<String, dynamic>.from(snap.data() ?? const {});
+            data['id'] = snap.id;
+            setState(() => _bookingDoc = data);
+          }
         });
         _showSuccess('Custom package request sent to the outfitter.');
       }
@@ -242,15 +288,52 @@ class _HunterCustomPackageBuilderScreenState
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('⚠️ $message'), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('✅ $message'), backgroundColor: Colors.green),
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
+  }
+
+  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
+  /// details, and package title to the device's native calendar via
+  /// [BookingCalendarService]. Mirrors the marketplace's calendar hook.
+  Future<void> _addToCalendar() async {
+    final booking = _bookingDoc;
+    if (booking == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final launched = await BookingCalendarService.instance.addToCalendar(booking);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(launched
+              ? 'Hunt added to your calendar — check your calendar app.'
+              : 'No hunt dates on file for this booking — the outfitter must '
+                'confirm the dates first.'),
+          backgroundColor: launched ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not open calendar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  bool _canAddToCalendar() {
+    final status = (_bookingDoc?['status'] as String?)?.toLowerCase() ?? '';
+    return status == 'confirmed' || status == 'completed';
   }
 
   @override
@@ -259,240 +342,132 @@ class _HunterCustomPackageBuilderScreenState
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          '🦌 Custom Package Builder',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          widget.farmName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: theme.backgroundColor,
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
-      body: _createdBookingId != null
-          ? _buildConfirmationView(theme)
-          : _buildFormView(theme),
+      body: _createdBookingId == null
+          ? _buildBuilderView(theme)
+          : _buildConfirmationView(theme),
+      bottomNavigationBar: const SafeArea(
+        top: false,
+        child: CopyrightFooter.tight(),
+      ),
     );
   }
 
-  // ── Confirmation view (post-submit): chat ────────────────────────────────
-  Widget _buildConfirmationView(ThemeController theme) {
+  // ---------------------------------------------------------------------------
+  //  BUILDER VIEW (species + service rates + dates + party + submit)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildBuilderView(ThemeController theme) {
+    return StreamBuilder<List<FarmGamePriceEntry>>(
+      stream: _priceListManager.getFarmPriceListStreamForHunter(widget.farmId),
+      builder: (context, speciesSnapshot) {
+        return StreamBuilder<FarmServiceRates>(
+          stream: _priceListManager.getFarmServiceRatesStream(widget.farmId),
+          builder: (context, ratesSnapshot) {
+            if (speciesSnapshot.hasError || ratesSnapshot.hasError) {
+              return _StateBanner(
+                icon: Icons.cloud_off,
+                message: 'Could not load this farm\'s price list.',
+                detail: '${speciesSnapshot.error ?? ratesSnapshot.error}',
+                theme: theme,
+              );
+            }
+            _speciesItems = speciesSnapshot.data ?? const [];
+            final rates = ratesSnapshot.data;
+            _feeItems = rates?.configuredRates ?? const [];
+
+            if (_speciesItems.isEmpty && _feeItems.isEmpty) {
+              return _StateBanner(
+                icon: Icons.price_check_outlined,
+                message: 'No pricing published yet',
+                detail: 'This farm has not published a game price list or '
+                    'service rates yet. Please check back later or contact '
+                    'the outfitter.',
+                theme: theme,
+              );
+            }
+
+            return _buildBuilderBody(theme);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBuilderBody(ThemeController theme) {
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, SafeBottomInset.of(context)),
       children: [
-        Icon(Icons.check_circle_rounded,
-            color: Colors.green, size: 56),
+        _buildDatesCard(theme),
         const SizedBox(height: 12),
-        Text(
-          'Request Submitted!',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: theme.textColor,
-              fontSize: 20,
-              fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Your custom package request for ${widget.farmName} has been sent to '
-          'the outfitter for approval. You can negotiate details in the chat '
-          'below.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: theme.subtitleColor, fontSize: 13),
-        ),
+        _buildPartyCard(theme),
         const SizedBox(height: 20),
-
-        // Price summary (the total price only).
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            children: [
-              _summaryRow(theme, 'Grand Total', _formatZAR(_grandTotal),
-                  emphasize: true),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // 💬 Standard booking chat thread.
-        BookingChatThread(
-          bookingId: _createdBookingId!,
-          theme: theme,
-          senderName:
-              FirebaseAuth.instance.currentUser?.displayName ?? 'Hunter',
-          initiallyExpanded: true,
-        ),
-        const SizedBox(height: 24),
-
-        // Done — back to the farm selection / dashboard.
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('DONE'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: theme.accentColor,
-              side: BorderSide(color: theme.accentColor.withValues(alpha: 0.5)),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+        if (_speciesItems.isNotEmpty) ...[
+          _sectionHeader(theme, 'Game Species & Trophies', Icons.pets_rounded),
+          const SizedBox(height: 8),
+          for (final e in _speciesItems)
+            _SpeciesQtyRow(
+              entry: e,
+              qty: _qty(_speciesRowId(e)),
+              unitPrice: _unitPriceSpecies(e),
+              onChanged: (v) => _setQty(_speciesRowId(e), v),
+              theme: theme,
             ),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryRow(ThemeController theme, String label, String value,
-      {bool emphasize = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: emphasize ? theme.textColor : theme.subtitleColor,
-            fontSize: emphasize ? 15 : 13,
-            fontWeight: emphasize ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: emphasize ? Colors.green : theme.textColor,
-            fontSize: emphasize ? 18 : 14,
-            fontWeight: emphasize ? FontWeight.bold : FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Form view ─────────────────────────────────────────────────────────────
-  Widget _buildFormView(ThemeController theme) {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
-            children: [
-              _buildFarmHeader(theme),
-              const SizedBox(height: 16),
-              _buildDatesSection(theme),
-              const SizedBox(height: 16),
-              _buildPartySection(theme),
-              const SizedBox(height: 16),
-              _buildSectionTitle(
-                  theme, Icons.pets_rounded, 'Species & Trophies'),
-              if (_speciesItems.isEmpty)
-                _emptyHint(theme, 'No species lines on this price list.')
-              else
-                ..._speciesItems.map((i) => _ItemQtyRow(
-                      item: i,
-                      qty: _qty(i['_rowId'] as String),
-                      unitPrice: _unitPrice(i),
-                      onChanged: (v) =>
-                          _setQty(i['_rowId'] as String, v),
-                      theme: theme,
-                    )),
-              const SizedBox(height: 16),
-              _buildSectionTitle(
-                  theme, Icons.hotel_rounded, 'Lodging & Catering'),
-              if (_feeItems.isEmpty)
-                _emptyHint(theme, 'No lodging/catering lines on this price list.')
-              else
-                ..._feeItems.map((i) => _ItemQtyRow(
-                      item: i,
-                      qty: _qty(i['_rowId'] as String),
-                      unitPrice: _unitPrice(i),
-                      onChanged: (v) =>
-                          _setQty(i['_rowId'] as String, v),
-                      theme: theme,
-                    )),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-        _buildBottomBar(theme),
-      ],
-    );
-  }
-
-  Widget _buildFarmHeader(ThemeController theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.terrain_rounded, color: theme.accentColor, size: 28),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.farmName,
-                  style: TextStyle(
-                      color: theme.textColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${_speciesItems.length} species · ${_feeItems.length} fee lines',
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(height: 20),
         ],
-      ),
+        if (_feeItems.isNotEmpty) ...[
+          _sectionHeader(theme, 'Itemized Service Rates',
+              Icons.room_service_rounded),
+          const SizedBox(height: 8),
+          for (final r in _feeItems)
+            _FeeQtyRow(
+              rate: r,
+              qty: _qty(_feeRowId(r)),
+              unitPrice: _unitPriceRate(r),
+              onChanged: (v) => _setQty(_feeRowId(r), v),
+              theme: theme,
+            ),
+          const SizedBox(height: 20),
+        ],
+        _buildSubmitCard(theme),
+      ],
     );
   }
 
-  Widget _buildDatesSection(ThemeController theme) {
+  Widget _buildDatesCard(ThemeController theme) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'HUNT DATES',
-            style: TextStyle(
-                color: theme.subtitleColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1),
-          ),
-          const SizedBox(height: 12),
+          _sectionHeader(theme, 'Hunt Window', Icons.event_rounded),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
-                child: _dateChip(
-                  theme: theme,
+                child: _dateButton(
+                  theme,
                   label: 'Check-in',
                   value: _checkIn,
                   onTap: () => _pickDate(isCheckIn: true),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
-                child: _dateChip(
-                  theme: theme,
+                child: _dateButton(
+                  theme,
                   label: 'Check-out',
                   value: _checkOut,
                   onTap: () => _pickDate(isCheckIn: false),
@@ -500,71 +475,47 @@ class _HunterCustomPackageBuilderScreenState
               ),
             ],
           ),
-          const SizedBox(height: 10),
           if (_huntingDays > 0)
-            Row(
-              children: [
-                Icon(Icons.event_available_rounded,
-                    color: theme.accentColor, size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  '$_huntingDays hunting day${_huntingDays != 1 ? 's' : ''}',
-                  style: TextStyle(
-                      color: theme.textColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '$_huntingDays hunting day${_huntingDays != 1 ? 's' : ''}',
+                style: TextStyle(
+                    color: theme.subtitleColor, fontSize: 12),
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _dateChip({
-    required ThemeController theme,
-    required String label,
-    required DateTime? value,
-    required VoidCallback onTap,
-  }) {
+  Widget _dateButton(ThemeController theme,
+      {required String label, DateTime? value, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         decoration: BoxDecoration(
-          color: theme.backgroundColor,
+          color: theme.accentColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.event_rounded, color: theme.accentColor, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: theme.subtitleColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold)),
-                  Text(
-                    value != null
-                        ? '${value.day}/${value.month}/${value.year}'
-                        : 'Select date',
-                    style: TextStyle(
-                        color: value != null
-                            ? theme.textColor
-                            : theme.subtitleColor,
-                        fontSize: 13,
-                        fontWeight: value != null
-                            ? FontWeight.w600
-                            : FontWeight.normal),
-                  ),
-                ],
-              ),
+            Text(label,
+                style: TextStyle(
+                    color: theme.subtitleColor, fontSize: 11)),
+            const SizedBox(height: 2),
+            Text(
+              value == null
+                  ? 'Select date'
+                  : _toIsoDate(value),
+              style: TextStyle(
+                  color: theme.textColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14),
             ),
           ],
         ),
@@ -572,103 +523,70 @@ class _HunterCustomPackageBuilderScreenState
     );
   }
 
-  Widget _buildPartySection(ThemeController theme) {
+  Widget _buildPartyCard(ThemeController theme) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _countStepper(
-              theme: theme,
-              label: 'Hunters',
-              icon: Icons.person_rounded,
-              value: _hunterCount,
-              min: 1,
-              onChanged: (v) => setState(() => _hunterCount = v),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _countStepper(
-              theme: theme,
-              label: 'Observers',
-              icon: Icons.visibility_rounded,
-              value: _observerCount,
-              min: 0,
-              onChanged: (v) => setState(() => _observerCount = v),
-            ),
-          ),
+          _sectionHeader(theme, 'Party Size', Icons.groups_rounded),
+          const SizedBox(height: 10),
+          _partyStepper(theme,
+              label: 'Hunters', value: _hunterCount, min: 1,
+              onChanged: (v) => setState(() => _hunterCount = v)),
+          const SizedBox(height: 8),
+          _partyStepper(theme,
+              label: 'Observers', value: _observerCount, min: 0,
+              onChanged: (v) => setState(() => _observerCount = v)),
         ],
       ),
     );
   }
 
-  Widget _countStepper({
-    required ThemeController theme,
-    required String label,
-    required IconData icon,
-    required int value,
-    required int min,
-    required ValueChanged<int> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _partyStepper(ThemeController theme,
+      {required String label,
+      required int value,
+      required int min,
+      required ValueChanged<int> onChanged}) {
+    return Row(
       children: [
-        Row(
-          children: [
-            Icon(icon, color: theme.accentColor, size: 16),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    color: theme.subtitleColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600)),
-          ],
+        Expanded(
+          child: Text(label,
+              style: TextStyle(color: theme.textColor, fontSize: 14)),
         ),
-        const SizedBox(height: 8),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _roundIconBtn(
-              theme: theme,
-              icon: Icons.remove_rounded,
-              onTap: value > min ? () => onChanged(value - 1) : null,
+            _roundBtn(theme, Icons.remove_rounded,
+                onTap: value > min ? () => onChanged(value - 1) : null),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('$value',
+                  style: TextStyle(
+                      color: theme.textColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
             ),
-            Expanded(
-              child: Text(
-                '$value',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: theme.textColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
-            _roundIconBtn(
-              theme: theme,
-              icon: Icons.add_rounded,
-              onTap: () => onChanged(value + 1),
-            ),
+            _roundBtn(theme, Icons.add_rounded,
+                onTap: () => onChanged(value + 1)),
           ],
         ),
       ],
     );
   }
 
-  Widget _roundIconBtn({
-    required ThemeController theme,
-    required IconData icon,
-    required VoidCallback? onTap,
-  }) {
+  Widget _roundBtn(ThemeController theme, IconData icon,
+      {required VoidCallback? onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
           color: onTap != null
               ? theme.accentColor.withValues(alpha: 0.15)
@@ -677,61 +595,43 @@ class _HunterCustomPackageBuilderScreenState
         ),
         child: Icon(icon,
             color: onTap != null ? theme.accentColor : theme.subtitleColor,
-            size: 20),
+            size: 18),
       ),
     );
   }
 
-  Widget _buildSectionTitle(ThemeController theme, IconData icon, String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: theme.accentColor, size: 18),
-          const SizedBox(width: 8),
-          Text(title,
-              style: TextStyle(
-                  color: theme.textColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15)),
-        ],
-      ),
+  Widget _sectionHeader(ThemeController theme, String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: theme.accentColor, size: 18),
+        const SizedBox(width: 8),
+        Text(label.toUpperCase(),
+            style: TextStyle(
+                color: theme.accentColor,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.0)),
+      ],
     );
   }
 
-  Widget _emptyHint(ThemeController theme, String message) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(message,
-          style: TextStyle(color: theme.subtitleColor, fontSize: 13)),
-    );
-  }
-
-  Widget _buildBottomBar(ThemeController theme) {
+  Widget _buildSubmitCard(ThemeController theme) {
     final total = _grandTotal;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: theme.cardColor,
-        border: Border(
-          top: BorderSide(color: theme.accentColor.withValues(alpha: 0.3), width: 2),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.4)),
       ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -751,67 +651,200 @@ class _HunterCustomPackageBuilderScreenState
                     ),
                   ],
                 ),
-                Text(
-                  _formatZAR(total),
-                  style: TextStyle(
-                      color: theme.accentColor,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: (_totalLineCount == 0 || _isSubmitting)
-                    ? null
-                    : _submitBooking,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.accentColor,
-                  foregroundColor: Colors.black,
-                  disabledBackgroundColor:
-                      theme.accentColor.withValues(alpha: 0.3),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                            color: Colors.black, strokeWidth: 2),
-                      )
-                    : const Text(
-                        'Submit Custom Package Request',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
               ),
+              Text(
+                _formatZAR(total),
+                style: TextStyle(
+                    color: theme.accentColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: (_totalLineCount == 0 || _isSubmitting)
+                  ? null
+                  : _submitBooking,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.accentColor,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor:
+                    theme.accentColor.withValues(alpha: 0.3),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                          color: Colors.black, strokeWidth: 2),
+                    )
+                  : const Text(
+                      'Submit Custom Package Request',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  //  CONFIRMATION VIEW (chat + status + calendar — marketplace parity)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildConfirmationView(ThemeController theme) {
+    final status =
+        (_bookingDoc?['status'] as String?) ?? BookingStatus.pendingApproval;
+    final canAddToCalendar = _canAddToCalendar();
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, SafeBottomInset.of(context)),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: _statusColor(status, theme).withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            children: [
+              Icon(Icons.check_circle_rounded,
+                  color: _statusColor(status, theme), size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Request Submitted!',
+                style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Your custom package request for ${widget.farmName} has been '
+                'sent to the outfitter for review. Use the chat below to '
+                'negotiate details and arrange payment.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _statusColor(status, theme).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  BookingStatus.hunterBadgeLabel(status).toUpperCase(),
+                  style: TextStyle(
+                      color: _statusColor(status, theme),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Embedded hunter↔outfitter chat thread (negotiation), matching the
+        // marketplace booking card's chat drawer.
+        BookingChatThread(
+          bookingId: _createdBookingId!,
+          theme: theme,
+          senderName: 'Hunter',
+          initiallyExpanded: true,
+        ),
+        const SizedBox(height: 12),
+        if (canAddToCalendar)
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _addToCalendar,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.event_available_rounded, size: 20),
+              label: const Text(
+                'ADD HUNT TO CALENDAR',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        if (!canAddToCalendar)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'Once the outfitter confirms your direct payment, an "Add to '
+              'Calendar" button will appear here so you can save the hunt '
+              'dates to your phone.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context)
+                .popUntil((route) => route.isFirst),
+            icon: const Icon(Icons.home_rounded),
+            label: const Text('BACK TO DASHBOARD'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.accentColor,
+              side: BorderSide(color: theme.accentColor),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _statusColor(String status, ThemeController theme) {
+    switch (status.toLowerCase()) {
+      case 'confirmed':
+      case 'completed':
+        return Colors.green.shade700;
+      case 'awaiting payment':
+      case 'approved':
+        return Colors.amber.shade700;
+      case 'declined':
+      case 'cancelled':
+        return Colors.red.shade700;
+      default:
+        return theme.accentColor;
+    }
+  }
 }
 
-/// A price-list line row with a quantity stepper + per-line total.
-///
-/// The unit price shown is the `hunterDisplayPriceZAR`, which equals the
-/// item's base price (there is no platform commission), so no separate fee
-/// row appears.
-class _ItemQtyRow extends StatelessWidget {
-  final Map<String, dynamic> item;
+/// A game-species price-list line row with a quantity stepper + per-line
+/// total. The unit price is the farm's published per-animal ZAR (no platform
+/// commission), so no separate fee row appears.
+class _SpeciesQtyRow extends StatelessWidget {
+  final FarmGamePriceEntry entry;
   final int qty;
   final double unitPrice;
   final ValueChanged<int> onChanged;
   final ThemeController theme;
 
-  const _ItemQtyRow({
-    required this.item,
+  const _SpeciesQtyRow({
+    required this.entry,
     required this.qty,
     required this.unitPrice,
     required this.onChanged,
@@ -820,15 +853,11 @@ class _ItemQtyRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = item['name'] as String? ??
-        item['displayLabel'] as String? ??
-        'Unknown';
-    final sexLabel = item['sexLabel'] as String? ?? '';
-    final sizeRange = item['trophySizeRange'] as String? ?? '';
+    final name = entry.speciesName;
     final isSelected = qty > 0;
     final lineTotal = unitPrice * qty;
-    final quantityLimit = _resolveQtyLimit(item);
-    final atLimit = quantityLimit != null && qty >= quantityLimit;
+    final limit = entry.qty > 0 ? entry.qty : null;
+    final atLimit = limit != null && qty >= limit;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -858,22 +887,21 @@ class _ItemQtyRow extends StatelessWidget {
                         isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
-                if (sexLabel.isNotEmpty || sizeRange.isNotEmpty) ...[
+                if (entry.gender != 'Any' || entry.hornTuskLength.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Wrap(
                     spacing: 6,
                     children: [
-                      if (sexLabel.isNotEmpty)
-                        _metaChip(sexLabel),
-                      if (sizeRange.isNotEmpty) _metaChip(sizeRange),
-                      if (quantityLimit != null)
-                        _metaChip('max $quantityLimit'),
+                      if (entry.gender != 'Any') _metaChip(theme, entry.gender),
+                      if (entry.hornTuskLength.isNotEmpty)
+                        _metaChip(theme, entry.hornTuskDisplayLabel),
+                      if (limit != null) _metaChip(theme, 'max $limit'),
                     ],
                   ),
                 ],
                 const SizedBox(height: 4),
                 Text(
-                  'R ${unitPrice.toStringAsFixed(0)} / unit'
+                  'R ${unitPrice.toStringAsFixed(0)} / animal'
                   '${qty > 0 ? '  ·  line R ${lineTotal.toStringAsFixed(0)}' : ''}',
                   style: TextStyle(
                       color: isSelected ? theme.accentColor : theme.subtitleColor,
@@ -884,26 +912,13 @@ class _ItemQtyRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _qtyStepper(atLimit: atLimit),
+          _qtyStepper(theme, qty: qty, atLimit: atLimit, onChanged: onChanged),
         ],
       ),
     );
   }
 
-  /// Resolves the per-line quantity limit from the item map (int / num /
-  /// numeric string). Returns `null` when unset (unlimited).
-  static int? _resolveQtyLimit(Map<String, dynamic> item) {
-    final v = item['quantityLimit'];
-    if (v is int) return v > 0 ? v : null;
-    if (v is num) return v.toInt() > 0 ? v.toInt() : null;
-    if (v is String) {
-      final n = int.tryParse(v);
-      return (n != null && n > 0) ? n : null;
-    }
-    return null;
-  }
-
-  Widget _metaChip(String label) {
+  Widget _metaChip(ThemeController theme, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -917,11 +932,13 @@ class _ItemQtyRow extends StatelessWidget {
     );
   }
 
-  Widget _qtyStepper({required bool atLimit}) {
+  Widget _qtyStepper(ThemeController theme,
+      {required int qty, required bool atLimit, required ValueChanged<int> onChanged}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _btn(icon: Icons.remove_rounded, onTap: qty > 0 ? () => onChanged(qty - 1) : null),
+        _btn(theme, Icons.remove_rounded,
+            onTap: qty > 0 ? () => onChanged(qty - 1) : null),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Text(
@@ -932,17 +949,13 @@ class _ItemQtyRow extends StatelessWidget {
                 fontWeight: FontWeight.bold),
           ),
         ),
-        // Cap the '+' button at the per-line quantity limit so a hunter
-        // cannot book more animals than the outfitter has available.
-        _btn(
-          icon: Icons.add_rounded,
-          onTap: atLimit ? null : () => onChanged(qty + 1),
-        ),
+        _btn(theme, Icons.add_rounded,
+            onTap: atLimit ? null : () => onChanged(qty + 1)),
       ],
     );
   }
 
-  Widget _btn({required IconData icon, required VoidCallback? onTap}) {
+  Widget _btn(ThemeController theme, IconData icon, {required VoidCallback? onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -957,6 +970,159 @@ class _ItemQtyRow extends StatelessWidget {
         child: Icon(icon,
             color: onTap != null ? theme.accentColor : theme.subtitleColor,
             size: 18),
+      ),
+    );
+  }
+}
+
+/// An itemized service-rate line row (bakkie / slaughtering / coldroom / daily
+/// / accommodation / catering) with a quantity stepper + per-line total.
+class _FeeQtyRow extends StatelessWidget {
+  final FarmServiceRate rate;
+  final int qty;
+  final double unitPrice;
+  final ValueChanged<int> onChanged;
+  final ThemeController theme;
+
+  const _FeeQtyRow({
+    required this.rate,
+    required this.qty,
+    required this.unitPrice,
+    required this.onChanged,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = qty > 0;
+    final lineTotal = unitPrice * qty;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected
+              ? theme.accentColor
+              : theme.textColor.withValues(alpha: 0.1),
+          width: isSelected ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  rate.label,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 15,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${rate.unitLabel} · ${rate.quantityNoun}',
+                  style: TextStyle(
+                      color: theme.subtitleColor, fontSize: 11),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'R ${unitPrice.toStringAsFixed(0)} / unit'
+                  '${qty > 0 ? '  ·  line R ${lineTotal.toStringAsFixed(0)}' : ''}',
+                  style: TextStyle(
+                      color: isSelected ? theme.accentColor : theme.subtitleColor,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _btn(theme, Icons.remove_rounded,
+                  onTap: qty > 0 ? () => onChanged(qty - 1) : null),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text('$qty',
+                    style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+              ),
+              _btn(theme, Icons.add_rounded, onTap: () => onChanged(qty + 1)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _btn(ThemeController theme, IconData icon, {required VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: onTap != null
+              ? theme.accentColor.withValues(alpha: 0.15)
+              : theme.accentColor.withValues(alpha: 0.05),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon,
+            color: onTap != null ? theme.accentColor : theme.subtitleColor,
+            size: 18),
+      ),
+    );
+  }
+}
+
+class _StateBanner extends StatelessWidget {
+  const _StateBanner({
+    required this.icon,
+    required this.message,
+    required this.detail,
+    required this.theme,
+  });
+  final IconData icon;
+  final String message;
+  final String detail;
+  final ThemeController theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 56, color: theme.subtitleColor),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: theme.textColor,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+            ),
+          ],
+        ),
       ),
     );
   }
