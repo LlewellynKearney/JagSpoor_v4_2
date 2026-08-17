@@ -85,11 +85,31 @@ class _HunterCustomPackageBuilderScreenState
   Map<String, dynamic>? _bookingDoc;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _bookingSub;
 
+  // Stable streams cached once in initState. The manager's stream getters
+  // build a FRESH OfflineStreamGuard broadcast controller + a FRESH Firestore
+  // .snapshots() subscription on EVERY call, so calling them inline inside
+  // build() (as the previous version did) re-created both streams on every
+  // State rebuild (e.g. each qty-stepper setState). The outer StreamBuilder's
+  // builder returns an INNER StreamBuilder whose `stream` was also re-created
+  // each outer emission, so the inner StreamBuilder re-subscribed -> reset to
+  // ConnectionState.waiting -> the loading guard fired -> a re-build loop that
+  // never let the screen settle on real data (and on some device / timing
+  // combos left the body painting nothing visible between AppBar and footer).
+  // Caching the streams once stabilises the StreamBuilders so they emit data
+  // and stay subscribed for the screen's lifetime (the documented project
+  // pattern -- see ballistic_calc_screen / scope_tools_bottom_sheet).
+  late final Stream<List<FarmGamePriceEntry>> _speciesStream;
+  late final Stream<FarmServiceRates> _ratesStream;
+
   @override
   void initState() {
     super.initState();
-    // The farm's price list + service rates are streamed reactively through
-    // the manager's hunter-readable getters (no owner-scoped filter).
+    // Cache the streams once so build() never re-creates them. Both getters
+    // are hunter-readable (no owner-scoped filter) and null-uid-safe (return
+    // Stream.empty() / Stream.value(empty) for an unauthenticated caller).
+    _speciesStream =
+        _priceListManager.getFarmPriceListStreamForHunter(widget.farmId);
+    _ratesStream = _priceListManager.getFarmServiceRatesStream(widget.farmId);
   }
 
   @override
@@ -364,10 +384,10 @@ class _HunterCustomPackageBuilderScreenState
 
   Widget _buildBuilderView(ThemeController theme) {
     return StreamBuilder<List<FarmGamePriceEntry>>(
-      stream: _priceListManager.getFarmPriceListStreamForHunter(widget.farmId),
+      stream: _speciesStream,
       builder: (context, speciesSnapshot) {
         return StreamBuilder<FarmServiceRates>(
-          stream: _priceListManager.getFarmServiceRatesStream(widget.farmId),
+          stream: _ratesStream,
           builder: (context, ratesSnapshot) {
             // Loading state: either stream is still awaiting its first
             // emission with no data yet. Without this branch the screen
@@ -381,23 +401,7 @@ class _HunterCustomPackageBuilderScreenState
                 ratesSnapshot.connectionState == ConnectionState.waiting &&
                     !ratesSnapshot.hasData;
             if (speciesLoading || ratesLoading) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: theme.accentColor),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Loading farm price list...',
-                        style: TextStyle(
-                            color: theme.subtitleColor, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+              return _LoadingView(theme: theme);
             }
             if (speciesSnapshot.hasError || ratesSnapshot.hasError) {
               return _StateBanner(
@@ -1147,6 +1151,36 @@ class _StateBanner extends StatelessWidget {
             Text(
               detail,
               textAlign: TextAlign.center,
+              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Loading state for the builder view. Rendered while either reactive stream
+/// is still awaiting its first emission (and has no data yet). Extracted to a
+/// dedicated widget so the loading branch is a single, always-visible,
+/// always-`Center`-painted widget -- never an empty `Container` / `SizedBox`
+/// that could leave the body blank between the AppBar and the footer.
+class _LoadingView extends StatelessWidget {
+  const _LoadingView({required this.theme});
+  final ThemeController theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: theme.accentColor),
+            const SizedBox(height: 16),
+            Text(
+              'Loading farm price list...',
               style: TextStyle(color: theme.subtitleColor, fontSize: 13),
             ),
           ],

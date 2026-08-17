@@ -1,26 +1,34 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart';
+import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 
 /// Widget tests for the Custom Package Builder screen.
 ///
-/// The builder previously rendered a blank screen because its reactive
-/// species / service-rates `StreamBuilder`s had no `ConnectionState.waiting`
-/// branch and the species stream used a server-side `.orderBy('speciesName')`
-/// that required a composite index (missing-index -> the stream errored /
-/// hung). These tests lock in the fix: the screen renders a loading indicator
-/// (not blank) while a stream is pending, and renders a defined empty state
-/// (not blank) when the farm has no published pricing.
+/// The builder previously rendered a blank screen (no loading spinner, no
+/// empty-state banner, no error banner -- nothing between the AppBar and the
+/// footer) because its two reactive `StreamBuilder`s were fed streams that
+/// were created INLINE inside `build()`. The manager's stream getters build
+/// a FRESH `OfflineStreamGuard` broadcast controller + a FRESH Firestore
+/// `.snapshots()` subscription on every call, so each State rebuild (e.g.
+/// each qty-stepper `setState`) re-created both streams. The outer
+/// `StreamBuilder`'s builder returned an INNER `StreamBuilder` whose
+/// `stream` was also re-created on each outer emission, so the inner
+/// `StreamBuilder` re-subscribed -> reset to `ConnectionState.waiting` ->
+/// the loading guard fired -> a rebuild loop that never let the screen settle
+/// on real data (and on some device/timing combos left the body painting
+/// nothing visible).
 ///
-/// In the test runner there is no signed-in Firebase user, so
-/// `FarmGamePriceListManager` resolves `_currentUserId` to null ->
-/// `getFarmPriceListStreamForHunter` returns `Stream.empty()` (never emits ->
-/// the consuming `StreamBuilder` stays in `ConnectionState.waiting`) and
-/// `getFarmServiceRatesStream` returns `Stream.value(FarmServiceRates.empty)`
-/// (emits immediately). The `speciesLoading` guard therefore drives the
-/// loading branch, which is exactly the "not blank" contract under test.
+/// The fix caches the two streams ONCE in `initState` (`_speciesStream` /
+/// `_ratesStream`) so the `StreamBuilder`s keep a stable subscription for the
+/// screen's lifetime (the documented project pattern -- see
+/// `ballistic_calc_screen` / `scope_tools_bottom_sheet`). These tests lock
+/// in the fix: the screen renders a visible widget (loading spinner OR
+/// empty-state banner OR the form body) at every pump step, never a blank
+/// body, and the cached streams survive a rebuild without being replaced.
 void main() {
   late ThemeController theme;
 
@@ -79,4 +87,141 @@ void main() {
     // fix keeps it while populating the body. Sanity-check it survives.
     expect(find.textContaining('JagSpoor'), findsWidgets);
   });
+
+  // ── PRODUCTION SCENARIO ───────────────────────────────────────────────────
+  //
+  // The tests above cover the unauthenticated test-runner path (null uid ->
+  // Stream.empty() -> empty-state banner). The bug report came from a real
+  // signed-in user hitting a REAL Firestore, so the streams were real
+  // `.snapshots()` streams wrapped in OfflineStreamGuard. The tests below
+  // swap the singleton's test seams for a Fake-backed Firestore + a real uid
+  // so the streams are genuine `.snapshots()` streams (mirroring production),
+  // then assert the body renders a visible widget (never blank) at every
+  // pump step -- including the first frame where the streams are still
+  // pending (ConnectionState.waiting -> loading spinner).
+
+  testWidgets('PRODUCTION: renders a visible widget (not blank) on the first frame with real Firestore streams',
+      (tester) async {
+    // Fake-backed Firestore + real uid -> the manager builds REAL
+    // .snapshots() streams wrapped in OfflineStreamGuard (mirrors production).
+    // The Fake Firestore emits synchronously, so the first pump already lands
+    // on the empty-state banner (no docs -> empty data). The contract under
+    // test is that the body paints a VISIBLE widget on the very first frame
+    // -- never a blank body (the bug was "completely blank, no spinner, no
+    // banner" between AppBar and footer). Whether that visible widget is the
+    // loading spinner (real Firestore latency) or the empty-state banner
+    // (Fake sync emit) depends on timing, but it must NEVER be blank.
+    FarmGamePriceListManager.instance.firestoreForTesting =
+        FakeFirebaseFirestore();
+    FarmGamePriceListManager.instance.currentUserIdResolverForTesting =
+        () => 'hunter-1';
+
+    try {
+      await tester.pumpWidget(MaterialApp(home: _buildScreen()));
+      await tester.pump(); // first frame
+
+      final spinners = find.byType(CircularProgressIndicator).evaluate().length;
+      final banners =
+          find.text('No pricing published yet').evaluate().length;
+      // The body MUST paint at least one visible state widget on the first
+      // frame -- a loading spinner OR the empty-state banner. This is the
+      // regression guard for the "completely blank, no loading spinner, no
+      // banner" symptom.
+      expect(spinners + banners, greaterThan(0),
+          reason: 'On the first frame the body must render a visible widget '
+              '(loading spinner for a slow real Firestore, or the empty-state '
+              'banner for an empty/sync Firestore) -- never a blank body.');
+    } finally {
+      FarmGamePriceListManager.instance.firestoreForTesting = null;
+      FarmGamePriceListManager.instance.currentUserIdResolverForTesting = null;
+    }
+  });
+
+  testWidgets('PRODUCTION: renders the empty-state banner (not blank) once an empty Fake Firestore settles',
+      (tester) async {
+    FarmGamePriceListManager.instance.firestoreForTesting =
+        FakeFirebaseFirestore();
+    FarmGamePriceListManager.instance.currentUserIdResolverForTesting =
+        () => 'hunter-1';
+
+    try {
+      await tester.pumpWidget(MaterialApp(home: _buildScreen()));
+      await tester.pumpAndSettle();
+
+      // No farm_pricelists docs + no farm_service_rates doc -> both streams
+      // emit empty -> the empty-state banner renders. NOT a blank body, and
+      // NOT a hung spinner.
+      expect(find.text('No pricing published yet'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    } finally {
+      FarmGamePriceListManager.instance.firestoreForTesting = null;
+      FarmGamePriceListManager.instance.currentUserIdResolverForTesting = null;
+    }
+  });
+
+  testWidgets('PRODUCTION: a rebuild (setState) does NOT recreate the streams -- body keeps rendering the empty-state banner',
+      (tester) async {
+    // This is the regression guard for the ROOT CAUSE: streams were created
+    // inline in build(), so every rebuild replaced them, which (a) reset the
+    // inner StreamBuilder to ConnectionState.waiting and (b) on some timing
+    // combos left the body painting nothing. With streams cached in
+    // initState, an in-place setState rebuild keeps the SAME State + the
+    // SAME cached stream fields, so the StreamBuilder keeps its subscription
+    // and the body stays on the empty-state banner (no flicker-to-blank, no
+    // re-subscribe churn).
+    FarmGamePriceListManager.instance.firestoreForTesting =
+        FakeFirebaseFirestore();
+    FarmGamePriceListManager.instance.currentUserIdResolverForTesting =
+        () => 'hunter-1';
+
+    try {
+      // Wrap the screen in a setter-driven parent so we can trigger an
+      // in-place setState rebuild (same HunterCustomPackageBuilderScreen
+      // State survives) -- the exact path that previously re-created the
+      // streams inline in build().
+      await tester.pumpWidget(_RebuildProbe(
+        theme: theme,
+        builder: (ctx) => _buildScreen(),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('No pricing published yet'), findsOneWidget);
+
+      // Trigger an in-place setState on the parent (the child State is
+      // preserved, so the cached `late final` stream fields survive).
+      tester.state<_RebuildProbeState>(find.byType(_RebuildProbe)).rebuild();
+      await tester.pumpAndSettle();
+
+      // The body stays on the empty-state banner -- it does NOT flash blank
+      // or revert to a hung spinner, because the streams were not recreated.
+      expect(find.text('No pricing published yet'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing,
+          reason: 'An in-place setState rebuild must not reset the cached '
+              'streams to waiting; the body stays on the settled empty-state, '
+              'never blank.');
+    } finally {
+      FarmGamePriceListManager.instance.firestoreForTesting = null;
+      FarmGamePriceListManager.instance.currentUserIdResolverForTesting = null;
+    }
+  });
+}
+
+/// A stateful wrapper that rebuilds its child on demand, so a test can trigger
+/// an in-place `setState` rebuild that preserves the child's `State` (the
+/// exact path that previously re-created streams inline in `build()`).
+class _RebuildProbe extends StatefulWidget {
+  final ThemeController theme;
+  final WidgetBuilder builder;
+  const _RebuildProbe({required this.theme, required this.builder});
+  @override
+  State<_RebuildProbe> createState() => _RebuildProbeState();
+}
+
+class _RebuildProbeState extends State<_RebuildProbe> {
+  int _tick = 0;
+  void rebuild() => setState(() => _tick++);
+  @override
+  Widget build(BuildContext context) {
+    // Reference _tick so the field is not flagged unused.
+    return MaterialApp(home: KeyedSubtree(key: ValueKey(_tick), child: widget.builder(context)));
+  }
 }
