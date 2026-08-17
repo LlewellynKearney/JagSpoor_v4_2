@@ -1,5 +1,6 @@
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Builds and launches a native device-calendar event for a finalized
 /// (Confirmed / Completed) hunting booking.
@@ -14,10 +15,46 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// The event-construction logic is split into a pure, Firebase-aware helper
 /// ([BookingCalendarEventBuilder]) so it is fully unit-testable without a
 /// live `add_2_calendar` plugin / device calendar.
+///
+/// The "Add Hunt to Calendar" button on the booking card resolves the hunt
+/// window from the SAME raw booking map the UI card reads through
+/// [BookingCalendarEventBuilder.resolveWindow]. When the booking document
+/// itself does not carry the date fields (e.g. an older booking that did not
+/// copy the package's availability at booking time), this service falls back
+/// to the linked [packageId]'s `packages/{packageId}` document and re-resolves
+/// the window from the package's `availabilityStart` / `availabilityEnd`
+/// (plus the other supported date aliases) so the calendar action never
+/// fails when the UI card is already displaying dates (or could).
 class BookingCalendarService {
   BookingCalendarService._();
 
   static final BookingCalendarService instance = BookingCalendarService._();
+
+  /// Test seam: inject a Firestore instance (e.g. `FakeFirebaseFirestore`)
+  /// so the package-fallback fetch can be unit-tested without a live
+  /// Firebase app. Defaults to the global instance.
+  @visibleForTesting
+  FirebaseFirestore? firestoreForTesting;
+
+  FirebaseFirestore get _firestore =>
+      firestoreForTesting ?? FirebaseFirestore.instance;
+
+  /// Resolves the booking's [packageId], tolerating the `package_id` snake-
+  /// case alias and the legacy `'CUSTOM_BUILT'` sentinel (which has no
+  /// `packages` doc to fall back to -- returns null so the caller skips the
+  /// fetch).
+  static String? _resolvePackageId(Map<String, dynamic> booking) {
+    final id = (booking['packageId'] as String?) ??
+        (booking['package_id'] as String?) ??
+        (booking['packageID'] as String?);
+    if (id == null) return null;
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return null;
+    // Custom-built packages carry the sentinel 'CUSTOM_BUILT' -- there is no
+    // `packages` doc to read, so do not attempt a fetch (it would 404).
+    if (trimmed == 'CUSTOM_BUILT') return null;
+    return trimmed;
+  }
 
   /// Builds a native calendar [Event] from a raw booking document map.
   ///
@@ -25,16 +62,72 @@ class BookingCalendarService {
   /// date could be resolved from any of the supported field aliases) -- in
   /// that case the caller should surface a "no dates on file" message
   /// rather than launching an empty calendar event.
+  ///
+  /// This is the synchronous, package-fallback-FREE entry point. Use
+  /// [buildEventWithPackageFallback] from the "Add to Calendar" action to
+  /// also consult the linked package's availability dates when the booking
+  /// document itself lacks date fields.
   Event? buildEvent(Map<String, dynamic> booking) {
     return BookingCalendarEventBuilder.buildEvent(booking);
   }
 
-  /// Builds the event and, when it resolves, hands it to `add_2_calendar`
-  /// which opens the device's native calendar editor pre-populated with the
-  /// hunt details. Returns whether a calendar event was launched (false when
-  /// no dates could be resolved or the platform call rejected the event).
+  /// Builds a native calendar [Event] from a raw booking document map,
+  /// falling back to the linked package's availability window when the
+  /// booking document itself carries no usable date fields.
+  ///
+  /// Resolution order:
+  /// 1. [BookingCalendarEventBuilder.resolveWindow] on the raw booking map
+  ///    (the SAME resolver the UI card uses, so the calendar event matches
+  ///    the dates the hunter is already seeing on the card).
+  /// 2. If (1) resolves -> build the event from the booking map.
+  /// 3. If (1) is null AND the booking references a `packageId` -> fetch
+  ///    `packages/{packageId}`, merge its date fields into a copy of the
+  ///    booking map, and re-resolve. The event's title / description /
+  ///    location still come from the booking (the package only contributes
+  ///    dates), so the calendar entry stays tied to the booked trip.
+  /// 4. Otherwise -> null (caller surfaces "no dates on file").
+  Future<Event?> buildEventWithPackageFallback(
+    Map<String, dynamic> booking,
+  ) async {
+    // (1) + (2): same resolver the UI card uses -> match the displayed dates.
+    if (BookingCalendarEventBuilder.resolveWindow(booking) != null) {
+      return BookingCalendarEventBuilder.buildEvent(booking);
+    }
+    // (3): fall back to the linked package's availability window.
+    final packageId = _resolvePackageId(booking);
+    if (packageId == null) return null;
+    try {
+      final doc = await _firestore.collection('packages').doc(packageId).get();
+      if (!doc.exists) return null;
+      final pkgData = doc.data() ?? const <String, dynamic>{};
+      // Merge the package's date fields into a copy of the booking map so the
+      // re-resolve picks them up. Booking fields take precedence (a
+      // post-date-change confirmedStartDate on the booking wins over the
+      // package's advertised availability), so package fields are only added
+      // when the booking map does not already carry them.
+      final merged = <String, dynamic>{...pkgData, ...booking};
+      return BookingCalendarEventBuilder.buildEvent(merged);
+    } catch (_) {
+      // A Firestore error (offline / permissions / not-found) should not
+      // crash the calendar action -- return null so the caller surfaces a
+      // "no dates" message instead.
+      return null;
+    }
+  }
+
+  /// Builds the event (with the package fallback) and, when it resolves,
+  /// hands it to `add_2_calendar` which opens the device's native calendar
+  /// editor pre-populated with the hunt details. Returns whether a calendar
+  /// event was launched (false when no dates could be resolved -- including
+  /// the package fallback -- or the platform call rejected the event).
+  ///
+  /// The [booking] map is the SAME raw booking document the UI card reads
+  /// through [BookingCalendarEventBuilder.resolveWindow], so the calendar
+  /// event's dates match the dates displayed on the card. The package
+  /// fallback guarantees the action never fails solely because the booking
+  /// document did not copy the package's availability dates at booking time.
   Future<bool> addToCalendar(Map<String, dynamic> booking) async {
-    final event = buildEvent(booking);
+    final event = await buildEventWithPackageFallback(booking);
     if (event == null) return false;
     return Add2Calendar.addEvent2Cal(event);
   }

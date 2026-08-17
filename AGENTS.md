@@ -6869,3 +6869,90 @@ footer) after the prior "add a loading branch" fix.
   (cached `late final` streams in initState + `_LoadingView` extraction),
   `test/custom_package_builder_screen_test.dart` (+3 production-scenario
   tests + `_RebuildProbe` wrapper), `AGENTS.md`.
+
+
+## Phase — Calendar button payload alignment + package date fallback (added 2026-08-17)
+
+The "ADD HUNT TO CALENDAR" button on the hunter booking card
+(`hunter_package_marketplace_screen.dart`) and the outfitter booking dashboard
+(`outfitter_booking_dashboard_screen.dart`) could surface "No hunt dates on
+file" even when the booking referenced a package that carries availability
+dates, because the calendar action only consulted the booking document's own
+date fields.
+
+### Audit
+- Both `_addToCalendar()` call sites already pass `widget.data` — the SAME
+  raw booking document map the UI card reads through
+  `BookingCalendarEventBuilder.resolveWindow(widget.data)` (hunter card
+  line 1599). So there was no field-name divergence between the UI's date
+  resolution and the calendar action's date resolution: both used the same
+  resolver on the same map.
+- The gap: when the booking document itself did not copy the package's
+  availability dates at booking time (an older booking, or a booking created
+  before the date-copy logic shipped), `resolveWindow(booking)` returned
+  null -> `addToCalendar` returned false ("No hunt dates on file") even
+  though the booking referenced a `packageId` whose `packages/{packageId}`
+  document carries `availabilityStart` / `availabilityEnd`. The calendar
+  action had no package fallback.
+
+### Fix — `BookingCalendarService` package fallback
+(`lib/features/hunter_mode/services/booking_calendar_service.dart`)
+- New `buildEventWithPackageFallback(booking)` async method. Resolution
+  order:
+  1. `BookingCalendarEventBuilder.resolveWindow(booking)` — the SAME
+     resolver the UI card uses, so the calendar event matches the dates the
+     hunter is already seeing on the card. If non-null -> build the event
+     from the booking map (no package read).
+  2. If null AND the booking references a `packageId` -> fetch
+     `packages/{packageId}`, merge its fields into a copy of the booking
+     map (`{...pkgData, ...booking}` — booking fields take precedence so a
+     post-date-change `confirmedStartDate` on the booking wins over the
+     package's advertised availability), and re-resolve + build the event.
+     The event's title / description / location still come from the booking
+     (the package only contributes dates), so the calendar entry stays tied
+     to the booked trip.
+  3. Otherwise -> null (caller surfaces "no dates on file").
+- `addToCalendar(booking)` now delegates to `buildEventWithPackageFallback`
+  so the button's onPressed (which passes `widget.data`) gets the package
+  fallback automatically — the call sites needed NO change (they already
+  pass the same map the UI reads).
+- `_resolvePackageId` tolerates `packageId` / `package_id` / `packageID`
+  field-name aliases, and short-circuits the `'CUSTOM_BUILT'` sentinel
+  (custom-built packages have no `packages` doc -> no fetch attempt).
+- A Firestore fetch error (offline / permissions / not-found /
+  `[core/no-app]`) is caught and returns null (caller surfaces "no dates")
+  so the calendar action never crashes.
+- Test seam: `firestoreForTesting` (`@visibleForTesting`) injects a
+  `FirebaseFirestore` (e.g. `FakeFirebaseFirestore`) so the fallback fetch
+  is unit-testable without a live Firebase app.
+
+### Tests
+- `test/booking_calendar_service_test.dart` extended from 36 -> 44 tests
+  (all pass), +8 in a new
+  `BookingCalendarService.buildEventWithPackageFallback` group:
+  - uses booking dates directly when the booking has date fields (no fetch);
+  - falls back to the package availability window when the booking has no
+    date fields (the core fix contract — calendar action never fails when
+    the booking references a package with availability dates);
+  - returns null when the booking has no dates AND no packageId;
+  - returns null when the referenced packageId does not exist;
+  - does NOT attempt a fetch for the CUSTOM_BUILT sentinel;
+  - tolerates the `package_id` snake_case alias;
+  - package fallback does NOT fire when the booking has a start date
+    (`resolveWindow(booking)` is non-null -> single-day event from the
+    booking alone, matching the UI card);
+  - a Firestore fetch error (no Firebase app) does not crash — returns null.
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (308 pre-existing
+  infos; the changed service + test are analyzer-clean — "No issues found").
+- `flutter test` (full suite): **All 649 tests passed**, zero failures
+  (was 641; +8 = the new package-fallback tests). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side service enhancement + tests; the `packages` read is already
+  `isSignedIn()` per `firestore.rules`).
+- Files: `lib/features/hunter_mode/services/booking_calendar_service.dart`
+  (`buildEventWithPackageFallback` + `_resolvePackageId` + `firestoreForTesting`
+  seam + `addToCalendar` delegation),
+  `test/booking_calendar_service_test.dart` (+8 package-fallback tests +
+  `fake_cloud_firestore` import), `AGENTS.md`.
