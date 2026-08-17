@@ -4,154 +4,292 @@
       "collectionGroup": "license_applications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hunterId", "order": "ASCENDING" },
-        { "fieldPath": "lastChecked", "order": "DESCENDING" }
+        {
+          "fieldPath": "hunterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastChecked",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "lodging",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "unitName", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unitName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "fleet",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "operationalStatus", "order": "ASCENDING" },
-        { "fieldPath": "vehicleName", "order": "ASCENDING" }
+        {
+          "fieldPath": "operationalStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "vehicleName",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "ammunition",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "inventory",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "bookingTimestamp",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hunterId", "order": "ASCENDING" },
-        { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
+        {
+          "fieldPath": "hunterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "bookingTimestamp",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "farms",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "farms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "packages",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "packages",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "packages",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "trophies",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "lastUpdated", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastUpdated",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "scanned_pricelists",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "venison_permits",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "venison_permits",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hunterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "hunterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "meat_processing_orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "hunterId", "order": "ASCENDING" },
-        { "fieldPath": "orderTimestamp", "order": "DESCENDING" }
+        {
+          "fieldPath": "hunterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "orderTimestamp",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "optic_logs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "savedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "savedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "farm_pricelists",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "farmId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "farmId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "farm_pricelists",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "outfitterId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "outfitterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

@@ -63,9 +63,19 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     try {
       final snap = await _enterpriseManager.getMyFarms();
       if (!mounted) return;
+      // `getMyFarms` no longer filters `status == 'active'` server-side (that
+      // 3-field equality+equality+orderBy combo required a composite index that
+      // is not deployed). Filter active farms client-side here so only active
+      // farms appear in the dropdown, while the query itself resolves off the
+      // existing `(outfitterId, createdAt)` index. Farms without a `status`
+      // field are treated as active (the creator stamps `status: 'active'` on
+      // every new farm, so this is the legacy-default-safe choice).
       final farms = snap.docs.map((d) {
         final data = d.data() as Map<String, dynamic>;
         return {'id': d.id, ...data};
+      }).where((f) {
+        final status = f['status'] as String?;
+        return status == null || status == 'active';
       }).toList();
       setState(() {
         _farms = farms;

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/booking_status.dart';
 import '../models/farm_config.dart';
@@ -9,13 +10,59 @@ class OutfitterEnterpriseManager {
       OutfitterEnterpriseManager._internal();
   static OutfitterEnterpriseManager get instance => _instance;
 
-  OutfitterEnterpriseManager._internal();
+  OutfitterEnterpriseManager._internal()
+      : _firestore = FirebaseFirestore.instance,
+        _authForTesting = null;
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  /// Test-only constructor: build a fresh, isolated manager bound to an
+  /// injectable Firestore + uid resolver so `getMyFarms` (and other queries)
+  /// can be unit-tested against `FakeFirebaseFirestore` without a live
+  /// `FirebaseAuth` app (avoids mocking the concrete `FirebaseAuth`/`User`
+  /// classes, which mockito handles poorly due to their internal structure).
+  /// When the uid resolver is supplied, the FirebaseAuth fallback path is
+  /// never exercised, so no Firebase app needs to be initialized.
+  @visibleForTesting
+  factory OutfitterEnterpriseManager.forTesting({
+    required FirebaseFirestore firestore,
+    required String? Function() currentUserIdResolver,
+  }) {
+    return OutfitterEnterpriseManager._internalWithFirestore(
+      firestore,
+      null,
+      currentUserIdResolver,
+    );
+  }
+
+  OutfitterEnterpriseManager._internalWithFirestore(
+      this._firestore, this._authForTesting,
+      [this.currentUserIdResolverForTesting]);
+
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth? _authForTesting;
+
+  /// Resolves the live FirebaseAuth instance lazily so the singleton can be
+  /// constructed (and the test factory) without initializing a Firebase app.
+  /// The test factory passes `null` + a uid resolver, so this is never called
+  /// under test.
+  FirebaseAuth get _auth => _authForTesting ?? FirebaseAuth.instance;
+
+  /// Test seam: inject a uid resolver so the owner-scoped queries can be
+  /// unit-tested without a live `FirebaseAuth` app. When null, falls back to
+  /// `FirebaseAuth.instance.currentUser?.uid`.
+  @visibleForTesting
+  String? Function()? currentUserIdResolverForTesting;
 
   User? get _currentUser => _auth.currentUser;
-  String? get _currentUserId => _currentUser?.uid;
+  String? get _currentUserId {
+    if (currentUserIdResolverForTesting != null) {
+      return currentUserIdResolverForTesting!();
+    }
+    try {
+      return _currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ==========================================
   // RECORD NEW FARM / CONCESSION LOCATION
@@ -416,12 +463,29 @@ class OutfitterEnterpriseManager {
       throw Exception('User must be authenticated');
     }
 
-    return await _firestore
+    // Query on `outfitterId` + `createdAt` (descending). This is covered by
+    // the existing composite index `farms (outfitterId ASC, createdAt DESC)`
+    // in `firestore.indexes.json`, so the query resolves WITHOUT requiring
+    // the additional `status` field to be part of the composite index.
+    //
+    // The `status == 'active'` filter is applied CLIENT-SIDE (below) rather
+    // than as a server `.where('status', isEqualTo: 'active')`. A server
+    // equality+equality+orderBy combo would require a 3-field composite index
+    // `(outfitterId ASC, status ASC, createdAt DESC)` that is NOT present in
+    // `firestore.indexes.json`; without it the query throws
+    // `FAILED_PRECONDITION: The query requires an index`, which surfaced to
+    // the Outfitter Price List screen as an empty farm dropdown -- blocking
+    // the outfitter from selecting a farm to publish a price list against,
+    // which in turn left the Hunter Custom Package Builder with no farms to
+    // browse (the root cause of the "empty pipeline" symptom). Filtering
+    // client-side after the indexed query keeps the screen working off the
+    // existing deployed index.
+    final snap = await _firestore
         .collection('farms')
         .where('outfitterId', isEqualTo: _currentUserId)
-        .where('status', isEqualTo: 'active')
         .orderBy('createdAt', descending: true)
         .get();
+    return snap;
   }
 
   /// Get all managers assigned to a specific farm
