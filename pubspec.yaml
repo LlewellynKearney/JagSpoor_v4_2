@@ -112,11 +112,29 @@ dev_dependencies:
   # Test mocking libraries
   test: ^1.25.0
   mockito: ^5.4.4
-  fake_cloud_firestore: ^4.1.1
+  # Pinned to ^4.2.0. The 4.1.1 mock's `MockWriteBatch.update` declared a
+  # non-generic signature (`void update(DocumentReference, Map<Object,Object?>)`)
+  # that does not satisfy `cloud_firestore` 6.8.0's generic
+  # `void update<T>(DocumentReference<T>, T)` — a compile-time override
+  # mismatch that broke `bug_report_screenshot_test.dart` and
+  # `offline_sync_queue_test.dart`. 4.2.0 fixed the mock signature to be
+  # generic and aligns with `cloud_firestore` ^6.7.1 (resolved 6.8.0).
+  fake_cloud_firestore: ^4.2.0
   # Pinned to the 2.3.x line. sqflite_common_ffi >=2.4.0 requires Dart SDK
   # ^3.12.0, which is incompatible with the CI Flutter 3.29.1 pin (Dart 3.7).
   # 2.3.6 requires Dart ^3.7.0 — satisfies both CI 3.29.1 and local 3.47.0.
   sqflite_common_ffi: '>=2.3.6 <2.4.0'
+
+dependency_overrides:
+  # `fake_cloud_firestore` 4.2.0 declares `rx ^0.5.0`, but `rx 0.5.0` requires
+  # Dart ^3.8.0 — incompatible with the CI Flutter 3.29.1 pin (Dart 3.7.0).
+  # The `rx` package is NOT imported anywhere in `fake_cloud_firestore`'s lib
+  # source (only `rxdart` is imported, which is a separate Dart-3.7-compatible
+  # package), so pinning `rx` to 0.4.0 (Dart ^3.2.0) is safe: it satisfies the
+  # resolver without affecting runtime behavior, and lets the 4.2.0 mock's
+  # generic `MockWriteBatch.update<T>` resolve on Dart 3.7 (fixing the compile
+  # skew against `cloud_firestore` 6.8.0).
+  rx: ^0.4.0
 
 flutter:
   uses-material-design: true
