@@ -11,7 +11,6 @@ import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 import '../services/booking_calendar_service.dart';
 import '../services/farm_game_price_list_manager.dart';
-import '../services/pricelist_scanner_service.dart';
 import '../widgets/booking_chat_thread.dart';
 
 /// Hunter **Custom Package Builder** form.
@@ -65,7 +64,6 @@ class _HunterCustomPackageBuilderScreenState
     extends State<HunterCustomPackageBuilderScreen> {
   final FarmGamePriceListManager _priceListManager =
       FarmGamePriceListManager.instance;
-  final PricelistScannerService _bookingService = PricelistScannerService.instance;
 
   // Form state.
   DateTime? _checkIn;
@@ -217,7 +215,7 @@ class _HunterCustomPackageBuilderScreenState
       final lodgingCatering = _collectSelectedFees();
       final total = _grandTotal;
 
-      final bookingId = await _bookingService.submitCustomPackageBooking(
+      final bookingId = await _priceListManager.submitCustomPackageBooking(
         farmId: widget.farmId,
         farmName: widget.farmName,
         outfitterId: widget.outfitterId,

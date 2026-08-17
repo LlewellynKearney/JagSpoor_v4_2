@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:jagspoor/features/hunter_mode/models/booking_status.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_game_price_entry.dart';
 import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 
@@ -154,6 +155,155 @@ void main() {
 
       expect(entries.map((e) => e.speciesName).toList(),
           ['Aardvark', 'Zebra']);
+    });
+  });
+
+  group('submitCustomPackageBooking (hunter-mode booking write)', () {
+    FarmGamePriceListManager bookingService({
+      required String? uid,
+      required FirebaseFirestore firestore,
+    }) {
+      return FarmGamePriceListManager.forTesting(
+        firestore: firestore,
+        currentUserIdResolver: () => uid,
+      );
+    }
+
+    test('writes the booking doc to `bookings` with the hunter-mode shape',
+        () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'farm-1',
+        farmName: 'Test Farm',
+        outfitterId: 'outfitter-1',
+        pricelistId: 'farm_pricelists:farm-1',
+        selectedItems: [
+          {
+            'name': 'Kudu',
+            'quantity': 2,
+            'unitPriceHunterZAR': 5000.0,
+            'lineTotal': 10000.0,
+            'outfitterBasePrice': 5000.0,
+            'hunterDisplayPriceZAR': 5000.0,
+          },
+        ],
+        lodgingCatering: [
+          {
+            'name': 'Accommodation',
+            'quantity': 3,
+            'unitPriceHunterZAR': 800.0,
+            'lineTotal': 2400.0,
+            'outfitterBasePrice': 800.0,
+            'hunterDisplayPriceZAR': 800.0,
+          },
+        ],
+        combinedTotalZAR: 12400.0,
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-04',
+        huntingDays: 3,
+        hunterCount: 2,
+        observerCount: 1,
+      );
+
+      // The returned id matches the doc written to the `bookings` collection.
+      final snap = await fake.collection('bookings').doc(bookingId).get();
+      expect(snap.exists, isTrue);
+
+      final data = snap.data()!;
+      // Hunter-mode contract: pending approval, custom-package flag, hunter id.
+      expect(data['status'], BookingStatus.pendingApproval);
+      expect(data['isCustomPackage'], isTrue);
+      expect(data['hunterId'], 'hunter-1');
+      expect(data['outfitterId'], 'outfitter-1');
+      expect(data['farmId'], 'farm-1');
+      expect(data['farmName'], 'Test Farm');
+      expect(data['packageId'], 'CUSTOM_BUILT');
+      // No platform commission: base == total.
+      expect(data['basePriceRands'], 12400.0);
+      expect(data['totalHunterPriceRands'], 12400.0);
+      // Party + window meta flow through to the booking doc.
+      expect(data['hunterCount'], 2);
+      expect(data['observerCount'], 1);
+      expect(data['huntingDays'], 3);
+      expect(data['checkInDate'], '2026-09-01');
+      expect(data['checkOutDate'], '2026-09-04');
+      // Both line-item lists are persisted (normalized to the dashboard shape).
+      expect((data['selectedItemsList'] as List).length, 1);
+      expect((data['lodgingCateringList'] as List).length, 1);
+      final speciesLine =
+          (data['selectedItemsList'] as List).first as Map<String, dynamic>;
+      expect(speciesLine['name'], 'Kudu');
+      expect(speciesLine['quantity'], 2);
+      expect(speciesLine['hunterPrice'], 5000.0);
+    });
+
+    test('rejects an unauthenticated caller', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: null, firestore: fake);
+
+      expect(
+        () => service.submitCustomPackageBooking(
+          farmId: 'farm-1',
+          outfitterId: 'outfitter-1',
+          selectedItems: [
+            {'name': 'Kudu', 'quantity': 1, 'unitPriceHunterZAR': 100.0}
+          ],
+          combinedTotalZAR: 100.0,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('prevents an outfitter from booking their own farm', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'outfitter-1', firestore: fake);
+
+      expect(
+        () => service.submitCustomPackageBooking(
+          farmId: 'farm-1',
+          outfitterId: 'outfitter-1',
+          selectedItems: [
+            {'name': 'Kudu', 'quantity': 1, 'unitPriceHunterZAR': 100.0}
+          ],
+          combinedTotalZAR: 100.0,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('rejects an empty selection', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      expect(
+        () => service.submitCustomPackageBooking(
+          farmId: 'farm-1',
+          outfitterId: 'outfitter-1',
+          selectedItems: const [],
+          lodgingCatering: const [],
+          combinedTotalZAR: 100.0,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('rejects a non-positive total', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      expect(
+        () => service.submitCustomPackageBooking(
+          farmId: 'farm-1',
+          outfitterId: 'outfitter-1',
+          selectedItems: [
+            {'name': 'Kudu', 'quantity': 1, 'unitPriceHunterZAR': 100.0}
+          ],
+          combinedTotalZAR: 0.0,
+        ),
+        throwsA(isA<Exception>()),
+      );
     });
   });
 }

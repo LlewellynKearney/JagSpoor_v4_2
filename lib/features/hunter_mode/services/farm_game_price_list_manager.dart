@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/services/offline_stream_guard.dart';
+import '../models/booking_status.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 
@@ -37,7 +38,9 @@ class FarmGamePriceListManager {
   /// Test seam: inject a uid resolver so the null-uid -> empty-stream branch
   /// and the owner-scoped query contract can be unit-tested without a real
   /// signed-in user. Defaults to the current Firebase user (null when no app
-  /// is initialized / no user signed in).
+  /// is initialized / unauthenticated). Used by BOTH the stream queries and
+  /// the booking-submission path, so the booking write can be unit-tested
+  /// without a live `FirebaseAuth` app.
   @visibleForTesting
   String? Function()? currentUserIdResolverForTesting;
 
@@ -54,7 +57,8 @@ class FarmGamePriceListManager {
 
   /// Test-only constructor: build a fresh, isolated manager bound to an
   /// injectable Firestore + uid resolver (mirrors `OpticLogService.forTesting`
-  /// / `FeedbackFirebaseService`).
+  /// / `FeedbackFirebaseService`). The same uid resolver backs both the
+  /// stream queries and the booking-submission path.
   @visibleForTesting
   factory FarmGamePriceListManager.forTesting({
     required FirebaseFirestore firestore,
@@ -446,5 +450,130 @@ class FarmGamePriceListManager {
       pricePerUnit: 0,
     );
     await saveFarmServiceRates(farmId: farmId, rates: existing);
+  }
+
+  // ── Custom Package booking submission (hunter-mode) ──────────────────────
+  //
+  // Submits a custom-built package booking request assembled by a hunter from
+  // the farm's published `farm_pricelists` (species) + `farm_service_rates`
+  // (itemized fees). This is the SOLE booking-write path for the Custom
+  // Package Builder -- the builder no longer depends on the outfitter-named
+  // `PricelistScannerService` (which has been removed) for submission, so the
+  // hunter-facing read + write path is fully consolidated here on the
+  // hunter-readable price-list manager. Writes to `bookings` with
+  // `status: BookingStatus.pendingApproval`; the booking is owner-scoped to
+  // the hunter (`hunterId`) and references the owning outfitter (`outfitterId`)
+  // so the outfitter booking dashboard's `Incoming Booking Requests` stream
+  // surfaces it for approval.
+
+  /// Submits a custom-built package booking request.
+  ///
+  /// Used when a hunter assembles their own itinerary from an outfitter's
+  /// published farm price list (species/fees with quantities) instead of
+  /// booking a pre-defined marketplace package.
+  ///
+  /// Pricing model: every line item's `unitPriceHunterZAR` equals its base
+  /// price (there is no platform commission / markup). The hunter sees
+  /// per-item prices and the grand total, which is the base booking cost.
+  ///
+  /// Parameters:
+  /// - [farmId], [farmName]: the concession where the hunt will take place.
+  /// - [outfitterId]: the UID of the outfitter who owns the farm/price list.
+  /// - [pricelistId]: the price-list source the items were drawn from.
+  /// - [selectedItems]: species/trophy lines - each map carries `name`,
+  ///   `quantity`, `unitPriceHunterZAR` / `hunterDisplayPriceZAR`, `lineTotal`.
+  /// - [lodgingCatering]: itemized fee lines (accommodation / catering /
+  ///   vehicle / guide / etc.), same shape as [selectedItems].
+  /// - [combinedTotalZAR]: the grand total (base cost; no commission).
+  /// - [checkInDate]/[checkOutDate]: ISO-8601 hunt window (drives the
+  ///   outfitter dashboard + the hunter's "Add to Calendar" integration).
+  /// - [huntingDays], [hunterCount], [observerCount]: party + duration meta.
+  ///
+  /// Returns the new booking document id. Throws if unauthenticated, if the
+  /// caller is the owning outfitter (outfitters cannot book their own farms),
+  /// if no items are selected, or if the total is non-positive.
+  Future<String> submitCustomPackageBooking({
+    required String farmId,
+    required String outfitterId,
+    required List<Map<String, dynamic>> selectedItems,
+    required double combinedTotalZAR,
+    String? farmName,
+    String? pricelistId,
+    List<Map<String, dynamic>> lodgingCatering = const [],
+    String? checkInDate,
+    String? checkOutDate,
+    int huntingDays = 0,
+    int hunterCount = 1,
+    int observerCount = 0,
+  }) async {
+    final currentUid = _currentUserId;
+    if (currentUid == null) {
+      throw Exception('User must be authenticated to book');
+    }
+
+    // Prevent outfitters from booking their own packages.
+    if (currentUid == outfitterId) {
+      throw Exception('Outfitters cannot book their own packages');
+    }
+
+    if (selectedItems.isEmpty && lodgingCatering.isEmpty) {
+      throw Exception('At least one item must be selected');
+    }
+    if (combinedTotalZAR <= 0) {
+      throw Exception('Total price must be greater than zero');
+    }
+
+    // The total equals the base booking cost; there is no platform commission.
+    final double basePrice = combinedTotalZAR;
+
+    // Normalise a line item into the shape the outfitter booking dashboard
+    // already renders (`name` + `hunterPrice` + `quantity`).
+    Map<String, dynamic> normalizeItem(Map<String, dynamic> item) => {
+          'name': item['name'] ?? item['displayLabel'] ?? 'Unknown',
+          'speciesId': item['speciesId'],
+          'sex': item['sex'],
+          'sexLabel': item['sexLabel'],
+          'trophySizeRange': item['trophySizeRange'],
+          'quantity': item['quantity'] ?? 1,
+          'unitPriceHunterZAR': item['unitPriceHunterZAR'] ??
+              item['hunterDisplayPriceZAR'] ??
+              0.0,
+          'lineTotal': item['lineTotal'] ?? 0.0,
+          // Mirror keys consumed by the existing outfitter dashboard renderer.
+          'hunterPrice': item['unitPriceHunterZAR'] ??
+              item['hunterDisplayPriceZAR'] ??
+              0.0,
+          'basePrice': item['outfitterBasePrice'] ?? 0.0,
+        };
+
+    final bookingData = {
+      'packageId': 'CUSTOM_BUILT',
+      'isCustomPackage': true,
+      'packageName':
+          farmName != null ? 'Custom Package - $farmName' : 'Custom Package',
+      'outfitterId': outfitterId,
+      'farmId': farmId,
+      if (farmName != null) 'farmName': farmName,
+      if (pricelistId != null) 'pricelistId': pricelistId,
+      'hunterId': currentUid,
+      'bookingType': 'custom_pricelist',
+      'selectedItemsList': selectedItems.map(normalizeItem).toList(),
+      if (lodgingCatering.isNotEmpty)
+        'lodgingCateringList': lodgingCatering.map(normalizeItem).toList(),
+      if (checkInDate != null) 'checkInDate': checkInDate,
+      if (checkOutDate != null) 'checkOutDate': checkOutDate,
+      'huntingDays': huntingDays,
+      'hunterCount': hunterCount,
+      'observerCount': observerCount,
+      'basePriceRands': basePrice,
+      'totalHunterPriceRands': combinedTotalZAR,
+      'status': BookingStatus.pendingApproval,
+      'bookingTimestamp': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    final docRef = await _firestore.collection('bookings').add(bookingData);
+    return docRef.id;
   }
 }
