@@ -277,8 +277,20 @@ class PackageBookingManager {
       // are stored as Firestore `Timestamp?` (see PackagePricing.toMap); we
       // pass them through verbatim so they keep their server-accurate
       // precision on the booking doc.
-      final availabilityStart = pkgData['availabilityStart'];
-      final availabilityEnd = pkgData['availabilityEnd'];
+      //
+      // DUAL-KEY FALLBACK: the package may store its hunt window under either
+      // `availabilityStart`/`availabilityEnd` (the canonical PackagePricing
+      // keys) OR `startDate`/`endDate` (a legacy / third-party alias). We
+      // resolve whichever is present (availabilityStart wins, then falls
+      // back to startDate) and then write BOTH key sets onto the booking doc
+      // so that no matter which key a downstream screen / widget looks for,
+      // the booking document carries it. This guarantees the booking is
+      // self-contained for the calendar resolver (which scans both alias
+      // families) and for any UI card that reads either key directly.
+      final availabilityStart =
+          pkgData['availabilityStart'] ?? pkgData['startDate'];
+      final availabilityEnd =
+          pkgData['availabilityEnd'] ?? pkgData['endDate'];
       final farmId = pkgData['farmId'] as String?;
       // Resolve the farm's display name + region from `farms/{farmId}` so the
       // booking is self-contained for the calendar event (title "@ Farm"
@@ -320,6 +332,15 @@ class PackageBookingManager {
         'updatedAt': FieldValue.serverTimestamp(),
         // Hunt window (copied from the package so the booking is
         // self-contained for the calendar + the booking card).
+        //
+        // We write BOTH the `availabilityStart`/`availabilityEnd` AND the
+        // `startDate`/`endDate` key sets so a downstream consumer reading
+        // either key always finds a value. The resolved `availabilityStart`/
+        // `availabilityEnd` locals already carry the dual-key fallback
+        // (availabilityStart ?? startDate), so when the package stored its
+        // window under `startDate`/`endDate` only, the booking still ends up
+        // with both sets populated from the single source value. A null
+        // window (package with no dates) writes neither set.
         if (availabilityStart != null) 'startDate': availabilityStart,
         if (availabilityEnd != null) 'endDate': availabilityEnd,
         if (availabilityStart != null) 'availabilityStart': availabilityStart,

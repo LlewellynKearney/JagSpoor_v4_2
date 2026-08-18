@@ -205,5 +205,97 @@ void main() {
       expect(afterBooking, 0);
       expect(status, 'sold_out');
     });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Dual-key date synchronization contract.
+    //
+    // `PackageBookingManager.bookPackage` resolves the package's hunt window
+    // with a dual-key fallback (`availabilityStart ?? startDate`, mirrored
+    // for the end), then writes BOTH key sets onto the booking doc so any
+    // downstream consumer (the calendar resolver, UI cards reading either
+    // key) always finds a value. These structural tests encode that
+    // resolution + write contract without the Firestore emulator (mirroring
+    // the rest of this group).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Mirrors the dual-key fallback resolution in `bookPackage`.
+    dynamic resolveStart(Map<String, dynamic> pkg) =>
+        pkg['availabilityStart'] ?? pkg['startDate'];
+    dynamic resolveEnd(Map<String, dynamic> pkg) =>
+        pkg['availabilityEnd'] ?? pkg['endDate'];
+
+    /// Mirrors the dual-key write `bookPackage` applies to the booking doc.
+    Map<String, dynamic> bookingDateFields(
+        dynamic start, dynamic end) => {
+              if (start != null) 'startDate': start,
+              if (end != null) 'endDate': end,
+              if (start != null) 'availabilityStart': start,
+              if (end != null) 'availabilityEnd': end,
+            };
+
+    test('dual-key sync: package with availabilityStart populates both sets',
+        () {
+      final pkg = <String, dynamic>{
+        'availabilityStart': '2026-08-21',
+        'availabilityEnd': '2026-08-23',
+      };
+      final start = resolveStart(pkg);
+      final end = resolveEnd(pkg);
+      // Resolved from the canonical availability keys.
+      expect(start, '2026-08-21');
+      expect(end, '2026-08-23');
+      // BOTH key sets are written to the booking doc.
+      final booking = bookingDateFields(start, end);
+      expect(booking['startDate'], '2026-08-21');
+      expect(booking['endDate'], '2026-08-23');
+      expect(booking['availabilityStart'], '2026-08-21');
+      expect(booking['availabilityEnd'], '2026-08-23');
+    });
+
+    test('dual-key sync: package with only startDate/endDate falls back + '
+        'writes both sets', () {
+      // A legacy / third-party package that stored its window under
+      // startDate/endDate only.
+      final pkg = <String, dynamic>{
+        'startDate': '2026-07-01',
+        'endDate': '2026-07-05',
+      };
+      final start = resolveStart(pkg);
+      final end = resolveEnd(pkg);
+      // availabilityStart ?? startDate falls back to startDate.
+      expect(start, '2026-07-01');
+      expect(end, '2026-07-05');
+      // The booking doc still ends up with BOTH key sets populated from the
+      // single source value.
+      final booking = bookingDateFields(start, end);
+      expect(booking['startDate'], '2026-07-01');
+      expect(booking['endDate'], '2026-07-05');
+      expect(booking['availabilityStart'], '2026-07-01');
+      expect(booking['availabilityEnd'], '2026-07-05');
+    });
+
+    test('dual-key sync: availabilityStart wins over startDate when both '
+        'present', () {
+      final pkg = <String, dynamic>{
+        'availabilityStart': '2026-09-01',
+        'startDate': '2026-08-01', // ignored — availabilityStart wins
+        'availabilityEnd': '2026-09-04',
+        'endDate': '2026-08-04',
+      };
+      expect(resolveStart(pkg), '2026-09-01');
+      expect(resolveEnd(pkg), '2026-09-04');
+    });
+
+    test('dual-key sync: a package with no dates writes no date keys to the '
+        'booking', () {
+      final pkg = <String, dynamic>{'title': 'No-date package'};
+      final start = resolveStart(pkg);
+      final end = resolveEnd(pkg);
+      expect(start, isNull);
+      expect(end, isNull);
+      // No date keys land on the booking doc (the calendar resolver then
+      // falls back to the package doc via buildEventWithPackageFallback).
+      expect(bookingDateFields(start, end), isEmpty);
+    });
   });
 }

@@ -560,8 +560,18 @@ class FarmGamePriceListManager {
       'selectedItemsList': selectedItems.map(normalizeItem).toList(),
       if (lodgingCatering.isNotEmpty)
         'lodgingCateringList': lodgingCatering.map(normalizeItem).toList(),
+      // Hunt window. The custom-package builder passes the hunt window as
+      // `checkInDate`/`checkOutDate` (ISO-8601 strings). We ALSO mirror them
+      // onto `startDate`/`endDate` so every downstream consumer (the calendar
+      // resolver, UI cards that read either key) finds a value regardless of
+      // which alias it looks for -- matching the dual-key guarantee
+      // `PackageBookingManager.bookPackage` writes for marketplace bookings.
       if (checkInDate != null) 'checkInDate': checkInDate,
       if (checkOutDate != null) 'checkOutDate': checkOutDate,
+      if (checkInDate != null) 'startDate': checkInDate,
+      if (checkOutDate != null) 'endDate': checkOutDate,
+      if (checkInDate != null) 'availabilityStart': checkInDate,
+      if (checkOutDate != null) 'availabilityEnd': checkOutDate,
       'huntingDays': huntingDays,
       'hunterCount': hunterCount,
       'observerCount': observerCount,

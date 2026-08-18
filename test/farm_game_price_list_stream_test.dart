@@ -230,6 +230,13 @@ void main() {
       expect(data['huntingDays'], 3);
       expect(data['checkInDate'], '2026-09-01');
       expect(data['checkOutDate'], '2026-09-04');
+      // Dual-key guarantee: the custom-package booking writes the hunt window
+      // under ALL alias families so any downstream consumer (calendar
+      // resolver, UI card) finds a value regardless of which key it reads.
+      expect(data['startDate'], '2026-09-01');
+      expect(data['endDate'], '2026-09-04');
+      expect(data['availabilityStart'], '2026-09-01');
+      expect(data['availabilityEnd'], '2026-09-04');
       // Both line-item lists are persisted (normalized to the dashboard shape).
       expect((data['selectedItemsList'] as List).length, 1);
       expect((data['lodgingCateringList'] as List).length, 1);
@@ -391,6 +398,48 @@ void main() {
       expect(data['farmName'], 'Ghost Farm');
       expect(data.containsKey('district'), isFalse);
       expect(data.containsKey('province'), isFalse);
+    });
+
+    test(
+        'dual-key sync: the calendar resolver (resolveWindow) reads the hunt '
+        'window from a custom-package booking regardless of which alias a '
+        'consumer reads', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'farm-1',
+        farmName: 'Test Farm',
+        outfitterId: 'outfitter-1',
+        selectedItems: [
+          {'name': 'Kudu', 'quantity': 1, 'unitPriceHunterZAR': 5000.0},
+        ],
+        combinedTotalZAR: 5000.0,
+        checkInDate: '2026-09-01',
+        checkOutDate: '2026-09-04',
+        huntingDays: 3,
+        hunterCount: 1,
+      );
+
+      final data =
+          (await fake.collection('bookings').doc(bookingId).get()).data()!;
+
+      // All alias families are populated on the booking doc.
+      expect(data['checkInDate'], '2026-09-01');
+      expect(data['startDate'], '2026-09-01');
+      expect(data['availabilityStart'], '2026-09-01');
+      expect(data['checkOutDate'], '2026-09-04');
+      expect(data['endDate'], '2026-09-04');
+      expect(data['availabilityEnd'], '2026-09-04');
+
+      // The SAME resolver the UI card + calendar action use resolves the
+      // window from the booking's dual-key payload.
+      final window =
+          BookingCalendarEventBuilder.resolveWindow(data);
+      expect(window, isNotNull);
+      expect(window!.start, DateTime(2026, 9, 1));
+      // resolveWindow normalizes end to the day AFTER the final hunt day.
+      expect(window.end, DateTime(2026, 9, 5));
     });
   });
 }

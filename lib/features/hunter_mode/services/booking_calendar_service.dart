@@ -207,6 +207,15 @@ class BookingCalendarEventBuilder {
   /// Resolves the hunt start/end window from a booking (or merged package)
   /// document by scanning the exhaustive alias lists in priority order.
   ///
+  /// **Dual-key guarantee**: this resolver treats `availabilityStart` and
+  /// `startDate` (and `availabilityEnd` / `endDate`) as fully interchangeable.
+  /// Whether the document is a booking (which carries BOTH key sets, written
+  /// by `PackageBookingManager.bookPackage` / `submitCustomPackageBooking`)
+  /// or a package (which carries `availabilityStart`/`availabilityEnd` from
+  /// `PackagePricing.toMap`), the resolver finds the window under whichever
+  /// alias is present. A booking that contains `availabilityStart` uses it
+  /// as the start; a booking that contains `startDate` treats it identically.
+  ///
   /// Returns `null` only when NO start alias resolves to a usable date -- in
   /// that case the caller surfaces a "no dates on file" message. The end
   /// falls back to the start (single-day window) when no end alias resolves,
