@@ -7814,3 +7814,90 @@ success state after a successful add.
   `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
   (Scaffold resize flag + persist + reactive added-state button),
   `AGENTS.md`.
+
+
+## Isolate chat composer into dedicated StatefulWidget (added 2026-08-18)
+
+Hardened the chat-input keyboard-kick-out fix by extracting the composer
+bar into its own dedicated `StatefulWidget`, so the `TextEditingController`
++ `FocusNode` + send-in-flight state live in an isolated element subtree
+that is NEVER torn down by the message list's Firestore stream rebuilds or
+the keyboard's `resizeToAvoidBottomInset` rebuilds. This is the robust
+form of the prior `ValueKey` + retained-`FocusNode` patch — the composer's
+state is now fully decoupled from the message list.
+
+### New `ChatComposerBar` widget
+(`lib/features/hunter_mode/widgets/chat_composer_bar.dart`, NEW)
+- Dedicated `StatefulWidget` that owns its own `TextEditingController` +
+  `FocusNode` + `_isSending` flag, created ONCE in the State and disposed
+  in `dispose` — never recreated across parent rebuilds.
+- API: `bookingId`, `theme` (`ThemeController`), `senderName`, and an
+  optional `onMessageSent` callback. The bar handles the full send
+  lifecycle (validation, `ChatAndFilterService.sendChatMessage`, the
+  in-flight spinner, the success/error snackbar) so the parent no longer
+  needs any composer/controller/send logic.
+- `onMessageSent` is invoked after a successful send so the parent can
+  scroll its message list to the bottom — the composer intentionally does
+  NOT own a `ScrollController` so the message-list scroll state stays with
+  the list widget (the parent).
+- The `TextField` keeps a stable `ValueKey('chatComposerBar')` + the
+  retained `FocusNode` + `scrollPadding: EdgeInsets.only(bottom: 80)` as
+  defense-in-depth on top of the isolated State.
+- `ScaffoldMessenger.maybeOf(context)` is captured before the async gap so
+  the error snackbar still fires if the bar unmounts while the send is in
+  flight; `mounted` is guarded throughout.
+
+### Refactored consumers (3 chat surfaces)
+All three chat surfaces now render the shared `ChatComposerBar` instead of
+an inline composer `Row`, and their card/thread States no longer hold a
+`TextEditingController` / `FocusNode` / `_isSending` flag / `_sendMessage`
+method — they keep ONLY the message-list `ScrollController` and a
+`_scrollChatToBottom` helper wired to the composer's `onMessageSent`.
+
+- **`BookingChatThread`** (`lib/features/hunter_mode/widgets/booking_chat_thread.dart`):
+  removed `_chatController` / `_chatFocusNode` / `_isSending` /
+  `_sendMessage`; kept only `_chatScrollController` + `_scrollToBottom`. The
+  `chat_and_filter_service` import was dropped (no longer used here; the
+  composer owns the send call).
+- **`_HunterBookingCard`** (marketplace
+  `hunter_package_marketplace_screen.dart`): removed `_chatController` /
+  `_chatFocusNode` / `_sendChatMessage`; kept only `_chatScrollController`
+  + added `_scrollChatToBottom`. The `chat_and_filter_service` import was
+  dropped (no longer used here).
+- **`_BookingCard`** (outfitter `outfitter_booking_dashboard_screen.dart`):
+  same removal; kept only `_chatScrollController` + added
+  `_scrollChatToBottom`. The `chat_and_filter_service` import was dropped.
+- Both screens gained the `chat_composer_bar.dart` import.
+
+### Tests
+- `test/chat_composer_bar_test.dart` (NEW, 3 widget tests, all pass):
+  - renders the text input + a send button that is enabled when idle
+    (the empty-input guard is handled inside `_sendMessage`, which no-ops
+    on empty text);
+  - **the `TextEditingController` persists across a parent rebuild** — the
+    core isolation contract: types "hello bushveld" into the composer,
+    forces a parent `_RebuildProbe` rebuild, and asserts the SAME
+    `TextEditingController` instance (same identity) + its text content
+    survive the rebuild (no controller recreation / no focus drop);
+  - shows the send icon when idle (no in-flight spinner).
+- The send path itself (which calls `ChatAndFilterService` -> Firestore) is
+  not exercised here, so no Firebase app is required; the tests are
+  unit-isolated.
+
+### Verification
+- `flutter analyze` (4 changed lib files + the new widget + the new test):
+  **No issues found** (0 errors, 0 warnings, 0 infos introduced; the two
+  now-unused `chat_and_filter_service` imports were removed so no
+  `unused_import` warning). `analysis_options.yaml` auto-touched by the
+  analyzer was reverted before commit.
+- `flutter test` (full suite): **All 710 tests passed**, zero failures
+  (was 707; +3 = the new composer-isolation tests). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side widget extraction + tests).
+- Files: `lib/features/hunter_mode/widgets/chat_composer_bar.dart` (NEW),
+  `lib/features/hunter_mode/widgets/booking_chat_thread.dart` (refactored),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (refactored + import drop),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (refactored + import drop),
+  `test/chat_composer_bar_test.dart` (NEW, 3 tests), `AGENTS.md`.

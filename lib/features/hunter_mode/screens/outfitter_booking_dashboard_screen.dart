@@ -10,7 +10,7 @@ import '../services/booking_calendar_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
-import '../services/chat_and_filter_service.dart';
+import '../widgets/chat_composer_bar.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -246,11 +246,10 @@ class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
   bool _isCustomItemsExpanded = false;
   bool _isChatExpanded = false;
-  final TextEditingController _chatController = TextEditingController();
+  // Owns ONLY the message-list scroll state. The composer's
+  // TextEditingController + FocusNode live in the isolated ChatComposerBar,
+  // so a stream re-emit / keyboard resize never touches the input state.
   final ScrollController _chatScrollController = ScrollController();
-  // Retained FocusNode so the composer keeps keyboard focus across the
-  // Scaffold's keyboard-inset rebuilds (prevents the keyboard "kick-out").
-  final FocusNode _chatFocusNode = FocusNode();
   // Local mirror of the persisted `addedToCalendar` flag so the button flips
   // to "✓ ADDED TO CALENDAR" immediately after a successful add (without
   // waiting for the booking stream to re-emit).
@@ -258,9 +257,7 @@ class _BookingCardState extends State<_BookingCard> {
 
   @override
   void dispose() {
-    _chatController.dispose();
     _chatScrollController.dispose();
-    _chatFocusNode.dispose();
     super.dispose();
   }
 
@@ -274,6 +271,20 @@ class _BookingCardState extends State<_BookingCard> {
     if (persisted != _addedToCalendar) {
       _addedToCalendar = persisted;
     }
+  }
+
+  /// Invoked by [ChatComposerBar] after a message is sent — scrolls the
+  /// message list to the bottom so the new bubble is visible.
+  void _scrollChatToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _updateStatus(String newStatus) async {
@@ -1498,52 +1509,15 @@ class _BookingCardState extends State<_BookingCard> {
 
                   const SizedBox(height: 12),
 
-                  // Chat Input Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          // Stable key + retained FocusNode keep the composer
-                          // mounted + focused across the Scaffold's keyboard
-                          // inset rebuilds (prevents the keyboard "kick-out").
-                          key: const ValueKey('outfitterChatComposer'),
-                          controller: _chatController,
-                          focusNode: _chatFocusNode,
-                          scrollPadding: const EdgeInsets.only(bottom: 80),
-                          style: TextStyle(color: widget.theme.textColor),
-                          decoration: InputDecoration(
-                            hintText: 'Type a message...',
-                            hintStyle: TextStyle(
-                              color: widget.theme.subtitleColor,
-                            ),
-                            filled: true,
-                            fillColor: widget.theme.backgroundColor,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: widget.theme.accentColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                          ),
-                          onPressed: _sendChatMessage,
-                        ),
-                      ),
-                    ],
+                  // Isolated composer: owns its own TextEditingController +
+                  // FocusNode, decoupled from this message-list stream so a
+                  // stream re-emit / keyboard resize never drops focus.
+                  ChatComposerBar(
+                    bookingId: widget.bookingId,
+                    theme: widget.theme,
+                    senderName: FirebaseAuth.instance.currentUser?.displayName ??
+                        'User',
+                    onMessageSent: _scrollChatToBottom,
                   ),
                 ],
               ),
@@ -1553,38 +1527,9 @@ class _BookingCardState extends State<_BookingCard> {
     );
   }
 
-  Future<void> _sendChatMessage() async {
-    final text = _chatController.text.trim();
-    if (text.isEmpty) return;
-
-    try {
-      await ChatAndFilterService.instance.sendChatMessage(
-        bookingId: widget.bookingId,
-        messageText: text,
-        senderName: FirebaseAuth.instance.currentUser?.displayName ?? 'User',
-      );
-      _chatController.clear();
-      // Scroll to bottom after sending
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_chatScrollController.hasClients) {
-          _chatScrollController.animateTo(
-            _chatScrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send message: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
+  // The composer's send lifecycle (validation, ChatAndFilterService call,
+  // in-flight spinner, snackbar) is owned by the isolated ChatComposerBar,
+  // which invokes _scrollChatToBottom via its onMessageSent callback.
 }
 
 class _ChatBubble extends StatelessWidget {
