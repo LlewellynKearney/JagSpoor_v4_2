@@ -158,8 +158,16 @@ class _OutfitterPackageCreatorScreenState
 
     final start = pkg['availabilityStart'];
     final end = pkg['availabilityEnd'];
-    if (start is Timestamp) _availabilityStart = start.toDate();
-    if (end is Timestamp) _availabilityEnd = end.toDate();
+    // Robust parse: the field can arrive as a Firestore Timestamp (canonical,
+    // written by PackagePricing.toMap), a DateTime (in-memory / fake round-trip),
+    // or an ISO-8601 String (legacy / migrated doc). parseFirestoreDate
+    // handles all three so the edit form pre-fills the saved dates instead of
+    // silently dropping non-Timestamp shapes (which would then trip the
+    // required-dates validation gate on save).
+    final parsedStart = parseFirestoreDate(start);
+    final parsedEnd = parseFirestoreDate(end);
+    if (parsedStart != null) _availabilityStart = parsedStart;
+    if (parsedEnd != null) _availabilityEnd = parsedEnd;
   }
 
   Future<void> _loadSpeciesCatalog() async {

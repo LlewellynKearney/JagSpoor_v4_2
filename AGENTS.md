@@ -7531,3 +7531,98 @@ range, end-before-start clamp).
   `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
   (1 site routed + `intl` import removed),
   `test/booking_calendar_service_test.dart` (+11 tests), `AGENTS.md`.
+
+## Hardened Firestore model date parsing — parseFirestoreDate (added 2026-08-18)
+
+Audited + hardened all Firestore model deserialization for the four
+package/booking date fields (`availabilityStart`, `availabilityEnd`,
+`startDate`, `endDate`) plus the date-change-request dates, so they are
+safely converted whether they arrive as a Firestore `Timestamp`, an ISO
+`String`, a `DateTime`, or a `num` (milliseconds-since-epoch).
+
+### Audit findings
+- `PackagePricing.fromMap` already had a private `static _toDate(dynamic)`
+  helper that handled Timestamp/DateTime/String (the robust pattern the
+  task wants) but it was private.
+- `DateChangeRequest.fromMap` already routed through `PackagePricing._toDate`
+  (robust).
+- **`OutfitterPackageCreatorScreen._prefillForEdit`** (the edit-mode
+  prefill) was the ONLY un-hardened site: it read
+  `pkg['availabilityStart']` / `pkg['availabilityEnd']` and only handled
+  `if (start is Timestamp) start.toDate()`. A value arriving as an ISO
+  `String` (legacy/migrated doc) or a `DateTime` (in-memory / fake
+  round-trip) was silently dropped -> the edit form showed empty date
+  chips -> the required-dates validation gate (added in the prior phase)
+  would block the save until the outfitter re-picked the dates. Real
+  regression risk on a legacy doc.
+- `package_booking_manager.bookPackage` passes the raw `pkgData` date
+  values through verbatim to the booking doc (`startDate`/`endDate`/
+  `availabilityStart`/`availabilityEnd` = copied directly, no cast) --
+  correct; the values keep their Timestamp type + server precision, and the
+  consumers (`resolveWindow`/`parseFirestoreDate`) handle all shapes. No
+  change needed.
+
+### Single source of truth -- parseFirestoreDate
+Promoted the private `PackagePricing._toDate` to a public top-level
+`parseFirestoreDate(dynamic)` helper in `package_pricing.dart`:
+- `null` -> `null`.
+- `Timestamp` -> `.toDate()`.
+- `DateTime` -> passed through unchanged.
+- `String` -> `DateTime.tryParse` (returns `null` for an unparseable
+  string, so a malformed date never throws).
+- `num` -> `DateTime.fromMillisecondsSinceEpoch(value, isUtc: true)` (a
+  3rd-party / legacy int representation; the calendar service's
+  `resolveDate` already handled this shape; the model parser now matches).
+- any other type -> `null`.
+This is the exact contract the task specified, plus the `num` shape the
+codebase already supported elsewhere. The caller (a `fromMap` /
+`fromFirestore` / edit-mode prefill) never throws on a missing or malformed
+date field.
+
+### Sites routed through the shared helper
+- `PackagePricing.fromMap`: `availabilityStart` / `availabilityEnd` ->
+  `parseFirestoreDate`.
+- `DateChangeRequest.fromMap`: `requestedStartDate` / `requestedEndDate` /
+  `requestedAt` / `resolvedAt` -> `parseFirestoreDate` (was routed through
+  the now-removed `_toDate`; behavior identical, now uses the public name).
+- `OutfitterPackageCreatorScreen._prefillForEdit` (the previously
+  un-hardened site): replaced the `if (start is Timestamp)`-only check with
+  `parseFirestoreDate(start)` / `parseFirestoreDate(end)` so the edit form
+  pre-fills the saved dates from ANY shape (Timestamp / DateTime / ISO
+  string) instead of silently dropping non-Timestamp shapes.
+- The calendar service's `resolveDate` is UNCHANGED -- it has a separate
+  concern (collapsing to midnight local for all-day events) and already
+  handles all four shapes; routing it through `parseFirestoreDate` would
+  lose the midnight-collapse, so the two remain separate (both robust).
+
+### Tests
+`test/parse_firestore_date_test.dart` (NEW, 22 tests, all pass):
+- `parseFirestoreDate`: null; Firestore Timestamp; DateTime pass-through;
+  ISO string; unparseable string -> null; empty string -> null; num
+  (ms-since-epoch, UTC); double num (truncated); unsupported type (List)
+  -> null; bool -> null.
+- `PackagePricing.fromMap` round-trip: Timestamp; ISO string; DateTime;
+  null start (single-side); null end; both null; malformed string does not
+  throw.
+- `DateChangeRequest.fromMap` round-trip: Timestamp; ISO string; null
+  dates; default status; malformed string does not throw.
+
+### Verification
+- `flutter analyze` (3 touched files: `package_pricing.dart`,
+  `outfitter_package_creator_screen.dart`,
+  `parse_firestore_date_test.dart`): only the 2 pre-existing
+  `DropdownButtonFormField.value` deprecation infos (unchanged baseline;
+  not introduced by this change). No new issues. `analysis_options.yaml` +
+  `pubspec.lock` auto-touched by `flutter pub get` reverted before commit.
+- `flutter test test/parse_firestore_date_test.dart`: 22/22 pass.
+- `flutter test` (full suite): **All 702 tests passed**, 0 failures (was
+  680; +22 new). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side model-deserialization hardening + tests).
+- Files: `lib/features/hunter_mode/models/package_pricing.dart`
+  (`_toDate` -> public `parseFirestoreDate` + `num` branch + docstring;
+  `PackagePricing.fromMap` + `DateChangeRequest.fromMap` routed through
+  it),
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  (edit prefill hardened),
+  `test/parse_firestore_date_test.dart` (NEW, 22 tests), `AGENTS.md`.

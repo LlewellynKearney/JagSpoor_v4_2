@@ -242,18 +242,40 @@ class PackagePricing {
                   SpeciesLineItem.fromMap(Map<String, dynamic>.from(e)))
               .toList()
           : const [],
-      availabilityStart: _toDate(map['availabilityStart']),
-      availabilityEnd: _toDate(map['availabilityEnd']),
+      availabilityStart: parseFirestoreDate(map['availabilityStart']),
+      availabilityEnd: parseFirestoreDate(map['availabilityEnd']),
     );
   }
+}
 
-  static DateTime? _toDate(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-    return null;
+/// Safely converts a raw Firestore date value to a [DateTime].
+///
+/// Handles every shape these date fields can arrive in across the app's
+/// collections:
+/// - `cloud_firestore` [Timestamp] (the canonical serialized form written by
+///   `PackagePricing.toMap` / `DateChangeRequest.toMap`).
+/// - A [DateTime] (e.g. when a map is built in-memory before a write, or a
+///   `FakeFirebaseFirestore` round-trips a DateTime directly).
+/// - An ISO-8601 [String] (legacy / migrated docs that predate the Timestamp
+///   serialization, or values written by an external tool).
+/// Returns `null` for `null` / an unparseable string / an unsupported type,
+/// so the caller (a `fromMap` / `fromFirestore` / edit-mode prefill) never
+/// throws on a missing or malformed date field.
+///
+/// This is the single source of truth for the four package/booking date
+/// fields (`availabilityStart`, `availabilityEnd`, `startDate`, `endDate`)
+/// plus the date-change-request dates — used by [PackagePricing.fromMap],
+/// [DateChangeRequest.fromMap], and the package creator's edit-mode prefill.
+DateTime? parseFirestoreDate(dynamic value) {
+  if (value == null) return null;
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  if (value is num) {
+    // milliseconds-since-epoch (a 3rd-party / legacy int representation).
+    return DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true);
   }
+  return null;
 }
 
 /// A date-change request raised by a hunter against an approved/paid booking.
@@ -295,12 +317,12 @@ class DateChangeRequest {
 
   factory DateChangeRequest.fromMap(Map<String, dynamic> map) {
     return DateChangeRequest(
-      requestedStartDate: PackagePricing._toDate(map['requestedStartDate']),
-      requestedEndDate: PackagePricing._toDate(map['requestedEndDate']),
+      requestedStartDate: parseFirestoreDate(map['requestedStartDate']),
+      requestedEndDate: parseFirestoreDate(map['requestedEndDate']),
       reason: map['reason'] as String? ?? '',
       status: map['status'] as String? ?? 'pending',
-      requestedAt: PackagePricing._toDate(map['requestedAt']),
-      resolvedAt: PackagePricing._toDate(map['resolvedAt']),
+      requestedAt: parseFirestoreDate(map['requestedAt']),
+      resolvedAt: parseFirestoreDate(map['resolvedAt']),
     );
   }
 }
