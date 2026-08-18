@@ -25,6 +25,8 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // Contact Info
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _altContactController = TextEditingController();
@@ -150,6 +152,8 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
 
   @override
   void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _fullNameController.dispose();
     _phoneController.dispose();
     _altContactController.dispose();
@@ -191,8 +195,25 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
         setState(() {
-          _fullNameController.text = data['fullName'] ?? '';
-          _phoneController.text = data['phone'] ?? '';
+          // First / last name: prefer the explicit fields, fall back to the
+          // legacy single `fullName` (split on the first space) so a
+          // returning hunter who completed the pre-split form is not bounced
+          // back to onboarding.
+          final legacyFull = (data['fullName'] as String?)?.trim() ?? '';
+          _firstNameController.text = (data['firstName'] as String?)?.trim() ??
+              (data['first_name'] as String?)?.trim() ??
+              (data['name'] as String?)?.trim() ??
+              (legacyFull.contains(' ')
+                  ? legacyFull.substring(0, legacyFull.indexOf(' '))
+                  : legacyFull);
+          _lastNameController.text = (data['lastName'] as String?)?.trim() ??
+              (data['last_name'] as String?)?.trim() ??
+              (data['surname'] as String?)?.trim() ??
+              (legacyFull.contains(' ')
+                  ? legacyFull.substring(legacyFull.indexOf(' ') + 1)
+                  : '');
+          _fullNameController.text = legacyFull;
+          _phoneController.text = data['phone'] ?? data['phoneNumber'] ?? '';
           _altContactController.text = data['altContact'] ?? '';
           _emailController.text = data['email'] ?? '';
           _addressController.text = data['address'] ?? '';
@@ -362,8 +383,16 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
+      // Compose the full name from the mandatory first + last name fields.
+      final first = _firstNameController.text.trim();
+      final last = _lastNameController.text.trim();
+      final composedFullName =
+          [first, last].where((p) => p.isNotEmpty).join(' ');
+
       final profileData = {
-        'fullName': _fullNameController.text.trim(),
+        'firstName': first,
+        'lastName': last,
+        'fullName': composedFullName,
         'phone': _phoneController.text.trim(),
         'altContact': _altContactController.text.trim(),
         'email': _emailController.text.trim(),
@@ -595,19 +624,58 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   const SizedBox(height: 24),
 
                   // Contact Info Section
-                  _buildSectionHeader('CONTACT INFORMATION'),
+                  _buildSectionHeader('CONTACT INFORMATION *'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Name, Surname, and a contact detail (phone or email) '
+                    'are mandatory. You cannot use the app until these are '
+                    'completed.',
+                    style: TextStyle(
+                      color: widget.theme.subtitleColor,
+                      fontSize: 11,
+                    ),
+                  ),
                   const SizedBox(height: 12),
-                  _buildTextField(
-                    _fullNameController,
-                    'Full Name',
-                    'Enter your full name',
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          _firstNameController,
+                          'First Name *',
+                          'Enter your first name',
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'First name is required'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTextField(
+                          _lastNameController,
+                          'Surname *',
+                          'Enter your surname',
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Surname is required'
+                              : null,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
                     _phoneController,
-                    'Phone Number',
+                    'Phone Number *',
                     'Enter your phone number',
                     keyboardType: TextInputType.phone,
+                    validator: (v) {
+                      final phone = v?.trim() ?? '';
+                      final email = _emailController.text.trim();
+                      if (phone.isEmpty && email.isEmpty) {
+                        return 'Enter a phone number or an email';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
@@ -619,9 +687,22 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   const SizedBox(height: 12),
                   _buildTextField(
                     _emailController,
-                    'Email Address',
+                    'Email Address *',
                     'Enter your email',
                     keyboardType: TextInputType.emailAddress,
+                    validator: (v) {
+                      final email = v?.trim() ?? '';
+                      final phone = _phoneController.text.trim();
+                      if (email.isEmpty && phone.isEmpty) {
+                        return 'Enter an email or a phone number';
+                      }
+                      if (email.isNotEmpty &&
+                          !RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$')
+                              .hasMatch(email)) {
+                        return 'Enter a valid email address';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 24),
 
@@ -991,12 +1072,15 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     String hint, {
     TextInputType? keyboardType,
     bool enabled = true,
+    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       style: TextStyle(color: widget.theme.textColor),
       keyboardType: keyboardType,
       enabled: enabled,
+      validator: validator,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,

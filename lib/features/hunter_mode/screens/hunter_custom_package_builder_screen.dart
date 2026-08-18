@@ -10,7 +10,6 @@ import '../models/booking_status.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 import '../services/farm_game_price_list_manager.dart';
-import '../widgets/booking_chat_thread.dart';
 
 /// Hunter **Custom Package Builder** form.
 ///
@@ -33,8 +32,7 @@ import '../widgets/booking_chat_thread.dart';
 ///   "Platform Fee" row.
 /// - On submit writes a `bookings` document with `isCustomPackage: true` and
 ///   `status: BookingStatus.pendingApproval`, then switches to a confirmation
-///   view that embeds the standard [BookingChatThread] for negotiation --
-///   matching the Package Marketplace booking workflow exactly.
+///   view matching the Package Marketplace booking workflow exactly.
 class HunterCustomPackageBuilderScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -694,7 +692,7 @@ class _HunterCustomPackageBuilderScreenState
   }
 
   // ---------------------------------------------------------------------------
-  //  CONFIRMATION VIEW (chat + status — marketplace parity)
+  //  CONFIRMATION VIEW (status — marketplace parity)
   // ---------------------------------------------------------------------------
 
   Widget _buildConfirmationView(ThemeController theme) {
@@ -726,8 +724,8 @@ class _HunterCustomPackageBuilderScreenState
               const SizedBox(height: 4),
               Text(
                 'Your custom package request for ${widget.farmName} has been '
-                'sent to the outfitter for review. Use the chat below to '
-                'negotiate details and arrange payment.',
+                'sent to the outfitter for review. Use the contact details on '
+                'your booking card to arrange payment directly with the outfitter.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: theme.subtitleColor, fontSize: 13),
               ),
@@ -749,15 +747,6 @@ class _HunterCustomPackageBuilderScreenState
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
-        // Embedded hunter↔outfitter chat thread (negotiation), matching the
-        // marketplace booking card's chat drawer.
-        BookingChatThread(
-          bookingId: _createdBookingId!,
-          theme: theme,
-          senderName: 'Hunter',
-          initiallyExpanded: true,
         ),
         const SizedBox(height: 12),
         SizedBox(

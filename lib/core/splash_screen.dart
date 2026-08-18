@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
 import '../features/auth/services/user_role_provider.dart';
+import '../features/hunter_mode/hunter_profile_screen.dart';
+import '../features/hunter_mode/services/hunter_profile_completeness.dart';
 import 'theme/app_theme.dart';
 import 'widgets/copyright_footer.dart';
 
@@ -82,6 +84,24 @@ class _SplashScreenState extends State<SplashScreen>
     // scanned_pricelists…) don't crash on a missing parameter.
     if (role == AppRole.outfitter) {
       await _ensureOutfitterSelfLink();
+    }
+
+    // Mandatory onboarding gate for hunters: a hunter whose Name / Surname /
+    // contact detail are not yet saved to Firestore is redirected to the
+    // Hunter Profile screen to complete onboarding before reaching the
+    // dashboard. Admins and outfitters are not gated by this check.
+    if (role == AppRole.hunter) {
+      final status =
+          await HunterProfileCompleteness.instance.statusFor(user.uid);
+      if (!status.isComplete && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HunterProfileScreen(theme: widget.theme),
+          ),
+          (_) => false,
+        );
+        return;
+      }
     }
 
     if (!mounted) return;

@@ -8272,3 +8272,128 @@ are unaffected.
   `firestore.rules` (split trophies + new trophy_stock block),
   `firestore.indexes.json` (composite index moved to trophy_stock),
   `test/firestore_rules_seeding_test.dart` (+13 separation-contract tests + import), `AGENTS.md`.
+
+## Phase — Remove in-app chat + outfitter-side hunter contact card + mandatory hunter profile onboarding gate (added 2026-08-18)
+
+Three coordinated changes delivered as one logical unit.
+
+### Task 1 — Completely remove in-app chat
+- Deleted the entire chat subsystem: `chat_and_filter_service.dart`,
+  `booking_chat_thread.dart`, `chat_composer_bar.dart` (services/widgets),
+  and their tests (`booking_chat_thread_test.dart`,
+  `chat_composer_bar_test.dart`).
+- The pure geo/temporal filter helpers that lived on `ChatAndFilterService`
+  (`isTimestampWithinHours`, `isCoordinateWithinRadius`) — used ONLY by
+  the off-grid navigation screen — were extracted into a NEW
+  `lib/features/hunter_mode/services/offline_map_filter_service.dart`
+  (`OfflineMapFilterService` singleton, pure Haversine + timestamp-age
+  arithmetic, no network). `offline_navigation_screen.dart` import +
+  call sites switched to the new service so the offline map filter was not
+  broken by the chat removal.
+- Hunter marketplace (`hunter_package_marketplace_screen.dart`):
+  `_HunterBookingCard` chat drawer (`_buildChatDrawer` / `_isChatExpanded`
+  / `_chatScrollController` / the inline composer) removed; the
+  `BookingChatThread` in the Custom Package Builder confirmation view
+  (`hunter_custom_package_builder_screen.dart`) removed. A missing
+  class-closing brace left by the chat removal was restored.
+- Outfitter booking dashboard (`outfitter_booking_dashboard_screen.dart`):
+  the chat action button + the `BookingChatThread` (via
+  `GlobalKey<BookingChatThreadState>`) removed; replaced with the
+  hunter contact card (Task 2). `resizeToAvoidBottomInset` retained.
+- `firestore.rules`: the `match /bookings/{bookingId}/chats/{chatId}`
+  subcollection block + the `isBookingPartyViaParent` helper (used only by
+  the chats rule) were removed. The bookings block otherwise unchanged.
+- `OutfitterContactCard` fallback copy + `outfitter_contact_card_test.dart`
+  updated to drop "in-app chat" references ("reaching the outfitter
+  directly").
+
+### Task 2 — Display hunter contact details to outfitter on booked packages
+- NEW `lib/features/hunter_mode/services/hunter_contact_resolver.dart`
+  (`HunterContactResolver` singleton + `HunterContact` model). `resolve(
+  bookingData)` reads `users/{hunterId}` to populate `firstName` /
+  `lastName` (with `surname` / `first_name` / `last_name` aliases) +
+  `fullName` (composed; with `fullName` legacy alias) + `phone` (with
+  `phoneNumber` / `phone` / `cellNumber` / `cell` / `cellNr` aliases) +
+  `email`. Best-effort: a missing doc / field / Firestore error yields an
+  empty contact (no crash). `@visibleForTesting forTesting(FirebaseFirestore)`
+  seam. Permitted by the existing `users` `read: isSignedIn()` rule.
+- NEW `lib/features/hunter_mode/widgets/hunter_contact_card.dart`
+  (`HunterContactCard` StatefulWidget). Renders the hunter name + role
+  label, a tappable phone row (`tel:` via `url_launcher.launchUrl`) and a
+  tappable email row (`mailto:`), each an `InkWell` with an open-in-new
+  icon; a failed launch surfaces an orange/red snackbar (messenger captured
+  pre-async-gap, `mounted` guarded). Loading spinner + graceful
+  "unavailable, contact admin" fallback states. `didUpdateWidget`
+  re-resolves when the booking's `hunterId` changes (ListView recycle
+  safety).
+- Wired into the outfitter booking dashboard `_BookingCard`: rendered on
+  every booking card (active + archived) between the financial breakdown
+  and the action buttons.
+
+### Task 3 — Mandatory hunter profile setup + immediate onboarding redirect
+- NEW `lib/features/hunter_mode/services/hunter_profile_completeness.dart`
+  (`HunterProfileCompleteness` singleton + `HunterProfileStatus` model).
+  `statusFor(uid)` reads `users/{uid}` and returns a `HunterProfileStatus`
+  whose `isComplete` is true iff (first name OR legacy multi-token
+  `fullName`) AND (last name OR surname alias OR legacy multi-token
+  `fullName`) AND (a contact detail: phone OR email). Field-alias tolerant;
+  blank/whitespace values are not present. `missingSummary` for the
+  redirect snackbar. `@visibleForTesting forTesting(FirebaseFirestore)`
+  seam. Lazy Firestore getter so cold-launch construction does not throw
+  `[core/no-app]`.
+- `hunter_profile_screen.dart`: the single `_fullNameController` was split
+  into `_firstNameController` + `_lastNameController` (mandatory, validated
+  non-empty); the phone + email fields are now mandatory (validators
+  reject empty). The Contact Info section header carries a `*`. The save
+  writes `firstName` / `lastName` (keeps `fullName` composed for
+  back-compat) + `phone` / `email` to `users/{uid}`.
+- Onboarding redirect wired into ALL THREE entry points so a hunter cannot
+  bypass the profile screen:
+  - `auth_screen.dart` `_routeAfterAuth`: hunters with an incomplete
+    profile are redirected to `HunterProfileScreen` (clearing the nav
+    stack) with an orange snackbar listing the missing fields, before
+    reaching `/hunter_dashboard`.
+  - `splash_screen.dart` `_navigateToNextScreen`: same gate on cold launch.
+  - `role_selection_screen.dart` `_confirmAndSelectRole`: same gate after
+    the role write + cache, so a brand-new hunter is redirected to complete
+    onboarding before the dashboard.
+  - `hunter_dashboard.dart` `_enforceProfileOnboarding` (defense-in-depth
+    in `initState`): if a hunter somehow reaches the dashboard with an
+    incomplete profile, redirect them. Admins are NOT gated.
+- `widget.theme` field reference fixed per-screen: `auth_screen` uses
+  `widget.themedata`; `role_selection_screen` (no theme field) uses
+  `ThemeController.instance`; splash + hunter_dashboard use `widget.theme`.
+- `Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(...), (_)
+  => false)` used (not the non-existent `pushReplacementAndRemoveUntil`).
+
+### Verification
+- `flutter analyze` (lib/ + test/, Flutter 3.29.1 CI pin): **0 errors, 0
+  warnings** (278 pre-existing infos; all changed/new files are
+  analyzer-clean). `analysis_options.yaml` + `pubspec.lock` were NOT
+  auto-touched.
+- `flutter test` (full suite): **All 694 tests passed**, zero failures
+  (was 666; +28 = 13 `hunter_contact_resolver_test` + 15
+  `hunter_profile_completeness_test`; no regressions). NOTE: created the
+  `/usr/lib/x86_64-linux-gnu/libsqlite3.so` symlink (-> `libsqlite3.so.0`)
+  so the `sqflite_common_ffi` SQLite integration tests can load
+  `libsqlite3.so` (documented sandbox limitation; the runtime `.so.0`
+  exists but the dev `.so` link did not).
+- No Firestore rules / index / Storage / pubspec / manifest changes
+  required beyond the chats-subcollection removal (the `users` read is
+  already `isSignedIn()`; the hunter contact + profile-completeness reads
+  are covered by it).
+- Files: NEW — `hunter_contact_resolver.dart`, `hunter_contact_card.dart`,
+  `hunter_profile_completeness.dart`, `offline_map_filter_service.dart`,
+  `test/hunter_contact_resolver_test.dart`,
+  `test/hunter_profile_completeness_test.dart`. DELETED —
+  `chat_and_filter_service.dart`, `booking_chat_thread.dart`,
+  `chat_composer_bar.dart`, `test/booking_chat_thread_test.dart`,
+  `test/chat_composer_bar_test.dart`. MODIFIED —
+  `hunter_profile_screen.dart`, `auth_screen.dart`, `splash_screen.dart`,
+  `role_selection_screen.dart`, `hunter_dashboard.dart`,
+  `hunter_package_marketplace_screen.dart`,
+  `hunter_custom_package_builder_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`, `offline_navigation_screen.dart`,
+  `outfitter_contact_card.dart`, `firestore.rules`,
+  `test/outfitter_contact_card_test.dart`, `AGENTS.md`.
+

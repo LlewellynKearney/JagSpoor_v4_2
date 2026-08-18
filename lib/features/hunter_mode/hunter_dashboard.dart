@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
@@ -8,6 +9,7 @@ import 'trophy_room_screen.dart';
 import 'weather/weather_tracker_screen.dart';
 import 'package:jagspoor/features/track/presentation/spoor_detection_hud_screen.dart';
 import 'hunter_profile_screen.dart';
+import 'services/hunter_profile_completeness.dart';
 import 'package:jagspoor/features/game_guide/presentation/field_estimate_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/ballistic_calc_screen.dart';
 import 'package:jagspoor/features/ballistics/presentation/ammunition_screen.dart';
@@ -45,6 +47,29 @@ class _HunterDashboardState extends State<HunterDashboard> {
     super.initState();
     _loadFavoriteIds();
     _resolveAdmin();
+    _enforceProfileOnboarding();
+  }
+
+  /// Defense-in-depth onboarding gate: if a hunter somehow reaches the
+  /// dashboard with an incomplete mandatory profile (e.g. a stale route
+  /// stack, a deep link, or a profile edit that cleared a mandatory field),
+  /// redirect them to the Hunter Profile screen to complete onboarding
+  /// before they can use any main app features. Admins are not gated.
+  Future<void> _enforceProfileOnboarding() async {
+    final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+    if (isAdmin) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final status =
+        await HunterProfileCompleteness.instance.statusFor(uid);
+    if (!status.isComplete && mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => HunterProfileScreen(theme: widget.theme),
+        ),
+        (_) => false,
+      );
+    }
   }
 
   Future<void> _resolveAdmin() async {

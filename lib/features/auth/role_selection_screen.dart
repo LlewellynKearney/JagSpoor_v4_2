@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/theme/app_theme.dart';
 import '../admin/services/admin_auth_guard.dart';
+import '../hunter_mode/hunter_profile_screen.dart';
+import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
@@ -82,6 +85,23 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     UserRoleProvider.instance.setRole(
       role == 'outfitter' ? AppRole.outfitter : AppRole.hunter,
     );
+
+    // Mandatory onboarding gate for hunters: a brand-new hunter has no
+    // profile yet, so redirect them to the Hunter Profile screen to
+    // complete Name / Surname / contact before reaching the dashboard.
+    if (role == 'hunter' && uid != null) {
+      final status =
+          await HunterProfileCompleteness.instance.statusFor(uid);
+      if (!status.isComplete && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HunterProfileScreen(theme: ThemeController.instance),
+          ),
+          (_) => false,
+        );
+        return;
+      }
+    }
 
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, routeName);

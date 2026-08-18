@@ -10,7 +10,7 @@ import '../services/booking_date_formatter.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
-import '../widgets/booking_chat_thread.dart';
+import '../widgets/hunter_contact_card.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -245,12 +245,6 @@ class _BookingCard extends StatefulWidget {
 class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
   bool _isCustomItemsExpanded = false;
-  // GlobalKey into the shared [BookingChatThread] so the card's external
-  // chat affordances (the unread-mail indicator + the "IN-APP CHAT" button)
-  // can drive the thread's expand/collapse state without the card owning any
-  // chat layout / scroll / composer state of its own.
-  final GlobalKey<BookingChatThreadState> _chatThreadKey =
-      GlobalKey<BookingChatThreadState>();
   // Cached resolved display names for the card's Package / Hunter rows. The
   // booking document carries only the `packageId` + `hunterId` (opaque ids);
   // the full names are resolved async from `packages/{packageId}` +
@@ -355,13 +349,6 @@ class _BookingCardState extends State<_BookingCard> {
           : (hunterId.isNotEmpty ? hunterId : 'Unknown hunter');
       _isResolvingNames = false;
     });
-  }
-
-  /// Toggles the shared [BookingChatThread] open/closed via its GlobalKey.
-  /// The thread owns its own message-list scroll controller + the isolated
-  /// [ChatComposerBar], so this card holds no chat-layout state of its own.
-  void _toggleChatDrawer() {
-    _chatThreadKey.currentState?.toggleExpanded();
   }
 
   Future<void> _updateStatus(String newStatus) async {
@@ -681,29 +668,6 @@ class _BookingCardState extends State<_BookingCard> {
     );
   }
 
-  /// Unread-message envelope indicator for the outfitter booking card header.
-  ///
-  /// Driven by the booking's `outfitterHasUnread` flag (written by the chat
-  /// flow when a hunter sends a message the outfitter hasn't seen). When the
-  /// flag is true the `Icons.mail` icon is highlighted in orange; otherwise
-  /// it stays muted grey. Identical layout to the hunter booking card.
-  /// Tapping it opens the chat drawer.
-  Widget _buildUnreadMailIndicator() {
-    final hasUnread = (widget.data['outfitterHasUnread'] as bool?) ?? false;
-    return InkWell(
-      onTap: _toggleChatDrawer,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Icon(
-          Icons.mail,
-          color: hasUnread ? Colors.orange : Colors.grey,
-          size: 24,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
@@ -793,7 +757,6 @@ class _BookingCardState extends State<_BookingCard> {
                     ],
                   ),
                 ),
-                _buildUnreadMailIndicator(),
               ],
             ),
           ),
@@ -918,19 +881,17 @@ class _BookingCardState extends State<_BookingCard> {
             child: _buildActionButtons(status),
           ),
 
-          // 💬 Chat & Negotiation Thread Panel -- delegates to the shared
-          // [BookingChatThread] widget (the same component the hunter side +
-          // the Custom Package Builder use). The thread owns its own
-          // message-list scroll controller + the isolated [ChatComposerBar],
-          // so the card holds no chat-layout state of its own; the
-          // [_chatThreadKey] lets the external affordances (unread-mail
-          // indicator + "IN-APP CHAT" button) drive the expand/collapse.
-          BookingChatThread(
-            key: _chatThreadKey,
-            bookingId: widget.bookingId,
-            theme: widget.theme,
-            senderName:
-                FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+          // 📞 Hunter contact card: surfaces the hunter's name / surname +
+          // tappable phone (tel:) + tappable email (mailto:) so the outfitter
+          // can reach the hunter directly to coordinate the off-platform
+          // payment. Renders a loading state + graceful "not available"
+          // fallback.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: HunterContactCard(
+              source: widget.data,
+              theme: widget.theme,
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -992,9 +953,9 @@ class _BookingCardState extends State<_BookingCard> {
   /// - `Awaiting Payment` (or legacy `Approved`): a prominent
   ///   VERIFY / CONFIRM PAYMENT RECEIVED button (outfitter confirms the
   ///   direct off-platform payment; the booking moves to `Confirmed` /
-  ///   Archived) plus a Chat Hunter row.
+  ///   Archived).
   /// - Archived (Confirmed / Completed / Declined / Cancelled): no action
-  ///   buttons (the in-app chat thread below the action row remains
+  ///   buttons (the hunter contact card below the action row remains
   ///   available for any finalized booking).
   Widget _buildActionButtons(String status) {
     final isPending = status == BookingStatus.pendingApproval;
@@ -1002,150 +963,109 @@ class _BookingCardState extends State<_BookingCard> {
         status == 'Approved';
 
     if (isPending) {
-      return Column(
+      return Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isProcessing
-                      ? null
-                      : () => _updateStatus(BookingStatus.declined),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.red,
-                          ),
-                        )
-                      : const Icon(Icons.close_rounded),
-                  label: const Text(
-                    'DECLINE',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _isProcessing
-                      ? null
-                      : () => _updateStatus(BookingStatus.approvedAwaitingPayment),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle_rounded),
-                  label: const Text(
-                    'APPROVE REQUEST',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildContactHunterRow(),
-        ],
-      );
-    }
-
-    if (isAwaitingPayment) {
-      return Column(
-        children: [
-          // Prominent verify-payment button.
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _isProcessing ? null : _confirmPaymentReceived,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.green,
-                disabledBackgroundColor: Colors.green.withValues(alpha: 0.5),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _isProcessing
+                  ? null
+                  : () => _updateStatus(BookingStatus.declined),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
               icon: _isProcessing
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.red,
+                      ),
+                    )
+                  : const Icon(Icons.close_rounded),
+              label: const Text(
+                'DECLINE',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing
+                  ? null
+                  : () => _updateStatus(BookingStatus.approvedAwaitingPayment),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: _isProcessing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.verified_rounded),
+                  : const Icon(Icons.check_circle_rounded),
               label: const Text(
-                'VERIFY / CONFIRM PAYMENT RECEIVED',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+                'APPROVE REQUEST',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          _buildContactHunterRow(),
         ],
       );
     }
 
-    // Archived / completed / declined / cancelled: no action buttons (the
-    // in-app chat thread below the action row remains available).
-    return const SizedBox.shrink();
-  }
-
-  /// "Chat Hunter" action button row -- lets the outfitter communicate with
-  /// the hunter regarding the off-platform payment via the in-app chat
-  /// drawer (the embedded chat thread for this booking).
-  Widget _buildContactHunterRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _toggleChatDrawer,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: widget.theme.accentColor,
-              side: BorderSide(color: widget.theme.accentColor),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+    if (isAwaitingPayment) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _isProcessing ? null : _confirmPaymentReceived,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.green,
+            disabledBackgroundColor: Colors.green.withValues(alpha: 0.5),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-            icon: const Icon(Icons.chat_rounded),
-            label: const Text(
-              'CHAT',
-              style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          icon: _isProcessing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.verified_rounded),
+          label: const Text(
+            'VERIFY / CONFIRM PAYMENT RECEIVED',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
         ),
-      ],
-    );
+      );
+    }
+
+    // Archived / completed / declined / cancelled: no action buttons (the
+    // hunter contact card below the action row remains available).
+    return const SizedBox.shrink();
   }
 
   /// Date-change request section: shows the hunter's requested dates + reason
@@ -1291,15 +1211,6 @@ class _BookingCardState extends State<_BookingCard> {
       ],
     );
   }
-
-  // The chat drawer is now rendered by the shared [BookingChatThread] widget
-  // (instantiated directly in [build] with the [_chatThreadKey]). The thread
-  // owns its own message-list scroll controller + the isolated
-  // [ChatComposerBar] + the chat-bubble renderer, so this card holds no
-  // chat-layout / scroll / composer state of its own -- the prior inline
-  // `_buildChatDrawer` + `_ChatBubble` have been removed in favour of the
-  // single canonical component shared with the hunter side + the Custom
-  // Package Builder.
 }
 
 class _FinancialRow extends StatelessWidget {

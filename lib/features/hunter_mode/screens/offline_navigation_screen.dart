@@ -11,7 +11,7 @@ import '../services/offline_map_cache.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/map_path_tracer.dart';
 import '../services/battery_saver_manager.dart';
-import '../services/chat_and_filter_service.dart';
+import '../services/offline_map_filter_service.dart';
 import '../services/advanced_tactical_service.dart';
 
 class OfflineNavigationScreen extends StatefulWidget {
@@ -147,7 +147,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
         hoursFilter = 999999; // Unlimited
       }
 
-      final passesTimeFilter = ChatAndFilterService.instance
+      final passesTimeFilter = OfflineMapFilterService.instance
           .isTimestampWithinHours(
             documentTimestampMillis: createdAtMillis,
             maxHoursFilter: hoursFilter,
@@ -167,7 +167,7 @@ class _OfflineNavigationScreenState extends State<OfflineNavigationScreen> {
 
       final passesRadiusFilter =
           maxRadiusKm == double.infinity ||
-          ChatAndFilterService.instance.isCoordinateWithinRadius(
+          OfflineMapFilterService.instance.isCoordinateWithinRadius(
             centerLat: _currentCenter.latitude,
             centerLon: _currentCenter.longitude,
             targetLat: position.latitude,

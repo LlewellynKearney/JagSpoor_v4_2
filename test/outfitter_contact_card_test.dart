@@ -86,7 +86,7 @@ void main() {
     expect(find.textContaining('not available'), findsOneWidget);
   });
 
-  testWidgets('the unavailable fallback mentions the in-app chat',
+  testWidgets('the unavailable fallback mentions reaching the outfitter directly',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -97,7 +97,8 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.textContaining('in-app chat'), findsOneWidget);
+    expect(find.textContaining('reach out to the outfitter directly'),
+        findsOneWidget);
   });
 
   testWidgets('accepts a custom heading', (tester) async {

@@ -45,14 +45,12 @@ service cloud.firestore {
       return isOwnerOf(ownerField) || isAdmin();
     }
 
-    // Booking party check that works for both the booking document itself
-    // (uses resource / request.resource) and for nested subcollections
-    // (looks up the parent booking via get()). Returns true when the caller
-    // is the hunter or the outfitter on the parent booking.
-    function isBookingPartyViaParent(parentPath) {
+    // Booking party check that works for the booking document itself
+    // (uses resource / request.resource).
+    function isBookingParty() {
       return isSignedIn() && (
-        get(parentPath).data.hunterId == request.auth.uid ||
-        get(parentPath).data.outfitterId == request.auth.uid
+        resource.data.hunterId == request.auth.uid ||
+        resource.data.outfitterId == request.auth.uid
       );
     }
 
@@ -381,14 +379,6 @@ service cloud.firestore {
         || (isBookingParty()
             && request.resource.data.status == resource.data.status);
       allow delete: if isAdmin();
-
-      // Negotiation chat subcollection — restricted to the two booking
-      // parties via a parent-doc lookup.
-      match /chats/{chatId} {
-        allow read, write: if isBookingPartyViaParent(
-          /databases/$(database)/documents/bookings/$(bookingId)
-        );
-      }
     }
 
     // ── Operational collections (outfitter-scoped) ──────────────────────

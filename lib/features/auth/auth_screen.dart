@@ -8,6 +8,8 @@ import '../../core/widgets/copyright_footer.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
+import '../hunter_mode/hunter_profile_screen.dart';
+import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
 import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
@@ -121,7 +123,9 @@ class _AuthScreenState extends State<AuthScreen> {
   /// single role:
   ///   - `outfitter` → `/outfitter_dashboard` (after self-linking
   ///     `outfitterId = uid` if missing — see [_ensureOutfitterSelfLink])
-  ///   - `hunter`    → `/hunter_dashboard`
+  ///   - `hunter`    → mandatory-profile check: if Name / Surname / a
+  ///     contact detail are missing, redirect to the Hunter Profile screen
+  ///     to complete onboarding; otherwise `/hunter_dashboard`.
   ///   - `admin`     → `/admin_dashboard`
   ///   - `unknown` / dual-role / unassigned → [RoleSelectionScreen]
   ///
@@ -141,6 +145,39 @@ class _AuthScreenState extends State<AuthScreen> {
     // scanned_pricelists…) don't crash on a missing parameter.
     if (role == AppRole.outfitter) {
       await _ensureOutfitterSelfLink();
+    }
+
+    // Mandatory onboarding gate for hunters: a hunter whose Name / Surname /
+    // contact detail are not yet saved to Firestore is redirected to the
+    // Hunter Profile screen to complete onboarding before reaching the
+    // dashboard. Admins and outfitters are not gated by this check.
+    if (role == AppRole.hunter) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final status =
+            await HunterProfileCompleteness.instance.statusFor(user.uid);
+        if (!status.isComplete && mounted) {
+          setState(() => _isLoading = false);
+          final missing = status.missingSummary;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => HunterProfileScreen(theme: widget.themedata),
+            ),
+            (_) => false,
+          );
+          if (missing.isNotEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Please complete your profile before continuing. $missing',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+      }
     }
 
     if (!mounted) return;

@@ -2,48 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../services/outfitter_contact_resolver.dart';
+import '../services/hunter_contact_resolver.dart';
 
-/// Reusable "CONTACT THE OUTFITTER" card that resolves + renders the
-/// outfitter / farm manager contact details (name + role, tappable phone
-/// `tel:` intent, tappable email `mailto:` intent) for a package or booking.
+/// Reusable "CONTACT THE HUNTER" card shown on the outfitter booking
+/// dashboard. Resolves + renders the hunter's contact details (name / surname,
+/// tappable phone `tel:` intent, tappable email `mailto:` intent) for a
+/// booking request.
 ///
-/// Resolves the contact asynchronously via [OutfitterContactResolver] from
-/// the `outfitterId` (+ optional `farmId`) carried on the supplied document
-/// map. Renders three states: a compact loading spinner, a graceful
-/// "not available" fallback (older records / missing docs / offline), and the
-/// resolved contact rows. A failed `tel:` / `mailto:` launch surfaces an
-/// orange/red snackbar (messenger captured pre-async-gap, `mounted` guarded).
-///
-/// Used by:
-/// - the Package Details bottom sheet (`_BookingConfirmationSheet`) so a
-///   hunter can contact the outfitter before booking;
-/// - the hunter "My Bookings" card (`_HunterBookingCard`) so a hunter can
-///   contact the outfitter / farm manager for an active or confirmed booking.
-class OutfitterContactCard extends StatefulWidget {
-  /// The raw package or booking document map. Must carry `outfitterId`;
-  /// `farmId` is optional (a package/booking may have no bound farm).
+/// Resolves the contact asynchronously via [HunterContactResolver] from the
+/// `hunterId` carried on the supplied booking document map. Renders three
+/// states: a compact loading spinner, a graceful "not available" fallback
+/// (older records / missing docs / offline / the hunter's mandatory profile
+/// not yet complete), and the resolved contact rows. A failed `tel:` /
+/// `mailto:` launch surfaces an orange/red snackbar (messenger captured
+/// pre-async-gap, `mounted` guarded).
+class HunterContactCard extends StatefulWidget {
+  /// The raw booking document map. Must carry `hunterId`.
   final Map<String, dynamic> source;
 
   final ThemeController theme;
 
-  /// Optional heading override (e.g. "CONTACT THE OUTFITTER"). Defaults to
-  /// "CONTACT THE OUTFITTER".
+  /// Optional heading override. Defaults to "CONTACT THE HUNTER".
   final String heading;
 
-  const OutfitterContactCard({
+  const HunterContactCard({
     super.key,
     required this.source,
     required this.theme,
-    this.heading = 'CONTACT THE OUTFITTER',
+    this.heading = 'CONTACT THE HUNTER',
   });
 
   @override
-  State<OutfitterContactCard> createState() => _OutfitterContactCardState();
+  State<HunterContactCard> createState() => _HunterContactCardState();
 }
 
-class _OutfitterContactCardState extends State<OutfitterContactCard> {
-  OutfitterContact? _contact;
+class _HunterContactCardState extends State<HunterContactCard> {
+  HunterContact? _contact;
   bool _isContactLoading = true;
 
   @override
@@ -53,12 +47,11 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
   }
 
   @override
-  void didUpdateWidget(covariant OutfitterContactCard oldWidget) {
+  void didUpdateWidget(covariant HunterContactCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Re-resolve when the underlying document's outfitterId / farmId changes
-    // (e.g. the card is recycled for a new booking by a ListView builder).
-    if (oldWidget.source['outfitterId'] != widget.source['outfitterId'] ||
-        oldWidget.source['farmId'] != widget.source['farmId']) {
+    // Re-resolve when the underlying booking's hunterId changes (e.g. the
+    // card is recycled for a new booking by a ListView builder).
+    if (oldWidget.source['hunterId'] != widget.source['hunterId']) {
       _resolveContact();
     }
   }
@@ -68,7 +61,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
     setState(() => _isContactLoading = true);
     try {
       final contact =
-          await OutfitterContactResolver.instance.resolve(widget.source);
+          await HunterContactResolver.instance.resolve(widget.source);
       if (mounted) {
         setState(() {
           _contact = contact;
@@ -78,7 +71,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _contact = const OutfitterContact();
+          _contact = const HunterContact();
           _isContactLoading = false;
         });
       }
@@ -118,7 +111,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
           const SizedBox(height: 12),
           if (_isContactLoading)
             _loadingRow(theme)
-          else if (_contact == null || !_contact!.hasAnyContact)
+          else if (_contact == null || !_contact!.hasAnyContactDetail)
             _unavailableRow(theme)
           else
             _contactDetailsRows(theme, _contact!),
@@ -137,7 +130,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
         ),
         const SizedBox(width: 12),
         Text(
-          'Loading contact details...',
+          'Loading hunter contact details...',
           style: TextStyle(color: theme.subtitleColor, fontSize: 13),
         ),
       ],
@@ -151,8 +144,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'Contact details are not available for this booking yet. '
-            'Please reach out to the outfitter directly.',
+            'Hunter contact details are not available for this booking yet.',
             style: TextStyle(color: theme.subtitleColor, fontSize: 12),
           ),
         ),
@@ -160,34 +152,34 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
     );
   }
 
-  Widget _contactDetailsRows(ThemeController theme, OutfitterContact contact) {
+  Widget _contactDetailsRows(ThemeController theme, HunterContact contact) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _contactNameRow(theme, contact),
-        if (contact.primaryPhone.isNotEmpty) ...[
+        if (contact.phone.isNotEmpty) ...[
           const SizedBox(height: 8),
           _contactActionRow(
             theme: theme,
             icon: Icons.phone_rounded,
-            label: contact.primaryPhone,
-            onTap: () => _launchUrl('tel:${contact.primaryPhone}'),
+            label: contact.phone,
+            onTap: () => _launchUrl('tel:${contact.phone}'),
           ),
         ],
-        if (contact.primaryEmail.isNotEmpty) ...[
+        if (contact.email.isNotEmpty) ...[
           const SizedBox(height: 8),
           _contactActionRow(
             theme: theme,
             icon: Icons.email_rounded,
-            label: contact.primaryEmail,
-            onTap: () => _launchUrl('mailto:${contact.primaryEmail}'),
+            label: contact.email,
+            onTap: () => _launchUrl('mailto:${contact.email}'),
           ),
         ],
       ],
     );
   }
 
-  Widget _contactNameRow(ThemeController theme, OutfitterContact contact) {
+  Widget _contactNameRow(ThemeController theme, HunterContact contact) {
     return Row(
       children: [
         Icon(Icons.person_rounded, color: theme.accentColor, size: 18),
@@ -197,7 +189,11 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                contact.primaryContactName,
+                contact.fullName.isNotEmpty
+                    ? contact.fullName
+                    : (contact.hunterId.isNotEmpty
+                        ? contact.hunterId
+                        : 'Unknown hunter'),
                 style: TextStyle(
                   color: theme.textColor,
                   fontSize: 14,
@@ -205,7 +201,7 @@ class _OutfitterContactCardState extends State<OutfitterContactCard> {
                 ),
               ),
               Text(
-                contact.primaryContactRole,
+                'Hunter',
                 style: TextStyle(
                   color: theme.subtitleColor,
                   fontSize: 11,

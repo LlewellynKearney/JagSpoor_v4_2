@@ -11,7 +11,6 @@ import '../services/booking_date_formatter.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/pricing_math.dart';
-import '../widgets/chat_composer_bar.dart';
 import '../widgets/outfitter_contact_card.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
@@ -84,7 +83,7 @@ class _HunterPackageMarketplaceScreenState
               indicatorColor: theme.accentColor,
               tabs: const [
                 Tab(text: '📦 Packages'),
-                Tab(text: '💬 My Bookings'),
+                Tab(text: '📋 My Bookings'),
               ],
             ),
           ),
@@ -96,7 +95,7 @@ class _HunterPackageMarketplaceScreenState
               children: [
                 // Packages Tab
                 _buildPackagesTab(theme),
-                // My Bookings Tab with Chat
+                // My Bookings Tab
                 _buildMyBookingsTab(theme),
               ],
             ),
@@ -339,7 +338,7 @@ class _HunterPackageMarketplaceScreenState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Book a package to start chatting with outfitters',
+                  'Book a package to coordinate with outfitters',
                   style: TextStyle(color: theme.subtitleColor),
                 ),
               ],
@@ -1380,12 +1379,6 @@ class _HunterBookingCard extends StatefulWidget {
 }
 
 class _HunterBookingCardState extends State<_HunterBookingCard> {
-  bool _isChatExpanded = false;
-  // Owns ONLY the message-list scroll state. The composer's
-  // TextEditingController + FocusNode live in the isolated ChatComposerBar,
-  // so a stream re-emit / keyboard resize never touches the input state.
-  final ScrollController _chatScrollController = ScrollController();
-
   Color _getStatusColor(String status) {
     switch (status) {
       case BookingStatus.pendingApproval:
@@ -1405,55 +1398,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       default:
         return Colors.grey;
     }
-  }
-
-  @override
-  void dispose() {
-    _chatScrollController.dispose();
-    super.dispose();
-  }
-
-  /// Invoked by [ChatComposerBar] after a message is sent — scrolls the
-  /// message list to the bottom so the new bubble is visible.
-  void _scrollChatToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_chatScrollController.hasClients) {
-        _chatScrollController.animateTo(
-          _chatScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  /// Toggles the chat drawer open/closed.
-  void _toggleChatDrawer() {
-    setState(() {
-      _isChatExpanded = !_isChatExpanded;
-    });
-  }
-
-  /// Unread-message envelope indicator for the card header.
-  ///
-  /// Driven by the booking's `hunterHasUnread` flag (written by the chat
-  /// flow when the outfitter sends a message the hunter hasn't seen). When
-  /// the flag is true the `Icons.mail` icon is highlighted in orange;
-  /// otherwise it stays muted grey. Tapping it opens the chat drawer.
-  Widget _buildUnreadMailIndicator() {
-    final hasUnread = (widget.data['hunterHasUnread'] as bool?) ?? false;
-    return InkWell(
-      onTap: () => _toggleChatDrawer(),
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Icon(
-          Icons.mail,
-          color: hasUnread ? Colors.orange : Colors.grey,
-          size: 24,
-        ),
-      ),
-    );
   }
 
   @override
@@ -1555,7 +1499,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                     ],
                   ),
                 ),
-                _buildUnreadMailIndicator(),
                 const SizedBox(width: 8),
                 Text(
                   'R ${totalPrice.toStringAsFixed(0)}',
@@ -1641,9 +1584,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
             ),
           ),
 
-          // 💬 Chat & Negotiation Thread Panel
-          _buildChatDrawer(),
-
           // 📅 Request Date Change button.
           if (canRequestDateChange)
             Padding(
@@ -1667,36 +1607,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                 ),
               ),
             ),
-
-          // 💬 Direct action button for off-platform payment communication:
-          // in-app chat with the outfitter. Lets the hunter coordinate the
-          // direct payment with the outfitter through the booking's embedded
-          // chat thread.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _toggleChatDrawer,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: widget.theme.accentColor,
-                      side: BorderSide(color: widget.theme.accentColor),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    icon: const Icon(Icons.chat_rounded, size: 20),
-                    label: const Text(
-                      'IN-APP CHAT',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -2037,214 +1947,5 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     );
   }
 
-  Widget _buildChatDrawer() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: widget.theme.accentColor.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.theme.accentColor.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        children: [
-          // Expandable Header
-          InkWell(
-            onTap: () => _toggleChatDrawer(),
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: widget.theme.accentColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.chat_rounded,
-                      color: widget.theme.accentColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '💬 Open Chat & Negotiation Thread',
-                      style: TextStyle(
-                        color: widget.theme.textColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _isChatExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: widget.theme.accentColor,
-                    size: 28,
-                  ),
-                ],
-              ),
-            ),
-          ),
 
-          // Expandable Chat Content
-          if (_isChatExpanded)
-            Container(
-              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-              child: Column(
-                children: [
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
-
-                  // Chat Messages Stream
-                  SizedBox(
-                    height: 200,
-                    child: StreamBuilder(
-                      stream: FirebaseFirestore.instance
-                          .collection('bookings')
-                          .doc(widget.bookingId)
-                          .collection('chats')
-                          .orderBy('timestamp', descending: false)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.green,
-                            ),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error loading chat',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          );
-                        }
-
-                        final messages = snapshot.data?.docs ?? [];
-                        if (messages.isEmpty) {
-                          return Center(
-                            child: Text(
-                              'No messages yet - start the conversation!',
-                              style: TextStyle(
-                                color: widget.theme.subtitleColor,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          controller: _chatScrollController,
-                          itemCount: messages.length,
-                          itemBuilder: (context, index) {
-                            final msg = messages[index].data();
-                            final senderId = msg['senderId'] as String? ?? '';
-                            final isMe = senderId ==
-                                FirebaseAuth.instance.currentUser?.uid;
-
-                            return _ChatBubbleHunter(
-                              text: msg['text'] as String? ?? '',
-                              senderName:
-                                  msg['senderName'] as String? ?? 'Unknown',
-                              isMe: isMe,
-                              theme: widget.theme,
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Isolated composer: owns its own TextEditingController +
-                  // FocusNode, decoupled from this message-list stream so a
-                  // stream re-emit / keyboard resize never drops focus.
-                  ChatComposerBar(
-                    bookingId: widget.bookingId,
-                    theme: widget.theme,
-                    senderName: FirebaseAuth.instance.currentUser?.displayName ??
-                        'Hunter',
-                    onMessageSent: _scrollChatToBottom,
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // The composer's send lifecycle (validation, ChatAndFilterService call,
-  // in-flight spinner, snackbar) is owned by the isolated ChatComposerBar,
-  // which invokes _scrollChatToBottom via its onMessageSent callback.
-}
-
-class _ChatBubbleHunter extends StatelessWidget {
-  final String text;
-  final String senderName;
-  final bool isMe;
-  final ThemeController theme;
-
-  const _ChatBubbleHunter({
-    required this.text,
-    required this.senderName,
-    required this.isMe,
-    required this.theme,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color:
-              isMe ? theme.accentColor.withValues(alpha: 0.2) : theme.cardColor,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isMe ? 16 : 4),
-            bottomRight: Radius.circular(isMe ? 4 : 16),
-          ),
-          border: Border.all(
-            color: isMe
-                ? theme.accentColor.withValues(alpha: 0.3)
-                : theme.accentColor.withValues(alpha: 0.1),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (!isMe)
-              Text(
-                senderName,
-                style: TextStyle(
-                  color: theme.accentColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            const SizedBox(height: 2),
-            Text(text, style: TextStyle(color: theme.textColor, fontSize: 14)),
-          ],
-        ),
-      ),
-    );
-  }
 }
