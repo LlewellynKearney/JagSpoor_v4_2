@@ -403,12 +403,34 @@ class _BookingCardState extends State<_BookingCard> {
   Future<void> _addToCalendar() async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      final launched = await BookingCalendarService.instance.addToCalendar(
-        // The doc `id` lives on the QueryDocumentSnapshot, not inside the
-        // data map -- inject it so the calendar event description can
-        // reference the Booking ID (buildDescription reads booking['id']).
-        {...widget.data, 'id': widget.bookingId},
-      );
+      // Resolve the hunt window ONCE from the SAME booking map the UI card
+      // reads through, then bake the resolved start/end directly into the
+      // payload. This guarantees the calendar service never has to guess or
+      // re-parse: every date alias (startDate / endDate / availabilityStart /
+      // availabilityEnd) carries the already-resolved DateTime, so the
+      // service's resolver finds a value regardless of which alias family it
+      // scans. The doc `id` is also injected (it lives on the
+      // QueryDocumentSnapshot, not inside the data map) so the event
+      // description can reference the Booking ID (buildDescription reads
+      // booking['id']).
+      //
+      // Alias priority is preserved: higher-priority keys
+      // (confirmedStartDate / checkInDate) still win over the injected
+      // startDate / availabilityStart, so a post-date-change-approval date
+      // is never clobbered by this injection.
+      final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
+      final payload = {
+        ...widget.data,
+        if (window != null) ...{
+          'startDate': window.start,
+          'endDate': window.end,
+          'availabilityStart': window.start,
+          'availabilityEnd': window.end,
+        },
+        'id': widget.bookingId,
+      };
+      final launched =
+          await BookingCalendarService.instance.addToCalendar(payload);
       if (!mounted) return;
       final snackBar = SnackBar(
         content: Text(
