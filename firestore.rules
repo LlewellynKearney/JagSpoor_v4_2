@@ -191,15 +191,14 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || isOwnerOf('userId');
     }
 
-    // Trophies — dual-purpose collection:
-    //  • Hunter personal trophies (Digital Trophy Room) — stamped `ownerId`.
-    //  • Outfitter trophy stock (marketplace listings) — stamped `outfitterId`
-    //    with `availableCount` for browse availability.
-    // Read is open to any signed-in user so the Trophy Registry & Booking
-    // marketplace can display outfitter trophy stock to hunters. Writes are
-    // restricted to the owning hunter/outfitter or an admin. Owner fields
-    // accepted: ownerId (personal), outfitterId (stock), hunterId/userId
-    // (legacy aliases).
+    // Hunter personal trophies (Digital Trophy Room) — stamped `ownerId`.
+    // Read is open to any signed-in user so a hunter can share their trophy
+    // room. Writes are restricted to the owning hunter (or an admin). The
+    // outfitter's saleable trophy stock inventory lives in a SEPARATE
+    // `trophy_stock` collection (see below) so the two concerns never collide.
+    // Owner fields accepted: ownerId (personal), hunterId/userId (legacy
+    // aliases). outfitterId is accepted too only for backward-compat with
+    // legacy stock docs that have not been migrated.
     match /trophies/{trophyId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isAdmin()
@@ -207,6 +206,18 @@ service cloud.firestore {
         || isOwnerOf('outfitterId')
         || isOwnerOf('hunterId')
         || isOwnerOf('userId');
+    }
+
+    // Outfitter trophy stock inventory (marketplace listings) — stamped
+    // `outfitterId` with `farmId` + `availableCount` + `pricePerTrophyRands`.
+    // Distinct from the hunter's personal Digital Trophy Room (`trophies`
+    // above) so the outfitter's saleable inventory never collides with a
+    // hunter's harvested trophy log. Read is open to any signed-in user so
+    // the Trophy Registry & marketplace can display outfitter stock to
+    // hunters. Writes are restricted to the owning outfitter (or an admin).
+    match /trophy_stock/{trophyId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if ownerOrAdmin('outfitterId');
     }
 
     // Per-farm game price lists (outfitterId). Each entry is a single

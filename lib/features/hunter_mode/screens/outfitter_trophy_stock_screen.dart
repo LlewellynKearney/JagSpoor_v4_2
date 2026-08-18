@@ -1263,7 +1263,8 @@ class _OutfitterTrophyStockScreenState
                 StreamBuilder<QuerySnapshot>(
                   stream:
                       FirebaseFirestore.instance
-                          .collection('trophies')
+                          .collection(OutfitterEnterpriseManager
+                              .trophyStockCollection)
                           .where(
                             'outfitterId',
                             isEqualTo: FirebaseAuth.instance.currentUser?.uid,

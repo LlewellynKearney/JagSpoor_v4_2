@@ -177,7 +177,7 @@
       ]
     },
     {
-      "collectionGroup": "trophies",
+      "collectionGroup": "trophy_stock",
       "queryScope": "COLLECTION",
       "fields": [
         {

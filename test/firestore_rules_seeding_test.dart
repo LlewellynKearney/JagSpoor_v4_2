@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jagspoor/features/hunter_mode/services/outfitter_enterprise_manager.dart';
 
 /// Structural tests for the Firestore security rules that gate the startup
 /// seeding collections (v4.5 to-do Item #5).
@@ -204,6 +205,130 @@ void main() {
     test('bookings delete is admin-only', () {
       final block = _blockFor(rules, 'bookings');
       expect(block.contains('allow delete: if isAdmin();'), isTrue);
+    });
+  });
+
+  // ── Trophy collection separation contract ────────────────────────────────
+  //
+  // The outfitter's saleable trophy stock inventory must live in a dedicated
+  // `trophy_stock` collection, distinct from the hunter's personal Digital
+  // Trophy Room (`trophies`, scoped by `ownerId`). These tests encode the
+  // separation contract structurally (the Firestore emulator can't run in
+  // this sandbox — see AGENTS.md environment constraints).
+  group('firestore.rules trophy stock separation', () {
+    test('dedicated trophy_stock match block exists', () {
+      expect(rules.contains('match /trophy_stock/{trophyId}'), isTrue,
+          reason: 'The outfitter trophy stock inventory must have its own '
+              'dedicated collection, separate from the hunter trophy room.');
+    });
+
+    test('trophy_stock: read = isSignedIn() (marketplace browse)', () {
+      final block = _blockFor(rules, 'trophy_stock');
+      expect(block, contains('allow read: if isSignedIn()'));
+    });
+
+    test('trophy_stock: writes are outfitter-owner-scoped', () {
+      final block = _blockFor(rules, 'trophy_stock');
+      expect(block, contains("ownerOrAdmin('outfitterId')"),
+          reason: 'Only the owning outfitter (or an admin) may create / '
+              'update / delete trophy stock entries.');
+    });
+
+    test('trophies (hunter room) match block still exists', () {
+      expect(rules.contains('match /trophies/{trophyId}'), isTrue,
+          reason: 'The hunter personal Digital Trophy Room collection must '
+              'remain on `trophies` (scoped by ownerId).');
+    });
+
+    test('trophies read remains isSignedIn() (sharing)', () {
+      final block = _blockFor(rules, 'trophies');
+      expect(block, contains('allow read: if isSignedIn()'));
+    });
+  });
+
+  // ── Trophy stock collection-name constant contract ───────────────────────
+  //
+  // Guards against a regression where an outfitter-side service / screen
+  // accidentally reads or writes the hunter `trophies` collection instead of
+  // the dedicated `trophy_stock` collection.
+  group('outfitter trophy stock collection-name contract', () {
+    test('OutfitterEnterpriseManager.trophyStockCollection == trophy_stock',
+        () {
+      expect(OutfitterEnterpriseManager.trophyStockCollection, 'trophy_stock');
+    });
+
+    test('no outfitter-side code reads/writes the hunter trophies collection',
+        () {
+      // The outfitter enterprise manager must NOT touch the hunter `trophies`
+      // collection — all four trophy-stock methods route through the dedicated
+      // collection constant.
+      final src = File(
+        'lib/features/hunter_mode/services/outfitter_enterprise_manager.dart',
+      ).readAsStringSync();
+      // No raw `collection('trophies')` should remain in the manager.
+      expect(src.contains("collection('trophies')"), isFalse,
+          reason: 'OutfitterEnterpriseManager must use trophyStockCollection, '
+              'not the hunter trophies collection.');
+      // The dedicated collection constant is referenced.
+      expect(src.contains('trophyStockCollection'), isTrue);
+    });
+
+    test('trophy_inventory_report_exporter reads trophy_stock', () {
+      final src = File(
+        'lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart',
+      ).readAsStringSync();
+      expect(src.contains('trophyStockCollection'), isTrue);
+      expect(src.contains("collection('trophies')"), isFalse);
+    });
+
+    test('outfitter_analytics_service reads trophy_stock', () {
+      final src = File(
+        'lib/features/hunter_mode/services/outfitter_analytics_service.dart',
+      ).readAsStringSync();
+      expect(src.contains('trophyStockCollection'), isTrue);
+      expect(src.contains("collection('trophies')"), isFalse);
+    });
+
+    test('hunter_trophy_browser_screen reads trophy_stock (outfitter stock)',
+        () {
+      // The hunter-facing Trophy Registry browses the OUTFITTER stock
+      // collection, not the hunter personal trophy room.
+      final src = File(
+        'lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart',
+      ).readAsStringSync();
+      expect(src.contains('trophyStockCollection'), isTrue);
+      expect(src.contains("collection('trophies')"), isFalse);
+    });
+
+    test('outfitter_trophy_stock_screen streams trophy_stock', () {
+      final src = File(
+        'lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart',
+      ).readAsStringSync();
+      expect(src.contains('trophyStockCollection'), isTrue);
+      expect(src.contains("collection('trophies')"), isFalse);
+    });
+
+    test('admin_analytics_service counts trophy_stock', () {
+      final src = File(
+        'lib/features/admin/services/admin_analytics_service.dart',
+      ).readAsStringSync();
+      expect(src.contains('trophyStockCollection'), isTrue);
+      expect(src.contains("collection('trophies')"), isFalse);
+    });
+
+    test('hunter trophy_room_screen still uses trophies (personal room)', () {
+      // The hunter's personal Digital Trophy Room MUST remain on `trophies`
+      // (scoped by ownerId). This is the inverse guard: the hunter room was
+      // NOT migrated.
+      final src = File(
+        'lib/features/hunter_mode/trophy_room_screen.dart',
+      ).readAsStringSync();
+      expect(src.contains("collection('trophies')"), isTrue,
+          reason: 'The hunter personal Digital Trophy Room must stay on the '
+              'trophies collection (scoped by ownerId).');
+      expect(src.contains('trophyStockCollection'), isFalse,
+          reason: 'The hunter personal trophy room must not reference the '
+              'outfitter trophy_stock collection.');
     });
   });
 }

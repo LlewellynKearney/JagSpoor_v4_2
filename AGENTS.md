@@ -8147,3 +8147,128 @@ tappable email `mailto:` intent) for an active or confirmed booking.
   (sheet refactored to use the widget + My Bookings card wired),
   `test/outfitter_contact_card_test.dart` (NEW, 4 tests), `AGENTS.md`.
 
+
+
+## Phase — Separate outfitter trophy stock inventory collection from hunter Digital Trophy Room (added 2026-08-18)
+
+The outfitter's saleable trophy stock inventory and the hunter's personal
+Digital Trophy Room previously shared a single Firestore `trophies`
+collection, distinguished only by which owner field was present
+(`outfitterId`/`farmId`/`availableCount`/`pricePerTrophyRands` for outfitter
+stock vs `ownerId` for hunter personal trophies). This conflated two
+distinct concerns (saleable marketplace inventory vs a hunter's harvested
+trophy log) in one collection. The outfitter side now uses a dedicated
+`trophy_stock` collection; the hunter Digital Trophy Room remains on
+`trophies` (scoped by `ownerId`).
+
+### Single source of truth — collection-name constant
+- New `static const String trophyStockCollection = 'trophy_stock'` on
+  `OutfitterEnterpriseManager` (`lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`).
+  The single named constant every outfitter-side consumer references, so the
+  collection name can never drift across the service / screen / exporter /
+  analytics / browser / admin.
+
+### Outfitter-side references migrated to `trophy_stock`
+- `OutfitterEnterpriseManager` — all four trophy-stock methods now route
+  through `trophyStockCollection`: `syncTrophyStock` (create),
+  `updateTrophyStock` (update), `deleteTrophyStock` (delete),
+  `getFarmTrophyStock` (query). Docstring updated.
+- `outfitter_trophy_stock_screen.dart` — the "Current Stock by Farm"
+  reactive `StreamBuilder` now streams
+  `collection(OutfitterEnterpriseManager.trophyStockCollection).where('outfitterId').orderBy('lastUpdated', descending)`.
+- `trophy_inventory_report_exporter.dart` — the PDF report's trophy fetch
+  now reads `trophy_stock` where `outfitterId` (the farm-grouped inventory report).
+- `outfitter_analytics_service.dart` — `getTrophyStockSummary` now reads
+  `trophy_stock` where `outfitterId`.
+- `hunter_trophy_browser_screen.dart` — the hunter-facing Trophy Registry
+  (which browses OUTFITTER saleable stock, `availableCount > 0`) now reads
+  `trophy_stock` for both the province-filtered and unfiltered queries.
+- `admin_analytics_service.dart` — the admin dashboard "Total Trophies"
+  metric now counts `trophy_stock` (the outfitter inventory metric;
+  previously the count was ambiguous because `trophies` held both hunter
+  personal trophies and outfitter stock).
+
+### Hunter-side references UNCHANGED (correctly remain on `trophies`)
+- `trophy_room_screen.dart` — the hunter personal Digital Trophy Room
+  (write + stream scoped by `ownerId`). Verified unchanged.
+- `add_trophy_screen.dart` / `edit_trophy_screen.dart` — query the
+  `firearms` collection (ownerId), not trophies. No change.
+- `trophy_detail_screen.dart` — no `trophies` collection reference. No change.
+
+### Firestore security rules (`firestore.rules`)
+- The previous dual-purpose `match /trophies/{trophyId}` block (which
+  allowed writes for `ownerId` / `outfitterId` / `hunterId` / `userId`) was
+  split into two explicit blocks:
+  - `match /trophies/{trophyId}` — hunter personal trophies. Read
+    `isSignedIn()` (sharing); create/update/delete owner-scoped on
+    `ownerId` / `outfitterId` (legacy back-compat) / `hunterId` / `userId`.
+    The `outfitterId` write allowance is retained only so legacy stock docs
+    that have not been migrated to `trophy_stock` can still be edited; new
+    outfitter stock is written to `trophy_stock`.
+  - `match /trophy_stock/{trophyId}` — NEW. Outfitter saleable trophy stock
+    inventory. Read `isSignedIn()` (marketplace browse); create/update/delete
+    `ownerOrAdmin('outfitterId')` (least-privilege — only the owning
+    outfitter or an admin may mutate the saleable inventory).
+- Default-deny catch-all retained; brace/paren balance verified.
+
+### Firestore indexes (`firestore.indexes.json`)
+- The `trophies` composite index `(outfitterId ASC, lastUpdated DESC)` —
+  which only the outfitter stock stream used — was moved to
+  `collectionGroup: trophy_stock` (the outfitter stock stream's new home).
+  The hunter trophy room stream queries by `ownerId` + `orderBy('createdAt')`
+  (a different field), so no `trophies` composite index is required.
+
+### Tests (`test/firestore_rules_seeding_test.dart`, +13 tests, all pass)
+Two new structural test groups encode the separation contract (the Firestore
+emulator can't run in this sandbox — see AGENTS.md environment constraints):
+- `firestore.rules trophy stock separation` (5): dedicated `trophy_stock`
+  match block exists; `trophy_stock` read = `isSignedIn()`; `trophy_stock`
+  writes are `ownerOrAdmin('outfitterId')`; `trophies` (hunter room) match
+  block still exists; `trophies` read remains `isSignedIn()`.
+- `outfitter trophy stock collection-name contract` (8):
+  `OutfitterEnterpriseManager.trophyStockCollection == 'trophy_stock'`; the
+  manager / exporter / analytics / browser / outfitter-stock-screen /
+  admin-analytics source files reference `trophyStockCollection` and do NOT
+  contain a raw `collection('trophies')`; the inverse guard that the hunter
+  `trophy_room_screen.dart` STILL uses `collection('trophies')` and does NOT
+  reference `trophyStockCollection` (the hunter room was not migrated).
+
+### Verification
+- `flutter analyze` (lib/ + test/): 0 errors, 0 warnings (278 pre-existing
+  infos; all changed/new files are analyzer-clean). `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- `flutter test` (full suite): All 679 tests passed, zero failures (was 666;
+  +13 = the new separation-contract tests). No regressions.
+- No Storage / pubspec / manifest changes (pure collection-name migration +
+  rules/index split + structural tests).
+
+### Deploy reminder
+`npx firebase-tools deploy --only firestore:rules,firestore:indexes` CANNOT
+run in this sandbox (no `FIREBASE_TOKEN` / `firebase login`; verified —
+`firebase projects:list` errors with an auth failure, matching the AGENTS.md
+environment-constraints note). The ruleset + index are committed; the deploy
+MUST be run in a credentialed environment. Until deployed: outfitter
+trophy-stock writes to `trophy_stock` are denied (default-deny applies to the
+not-yet-deployed collection); the `trophy_stock` composite index does not
+exist, so the outfitter stock stream errors (surfaced in-UI) until built.
+
+### Data migration note (operational)
+Existing outfitter stock docs currently live in the `trophies` collection.
+After the rules deploy, a one-time admin migration should copy each
+`trophies` doc carrying `outfitterId` + `availableCount` into the
+`trophy_stock` collection (and optionally delete the original). The app's
+outfitter-side reads now target `trophy_stock`, so until the migration runs
+the outfitter stock screen / PDF / analytics will show empty for existing
+data. Legacy `trophies` docs with only `ownerId` (hunter personal trophies)
+are unaffected.
+
+- Files: `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`
+  (`trophyStockCollection` constant + 4 method migrations),
+  `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart` (stream migration),
+  `lib/features/hunter_mode/services/trophy_inventory_report_exporter.dart` (fetch migration + import),
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart` (summary fetch migration + import),
+  `lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart` (browse query migration + import),
+  `lib/features/admin/services/admin_analytics_service.dart` (count migration + import),
+  `firestore.rules` (split trophies + new trophy_stock block),
+  `firestore.indexes.json` (composite index moved to trophy_stock),
+  `test/firestore_rules_seeding_test.dart` (+13 separation-contract tests + import), `AGENTS.md`.

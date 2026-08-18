@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/offline_stream_guard.dart';
 import '../models/booking_status.dart';
+import 'outfitter_enterprise_manager.dart';
 import 'pricing_math.dart';
 
 class OutfitterAnalyticsService {
@@ -194,7 +195,7 @@ class OutfitterAnalyticsService {
   Future<Map<String, dynamic>> getTrophyStockSummary(String outfitterId) async {
     final snapshot =
         await _firestore
-            .collection('trophies')
+            .collection(OutfitterEnterpriseManager.trophyStockCollection)
             .where('outfitterId', isEqualTo: outfitterId)
             .get();
 

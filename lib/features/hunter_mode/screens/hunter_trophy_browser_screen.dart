@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../services/outfitter_enterprise_manager.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
   final ThemeController theme;
@@ -45,20 +46,24 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
     try {
       QuerySnapshot snapshot;
 
-      // Load from unified /trophies collection
+      // Load from the dedicated outfitter trophy stock collection
+      // (`trophy_stock`), distinct from the hunter's personal Digital Trophy
+      // Room (`trophies`, scoped by `ownerId`).
       if (_selectedProvince != null &&
           _selectedProvince!.isNotEmpty &&
           _selectedProvince != 'All Provinces') {
         snapshot =
             await FirebaseFirestore.instance
-                .collection('trophies')
+                .collection(
+                    OutfitterEnterpriseManager.trophyStockCollection)
                 .where('province', isEqualTo: _selectedProvince)
                 .where('availableCount', isGreaterThan: 0)
                 .get();
       } else {
         snapshot =
             await FirebaseFirestore.instance
-                .collection('trophies')
+                .collection(
+                    OutfitterEnterpriseManager.trophyStockCollection)
                 .where('availableCount', isGreaterThan: 0)
                 .get();
       }

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
+import 'outfitter_enterprise_manager.dart';
 
 /// Farm-grouped trophy stock report PDF, rendered through the universal
 /// [JagSpoorPdfDocument] engine. Lists every trophy entry grouped by farm with
@@ -35,7 +36,7 @@ class TrophyInventoryReportExporter {
 
     // Trophies.
     final trophySnap = await FirebaseFirestore.instance
-        .collection('trophies')
+        .collection(OutfitterEnterpriseManager.trophyStockCollection)
         .where('outfitterId', isEqualTo: outfitterId)
         .get();
     for (final t in trophySnap.docs) {

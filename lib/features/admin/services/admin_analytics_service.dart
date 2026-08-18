@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../auth/services/user_role_provider.dart';
 import '../../hunter_mode/models/booking_status.dart';
+import '../../hunter_mode/services/outfitter_enterprise_manager.dart';
 import 'admin_auth_guard.dart';
 
 /// Aggregated metrics for the master admin analytics dashboard.
@@ -96,7 +97,8 @@ class AdminAnalyticsService {
       _safeCount(() => _countQuery(_db
           .collection('bookings')
           .where('status', whereIn: BookingStatus.earnedStatuses))),
-      _safeCount(() => _count(_db.collection('trophies'))),
+      _safeCount(() => _count(_db.collection(
+          OutfitterEnterpriseManager.trophyStockCollection))),
       _safeCount(() => _count(_db.collection('users'))),
     ]);
 

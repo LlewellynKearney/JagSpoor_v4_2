@@ -6,6 +6,12 @@ import '../models/booking_status.dart';
 import '../models/farm_config.dart';
 
 class OutfitterEnterpriseManager {
+  /// Dedicated Firestore collection for the outfitter's saleable trophy stock
+  /// inventory (per-farm species availability + pricing + measurements +
+  /// photos). Distinct from the hunter's personal Digital Trophy Room
+  /// (`trophies`, scoped by `ownerId`) so the two concerns never collide.
+  static const String trophyStockCollection = 'trophy_stock';
+
   static final OutfitterEnterpriseManager _instance =
       OutfitterEnterpriseManager._internal();
   static OutfitterEnterpriseManager get instance => _instance;
@@ -259,7 +265,7 @@ class OutfitterEnterpriseManager {
   /// - [trophyPhotoUrls]: Optional list of up to 3 photo download URLs for the
   ///   trophy animal. Stored as the `trophyPhotoUrls` array.
   ///
-  /// Returns: void (saves to Firestore 'trophies' collection)
+  /// Returns: void (saves to Firestore `trophy_stock` collection)
   ///
   /// Throws: Exception if user is not authenticated or save fails
   Future<void> syncTrophyStock({
@@ -309,7 +315,9 @@ class OutfitterEnterpriseManager {
       trophyData['trophyPhotoUrls'] = trophyPhotoUrls.take(3).toList();
     }
 
-    await _firestore.collection('trophies').add(trophyData);
+    await _firestore
+        .collection(trophyStockCollection)
+        .add(trophyData);
   }
 
   // ==========================================
@@ -371,7 +379,10 @@ class OutfitterEnterpriseManager {
     if (updates.isEmpty) return;
 
     updates['lastUpdated'] = FieldValue.serverTimestamp();
-    await _firestore.collection('trophies').doc(trophyId).update(updates);
+    await _firestore
+        .collection(trophyStockCollection)
+        .doc(trophyId)
+        .update(updates);
   }
 
   // ==========================================
@@ -389,7 +400,10 @@ class OutfitterEnterpriseManager {
     if (trophyId.trim().isEmpty) {
       throw Exception('Trophy ID cannot be empty');
     }
-    await _firestore.collection('trophies').doc(trophyId).delete();
+    await _firestore
+        .collection(trophyStockCollection)
+        .doc(trophyId)
+        .delete();
   }
 
   // ==========================================
@@ -508,7 +522,7 @@ class OutfitterEnterpriseManager {
     }
 
     return await _firestore
-        .collection('trophies')
+        .collection(trophyStockCollection)
         .where('farmId', isEqualTo: farmId)
         .where('outfitterId', isEqualTo: _currentUserId)
         .get();
