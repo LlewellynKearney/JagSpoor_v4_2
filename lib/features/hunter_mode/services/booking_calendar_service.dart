@@ -2,6 +2,7 @@ import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Builds and launches a native device-calendar event for a finalized
 /// (Confirmed / Completed) hunting booking.
@@ -120,7 +121,22 @@ class BookingCalendarService {
   /// hands it to `add_2_calendar` which opens the device's native calendar
   /// editor pre-populated with the hunt details. Returns whether a calendar
   /// event was launched (false when no dates could be resolved -- including
-  /// the package fallback -- or the platform call rejected the event).
+  /// the package fallback -- OR the calendar permission was denied -- OR the
+  /// platform call rejected the event).
+  ///
+  /// **Runtime permission request**: on Android 6+ (API 23+) and iOS,
+  /// calendar access is a "dangerous"/protected permission that requires a
+  /// runtime grant in addition to the manifest/Info.plist declaration. This
+  /// method requests `Permission.calendarFullAccess` (the non-deprecated
+  /// successor to `Permission.calendar`; it covers BOTH `READ_CALENDAR` +
+  /// `WRITE_CALENDAR` on Android and the iOS EKEventStore full-access
+  /// entitlement) before handing off to `add_2_calendar`. If the permission
+  /// is denied (or permanently denied), the method returns `false` so the
+  /// caller surfaces its existing "Could not open your device calendar.
+  /// Check that a calendar app is installed and permissions are granted."
+  /// snackbar -- which accurately tells the user to grant the calendar
+  /// permission rather than reporting a false-positive "no hunt dates"
+  /// warning.
   ///
   /// The [booking] map is the SAME raw booking document the UI card reads
   /// through [BookingCalendarEventBuilder.resolveWindow], so the calendar
@@ -130,6 +146,27 @@ class BookingCalendarService {
   Future<bool> addToCalendar(Map<String, dynamic> booking) async {
     final event = await buildEventWithPackageFallback(booking);
     if (event == null) return false;
+    // Runtime calendar permission gate. Check the current status first; if
+    // not already granted, issue a runtime request (mirrors the codebase's
+    // license-scanner camera permission pattern).
+    // `Permission.calendarFullAccess` maps to READ_CALENDAR +
+    // WRITE_CALENDAR on Android (the manifest declares both) and the iOS
+    // EKEventStore full-access entitlement. (The older
+    // `Permission.calendar` is deprecated in permission_handler 11.x in
+    // favour of `calendarFullAccess` / `calendarWriteOnly`; we use full
+    // access because adding an event may require resolving the target
+    // calendar before inserting.)
+    var status = await Permission.calendarFullAccess.status;
+    if (!status.isGranted) {
+      status = await Permission.calendarFullAccess.request();
+    }
+    if (!status.isGranted) {
+      // Permission denied (user declined the dialog, or permanently denied
+      // -> they must grant from system settings). Returning false flows into
+      // the caller's "Could not open your device calendar" snackbar, which
+      // tells the user to check permissions -- the accurate UX.
+      return false;
+    }
     return Add2Calendar.addEvent2Cal(event);
   }
 }
