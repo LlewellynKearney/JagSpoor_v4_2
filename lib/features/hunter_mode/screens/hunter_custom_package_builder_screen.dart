@@ -9,7 +9,6 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
-import '../services/booking_calendar_service.dart';
 import '../services/farm_game_price_list_manager.dart';
 import '../widgets/booking_chat_thread.dart';
 
@@ -34,9 +33,8 @@ import '../widgets/booking_chat_thread.dart';
 ///   "Platform Fee" row.
 /// - On submit writes a `bookings` document with `isCustomPackage: true` and
 ///   `status: BookingStatus.pendingApproval`, then switches to a confirmation
-///   view that embeds the standard [BookingChatThread] for negotiation and an
-///   "ADD HUNT TO CALENDAR" button once the booking transitions to Confirmed /
-///   Completed -- matching the Package Marketplace booking workflow exactly.
+///   view that embeds the standard [BookingChatThread] for negotiation --
+///   matching the Package Marketplace booking workflow exactly.
 class HunterCustomPackageBuilderScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -317,57 +315,6 @@ class _HunterCustomPackageBuilderScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
-  }
-
-  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
-  /// details, and package title to the device's native calendar via
-  /// [BookingCalendarService]. Mirrors the marketplace's calendar hook.
-  Future<void> _addToCalendar() async {
-    final booking = _bookingDoc;
-    if (booking == null) return;
-    final bookingId = _createdBookingId;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final launched = await BookingCalendarService.instance.addToCalendar(booking);
-      if (!mounted) return;
-      if (launched && bookingId != null) {
-        // Persist the added-flag to the booking doc so it survives app
-        // restarts + is visible to the outfitter. The booking-doc stream
-        // subscription will re-emit + setState, flipping the button to the
-        // "✓ ADDED TO CALENDAR" state. Best-effort: a Firestore write
-        // failure is swallowed (the snackbar still reports success).
-        try {
-          await FirebaseFirestore.instance
-              .collection('bookings')
-              .doc(bookingId)
-              .update({'addedToCalendar': true});
-        } catch (e) {
-          debugPrint('[BookingCalendar] Failed to persist addedToCalendar: $e');
-        }
-      }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(launched
-              ? 'Hunt added to your calendar — check your calendar app.'
-              : 'No hunt dates on file for this booking — the outfitter must '
-                'confirm the dates first.'),
-          backgroundColor: launched ? Colors.green : Colors.orange,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Could not open calendar: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  bool _canAddToCalendar() {
-    final status = (_bookingDoc?['status'] as String?)?.toLowerCase() ?? '';
-    return status == 'confirmed' || status == 'completed';
   }
 
   @override
@@ -747,16 +694,12 @@ class _HunterCustomPackageBuilderScreenState
   }
 
   // ---------------------------------------------------------------------------
-  //  CONFIRMATION VIEW (chat + status + calendar — marketplace parity)
+  //  CONFIRMATION VIEW (chat + status — marketplace parity)
   // ---------------------------------------------------------------------------
 
   Widget _buildConfirmationView(ThemeController theme) {
     final status =
         (_bookingDoc?['status'] as String?) ?? BookingStatus.pendingApproval;
-    final canAddToCalendar = _canAddToCalendar();
-    // The booking-doc stream re-emits after the persisted
-    // `addedToCalendar` flag is written, so this is reactive.
-    final addedToCalendar = _bookingDoc?['addedToCalendar'] == true;
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 12, 16, SafeBottomInset.of(context)),
       children: [
@@ -816,50 +759,6 @@ class _HunterCustomPackageBuilderScreenState
           senderName: 'Hunter',
           initiallyExpanded: true,
         ),
-        const SizedBox(height: 12),
-        if (canAddToCalendar)
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              // Disable once added so the hunter cannot re-trigger the
-              // calendar insertion for the same booking.
-              onPressed: addedToCalendar ? null : _addToCalendar,
-              style: FilledButton.styleFrom(
-                backgroundColor: addedToCalendar
-                    ? Colors.grey
-                    : Colors.green.shade700,
-                disabledBackgroundColor: Colors.grey,
-                foregroundColor: Colors.white,
-                disabledForegroundColor: Colors.white70,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: Icon(
-                addedToCalendar
-                    ? Icons.check_circle_rounded
-                    : Icons.event_available_rounded,
-                size: 20,
-              ),
-              label: Text(
-                addedToCalendar
-                    ? '✓ ADDED TO CALENDAR'
-                    : 'ADD HUNT TO CALENDAR',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-        if (!canAddToCalendar)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              'Once the outfitter confirms your direct payment, an "Add to '
-              'Calendar" button will appear here so you can save the hunt '
-              'dates to your phone.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 12),
-            ),
-          ),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/features/hunter_mode/models/booking_status.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_game_price_entry.dart';
-import 'package:jagspoor/features/hunter_mode/services/booking_calendar_service.dart';
+import 'package:jagspoor/features/hunter_mode/services/booking_date_formatter.dart';
 import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 
 /// Unit tests for the Custom Package Builder's farm price-list stream contract.
@@ -340,14 +340,10 @@ void main() {
       expect(data['farmName'], 'Bosveld Ranch');
       expect(data['district'], 'Waterberg');
       expect(data['province'], 'Limpopo');
-      // buildTitle -> "Custom Package - Bosveld Ranch @ Bosveld Ranch"; the
-      // calendar location -> "Bosveld Ranch (Waterberg, Limpopo)".
-      final title =
-          BookingCalendarEventBuilder.buildTitle(data);
-      expect(title, contains('Bosveld Ranch'));
-      final location =
-          BookingCalendarEventBuilder.buildLocation(data);
-      expect(location, 'Bosveld Ranch (Waterberg, Limpopo)');
+      // The packageName carries the farm name; the booking doc's region
+      // fields let the outfitter card render a located booking without a
+      // separate farm read.
+      expect(data['packageName'], contains('Bosveld Ranch'));
     });
 
     test('backfills farmName + packageName from farms/{farmId} when the '
@@ -401,7 +397,7 @@ void main() {
     });
 
     test(
-        'dual-key sync: the calendar resolver (resolveWindow) reads the hunt '
+        'dual-key sync: the date resolver (resolveWindow) reads the hunt '
         'window from a custom-package booking regardless of which alias a '
         'consumer reads', () async {
       final fake = FakeFirebaseFirestore();
@@ -432,10 +428,10 @@ void main() {
       expect(data['endDate'], '2026-09-04');
       expect(data['availabilityEnd'], '2026-09-04');
 
-      // The SAME resolver the UI card + calendar action use resolves the
+      // The SAME resolver the UI card uses resolves the
       // window from the booking's dual-key payload.
       final window =
-          BookingCalendarEventBuilder.resolveWindow(data);
+          BookingDateFormatter.resolveWindow(data);
       expect(window, isNotNull);
       expect(window!.start, DateTime(2026, 9, 1));
       // resolveWindow normalizes end to the day AFTER the final hunt day.

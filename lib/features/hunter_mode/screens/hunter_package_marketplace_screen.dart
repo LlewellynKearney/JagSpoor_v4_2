@@ -7,7 +7,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
-import '../services/booking_calendar_service.dart';
+import '../services/booking_date_formatter.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/pricing_math.dart';
@@ -610,7 +610,7 @@ class _PackageCard extends StatelessWidget {
                     _metaChip(
                       theme,
                       icon: Icons.event_available_rounded,
-                      label: BookingCalendarEventBuilder.formatDateRange(
+                      label: BookingDateFormatter.formatDateRange(
                               start: startDate, end: endDate) ??
                           'Select dates',
                     ),
@@ -1052,7 +1052,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         if (start != null)
           _summaryChip(
             icon: Icons.event_available_rounded,
-            label: 'Available ${BookingCalendarEventBuilder.formatDateRange(start: start, end: end) ?? ''}',
+            label: 'Available ${BookingDateFormatter.formatDateRange(start: start, end: end) ?? ''}',
           ),
       ],
     );
@@ -1378,10 +1378,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
   // TextEditingController + FocusNode live in the isolated ChatComposerBar,
   // so a stream re-emit / keyboard resize never touches the input state.
   final ScrollController _chatScrollController = ScrollController();
-  // Local mirror of the persisted `addedToCalendar` flag so the button flips
-  // to "✓ ADDED TO CALENDAR" immediately after a successful add (without
-  // waiting for the booking stream to re-emit).
-  bool _addedToCalendar = false;
 
   Color _getStatusColor(String status) {
     switch (status) {
@@ -1410,19 +1406,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     super.dispose();
   }
 
-  @override
-  void didUpdateWidget(covariant _HunterBookingCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Keep the local flag in sync with the persisted booking doc field so a
-    // stream re-emit (e.g. after the outfitter updates the booking) doesn't
-    // reset a freshly-added state, and a doc that already carries the flag
-    // renders added on first mount.
-    final persisted = widget.data['addedToCalendar'] == true;
-    if (persisted != _addedToCalendar) {
-      _addedToCalendar = persisted;
-    }
-  }
-
   /// Invoked by [ChatComposerBar] after a message is sent — scrolls the
   /// message list to the bottom so the new bubble is visible.
   void _scrollChatToBottom() {
@@ -1443,109 +1426,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
       _isChatExpanded = !_isChatExpanded;
     });
   }
-
-  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
-  /// details, and package title to the device's native calendar via
-  /// [BookingCalendarService]. Surfaces a snackbar on success / "no dates"
-  /// / failure so the hunter always gets feedback.
-  Future<void> _addToCalendar() async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      // Resolve the hunt window ONCE from the SAME booking map the UI card
-      // reads through, then bake the resolved start/end directly into the
-      // payload. This guarantees the calendar service never has to guess or
-      // re-parse: every date alias (startDate / endDate / availabilityStart /
-      // availabilityEnd) carries the already-resolved DateTime, so the
-      // service's resolver finds a value regardless of which alias family it
-      // scans. The doc `id` is also injected (it lives on the
-      // QueryDocumentSnapshot, not inside the data map) so the event
-      // description can reference the Booking ID (buildDescription reads
-      // booking['id']).
-      //
-      // Alias priority is preserved: higher-priority keys
-      // (confirmedStartDate / checkInDate) still win over the injected
-      // startDate / availabilityStart, so a post-date-change-approval date
-      // is never clobbered by this injection.
-      final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
-      final payload = {
-        ...widget.data,
-        if (window != null) ...{
-          'startDate': window.start,
-          'endDate': window.end,
-          'availabilityStart': window.start,
-          'availabilityEnd': window.end,
-        },
-        'id': widget.bookingId,
-      };
-      // VALIDATION GATE: resolve the window from the FINAL payload (not just
-      // widget.data) so the check reflects exactly what the calendar service
-      // will resolve. If the window resolves successfully, NEVER show the
-      // "No hunt dates on file" warning -- force straight through to the
-      // platform calendar. A subsequent `launched == false` can then only
-      // mean the device calendar rejected the event (no calendar app,
-      // permission denied, user cancel), which is reported accurately below
-      // -- never as a false-positive "no dates" warning.
-      final resolvedWindow =
-          BookingCalendarEventBuilder.resolveWindow(payload);
-      if (resolvedWindow == null) {
-        if (!mounted) return;
-        if (messenger != null) {
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'No hunt dates on file for this booking -- cannot add to calendar.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-      final launched =
-          await BookingCalendarService.instance.addToCalendar(payload);
-      if (!mounted) return;
-      if (launched) {
-        // Persist the added-flag to the booking doc so it survives app
-        // restarts + is visible to the other party, then flip the local
-        // state so the button immediately disables + re-styles without
-        // waiting for the booking stream to re-emit. Best-effort: a
-        // Firestore write failure is swallowed (the local flag still flips
-        // so the UX is correct for this session).
-        setState(() => _addedToCalendar = true);
-        try {
-          await FirebaseFirestore.instance
-              .collection('bookings')
-              .doc(widget.bookingId)
-              .update({'addedToCalendar': true});
-        } catch (e) {
-          debugPrint('[BookingCalendar] Failed to persist addedToCalendar: $e');
-        }
-      }
-      final snackBar = SnackBar(
-        content: Text(
-          launched
-              ? 'Opening your calendar to save this hunt...'
-              // The window WAS resolved, so a `false` here means the device
-              // calendar rejected the event (no calendar app, permission
-              // denied, user cancel) -- NOT a missing-dates problem.
-              : 'Could not open your device calendar. Check that a calendar '
-                  'app is installed and permissions are granted.',
-        ),
-        backgroundColor: launched ? Colors.green : Colors.orange,
-      );
-      if (messenger != null) messenger.showSnackBar(snackBar);
-    } catch (e) {
-      if (!mounted) return;
-      if (messenger != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Unable to add to calendar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
 
   /// Unread-message envelope indicator for the card header.
   ///
@@ -1571,13 +1451,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    // Seed the local added-flag from the persisted doc field on the first
-    // build (covers first mount; subsequent stream updates are handled in
-    // didUpdateWidget). Uses the local _addedToCalendar as a write-once guard
-    // so a successful add is never cleared by a stale stream re-emit.
-    if (!_addedToCalendar && widget.data['addedToCalendar'] == true) {
-      _addedToCalendar = true;
-    }
     final status =
         widget.data['status'] as String? ?? BookingStatus.pendingApproval;
     final packageName =
@@ -1609,11 +1482,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
         statusLower == 'awaiting payment' ||
         statusLower == 'confirmed';
     final canRequestDateChange = isPostApproval && !dateChangePending;
-    // The "Add to Calendar" action is offered once the booking is finalized
-    // (Confirmed / Completed) -- i.e. the outfitter has verified the direct
-    // payment and the hunt dates are locked in.
-    final canAddToCalendar = statusLower == 'confirmed' ||
-        statusLower == 'completed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1696,19 +1564,18 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
 
           // Hunt dates row: surfaces the booking's hunt window (start -> end)
           // copied from the package's availability dates at booking time so
-          // the hunter can see the dates on the card AND the "Add to
-          // Calendar" action resolves them without a separate package read.
-          // Hidden when the booking has no dates on file.
+          // the hunter can see the dates on the card. Hidden when the booking
+          // has no dates on file.
           Builder(
             builder: (context) {
               final window =
-                  BookingCalendarEventBuilder.resolveWindow(widget.data);
+                  BookingDateFormatter.resolveWindow(widget.data);
               if (window == null) return const SizedBox.shrink();
               // Single source of truth for the date-range label format —
               // `d MMM yyyy – d MMM yyyy` (or one date for a single-day
               // hunt). Mirrors the outfitter banner exactly.
               final dateLabel =
-                  BookingCalendarEventBuilder.formatWindow(window) ??
+                  BookingDateFormatter.formatWindow(window) ??
                       'No hunt dates on file';
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1811,49 +1678,6 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
               ],
             ),
           ),
-
-          // 📅 Add to Calendar: offered once the booking is finalized
-          // (Confirmed / Completed) so the hunter can save the hunt dates,
-          // farm details, and package title to their phone's native calendar.
-          // After a successful add the persisted `addedToCalendar` flag flips
-          // the button to a muted "✓ ADDED TO CALENDAR" state + disables
-          // further taps to prevent redundant adds.
-          if (canAddToCalendar)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  // Disable once added so the user cannot re-trigger the
-                  // calendar insertion for the same booking.
-                  onPressed: _addedToCalendar ? null : _addToCalendar,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _addedToCalendar
-                        ? Colors.grey
-                        : Colors.green.shade700,
-                    disabledBackgroundColor: Colors.grey,
-                    foregroundColor: Colors.white,
-                    disabledForegroundColor: Colors.white70,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  icon: Icon(
-                    _addedToCalendar
-                        ? Icons.check_circle_rounded
-                        : Icons.event_available_rounded,
-                    size: 20,
-                  ),
-                  label: Text(
-                    _addedToCalendar
-                        ? '✓ ADDED TO CALENDAR'
-                        : 'ADD HUNT TO CALENDAR',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -2174,7 +1998,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                   ),
                   Text(
                     value != null
-                        ? BookingCalendarEventBuilder.formatDate(value)
+                        ? BookingDateFormatter.formatDate(value)
                         : 'Select date',
                     style: TextStyle(
                       color: value != null

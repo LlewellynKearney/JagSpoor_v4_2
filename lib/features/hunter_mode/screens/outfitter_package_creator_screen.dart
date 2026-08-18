@@ -800,9 +800,9 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
 
-    // Availability dates are REQUIRED: the booking calendar resolver
-    // (BookingCalendarEventBuilder.resolveWindow) reads the hunt window from
-    // the booking doc, which copies it from the package at booking time. A
+    // Availability dates are REQUIRED: the booking date resolver
+    // (BookingDateFormatter.resolveWindow) reads the hunt window from the
+    // booking doc, which copies it from the package at booking time. A
     // package published with no dates produces bookings with no dates ->
     // "No hunt dates on file" on every booking card. Block publish/edit here
     // so the root cause never reaches the booking flow.
@@ -810,7 +810,7 @@ class _OutfitterPackageCreatorScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Please select an availability Start Date -- the hunt window is required for booking + calendar.'),
+              'Please select an availability Start Date -- the hunt window is required for booking.'),
           backgroundColor: Colors.red,
         ),
       );

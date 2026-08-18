@@ -6,7 +6,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
-import '../services/booking_calendar_service.dart';
+import '../services/booking_date_formatter.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
@@ -251,21 +251,110 @@ class _BookingCardState extends State<_BookingCard> {
   // chat layout / scroll / composer state of its own.
   final GlobalKey<BookingChatThreadState> _chatThreadKey =
       GlobalKey<BookingChatThreadState>();
-  // Local mirror of the persisted `addedToCalendar` flag so the button flips
-  // to "✓ ADDED TO CALENDAR" immediately after a successful add (without
-  // waiting for the booking stream to re-emit).
-  bool _addedToCalendar = false;
+  // Cached resolved display names for the card's Package / Hunter rows. The
+  // booking document carries only the `packageId` + `hunterId` (opaque ids);
+  // the full names are resolved async from `packages/{packageId}` +
+  // `users/{hunterId}` once per card lifetime and cached so a stream re-emit
+  // doesn't re-trigger the lookups.
+  String _packageNameDisplay = '';
+  String _hunterNameDisplay = '';
+  bool _isResolvingNames = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveDisplayNames();
+  }
 
   @override
   void didUpdateWidget(covariant _BookingCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Keep the local flag in sync with the persisted booking doc field so a
-    // stream re-emit doesn't reset a freshly-added state, and a doc that
-    // already carries the flag renders added on first mount.
-    final persisted = widget.data['addedToCalendar'] == true;
-    if (persisted != _addedToCalendar) {
-      _addedToCalendar = persisted;
+    // Re-resolve the display names when the underlying booking document id or
+    // the packageId/hunterId changes (e.g. the card is recycled for a new
+    // booking by the ListView builder).
+    if (oldWidget.data['packageId'] != widget.data['packageId'] ||
+        oldWidget.data['hunterId'] != widget.data['hunterId']) {
+      _resolveDisplayNames();
     }
+  }
+
+  /// Resolves the full package name + hunter name for the card from the
+  /// referenced `packages/{packageId}` + `users/{hunterId}` documents.
+  ///
+  /// The booking document stores only `packageName` (an optional snapshot
+  /// written at booking time) + `packageId` + `hunterId`. To show a
+  /// human-readable package title + hunter name on the card we resolve them
+  /// from the referenced documents (best-effort: a missing doc or a fetch
+  /// failure falls back to the booking-doc snapshot / the opaque id so the
+  /// card never renders an empty row).
+  Future<void> _resolveDisplayNames() async {
+    if (_isResolvingNames) return;
+    setState(() => _isResolvingNames = true);
+    String packageName =
+        (widget.data['packageName'] as String?)?.trim() ?? '';
+    String hunterName = (widget.data['hunterName'] as String?)?.trim() ?? '';
+
+    final packageId = (widget.data['packageId'] as String?)?.trim() ?? '';
+    final hunterId = (widget.data['hunterId'] as String?)?.trim() ?? '';
+
+    String? resolvedPackage;
+    String? resolvedHunter;
+    // Package title: prefer the booking-doc snapshot, else resolve from
+    // the package doc (custom-built bookings carry the 'CUSTOM_BUILT'
+    // sentinel, which has no package doc -- the snapshot is used).
+    if (packageName.isEmpty &&
+        packageId.isNotEmpty &&
+        packageId != 'CUSTOM_BUILT') {
+      try {
+        final pkgSnap = await FirebaseFirestore.instance
+            .collection('packages')
+            .doc(packageId)
+            .get();
+        if (pkgSnap.exists) {
+          final pkgData = pkgSnap.data() ?? const <String, dynamic>{};
+          final resolved = (pkgData['title'] as String?)?.trim() ?? '';
+          if (resolved.isNotEmpty) resolvedPackage = resolved;
+        }
+      } catch (_) {
+        // Offline / permissions -- fall back to the snapshot / id below.
+      }
+    }
+
+    // Hunter name: prefer the booking-doc snapshot, else resolve from the
+    // user profile (`users/{hunterId}` carries `fullName` / `name`).
+    if (hunterName.isEmpty && hunterId.isNotEmpty) {
+      try {
+        final userSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(hunterId)
+            .get();
+        if (userSnap.exists) {
+          final userData = userSnap.data() ?? const <String, dynamic>{};
+          final resolved = (userData['fullName'] as String?)?.trim() ??
+              (userData['name'] as String?)?.trim() ??
+              '';
+          if (resolved.isNotEmpty) resolvedHunter = resolved;
+        }
+      } catch (_) {
+        // Offline / permissions -- fall back to the opaque id below.
+      }
+    }
+
+    if (resolvedPackage != null) packageName = resolvedPackage;
+    if (resolvedHunter != null) hunterName = resolvedHunter;
+    if (!mounted) {
+      _isResolvingNames = false;
+      return;
+    }
+    setState(() {
+      _packageNameDisplay = packageName.isNotEmpty
+          ? packageName
+          : (packageId.isNotEmpty ? packageId : 'Unknown package');
+      _hunterNameDisplay = hunterName.isNotEmpty
+          ? hunterName
+          : (hunterId.isNotEmpty ? hunterId : 'Unknown hunter');
+      _isResolvingNames = false;
+    });
   }
 
   /// Toggles the shared [BookingChatThread] open/closed via its GlobalKey.
@@ -412,115 +501,6 @@ class _BookingCardState extends State<_BookingCard> {
         setState(() {
           _isProcessing = false;
         });
-      }
-    }
-  }
-
-  /// Saves the finalized (Confirmed / Completed) booking's hunt dates, farm
-  /// details, and package title to the outfitter's device calendar via
-  /// [BookingCalendarService]. Surfaces a snackbar on success / "no dates"
-  /// / failure so the outfitter always gets feedback.
-  ///
-  /// Delegates to [BookingCalendarService.instance.addToCalendar], which uses
-  /// [BookingCalendarService.buildEventWithPackageFallback] -- so the hunt
-  /// window is resolved the SAME way the hunter card resolves it
-  /// ([BookingCalendarEventBuilder.resolveWindow] on the booking map), with a
-  /// fallback to the linked package's `availabilityStart` / `availabilityEnd`
-  /// when the booking document itself lacks date fields.
-  Future<void> _addToCalendar() async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      // Resolve the hunt window ONCE from the SAME booking map the UI card
-      // reads through, then bake the resolved start/end directly into the
-      // payload. This guarantees the calendar service never has to guess or
-      // re-parse: every date alias (startDate / endDate / availabilityStart /
-      // availabilityEnd) carries the already-resolved DateTime, so the
-      // service's resolver finds a value regardless of which alias family it
-      // scans. The doc `id` is also injected (it lives on the
-      // QueryDocumentSnapshot, not inside the data map) so the event
-      // description can reference the Booking ID (buildDescription reads
-      // booking['id']).
-      //
-      // Alias priority is preserved: higher-priority keys
-      // (confirmedStartDate / checkInDate) still win over the injected
-      // startDate / availabilityStart, so a post-date-change-approval date
-      // is never clobbered by this injection.
-      final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
-      final payload = {
-        ...widget.data,
-        if (window != null) ...{
-          'startDate': window.start,
-          'endDate': window.end,
-          'availabilityStart': window.start,
-          'availabilityEnd': window.end,
-        },
-        'id': widget.bookingId,
-      };
-      // VALIDATION GATE: resolve the window from the FINAL payload (not just
-      // widget.data) so the check reflects exactly what the calendar service
-      // will resolve. If the window resolves successfully, NEVER show the
-      // "No hunt dates on file" warning -- force straight through to the
-      // platform calendar. A subsequent `launched == false` can then only
-      // mean the device calendar rejected the event (no calendar app,
-      // permission denied, user cancel), which is reported accurately below
-      // -- never as a false-positive "no dates" warning.
-      final resolvedWindow =
-          BookingCalendarEventBuilder.resolveWindow(payload);
-      if (resolvedWindow == null) {
-        if (!mounted) return;
-        if (messenger != null) {
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'No hunt dates on file for this booking -- cannot add to calendar.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-      final launched =
-          await BookingCalendarService.instance.addToCalendar(payload);
-      if (!mounted) return;
-      if (launched) {
-        // Persist the added-flag to the booking doc so it survives app
-        // restarts + is visible to the other party, then flip the local
-        // state so the button immediately disables + re-styles without
-        // waiting for the booking stream to re-emit. Best-effort: a
-        // Firestore write failure is swallowed (the local flag still flips
-        // so the UX is correct for this session).
-        setState(() => _addedToCalendar = true);
-        try {
-          await FirebaseFirestore.instance
-              .collection('bookings')
-              .doc(widget.bookingId)
-              .update({'addedToCalendar': true});
-        } catch (e) {
-          debugPrint('[BookingCalendar] Failed to persist addedToCalendar: $e');
-        }
-      }
-      final snackBar = SnackBar(
-        content: Text(
-          launched
-              ? 'Opening your calendar to save this hunt...'
-              // The window WAS resolved, so a `false` here means the device
-              // calendar rejected the event (no calendar app, permission
-              // denied, user cancel) -- NOT a missing-dates problem.
-              : 'Could not open your device calendar. Check that a calendar '
-                  'app is installed and permissions are granted.',
-        ),
-        backgroundColor: launched ? Colors.green : Colors.orange,
-      );
-      if (messenger != null) messenger.showSnackBar(snackBar);
-    } catch (e) {
-      if (!mounted) return;
-      if (messenger != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Unable to add to calendar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
   }
@@ -726,17 +706,19 @@ class _BookingCardState extends State<_BookingCard> {
 
   @override
   Widget build(BuildContext context) {
-    // Seed the local added-flag from the persisted doc field on the first
-    // build (covers first mount; subsequent stream updates are handled in
-    // didUpdateWidget). Uses the local _addedToCalendar as a write-once guard
-    // so a successful add is never cleared by a stale stream re-emit.
-    if (!_addedToCalendar && widget.data['addedToCalendar'] == true) {
-      _addedToCalendar = true;
-    }
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
     final status = widget.data['status'] ?? BookingStatus.pendingApproval;
     final packageId = widget.data['packageId'] ?? 'Unknown';
-    final hunterId = widget.data['hunterId'] ?? 'Unknown';
+
+    // Resolved display values (populated async by [_resolveDisplayNames] in
+    // initState). Fall back to the opaque ids while the lookup is in flight
+    // so the card never renders an empty Package / Hunter row on first paint.
+    final packageNameDisplay = _packageNameDisplay.isNotEmpty
+        ? _packageNameDisplay
+        : (packageId == 'CUSTOM_BUILT' ? 'Custom Package' : packageId);
+    final hunterNameDisplay = _hunterNameDisplay.isNotEmpty
+        ? _hunterNameDisplay
+        : (widget.data['hunterId'] as String? ?? 'Unknown');
 
     // Date-change request state.
     final dateChangePending =
@@ -833,7 +815,7 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Package ID: ',
+                      'Package: ',
                       style: TextStyle(
                         color: widget.theme.subtitleColor,
                         fontSize: 13,
@@ -841,14 +823,13 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     Expanded(
                       child: Text(
-                        packageId.substring(
-                              0,
-                              packageId.length > 8 ? 8 : packageId.length,
-                            ) +
-                            '...',
+                        packageNameDisplay,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: widget.theme.textColor,
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -864,7 +845,7 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Hunter ID: ',
+                      'Hunter: ',
                       style: TextStyle(
                         color: widget.theme.subtitleColor,
                         fontSize: 13,
@@ -872,14 +853,13 @@ class _BookingCardState extends State<_BookingCard> {
                     ),
                     Expanded(
                       child: Text(
-                        hunterId.substring(
-                              0,
-                              hunterId.length > 8 ? 8 : hunterId.length,
-                            ) +
-                            '...',
+                        hunterNameDisplay,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: widget.theme.textColor,
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -926,11 +906,8 @@ class _BookingCardState extends State<_BookingCard> {
           ],
 
           // Hunt dates banner: surfaces the booking's hunt window
-          // (start -> end) using the SAME resolver the hunter card uses
-          // ([BookingCalendarEventBuilder.resolveWindow]) so the outfitter
-          // sees the dates before tapping "ADD HUNT TO CALENDAR". Hidden
-          // when the booking has no dates on file (and the calendar action's
-          // package fallback will still try to resolve them on tap).
+          // (start -> end) so the outfitter sees the dates on the card.
+          // Hidden when the booking has no dates on file.
           _buildHuntDatesBanner(),
 
           const SizedBox(height: 16),
@@ -964,25 +941,18 @@ class _BookingCardState extends State<_BookingCard> {
 
   /// Builds the hunt-dates banner for the outfitter booking card.
   ///
-  /// Surfaces the booking's hunt window (`Hunt dates: <start> → <end>`)
-  /// using [BookingCalendarEventBuilder.resolveWindow] -- the SAME resolver
-  /// the hunter card uses (and the SAME resolver
-  /// [BookingCalendarService.addToCalendar] uses, via
-  /// [BookingCalendarService.buildEventWithPackageFallback]) -- so the
-  /// outfitter sees the exact dates that will be written to the device
-  /// calendar before tapping "ADD HUNT TO CALENDAR". Returns
-  /// [SizedBox.shrink] when the booking has no resolvable dates on file
-  /// (the calendar action's package fallback will still attempt to resolve
-  /// them on tap).
+  /// Surfaces the booking's hunt window (`Hunt dates: <start> – <end>`) using
+  /// [BookingDateFormatter.resolveWindow] — the SAME resolver the hunter card
+  /// uses — so the outfitter sees the same dates the hunter sees. Returns
+  /// [SizedBox.shrink] when the booking has no resolvable dates on file.
   Widget _buildHuntDatesBanner() {
-    final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
+    final window = BookingDateFormatter.resolveWindow(widget.data);
     if (window == null) return const SizedBox.shrink();
     // Single source of truth for the date-range label format —
     // `d MMM yyyy – d MMM yyyy` (or one date for a single-day hunt). Mirrors
-    // the hunter booking banner exactly, so the outfitter sees the same
-    // dates that will be written to the device calendar.
+    // the hunter booking banner exactly.
     final dateLabel =
-        BookingCalendarEventBuilder.formatWindow(window) ??
+        BookingDateFormatter.formatWindow(window) ??
             'No hunt dates on file';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -1023,9 +993,9 @@ class _BookingCardState extends State<_BookingCard> {
   ///   VERIFY / CONFIRM PAYMENT RECEIVED button (outfitter confirms the
   ///   direct off-platform payment; the booking moves to `Confirmed` /
   ///   Archived) plus a Chat Hunter row.
-  /// - Archived (Confirmed / Completed): ADD HUNT TO CALENDAR (save the
-  ///   finalized hunt to the native device calendar). Declined / Cancelled
-  ///   render no actions.
+  /// - Archived (Confirmed / Completed / Declined / Cancelled): no action
+  ///   buttons (the in-app chat thread below the action row remains
+  ///   available for any finalized booking).
   Widget _buildActionButtons(String status) {
     final isPending = status == BookingStatus.pendingApproval;
     final isAwaitingPayment = status == BookingStatus.approvedAwaitingPayment ||
@@ -1145,52 +1115,9 @@ class _BookingCardState extends State<_BookingCard> {
       );
     }
 
-    // Archived / completed / declined / cancelled: (for finalized Confirmed /
-    // Completed bookings) save the hunt to the native device calendar.
-    // After a successful add the persisted `addedToCalendar` flag flips the
-    // button to a muted "✓ ADDED TO CALENDAR" state + disables further taps
-    // to prevent redundant adds.
-    final canAddToCalendar = status == BookingStatus.confirmed ||
-        status == BookingStatus.completed;
-    return Column(
-      children: [
-        if (canAddToCalendar) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              // Disable once added so the outfitter cannot re-trigger the
-              // calendar insertion for the same booking.
-              onPressed: _addedToCalendar ? null : _addToCalendar,
-              style: FilledButton.styleFrom(
-                backgroundColor: _addedToCalendar
-                    ? Colors.grey
-                    : Colors.green.shade700,
-                disabledBackgroundColor: Colors.grey,
-                foregroundColor: Colors.white,
-                disabledForegroundColor: Colors.white70,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              icon: Icon(
-                _addedToCalendar
-                    ? Icons.check_circle_rounded
-                    : Icons.event_available_rounded,
-                size: 20,
-              ),
-              label: Text(
-                _addedToCalendar
-                    ? '✓ ADDED TO CALENDAR'
-                    : 'ADD HUNT TO CALENDAR',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
+    // Archived / completed / declined / cancelled: no action buttons (the
+    // in-app chat thread below the action row remains available).
+    return const SizedBox.shrink();
   }
 
   /// "Chat Hunter" action button row -- lets the outfitter communicate with

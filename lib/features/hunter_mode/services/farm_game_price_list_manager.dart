@@ -486,7 +486,7 @@ class FarmGamePriceListManager {
   ///   vehicle / guide / etc.), same shape as [selectedItems].
   /// - [combinedTotalZAR]: the grand total (base cost; no commission).
   /// - [checkInDate]/[checkOutDate]: ISO-8601 hunt window (drives the
-  ///   outfitter dashboard + the hunter's "Add to Calendar" integration).
+  ///   outfitter dashboard booking-card date banner).
   /// - [huntingDays], [hunterCount], [observerCount]: party + duration meta.
   ///
   /// Returns the new booking document id. Throws if unauthenticated, if the
