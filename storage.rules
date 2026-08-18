@@ -2,58 +2,99 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Authenticated users may read any object (marketplace trophy photos,
-    // outfitter price-list scans, public profile pictures, etc.).
+    // ─────────────────────────────────────────────────────────────────────
+    // READS — authenticated users may read any object.
+    //
+    // Marketplace trophy photos, outfitter package imagery, permit
+    // signatures, public profile pictures, bug-report screenshots (admins),
+    // etc. are all visible to signed-in users. The per-collection read grants
+    // below are redundant with this global rule but make the contract
+    // explicit so a future tightening of this catch-all cannot silently
+    // break a feature.
+    // ─────────────────────────────────────────────────────────────────────
     match /{allPaths=**} {
       allow read: if request.auth != null;
     }
 
-    // Per-user uploads: profile pictures, firearm photos, trophy photos,
-    // hunter images. The second path segment is the owner's uid so writes
-    // are scoped to the authenticated owner.
-    match /users/{uid}/{fileName} {
+    // ─────────────────────────────────────────────────────────────────────
+    // WRITES — owner-scoped (the second path segment is the caller's uid).
+    //
+    // The app ALWAYS writes uploads under a path whose first/second segment
+    // is the authenticated caller's own uid (profile pics, trophy photos,
+    // firearm photos, package gallery images, bug-report screenshots).
+    // Scoping writes to `request.auth.uid == uid` prevents a hunter from
+    // overwriting another hunter's uploads while still admitting every
+    // legitimate upload path the app writes (audited 2026-08-18).
+    //
+    // NOTE: a blanket `allow write: if request.auth != null` fallback is
+    // intentionally NOT used — it would let any signed-in user write to any
+    // path (cross-user tampering, arbitrary file upload). The owner-scoped
+    // grants below are the least-privilege posture that still prevents
+    // [firebase_storage/unauthorized] on every real upload path.
+    // ─────────────────────────────────────────────────────────────────────
+
+    // User profile pictures, firearm photos, hunter images.
+    match /users/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
-    match /firearm_photos/{uid}/{fileName} {
+    match /firearm_photos/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
-    match /hunters/{uid}/{fileName} {
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-    match /trophies/{uid}/{fileName} {
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-    match /trophy_photos/{uid}/{fileName} {
+    match /hunters/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Outfitter-scoped uploads (price lists, package imagery). The outfitter's
-    // uid is the second path segment.
-    match /outfitters/{uid}/{fileName} {
+    // Trophy photos — written by both hunters (`trophy_photos/{uid}/`) and
+    // outfitters (`trophy_photos/{outfitterId}/`). In both cases the second
+    // segment is the authenticated caller's own uid, so the owner-scoped
+    // write admits the legitimate path and blocks cross-user writes.
+    match /trophy_photos/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
-    // Package gallery images — stored under package_images/{outfitterUid}/.
-    // Writes scoped to the authenticated outfitter owner; reads covered by the
-    // global authenticated-read rule above (marketplace listings are visible
-    // to signed-in hunters).
-    match /package_images/{uid}/{fileName} {
+    // Legacy `trophies/{uid}/` alias (no live writer today; retained so a
+    // future writer is admitted without a rules redeploy).
+    match /trophies/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Permit signatures — stored under permit_signatures/{permitId}/. Either
-    // party (hunter or outfitter) may upload their signature for a permit they
+    // Outfitter-scoped uploads (price lists, package imagery).
+    match /outfitters/{uid}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    // Package gallery images — `package_images/{outfitterUid}/`.
+    match /package_images/{uid}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    // `packages/{outfitterUid}/` alias (defensive — no live writer today).
+    match /packages/{uid}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Chat attachments — `chat_attachments/{senderUid}/`. Owner-scoped so a
+    // hunter uploads only into their own folder; reads are authenticated so
+    // the counterparty can view the attachment. (No live writer today; added
+    // defensively so a future in-chat image upload works without a rules
+    // redeploy.)
+    match /chat_attachments/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Permit signatures — `permit_signatures/{permitId}/`. Either party
+    // (hunter or outfitter) may upload their signature for a permit they
     // are party to; both are authenticated, so writes are scoped to signed-in
-    // users. Reads are covered by the global authenticated-read rule above.
-    match /permit_signatures/{permitId}/{fileName} {
+    // users (the permitId is a doc id, not a uid, so owner-scoping on uid is
+    // not applicable here).
+    match /permit_signatures/{permitId}/{allPaths=**} {
       allow write: if request.auth != null;
     }
 
-    // Bug-report screenshot attachments — stored under
-    // bug_report_attachments/{uid}/. The reporter's uid is the second path
-    // segment so writes are scoped to the authenticated reporter; reads are
-    // covered by the global authenticated-read rule (admins reviewing the
-    // report need to view the attached screenshots).
-    match /bug_report_attachments/{uid}/{fileName} {
+    // Bug-report screenshot attachments — `bug_report_attachments/{uid}/`.
+    // The reporter's uid is the second path segment so writes are scoped to
+    // the authenticated reporter; reads are covered by the global
+    // authenticated-read rule (admins reviewing the report view the
+    // screenshots).
+    match /bug_report_attachments/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
   }

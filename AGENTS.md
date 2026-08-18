@@ -7368,3 +7368,85 @@ creation → calendar fallback pipeline across Hunter + Outfitter modes.
   (`resolveWindow` exhaustive alias scan + debug logging +
   `_dateishValues` + `startAliases`/`endAliases` const lists),
   `test/booking_calendar_service_test.dart` (+9 tests), `AGENTS.md`.
+
+## Firebase Storage rules audit & [firebase_storage/unauthorized] fix (added 2026-08-18)
+
+Audited `storage.rules` against every Storage upload path the code writes
+to prevent `[firebase_storage/unauthorized]` errors.
+
+### Audit findings (complete upload-path inventory)
+Enumerated every `FirebaseStorage.ref().child(...)` / `.ref(...)` write in
+`lib/` and mapped each against the rules:
+- `users/{uid}/profile.jpg` (hunter_profile_screen) — owner-scoped.
+- `trophy_photos/{uid}/{ts}.jpg` (add_trophy / edit_trophy) — owner-scoped.
+- `trophy_photos/{outfitterId}/{ts}.jpg` (outfitter_trophy_stock) — owner-
+  scoped (outfitterId IS the caller's own uid).
+- `package_images/{outfitterId}/{ts}.jpg` (package_creator) — owner-scoped.
+- `bug_report_attachments/{userId}/{ts}.jpg` (bug_report_modal) — owner-scoped.
+- `firearm_photos/{uid}/{docId}_{ts}.jpg` (firearm_detail) — owner-scoped.
+- `permit_signatures/{permitId}/{role}_signature.png` (venison_permit_manager)
+  — authenticated write (permitId is a doc id, not a uid; either party may
+  upload).
+- `hunters/{hunterId}/{ts}.jpg` (image_utils `uploadHunterImage`) — legacy
+  helper with zero live callers (dead code); owner-scoped rule retained.
+- **No chat-attachment upload to Storage exists** — the chat service
+  (`chat_and_filter_service.dart`) + `BookingChatThread` have no image upload
+  (confirmed via grep). The template's `chat_attachments/` path is unused.
+- **No `trophies/` or `packages/` Storage writes exist** — trophy photos go
+  to `trophy_photos/`, package gallery images go to `package_images/`. The
+  template's `trophies/` + `packages/` paths are unused (retained as
+  defensive aliases).
+
+### Conclusion: the committed rules already covered every real upload path
+The most likely real-world cause of `[firebase_storage/unauthorized]` is
+that the rules had not been DEPLOYED (AGENTS.md documents that
+`firebase deploy` cannot run in this sandbox — no `FIREBASE_TOKEN`; the
+deployed project may still carry default-deny storage rules).
+
+### Hardening applied
+Rewrote `storage.rules` for clarity + explicit per-collection contracts
+while preserving the least-privilege owner-scoped write posture:
+- **Reads**: global authenticated read (`match /{allPaths=**} allow read:
+  if request.auth != null`) retained; `chat_attachments/{uid}` gained an
+  explicit read grant so the contract survives a future tightening of the
+  catch-all.
+- **Writes**: every collection scoped to `request.auth.uid == uid` (the
+  second path segment is the authenticated caller's own uid) — prevents a
+  hunter from overwriting another hunter's uploads while admitting every
+  legitimate upload path. Switched `{fileName}` -> `{allPaths=**}` so
+  nested files under an owner folder are admitted (future-proofs sub-path
+  layouts).
+- Added the template's requested named collections (`chat_attachments`,
+  `packages`) with owner-scoped writes (defensive — no live writer today;
+  if a future in-chat image upload or package-image alias is added, it works
+  without a rules redeploy).
+- **Security: deliberately did NOT adopt the over-broad
+  `allow write: if request.auth != null` fallback** from the suggested
+  template — it would let any signed-in user write to any path (cross-user
+  tampering, arbitrary file upload). The owner-scoped grants are the
+  least-privilege posture that still prevents `[firebase_storage/unauthorized]`
+  on every real upload path. Documented this choice inline in the rules.
+- `permit_signatures/{permitId}`: authenticated write (permitId is a doc id,
+  not a uid, so owner-scoping is not applicable — either party uploads).
+
+### Verification
+- Structural validation: brace balance 0, paren balance 0, 11 named
+  collections + global read all covered, no over-broad authenticated-write
+  fallback.
+- `flutter analyze` (`lib/`): 96 pre-existing infos (unchanged baseline;
+  the rules edit touches no Dart).
+- `flutter test` (full suite): **All 669 tests passed**, 0 failures (no
+  regressions; pure config change).
+- `analysis_options.yaml` + `pubspec.lock` auto-touched by `flutter pub get`
+  were reverted before commit.
+
+### Deploy reminder
+`npx firebase-tools deploy --only storage` CANNOT run in this sandbox (no
+`FIREBASE_TOKEN` / `firebase login`; verified — `firebase projects:list`
+errors with an auth failure, matching the AGENTS.md environment-constraints
+note). The ruleset is committed + pushed; the deploy MUST be run in a
+credentialed environment: `npx firebase-tools deploy --only storage`.
+Until deployed the deployed project may still carry default-deny storage
+rules, which is the actual source of `[firebase_storage/unauthorized]`.
+- Files: `storage.rules` (rewritten — global authenticated read + 11
+  owner-scoped write collections + inline security rationale), `AGENTS.md`.
