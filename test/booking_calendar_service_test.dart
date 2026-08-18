@@ -238,6 +238,107 @@ void main() {
     });
   });
 
+  group('BookingCalendarEventBuilder.formatDate / formatWindow / '
+      'formatDateRange (unified date-range badge formatting)', () {
+    test('formatDate renders d MMM yyyy (always full month + year)', () {
+      expect(BookingCalendarEventBuilder.formatDate(DateTime(2026, 8, 21)),
+          '21 Aug 2026');
+      // Single-digit day -> no leading zero (matches d MMM yyyy).
+      expect(BookingCalendarEventBuilder.formatDate(DateTime(2026, 8, 5)),
+          '5 Aug 2026');
+      // Month always present even when day/month are the same as a sibling.
+      expect(BookingCalendarEventBuilder.formatDate(DateTime(2026, 12, 1)),
+          '1 Dec 2026');
+    });
+
+    test('formatWindow returns null when window is null', () {
+      expect(BookingCalendarEventBuilder.formatWindow(null), isNull);
+    });
+
+    test('formatWindow renders a single date for a single-day hunt '
+        '(no spurious two-day range)', () {
+      // resolveWindow end = day after start for a single-day hunt.
+      final window = (
+        start: DateTime(2026, 8, 21),
+        end: DateTime(2026, 8, 22), // calendar-exclusive
+      );
+      expect(BookingCalendarEventBuilder.formatWindow(window),
+          '21 Aug 2026');
+    });
+
+    test('formatWindow renders a full d MMM yyyy – d MMM yyyy range for a '
+        'multi-day hunt (never clips the month on the start)', () {
+      final window = (
+        start: DateTime(2026, 8, 21),
+        end: DateTime(2026, 8, 24), // calendar-exclusive; real end = 23 Aug
+      );
+      expect(BookingCalendarEventBuilder.formatWindow(window),
+          '21 Aug 2026 – 23 Aug 2026');
+    });
+
+    test('formatWindow range that shares a month renders both months '
+        '(no clipping when start + end share August)', () {
+      final window = (
+        start: DateTime(2026, 8, 21),
+        end: DateTime(2026, 8, 24),
+      );
+      final label = BookingCalendarEventBuilder.formatWindow(window)!;
+      // Both ends carry the full month — the prior numeric shorthand
+      // `21/8 – 23/8/2026` omitted the month on the start; this never does.
+      expect(label, startsWith('21 Aug 2026'));
+      expect(label, endsWith('23 Aug 2026'));
+      expect(label, contains('–'));
+    });
+
+    test('formatWindow crosses a month boundary correctly', () {
+      final window = (
+        start: DateTime(2026, 8, 30),
+        end: DateTime(2026, 9, 2), // real end = 1 Sep
+      );
+      expect(BookingCalendarEventBuilder.formatWindow(window),
+          '30 Aug 2026 – 1 Sep 2026');
+    });
+
+    test('formatDateRange returns null when start is null', () {
+      expect(
+        BookingCalendarEventBuilder.formatDateRange(start: null),
+        isNull,
+      );
+    });
+
+    test('formatDateRange renders a single date when end is null', () {
+      expect(
+        BookingCalendarEventBuilder.formatDateRange(
+            start: DateTime(2026, 8, 21), end: null),
+        '21 Aug 2026',
+      );
+    });
+
+    test('formatDateRange renders a single date when start == end', () {
+      expect(
+        BookingCalendarEventBuilder.formatDateRange(
+            start: DateTime(2026, 8, 21), end: DateTime(2026, 8, 21)),
+        '21 Aug 2026',
+      );
+    });
+
+    test('formatDateRange renders d MMM yyyy – d MMM yyyy for a range', () {
+      expect(
+        BookingCalendarEventBuilder.formatDateRange(
+            start: DateTime(2026, 8, 21), end: DateTime(2026, 8, 23)),
+        '21 Aug 2026 – 23 Aug 2026',
+      );
+    });
+
+    test('formatDateRange clamps an end-before-start to a single date', () {
+      expect(
+        BookingCalendarEventBuilder.formatDateRange(
+            start: DateTime(2026, 8, 21), end: DateTime(2026, 8, 19)),
+        '21 Aug 2026',
+      );
+    });
+  });
+
   group('BookingCalendarEventBuilder.buildTitle', () {
     test('combines package name + farm name', () {
       expect(

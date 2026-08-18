@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -610,9 +609,9 @@ class _PackageCard extends StatelessWidget {
                     _metaChip(
                       theme,
                       icon: Icons.event_available_rounded,
-                      label: endDate != null
-                          ? '${startDate.day}/${startDate.month} – ${endDate.day}/${endDate.month}/${endDate.year}'
-                          : 'From ${startDate.day}/${startDate.month}/${startDate.year}',
+                      label: BookingCalendarEventBuilder.formatDateRange(
+                              start: startDate, end: endDate) ??
+                          'Select dates',
                     ),
                   _metaChip(
                     theme,
@@ -1052,9 +1051,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         if (start != null)
           _summaryChip(
             icon: Icons.event_available_rounded,
-            label: end != null
-                ? 'Available ${start.day}/${start.month} – ${end.day}/${end.month}/${end.year}'
-                : 'From ${start.day}/${start.month}/${start.year}',
+            label: 'Available ${BookingCalendarEventBuilder.formatDateRange(start: start, end: end) ?? ''}',
           ),
       ],
     );
@@ -1601,17 +1598,12 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
               final window =
                   BookingCalendarEventBuilder.resolveWindow(widget.data);
               if (window == null) return const SizedBox.shrink();
-              final fmt = DateFormat('d MMM yyyy');
-              // resolveWindow normalizes `end` to the day AFTER the hunt's
-              // final day (so an all-day calendar event spans the full final
-              // day). For the on-card label we show the actual final hunt day
-              // (end - 1 day) so a single-day hunt reads as one date, not a
-              // spurious two-day range -- mirrors the outfitter banner.
-              final huntEnd = window.end.subtract(const Duration(days: 1));
-              final sameDay = window.start == huntEnd;
-              final dateLabel = sameDay
-                  ? fmt.format(window.start)
-                  : '${fmt.format(window.start)}  →  ${fmt.format(huntEnd)}';
+              // Single source of truth for the date-range label format —
+              // `d MMM yyyy – d MMM yyyy` (or one date for a single-day
+              // hunt). Mirrors the outfitter banner exactly.
+              final dateLabel =
+                  BookingCalendarEventBuilder.formatWindow(window) ??
+                      'No hunt dates on file';
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Container(
@@ -2060,7 +2052,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                   ),
                   Text(
                     value != null
-                        ? '${value.day}/${value.month}/${value.year}'
+                        ? BookingCalendarEventBuilder.formatDate(value)
                         : 'Select date',
                     style: TextStyle(
                       color: value != null

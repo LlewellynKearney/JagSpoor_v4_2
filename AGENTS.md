@@ -7450,3 +7450,84 @@ Until deployed the deployed project may still carry default-deny storage
 rules, which is the actual source of `[firebase_storage/unauthorized]`.
 - Files: `storage.rules` (rewritten — global authenticated read + 11
   owner-scoped write collections + inline security rationale), `AGENTS.md`.
+
+## Standardized date-range badge formatting on UI cards (added 2026-08-18)
+
+Unified every package-availability + hunt-date range badge across Hunter +
+Outfitter screens on a single `d MMM yyyy – d MMM yyyy` format (e.g.
+`21 Aug 2026 – 23 Aug 2026`), eliminating the clipped/ambiguous numeric
+shorthand that omitted the month on the start date.
+
+### Root cause (the clipping bug)
+The package card meta chip + the booking confirmation sheet availability
+summary rendered the range as a raw numeric shorthand:
+`'${start.day}/${start.month} – ${end.day}/${end.month}/${end.year}'` ->
+`21/8 – 23/8/2026`. The START omitted the year + used bare numeric
+month/day, so a range sharing a month read as clipped/ambiguous (and the
+numeric `8` vs `Aug` was locale-unstable). The hunter + outfitter booking
+banners already used `DateFormat('d MMM yyyy')` (clean) but joined with an
+` → ` arrow — inconsistent with the cards' `–` and with each other.
+
+### Single source of truth
+Added three static formatters to `BookingCalendarEventBuilder`
+(`booking_calendar_service.dart`) — colocated with the date resolver so the
+resolver + formatter live together:
+- `formatDate(DateTime)` -> `d MMM yyyy` (e.g. `21 Aug 2026`).
+- `formatWindow(({start, end})?)` -> resolves a `resolveWindow` result to a
+  label: `null` when no window; one date for a single-day hunt
+  (`window.end` is calendar-exclusive, so it subtracts 1 day + collapses
+  same-day to one date); `start – end` (en-dash) for a multi-day hunt.
+- `formatDateRange({start, end})` -> null-safe range from two raw
+  `DateTime?`s (for package-availability badges that don't run through
+  `resolveWindow`): null when start null; one date when end null /
+  end<=start / start==end; `start – end` otherwise.
+All three ALWAYS carry the full month + year on BOTH ends — a range sharing
+a month/year is never clipped. Uses `intl` `DateFormat` (locale-stable
+month abbreviations). Single en-dash `–` separator everywhere.
+
+### Sites standardized (5 total)
+1. **Package card meta chip** (`hunter_package_marketplace_screen.dart`
+   line 612): the buggy `21/8 – 23/8/2026` shorthand -> `formatDateRange`.
+2. **Booking confirmation sheet availability summary** (line 1054): the
+   buggy `Available 21/8 – 23/8/2026` shorthand -> `formatDateRange`.
+3. **Hunter booking card hunt-dates banner** (line 1605): inline
+   `DateFormat('d MMM yyyy')` + `→` arrow -> `formatWindow` (en-dash).
+4. **Outfitter booking card hunt-dates banner**
+   (`outfitter_booking_dashboard_screen.dart` line 882): inline
+   `DateFormat('d MMM yyyy')` + `→` arrow -> `formatWindow` (en-dash).
+5. **Date-change request single-date chip** (line 2055): `d/M/yyyy`
+   numeric -> `formatDate`.
+The now-unused `import 'package:intl/intl.dart'` was removed from both
+screens (the inline `DateFormat` calls are gone; the shared helper owns
+the `intl` dependency). Both screens already imported
+`booking_calendar_service.dart` (no new import needed).
+
+### Tests
+`test/booking_calendar_service_test.dart` +11 tests (all pass): `formatDate`
+(d MMM yyyy, single-digit day, month always present); `formatWindow` (null
+window, single-day collapse, multi-day `start – end`, shared-month no-clip,
+month-boundary cross); `formatDateRange` (null start, null end, start==end,
+range, end-before-start clamp).
+
+### Verification
+- `flutter analyze` (4 touched files: `booking_calendar_service.dart`,
+  `hunter_package_marketplace_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`,
+  `booking_calendar_service_test.dart`): **No issues found** (0 errors, 0
+  warnings, 0 infos — the unused `intl` imports were removed so no
+  `unused_import` warning). `analysis_options.yaml` + `pubspec.lock`
+  auto-touched by `flutter pub get` were reverted before commit.
+- `flutter test test/booking_calendar_service_test.dart`: 64/64 pass (was
+  53; +11 formatter tests).
+- `flutter test` (full suite): **All 680 tests passed**, 0 failures (was
+  669; +11). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side UI formatting consolidation; `intl` was already a dependency).
+- Files: `lib/features/hunter_mode/services/booking_calendar_service.dart`
+  (`formatDate` + `formatWindow` + `formatDateRange` + `_dateFormatter` +
+  `intl` import),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (3 sites routed through the helper + `intl` import removed),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (1 site routed + `intl` import removed),
+  `test/booking_calendar_service_test.dart` (+11 tests), `AGENTS.md`.

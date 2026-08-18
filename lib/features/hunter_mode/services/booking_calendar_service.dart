@@ -1,6 +1,7 @@
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
 /// Builds and launches a native device-calendar event for a finalized
 /// (Confirmed / Completed) hunting booking.
@@ -270,6 +271,56 @@ class BookingCalendarEventBuilder {
       if (v != null) result[alias] = v.toString();
     }
     return result;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Date-range FORMATTING — the single source of truth for how hunt windows
+  // + package availability windows render on every UI card / badge / sheet.
+  //
+  // Standard: `d MMM yyyy` (e.g. `21 Aug 2026`), joined by an en-dash for a
+  // range (`21 Aug 2026 – 23 Aug 2026`). A single-day window renders as one
+  // date (no spurious two-day range, no "From" prefix). Both the start and
+  // end ALWAYS carry the full month + year, so a range that shares a month
+  // or year is never clipped/ambiguous (the prior numeric shorthand
+  // `21/8 – 23/8/2026` omitted the month on the start + used bare numbers).
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// The shared date formatter — `d MMM yyyy` (e.g. `21 Aug 2026`).
+  static final DateFormat _dateFormatter = DateFormat('d MMM yyyy');
+
+  /// Formats a single [date] as `d MMM yyyy` (e.g. `21 Aug 2026`).
+  static String formatDate(DateTime date) => _dateFormatter.format(date);
+
+  /// Formats a date range from a resolved [window] (the `({DateTime start,
+  /// DateTime end})?` returned by [resolveWindow], where `end` is the
+  /// calendar-exclusive day AFTER the hunt's final day).
+  ///
+  /// Returns `null` when [window] is null (no resolvable dates). For a
+  /// single-day hunt (start == huntEnd) returns just the start date; for a
+  /// multi-day hunt returns `start – end` with the real final hunt day
+  /// (`window.end` minus 1 day).
+  static String? formatWindow(
+    ({DateTime start, DateTime end})? window,
+  ) {
+    if (window == null) return null;
+    final huntEnd = window.end.subtract(const Duration(days: 1));
+    if (window.start == huntEnd) return formatDate(window.start);
+    return '${formatDate(window.start)} – ${formatDate(huntEnd)}';
+  }
+
+  /// Formats a date range from two raw [DateTime]s (e.g. a package's
+  /// `availabilityStart` / `availabilityEnd`). Null-safe: a null [start]
+  /// returns null; a null or pre-start [end] collapses to a single date.
+  /// Use this for package-availability badges that don't run through
+  /// [resolveWindow].
+  static String? formatDateRange({
+    required DateTime? start,
+    DateTime? end,
+  }) {
+    if (start == null) return null;
+    if (end == null || !end.isAfter(start)) return formatDate(start);
+    if (start == end) return formatDate(start);
+    return '${formatDate(start)} – ${formatDate(end)}';
   }
 
   /// Builds the [Event] title from the package name + farm name.

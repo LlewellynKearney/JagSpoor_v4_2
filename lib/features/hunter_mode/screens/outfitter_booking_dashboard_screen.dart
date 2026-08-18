@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -875,16 +874,13 @@ class _BookingCardState extends State<_BookingCard> {
   Widget _buildHuntDatesBanner() {
     final window = BookingCalendarEventBuilder.resolveWindow(widget.data);
     if (window == null) return const SizedBox.shrink();
-    final fmt = DateFormat('d MMM yyyy');
-    // resolveWindow normalizes `end` to the day AFTER the hunt's final day
-    // (so an all-day calendar event spans the full final day). For the
-    // on-card label we show the actual final hunt day (end - 1 day) so the
-    // outfitter reads the real hunt end date, not the calendar-exclusive end.
-    final huntEnd = window.end.subtract(const Duration(days: 1));
-    final sameDay = window.start == huntEnd;
-    final dateLabel = sameDay
-        ? fmt.format(window.start)
-        : '${fmt.format(window.start)}  →  ${fmt.format(huntEnd)}';
+    // Single source of truth for the date-range label format —
+    // `d MMM yyyy – d MMM yyyy` (or one date for a single-day hunt). Mirrors
+    // the hunter booking banner exactly, so the outfitter sees the same
+    // dates that will be written to the device calendar.
+    final dateLabel =
+        BookingCalendarEventBuilder.formatWindow(window) ??
+            'No hunt dates on file';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Container(
