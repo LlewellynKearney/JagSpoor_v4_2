@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Builds and launches a native device-calendar event for a finalized
 /// (Confirmed / Completed) hunting booking.
@@ -167,7 +168,63 @@ class BookingCalendarService {
       // tells the user to check permissions -- the accurate UX.
       return false;
     }
-    return Add2Calendar.addEvent2Cal(event);
+    // Primary path: delegate to the `add_2_calendar` plugin's native
+    // insertion. The plugin may return `false` (no calendar app could handle
+    // the intent, or the insertion was rejected) or throw (a native
+    // `SecurityException` / `ActivityNotFoundException` on Android 14/15/16
+    // where the `content://com.android.calendar/events` content-provider
+    // launch via `ACTION_VIEW` can be blocked without explicit authority
+    // flags). On either failure, fall back to the web calendar so the hunter
+    // can still save the trip.
+    try {
+      final launched = await Add2Calendar.addEvent2Cal(event);
+      if (launched) return true;
+      debugPrint('[BookingCalendar] Native addEvent2Cal returned false; '
+          'falling back to web calendar.');
+    } catch (e) {
+      debugPrint('[BookingCalendar] Native addEvent2Cal threw: $e; '
+          'falling back to web calendar.');
+    }
+    return _launchWebCalendarFallback(event);
+  }
+
+  /// Graceful secondary fallback when the native calendar insertion fails or
+  /// is rejected (Android 14/15/16 may block the
+  /// `content://com.android.calendar/events` content-provider launch via
+  /// `ACTION_VIEW` without explicit authority flags). Builds a Google
+  /// Calendar web "TEMPLATE" URL pre-filled with the event details and
+  /// launches it in the external browser via `url_launcher`. The user lands
+  /// on a pre-populated "New event" form they can save to any signed-in
+  /// calendar account.
+  ///
+  /// Returns whether the browser hand-off succeeded. Any failure is logged
+  /// and reported as `false` so the caller surfaces its existing failure
+  /// snackbar instead of crashing.
+  Future<bool> _launchWebCalendarFallback(Event event) async {
+    try {
+      // Construct a safe Google Calendar web URL with pre-filled event
+      // details as a reliable fallback.
+      final title = Uri.encodeComponent(event.title);
+      final description = Uri.encodeComponent(event.description ?? '');
+      final location = Uri.encodeComponent(event.location ?? '');
+      // Google Calendar `dates` param: YYYYMMDDTHHMMSS / YYYYMMDDTHHMMSS (UTC
+      // 'Z' suffix optional). Strip the separators from the ISO-8601 string.
+      final startDate =
+          event.startDate.toIso8601String().replaceAll(RegExp(r'[-:]|\.\d+'), '');
+      final endDate =
+          event.endDate.toIso8601String().replaceAll(RegExp(r'[-:]|\.\d+'), '');
+
+      final url = Uri.parse(
+        'https://calendar.google.com/calendar/render?action=TEMPLATE'
+        '&text=$title&details=$description&location=$location'
+        '&dates=$startDate/$endDate',
+      );
+
+      return await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('[BookingCalendar] Web calendar fallback failed: $e');
+      return false;
+    }
   }
 }
 
