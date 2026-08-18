@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/features/hunter_mode/models/booking_status.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_game_price_entry.dart';
+import 'package:jagspoor/features/hunter_mode/services/booking_calendar_service.dart';
 import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 
 /// Unit tests for the Custom Package Builder's farm price-list stream contract.
@@ -304,6 +305,92 @@ void main() {
         ),
         throwsA(isA<Exception>()),
       );
+    });
+
+    test('resolves district + province from farms/{farmId} so the calendar '
+        'event carries a located title + location', () async {
+      final fake = FakeFirebaseFirestore();
+      // Seed the farm doc the booking resolves the region from.
+      await fake.collection('farms').doc('farm-1').set({
+        'name': 'Bosveld Ranch',
+        'district': 'Waterberg',
+        'province': 'Limpopo',
+      });
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'farm-1',
+        farmName: 'Bosveld Ranch',
+        outfitterId: 'outfitter-1',
+        selectedItems: [
+          {'name': 'Kudu', 'quantity': 1, 'unitPriceHunterZAR': 5000.0}
+        ],
+        combinedTotalZAR: 5000.0,
+      );
+
+      final data =
+          (await fake.collection('bookings').doc(bookingId).get()).data()!;
+      expect(data['farmName'], 'Bosveld Ranch');
+      expect(data['district'], 'Waterberg');
+      expect(data['province'], 'Limpopo');
+      // buildTitle -> "Custom Package - Bosveld Ranch @ Bosveld Ranch"; the
+      // calendar location -> "Bosveld Ranch (Waterberg, Limpopo)".
+      final title =
+          BookingCalendarEventBuilder.buildTitle(data);
+      expect(title, contains('Bosveld Ranch'));
+      final location =
+          BookingCalendarEventBuilder.buildLocation(data);
+      expect(location, 'Bosveld Ranch (Waterberg, Limpopo)');
+    });
+
+    test('backfills farmName + packageName from farms/{farmId} when the '
+        'caller omits farmName', () async {
+      final fake = FakeFirebaseFirestore();
+      await fake.collection('farms').doc('farm-9').set({
+        'name': 'Springbok Plains',
+        'district': 'Central Karoo',
+        'province': 'Northern Cape',
+      });
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'farm-9',
+        outfitterId: 'outfitter-1',
+        selectedItems: [
+          {'name': 'Springbok', 'quantity': 1, 'unitPriceHunterZAR': 1200.0}
+        ],
+        combinedTotalZAR: 1200.0,
+      );
+
+      final data =
+          (await fake.collection('bookings').doc(bookingId).get()).data()!;
+      expect(data['farmName'], 'Springbok Plains');
+      expect(data['packageName'], 'Custom Package - Springbok Plains');
+      expect(data['district'], 'Central Karoo');
+      expect(data['province'], 'Northern Cape');
+    });
+
+    test('omits region fields gracefully when the farm doc is missing '
+        '(no crash, calendar falls back to farm name only)', () async {
+      final fake = FakeFirebaseFirestore();
+      // No farms doc seeded.
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'ghost-farm',
+        farmName: 'Ghost Farm',
+        outfitterId: 'outfitter-1',
+        selectedItems: [
+          {'name': 'Impala', 'quantity': 1, 'unitPriceHunterZAR': 900.0}
+        ],
+        combinedTotalZAR: 900.0,
+      );
+
+      final data =
+          (await fake.collection('bookings').doc(bookingId).get()).data()!;
+      expect(data['farmName'], 'Ghost Farm');
+      expect(data.containsKey('district'), isFalse);
+      expect(data.containsKey('province'), isFalse);
     });
   });
 }

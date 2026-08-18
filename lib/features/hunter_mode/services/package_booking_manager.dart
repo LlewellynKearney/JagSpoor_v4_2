@@ -280,6 +280,33 @@ class PackageBookingManager {
       final availabilityStart = pkgData['availabilityStart'];
       final availabilityEnd = pkgData['availabilityEnd'];
       final farmId = pkgData['farmId'] as String?;
+      // Resolve the farm's display name + region from `farms/{farmId}` so the
+      // booking is self-contained for the calendar event (title "@ Farm"
+      // suffix, location, description Farm/region lines). The `packages`
+      // doc only carries `farmId` (not the farm name); the marketplace
+      // resolves the name via a runtime farms-join at read time, but the
+      // booking doc must carry it itself so the calendar service can build a
+      // located event without a farm read. Best-effort: a missing/empty
+      // farmId or a missing farms doc simply omits the fields (the calendar
+      // falls back to the package name only).
+      String? farmName;
+      String? farmDistrict;
+      String? farmProvince;
+      if (farmId != null && farmId.isNotEmpty) {
+        try {
+          final farmSnap = await transaction
+              .get(_firestore.collection('farms').doc(farmId));
+          if (farmSnap.exists) {
+            final farmData = farmSnap.data() ?? const <String, dynamic>{};
+            farmName = (farmData['name'] as String?)?.trim();
+            farmDistrict = (farmData['district'] as String?)?.trim();
+            farmProvince = (farmData['province'] as String?)?.trim();
+          }
+        } catch (_) {
+          // A farm read failure must never block the booking -- the calendar
+          // event simply omits the farm location.
+        }
+      }
       transaction.set(bookingRef, {
         'packageId': packageId.trim(),
         'outfitterId': outfitterId.trim(),
@@ -298,6 +325,14 @@ class PackageBookingManager {
         if (availabilityStart != null) 'availabilityStart': availabilityStart,
         if (availabilityEnd != null) 'availabilityEnd': availabilityEnd,
         if (farmId != null && farmId.isNotEmpty) 'farmId': farmId,
+        // Farm location snapshot (resolved from farms/{farmId}) so the
+        // calendar event carries a located title + location + description
+        // without a separate farm read at calendar-build time.
+        if (farmName != null && farmName.isNotEmpty) 'farmName': farmName,
+        if (farmDistrict != null && farmDistrict.isNotEmpty)
+          'district': farmDistrict,
+        if (farmProvince != null && farmProvince.isNotEmpty)
+          'province': farmProvince,
       });
 
       // Decrement the slot count. When the last slot is claimed, flip the

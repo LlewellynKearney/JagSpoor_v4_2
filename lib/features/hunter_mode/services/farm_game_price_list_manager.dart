@@ -573,6 +573,41 @@ class FarmGamePriceListManager {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    // Resolve the farm's region (district + province) from `farms/{farmId}`
+    // so the booking is self-contained for the calendar event's location
+    // (buildLocation renders "Farm (district, province)"). Best-effort: a
+    // missing farm doc or read failure simply omits the region fields (the
+    // calendar falls back to the farm name only). Mirrors the package-booking
+    // path's farm-location enrichment.
+    if (farmId.isNotEmpty) {
+      try {
+        final farmSnap =
+            await _firestore.collection('farms').doc(farmId).get();
+        if (farmSnap.exists) {
+          final farmData = farmSnap.data() ?? const <String, dynamic>{};
+          final district = (farmData['district'] as String?)?.trim();
+          final province = (farmData['province'] as String?)?.trim();
+          if (district != null && district.isNotEmpty) {
+            bookingData['district'] = district;
+          }
+          if (province != null && province.isNotEmpty) {
+            bookingData['province'] = province;
+          }
+          // If the caller did not supply a farmName, backfill it from the
+          // farm doc so the calendar title carries the "@ Farm" suffix.
+          if ((farmName == null || farmName.isEmpty)) {
+            final resolvedName = (farmData['name'] as String?)?.trim();
+            if (resolvedName != null && resolvedName.isNotEmpty) {
+              bookingData['farmName'] = resolvedName;
+              bookingData['packageName'] = 'Custom Package - $resolvedName';
+            }
+          }
+        }
+      } catch (_) {
+        // A farm read failure must never block the booking.
+      }
+    }
+
     final docRef = await _firestore.collection('bookings').add(bookingData);
     return docRef.id;
   }

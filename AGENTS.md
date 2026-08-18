@@ -7186,3 +7186,105 @@ modes. Two real defects found + fixed; service + tests otherwise verified
   (banner end-date fix + `id` injection),
   `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
   (`id` injection), `AGENTS.md`.
+
+## Package date picker serialization & booking calendar mapping audit (added 2026-08-18)
+
+Audited the package-creation date picker → Firestore serialization → booking
+creation → calendar fallback pipeline across Hunter + Outfitter modes.
+
+### Task 1 — Package creation date serialization (VERIFIED CORRECT, no fix)
+- `outfitter_package_creator_screen.dart` date picker writes
+  `_availabilityStart` / `_availabilityEnd` as `DateTime?` (lines 82-83,
+  389-395). `_publishPackage` builds
+  `PackagePricing(availabilityStart: _availabilityStart,
+  availabilityEnd: _availabilityEnd)`.
+- `PackagePricing.toMap()` serializes them as
+  `Timestamp.fromDate(availabilityStart!)` / `Timestamp.fromDate(
+  availabilityEnd!)` (package_pricing.dart lines 215-219) — Firestore
+  `Timestamp`, never dropped/nulled.
+- `publishPackage` spreads `...pricing.toMap()` into the package doc
+  (package_booking_manager.dart line 97); `updatePackage` does
+  `update..addAll(pricing.toMap())` (line 170). Edit-mode prefill
+  round-trips `Timestamp`→`DateTime` (creator lines 159-162). ✓
+- `bookPackage` copies the package's `availabilityStart`/`availabilityEnd`
+  onto the booking under BOTH `startDate`/`endDate` AND
+  `availabilityStart`/`availabilityEnd` aliases (verbatim Timestamps,
+  preserving server-accurate precision). ✓
+
+### Task 2 — Booking calendar fallback (VERIFIED + 1 fix)
+- **Package fallback** (`BookingCalendarService.buildEventWithPackageFallback`):
+  verified correct (44 calendar tests) — booking dates win (no package
+  read); on null, fetches `packages/{packageId}` handling
+  `packageId`/`package_id`/`packageID` aliases + the `CUSTOM_BUILT` sentinel
+  (no 404), merges `{...pkgData, ...booking}` with booking precedence, and
+  catches Firestore errors → null (no crash).
+- **Outfitter card resolver consistency** (Task 2.3): verified —
+  `_buildHuntDatesBanner()` uses `resolveWindow(widget.data)` (line 873) and
+  the "ADD HUNT TO CALENDAR" action calls `addToCalendar(...)` →
+  `buildEventWithPackageFallback` → `resolveWindow` (the SAME resolver), so
+  the banner dates always match the calendar event dates. No mismatch.
+
+### Defect — Booking missing farm location → calendar event had no location (fixed)
+- **Root cause**: the `packages` Firestore doc carries only `farmId` (NOT
+  `farmName`/`district`/`province`) — `publishPackage` writes `farmId` only;
+  the marketplace resolves the farm name via a runtime `farms`-join at read
+  time and passes `farmName` to `_PackageCard` as a separate widget field.
+  `bookPackage` copied `farmId` from the package doc but NOT the farm
+  name/region → the booking doc had `farmId` but no `farmName`/`district`/
+  `province`. Result: `BookingCalendarEventBuilder.buildTitle` had no "@
+  Farm" suffix, `buildLocation` returned null, and `buildDescription`
+  omitted the Farm/region lines — the device calendar event had no
+  location. (Dates were fine; only the farm location was missing.)
+- **Fix** (`package_booking_manager.dart` `bookPackage`): inside the booking
+  transaction, resolve `farmName` + `district` + `province` from
+  `farms/{farmId}` via `transaction.get(...)` and copy them onto the booking
+  doc (best-effort — a missing/empty `farmId` or a missing farms doc simply
+  omits the fields; the calendar falls back to the package name only). This
+  makes the booking self-contained for the calendar exactly the way it's
+  already self-contained for dates. A farm read failure never blocks the
+  booking (try/catch → omit).
+- **Parallel fix** (`farm_game_price_list_manager.dart`
+  `submitCustomPackageBooking`): the custom-package booking path already
+  accepted + wrote `farmName`, but did NOT resolve `district`/`province`.
+  Added the same `farms/{farmId}` region resolution (best-effort) so the
+  custom-built booking also carries a located calendar event
+  (`buildLocation` → "Farm (district, province)"). Also backfills
+  `farmName` + `packageName` from the farm doc when the caller omits
+  `farmName` (defensive — the builder screen currently always passes it).
+  Both booking-creation paths now produce self-contained, located booking
+  docs.
+
+### Tests
+- `test/farm_game_price_list_stream_test.dart` +3 tests (all pass via
+  `FakeFirebaseFirestore`): (1) district + province resolved from
+  `farms/{farmId}` → `buildLocation` returns "Bosveld Ranch (Waterberg,
+  Limpopo)"; (2) `farmName` + `packageName` backfilled from the farm doc
+  when the caller omits `farmName`; (3) missing farm doc → region fields
+  omitted gracefully (no crash, `farmName` retained). The calendar
+  service's consumption of `farmName`/`district`/`province`
+  (`buildTitle`/`buildLocation`/`buildDescription`) is already covered by
+  the 44-test calendar suite.
+
+### Verification
+- `flutter analyze` (3 touched files: `package_booking_manager.dart`,
+  `farm_game_price_list_manager.dart`,
+  `farm_game_price_list_stream_test.dart`): only 2 pre-existing
+  `no_leading_underscores_for_local_identifiers` infos in unchanged helper
+  locals (lines 26/32, not in the edited code); the changed code is
+  analyzer-clean. `analysis_options.yaml` + `pubspec.lock` auto-touched by
+  `flutter pub get` were reverted before commit (documented baseline
+  pattern).
+- `flutter test test/farm_game_price_list_stream_test.dart
+  test/booking_calendar_service_test.dart`: 58/58 pass.
+- `flutter test` (full suite): **All 660 tests passed**, 0 failures (was
+  657; +3 = the new farm-region enrichment tests). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side booking-doc enrichment; the `farms` read is already
+  `isSignedIn()` per `firestore.rules`, and `bookPackage` runs server-side
+  in a transaction with the caller authenticated).
+- Files: `lib/features/hunter_mode/services/package_booking_manager.dart`
+  (`bookPackage` farm-location resolution),
+  `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (`submitCustomPackageBooking` farm-region resolution + farmName backfill),
+  `test/farm_game_price_list_stream_test.dart` (+3 tests +
+  `booking_calendar_service` import), `AGENTS.md`.
