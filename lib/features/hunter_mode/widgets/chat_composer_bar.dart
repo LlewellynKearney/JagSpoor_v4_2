@@ -91,52 +91,64 @@ class _ChatComposerBarState extends State<ChatComposerBar> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            // Stable key so the element identity persists across ancestor
-            // rebuilds (defense-in-depth on top of the isolated State).
-            key: const ValueKey('chatComposerBar'),
-            controller: _controller,
-            focusNode: _focusNode,
-            scrollPadding: const EdgeInsets.only(bottom: 80),
-            style: TextStyle(color: theme.textColor),
-            decoration: InputDecoration(
-              hintText: 'Type a message...',
-              hintStyle: TextStyle(color: theme.subtitleColor),
-              filled: true,
-              fillColor: theme.backgroundColor,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
-                borderSide: BorderSide.none,
+    // Wrap the input in a GestureDetector so an explicit tap requests focus
+    // through our retained FocusNode, satisfying the platform's input-manager
+    // view-target validation (some OEM keyboards/embedded text services reject
+    // an implicit focus derived purely from a hit-test on the editable region).
+    return GestureDetector(
+      onTap: () => _focusNode.requestFocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              // Stable key so the element identity persists across ancestor
+              // rebuilds (defense-in-depth on top of the isolated State).
+              key: const ValueKey('chatComposerBar'),
+              controller: _controller,
+              focusNode: _focusNode,
+              autofocus: false,
+              scrollPadding: const EdgeInsets.only(bottom: 80),
+              // Gracefully release focus on a tap outside the field without
+              // triggering abrupt layout jumps from the keyboard inset.
+              onTapOutside: (_) => _focusNode.unfocus(),
+              style: TextStyle(color: theme.textColor),
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                hintStyle: TextStyle(color: theme.subtitleColor),
+                filled: true,
+                fillColor: theme.backgroundColor,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: theme.accentColor,
-            shape: BoxShape.circle,
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.accentColor,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: _isSending
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.send_rounded, color: Colors.white),
+              onPressed: _isSending ? null : _sendMessage,
+            ),
           ),
-          child: IconButton(
-            icon: _isSending
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : const Icon(Icons.send_rounded, color: Colors.white),
-            onPressed: _isSending ? null : _sendMessage,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
