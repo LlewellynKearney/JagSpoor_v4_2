@@ -7099,3 +7099,90 @@ booking's farm can read enterprise bookings.
   the manager list-query limitation),
   `test/firestore_rules_seeding_test.dart` (+8 bookings rules tests),
   `AGENTS.md`.
+
+## "Add Hunt to Calendar" end-to-end audit (added 2026-08-18)
+
+Rigorous audit of the "Add Hunt to Calendar" flow across Hunter + Outfitter
+modes. Two real defects found + fixed; service + tests otherwise verified
+100% functional.
+
+### Task 1 — Data & fallback flow (verified + 2 fixes)
+- **Trace booking data**: both the Hunter `_HunterBookingCard` and the
+  Outfitter `_BookingCard` pass `widget.data` (the raw booking document map
+  from `doc.data() as Map<String, dynamic>`) into
+  `BookingCalendarService.instance.addToCalendar(data)`.
+  `BookingCalendarEventBuilder.resolveWindow(widget.data)` is the SAME
+  resolver both the on-card hunt-dates banner AND the calendar action (via
+  `buildEventWithPackageFallback`) use, so the calendar event's dates always
+  match the dates displayed on the card.
+- **Package fallback**: `buildEventWithPackageFallback(booking)` verified
+  correct: (1) resolves via `resolveWindow(booking)` -- no package read when
+  the booking carries dates; (2) on null, falls back to
+  `packages/{packageId}` (seeded via `FakeFirebaseFirestore` in the 44-test
+  suite), merges `{...pkgData, ...booking}` (booking fields win, so a
+  post-date-change `confirmedStartDate` overrides the package's advertised
+  availability), and re-resolves; (3) short-circuits the `CUSTOM_BUILT`
+  sentinel (no 404); (4) tolerates the `package_id` snake-case alias;
+  (5) catches Firestore errors -> null (no crash). Covers every requested
+  alias: `startDate`/`endDate`, `checkInDate`/`checkOutDate`,
+  `availabilityStart`/`availabilityEnd`, `confirmedStartDate`/
+  `confirmedEndDate`, `huntDate`.
+- **UI date banners**: both screens render the hunt-dates banner via
+  `resolveWindow(widget.data)` -> `SizedBox.shrink` when null (so a valid
+  booking never shows "No hunt dates on file" on the card; the calendar
+  action's package fallback still attempts resolution on tap).
+
+### Defect 1 — Hunter banner showed a spurious extra day (fixed)
+- `resolveWindow` normalizes `end` to the day *after* the final hunt day
+  (calendar-exclusive, so an all-day event spans the full final day). The
+  Outfitter banner already subtracted 1 day
+  (`huntEnd = window.end.subtract(Duration(days: 1))`), but the Hunter banner
+  rendered `window.end` directly -- so a single-day hunt (Jan 5) wrongly
+  displayed as "Jan 5 -> Jan 6". Fixed the Hunter banner to mirror the
+  outfitter's `huntEnd` subtraction. (File: `hunter_package_marketplace_screen.dart`.)
+
+### Defect 2 — Booking ID was missing from the calendar description (fixed)
+- The booking doc `id` lives on the `QueryDocumentSnapshot`, NOT inside the
+  `data()` map; both cards hold it separately as `widget.bookingId`.
+  `buildDescription` reads `booking['id'] ?? booking['bookingId']` -- which
+  was always null -> the "Booking ID:" line was silently omitted from the
+  calendar event description. Fixed both call sites to inject the id at the
+  call boundary: `addToCalendar({...widget.data, 'id': widget.bookingId})`
+  (minimal, no service API change; `buildDescription` already consumes
+  `booking['id']`). Now the device calendar event carries the Booking ID
+  for reference. (Files: `hunter_package_marketplace_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`.)
+
+### Task 2 — Device calendar integration (verified)
+- `BookingCalendarService.addToCalendar` builds the all-day `Event`
+  (`startDate`/`endDate` midnight-local, `allDay: true`, 12h iOS reminder)
+  and hands it to `Add2Calendar.addEvent2Cal(event)`. Returns `false` (not a
+  crash) when no event resolves or the platform rejects it -> the caller
+  surfaces the orange "No hunt dates on file" / red failure snackbar. Both
+  `_addToCalendar` handlers capture `ScaffoldMessenger.maybeOf(context)`
+  before the async gap, guard `mounted`, and try/catch -> graceful feedback
+  on every path. `flutter analyze` on the three touched files: **No issues
+  found.**
+
+### Verification
+- `flutter analyze` (local Flutter 3.47.0 stable) on the three touched
+  files (`booking_calendar_service.dart`,
+  `hunter_package_marketplace_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`): **No issues found!** (0
+  errors, 0 warnings, 0 infos introduced; project baseline unchanged).
+  `analysis_options.yaml` + `pubspec.lock` auto-touched by `flutter pub get`
+  were reverted before commit (per the documented baseline pattern).
+- `flutter test test/booking_calendar_service_test.dart`: 44/44 pass
+  (all date aliases, package fallback incl. CUSTOM_BUILT + snake-case
+  alias + merge precedence + Firestore-error resilience, buildDescription
+  Booking ID line, all-day Event shape).
+- `flutter test` (full suite): **All 657 tests passed**, zero failures. No
+  regressions (the `id`-injection at the call boundary doesn't change the
+  service contract; the banner end-date fix is a pure label correction).
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side UI label + call-site `id` injection; the `packages` read in
+  the fallback is already `isSignedIn()` per `firestore.rules`).
+- Files: `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (banner end-date fix + `id` injection),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (`id` injection), `AGENTS.md`.

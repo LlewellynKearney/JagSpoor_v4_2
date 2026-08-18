@@ -405,7 +405,10 @@ class _BookingCardState extends State<_BookingCard> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final launched = await BookingCalendarService.instance.addToCalendar(
-        widget.data,
+        // The doc `id` lives on the QueryDocumentSnapshot, not inside the
+        // data map -- inject it so the calendar event description can
+        // reference the Booking ID (buildDescription reads booking['id']).
+        {...widget.data, 'id': widget.bookingId},
       );
       if (!mounted) return;
       final snackBar = SnackBar(

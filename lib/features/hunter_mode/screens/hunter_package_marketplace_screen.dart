@@ -1422,7 +1422,10 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final launched = await BookingCalendarService.instance.addToCalendar(
-        widget.data,
+        // The doc `id` lives on the QueryDocumentSnapshot, not inside the
+        // data map -- inject it so the calendar event description can
+        // reference the Booking ID (buildDescription reads booking['id']).
+        {...widget.data, 'id': widget.bookingId},
       );
       if (!mounted) return;
       final snackBar = SnackBar(
@@ -1599,10 +1602,16 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                   BookingCalendarEventBuilder.resolveWindow(widget.data);
               if (window == null) return const SizedBox.shrink();
               final fmt = DateFormat('d MMM yyyy');
-              final sameDay = window.start == window.end;
+              // resolveWindow normalizes `end` to the day AFTER the hunt's
+              // final day (so an all-day calendar event spans the full final
+              // day). For the on-card label we show the actual final hunt day
+              // (end - 1 day) so a single-day hunt reads as one date, not a
+              // spurious two-day range -- mirrors the outfitter banner.
+              final huntEnd = window.end.subtract(const Duration(days: 1));
+              final sameDay = window.start == huntEnd;
               final dateLabel = sameDay
                   ? fmt.format(window.start)
-                  : '${fmt.format(window.start)}  →  ${fmt.format(window.end)}';
+                  : '${fmt.format(window.start)}  →  ${fmt.format(huntEnd)}';
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Container(
