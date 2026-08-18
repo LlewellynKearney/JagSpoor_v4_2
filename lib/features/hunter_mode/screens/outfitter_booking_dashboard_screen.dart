@@ -10,7 +10,7 @@ import '../services/booking_calendar_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
-import '../widgets/chat_composer_bar.dart';
+import '../widgets/booking_chat_thread.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -245,21 +245,16 @@ class _BookingCard extends StatefulWidget {
 class _BookingCardState extends State<_BookingCard> {
   bool _isProcessing = false;
   bool _isCustomItemsExpanded = false;
-  bool _isChatExpanded = false;
-  // Owns ONLY the message-list scroll state. The composer's
-  // TextEditingController + FocusNode live in the isolated ChatComposerBar,
-  // so a stream re-emit / keyboard resize never touches the input state.
-  final ScrollController _chatScrollController = ScrollController();
+  // GlobalKey into the shared [BookingChatThread] so the card's external
+  // chat affordances (the unread-mail indicator + the "IN-APP CHAT" button)
+  // can drive the thread's expand/collapse state without the card owning any
+  // chat layout / scroll / composer state of its own.
+  final GlobalKey<BookingChatThreadState> _chatThreadKey =
+      GlobalKey<BookingChatThreadState>();
   // Local mirror of the persisted `addedToCalendar` flag so the button flips
   // to "✓ ADDED TO CALENDAR" immediately after a successful add (without
   // waiting for the booking stream to re-emit).
   bool _addedToCalendar = false;
-
-  @override
-  void dispose() {
-    _chatScrollController.dispose();
-    super.dispose();
-  }
 
   @override
   void didUpdateWidget(covariant _BookingCard oldWidget) {
@@ -273,18 +268,11 @@ class _BookingCardState extends State<_BookingCard> {
     }
   }
 
-  /// Invoked by [ChatComposerBar] after a message is sent — scrolls the
-  /// message list to the bottom so the new bubble is visible.
-  void _scrollChatToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_chatScrollController.hasClients) {
-        _chatScrollController.animateTo(
-          _chatScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  /// Toggles the shared [BookingChatThread] open/closed via its GlobalKey.
+  /// The thread owns its own message-list scroll controller + the isolated
+  /// [ChatComposerBar], so this card holds no chat-layout state of its own.
+  void _toggleChatDrawer() {
+    _chatThreadKey.currentState?.toggleExpanded();
   }
 
   Future<void> _updateStatus(String newStatus) async {
@@ -723,9 +711,7 @@ class _BookingCardState extends State<_BookingCard> {
   Widget _buildUnreadMailIndicator() {
     final hasUnread = (widget.data['outfitterHasUnread'] as bool?) ?? false;
     return InkWell(
-      onTap: () => setState(() {
-        _isChatExpanded = !_isChatExpanded;
-      }),
+      onTap: _toggleChatDrawer,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -955,20 +941,25 @@ class _BookingCardState extends State<_BookingCard> {
             child: _buildActionButtons(status),
           ),
 
-          // 💬 Chat & Negotiation Thread Panel
-          _buildChatDrawer(),
+          // 💬 Chat & Negotiation Thread Panel -- delegates to the shared
+          // [BookingChatThread] widget (the same component the hunter side +
+          // the Custom Package Builder use). The thread owns its own
+          // message-list scroll controller + the isolated [ChatComposerBar],
+          // so the card holds no chat-layout state of its own; the
+          // [_chatThreadKey] lets the external affordances (unread-mail
+          // indicator + "IN-APP CHAT" button) drive the expand/collapse.
+          BookingChatThread(
+            key: _chatThreadKey,
+            bookingId: widget.bookingId,
+            theme: widget.theme,
+            senderName:
+                FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+          ),
 
           const SizedBox(height: 16),
         ],
       ),
     );
-  }
-
-  /// Toggles the embedded chat drawer open/closed.
-  void _toggleChatDrawer() {
-    setState(() {
-      _isChatExpanded = !_isChatExpanded;
-    });
   }
 
   /// Builds the hunt-dates banner for the outfitter booking card.
@@ -1374,231 +1365,14 @@ class _BookingCardState extends State<_BookingCard> {
     );
   }
 
-  Widget _buildChatDrawer() {
-    // Mirrors the working hunter `_buildChatDrawer` layout EXACTLY: a fully
-    // static, non-animating container. The expanded content uses ONLY
-    // constant padding (no `MediaQuery.viewInsets.bottom` / no SafeArea
-    // inside the drawer), so the chat drawer's geometry never re-measures
-    // when the soft keyboard opens. The Scaffold-level
-    // `resizeToAvoidBottomInset: true` handles the keyboard (the ListView
-    // shrinks + scrolls the composer into view), and the ChatComposerBar's
-    // retained FocusNode + GestureDetector-tap focus request establish the
-    // InputConnection against a STABLE parent -- no conditional layout
-    // switch during focus acquisition (the root cause of "InputConnection
-    // invalidated" on the prior viewInsets-driven wrapper).
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: widget.theme.accentColor.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.theme.accentColor.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        children: [
-          // Expandable Header
-          InkWell(
-            onTap: _toggleChatDrawer,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: widget.theme.accentColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.chat_rounded,
-                      color: widget.theme.accentColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '💬 Open Chat & Negotiation Thread',
-                      style: TextStyle(
-                        color: widget.theme.textColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _isChatExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: widget.theme.accentColor,
-                    size: 28,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Expandable Chat Content -- constant padding only (identical to
-          // the hunter drawer). NO MediaQuery.viewInsets dependency so the
-          // composer's parent never rebuilds / re-measures during focus.
-          if (_isChatExpanded)
-            Container(
-              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-              child: Column(
-                children: [
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
-
-                  // Chat Messages Stream -- fixed-height bounded box so the
-                  // composer below it sits in a stable, non-unbounded slot.
-                  SizedBox(
-                    height: 200,
-                    child: StreamBuilder(
-                      stream: FirebaseFirestore.instance
-                          .collection('bookings')
-                          .doc(widget.bookingId)
-                          .collection('chats')
-                          .orderBy('timestamp', descending: false)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.green,
-                            ),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error loading chat',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          );
-                        }
-
-                        final messages = snapshot.data?.docs ?? [];
-                        if (messages.isEmpty) {
-                          return Center(
-                            child: Text(
-                              'No messages yet',
-                              style: TextStyle(
-                                color: widget.theme.subtitleColor,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          controller: _chatScrollController,
-                          itemCount: messages.length,
-                          itemBuilder: (context, index) {
-                            final msg = messages[index].data();
-                            final senderId = msg['senderId'] as String? ?? '';
-                            final isMe = senderId ==
-                                FirebaseAuth.instance.currentUser?.uid;
-
-                            return _ChatBubble(
-                              text: msg['text'] as String? ?? '',
-                              senderName:
-                                  msg['senderName'] as String? ?? 'Unknown',
-                              isMe: isMe,
-                              theme: widget.theme,
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Isolated composer: owns its own TextEditingController +
-                  // FocusNode, decoupled from this message-list stream so a
-                  // stream re-emit / keyboard resize never drops focus.
-                  ChatComposerBar(
-                    bookingId: widget.bookingId,
-                    theme: widget.theme,
-                    senderName: FirebaseAuth.instance.currentUser?.displayName ??
-                        'User',
-                    onMessageSent: _scrollChatToBottom,
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // The composer's send lifecycle (validation, ChatAndFilterService call,
-  // in-flight spinner, snackbar) is owned by the isolated ChatComposerBar,
-  // which invokes _scrollChatToBottom via its onMessageSent callback.
-}
-
-class _ChatBubble extends StatelessWidget {
-  final String text;
-  final String senderName;
-  final bool isMe;
-  final ThemeController theme;
-
-  const _ChatBubble({
-    required this.text,
-    required this.senderName,
-    required this.isMe,
-    required this.theme,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color:
-              isMe ? theme.accentColor.withValues(alpha: 0.2) : theme.cardColor,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isMe ? 16 : 4),
-            bottomRight: Radius.circular(isMe ? 4 : 16),
-          ),
-          border: Border.all(
-            color:
-                isMe
-                    ? theme.accentColor.withValues(alpha: 0.3)
-                    : theme.accentColor.withValues(alpha: 0.1),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (!isMe)
-              Text(
-                senderName,
-                style: TextStyle(
-                  color: theme.accentColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            const SizedBox(height: 2),
-            Text(text, style: TextStyle(color: theme.textColor, fontSize: 14)),
-          ],
-        ),
-      ),
-    );
-  }
+  // The chat drawer is now rendered by the shared [BookingChatThread] widget
+  // (instantiated directly in [build] with the [_chatThreadKey]). The thread
+  // owns its own message-list scroll controller + the isolated
+  // [ChatComposerBar] + the chat-bubble renderer, so this card holds no
+  // chat-layout / scroll / composer state of its own -- the prior inline
+  // `_buildChatDrawer` + `_ChatBubble` have been removed in favour of the
+  // single canonical component shared with the hunter side + the Custom
+  // Package Builder.
 }
 
 class _FinancialRow extends StatelessWidget {

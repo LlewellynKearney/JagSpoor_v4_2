@@ -45,10 +45,14 @@ class BookingChatThread extends StatefulWidget {
   });
 
   @override
-  State<BookingChatThread> createState() => _BookingChatThreadState();
+  State<BookingChatThread> createState() => BookingChatThreadState();
 }
 
-class _BookingChatThreadState extends State<BookingChatThread> {
+/// Public state for [BookingChatThread] so a parent can drive the
+/// expand/collapse state from external affordances (e.g. an "IN-APP CHAT"
+/// button or an unread-mail indicator on a booking card) via a
+/// [GlobalKey<BookingChatThreadState>].
+class BookingChatThreadState extends State<BookingChatThread> {
   bool _isExpanded = false;
   // Owns ONLY the message-list scroll state. The composer's
   // TextEditingController + FocusNode live in the isolated ChatComposerBar,
@@ -67,8 +71,18 @@ class _BookingChatThreadState extends State<BookingChatThread> {
     super.dispose();
   }
 
-  void _toggleExpanded() {
+  /// Toggles the chat thread open/closed. Call from the built-in header OR
+  /// from a parent via a [GlobalKey<BookingChatThreadState>].
+  void toggleExpanded() {
     setState(() => _isExpanded = !_isExpanded);
+  }
+
+  /// Whether the thread is currently expanded (for parent affordances that
+  /// want to reflect the state, e.g. an unread-mail indicator).
+  bool get isExpanded => _isExpanded;
+
+  void _toggleExpanded() {
+    toggleExpanded();
   }
 
   /// Invoked by [ChatComposerBar] after a message is sent — scrolls the
