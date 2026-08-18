@@ -1375,11 +1375,17 @@ class _BookingCardState extends State<_BookingCard> {
   }
 
   Widget _buildChatDrawer() {
-    // Mirrors the working hunter `_buildChatDrawer` layout. The composer is
-    // wrapped in SafeArea(bottom: true) + keyboard-inset padding so that when
-    // the soft keyboard opens (resizeToAvoidBottomInset: true on the
-    // Scaffold), the composer lifts with it instead of being pushed below the
-    // navigation bar / off the visible viewport (the keyboard kick-out).
+    // Mirrors the working hunter `_buildChatDrawer` layout EXACTLY: a fully
+    // static, non-animating container. The expanded content uses ONLY
+    // constant padding (no `MediaQuery.viewInsets.bottom` / no SafeArea
+    // inside the drawer), so the chat drawer's geometry never re-measures
+    // when the soft keyboard opens. The Scaffold-level
+    // `resizeToAvoidBottomInset: true` handles the keyboard (the ListView
+    // shrinks + scrolls the composer into view), and the ChatComposerBar's
+    // retained FocusNode + GestureDetector-tap focus request establish the
+    // InputConnection against a STABLE parent -- no conditional layout
+    // switch during focus acquisition (the root cause of "InputConnection
+    // invalidated" on the prior viewInsets-driven wrapper).
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -1434,106 +1440,94 @@ class _BookingCardState extends State<_BookingCard> {
             ),
           ),
 
-          // Expandable Chat Content. Wrapped in SafeArea(bottom: true) so the
-          // keyboard bottom insets don't collide with the navigation bar, and
-          // padded by the live keyboard inset so the composer lifts with the
-          // keyboard rather than being kicked out of view.
+          // Expandable Chat Content -- constant padding only (identical to
+          // the hunter drawer). NO MediaQuery.viewInsets dependency so the
+          // composer's parent never rebuilds / re-measures during focus.
           if (_isChatExpanded)
-            SafeArea(
-              top: false,
-              bottom: true,
-              child: Container(
-                padding: EdgeInsets.only(
-                  left: 16,
-                  right: 16,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                ),
-                child: Column(
-                  children: [
-                    const Divider(height: 1),
-                    const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
 
-                    // Chat Messages Stream -- fixed-height bounded box so the
-                    // composer below it is never pushed into an unbounded
-                    // column (the input view-target stays stable).
-                    SizedBox(
-                      height: 200,
-                      child: StreamBuilder(
-                        stream:
-                            FirebaseFirestore.instance
-                                .collection('bookings')
-                                .doc(widget.bookingId)
-                                .collection('chats')
-                                .orderBy('timestamp', descending: false)
-                                .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.green,
-                              ),
-                            );
-                          }
-
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Text(
-                                'Error loading chat',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            );
-                          }
-
-                          final messages = snapshot.data?.docs ?? [];
-                          if (messages.isEmpty) {
-                            return Center(
-                              child: Text(
-                                'No messages yet',
-                                style: TextStyle(
-                                  color: widget.theme.subtitleColor,
-                                ),
-                              ),
-                            );
-                          }
-
-                          return ListView.builder(
-                            controller: _chatScrollController,
-                            itemCount: messages.length,
-                            itemBuilder: (context, index) {
-                              final msg = messages[index].data();
-                              final senderId = msg['senderId'] as String? ?? '';
-                              final isMe =
-                                  senderId ==
-                                  FirebaseAuth.instance.currentUser?.uid;
-
-                              return _ChatBubble(
-                                text: msg['text'] as String? ?? '',
-                                senderName:
-                                    msg['senderName'] as String? ?? 'Unknown',
-                                isMe: isMe,
-                                theme: widget.theme,
-                              );
-                            },
+                  // Chat Messages Stream -- fixed-height bounded box so the
+                  // composer below it sits in a stable, non-unbounded slot.
+                  SizedBox(
+                    height: 200,
+                    child: StreamBuilder(
+                      stream: FirebaseFirestore.instance
+                          .collection('bookings')
+                          .doc(widget.bookingId)
+                          .collection('chats')
+                          .orderBy('timestamp', descending: false)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.green,
+                            ),
                           );
-                        },
-                      ),
-                    ),
+                        }
 
-                    const SizedBox(height: 12),
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Error loading chat',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
 
-                    // Isolated composer: owns its own TextEditingController +
-                    // FocusNode, decoupled from this message-list stream so a
-                    // stream re-emit / keyboard resize never drops focus.
-                    ChatComposerBar(
-                      bookingId: widget.bookingId,
-                      theme: widget.theme,
-                      senderName: FirebaseAuth.instance.currentUser?.displayName ??
-                          'User',
-                      onMessageSent: _scrollChatToBottom,
+                        final messages = snapshot.data?.docs ?? [];
+                        if (messages.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No messages yet',
+                              style: TextStyle(
+                                color: widget.theme.subtitleColor,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          controller: _chatScrollController,
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = messages[index].data();
+                            final senderId = msg['senderId'] as String? ?? '';
+                            final isMe = senderId ==
+                                FirebaseAuth.instance.currentUser?.uid;
+
+                            return _ChatBubble(
+                              text: msg['text'] as String? ?? '',
+                              senderName:
+                                  msg['senderName'] as String? ?? 'Unknown',
+                              isMe: isMe,
+                              theme: widget.theme,
+                            );
+                          },
+                        );
+                      },
                     ),
-                  ],
-                ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Isolated composer: owns its own TextEditingController +
+                  // FocusNode, decoupled from this message-list stream so a
+                  // stream re-emit / keyboard resize never drops focus.
+                  ChatComposerBar(
+                    bookingId: widget.bookingId,
+                    theme: widget.theme,
+                    senderName: FirebaseAuth.instance.currentUser?.displayName ??
+                        'User',
+                    onMessageSent: _scrollChatToBottom,
+                  ),
+                ],
               ),
             ),
         ],
