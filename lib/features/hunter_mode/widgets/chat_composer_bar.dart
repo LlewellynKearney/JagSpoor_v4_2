@@ -91,64 +91,73 @@ class _ChatComposerBarState extends State<ChatComposerBar> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    // Wrap the input in a GestureDetector so an explicit tap requests focus
-    // through our retained FocusNode, satisfying the platform's input-manager
-    // view-target validation (some OEM keyboards/embedded text services reject
-    // an implicit focus derived purely from a hit-test on the editable region).
-    return GestureDetector(
-      onTap: () => _focusNode.requestFocus(),
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              // Stable key so the element identity persists across ancestor
-              // rebuilds (defense-in-depth on top of the isolated State).
-              key: const ValueKey('chatComposerBar'),
-              controller: _controller,
-              focusNode: _focusNode,
-              autofocus: false,
-              scrollPadding: const EdgeInsets.only(bottom: 80),
-              // Gracefully release focus on a tap outside the field without
-              // triggering abrupt layout jumps from the keyboard inset.
-              onTapOutside: (_) => _focusNode.unfocus(),
-              style: TextStyle(color: theme.textColor),
-              decoration: InputDecoration(
-                hintText: 'Type a message...',
-                hintStyle: TextStyle(color: theme.subtitleColor),
-                filled: true,
-                fillColor: theme.backgroundColor,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
+    // NOTE: the composer is intentionally NOT wrapped in a GestureDetector.
+    // A parent GestureDetector (with HitTestBehavior.opaque) competes with the
+    // TextField's own TapGestureRecognizer in the gesture arena. Because
+    // recognizers register inside-out and the LAST-registered (parent)
+    // recognizer wins a default arena, the wrapper would steal the tap from
+    // the editable region -- the focus IS requested (briefly) but the
+    // EditableText's internal tap handler never fires, so the platform
+    // InputMethodManager never binds to the EditText view ("ssi() view is not
+    // EditText") and the keyboard immediately dismisses. Instead, the
+    // TextField's own `onTap` (invoked as part of EditableText's internal
+    // tap handling, not as a competing gesture recognizer) requests focus,
+    // and `onTapOutside` releases it -- no arena contention.
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            // Stable key so the element identity persists across ancestor
+            // rebuilds (defense-in-depth on top of the isolated State).
+            key: const ValueKey('chatComposerBar'),
+            controller: _controller,
+            focusNode: _focusNode,
+            autofocus: false,
+            scrollPadding: const EdgeInsets.only(bottom: 80),
+            // Explicit focus request on tap -- invoked as part of
+            // EditableText's own tap handling (not a competing gesture
+            // recognizer), so the IMM binds to the EditText correctly and the
+            // keyboard stays open while typing.
+            onTap: () => _focusNode.requestFocus(),
+            // Gracefully release focus on a tap outside the field without
+            // triggering abrupt layout jumps from the keyboard inset.
+            onTapOutside: (_) => _focusNode.unfocus(),
+            style: TextStyle(color: theme.textColor),
+            decoration: InputDecoration(
+              hintText: 'Type a message...',
+              hintStyle: TextStyle(color: theme.subtitleColor),
+              filled: true,
+              fillColor: theme.backgroundColor,
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: BorderSide.none,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: theme.accentColor,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: _isSending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Icon(Icons.send_rounded, color: Colors.white),
-              onPressed: _isSending ? null : _sendMessage,
-            ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: theme.accentColor,
+            shape: BoxShape.circle,
           ),
-        ],
-      ),
+          child: IconButton(
+            icon: _isSending
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded, color: Colors.white),
+            onPressed: _isSending ? null : _sendMessage,
+          ),
+        ),
+      ],
     );
   }
 }

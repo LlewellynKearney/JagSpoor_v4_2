@@ -7901,3 +7901,101 @@ method — they keep ONLY the message-list `ScrollController` and a
   `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
   (refactored + import drop),
   `test/chat_composer_bar_test.dart` (NEW, 3 tests), `AGENTS.md`.
+
+
+## ChatComposerBar keyboard-focus / IMM binding fix (added 2026-08-18)
+
+Fixed the "ssi() view is not EditText" / immediate-keyboard-hide defect on
+the outfitter booking dashboard chat (and every other `BookingChatThread` /
+`ChatComposerBar` consumer -- the hunter marketplace card + the Custom
+Package Builder confirmation view).
+
+### Root cause
+- `ChatComposerBar.build` wrapped its entire `Row` (including the
+  `TextField`) in a `GestureDetector` with `onTap:
+  _focusNode.requestFocus()` + `behavior: HitTestBehavior.opaque`. The
+  intent was to explicitly request focus on tap to satisfy the platform
+  input-manager view-target validation.
+- The defect: in Flutter's gesture arena, a `TextField` (via
+  `EditableText`) registers its own `TapGestureRecognizer`, and a parent
+  `GestureDetector` registers another. Recognizers register inside-out
+  (children first), and in a DEFAULT arena the LAST-registered (parent)
+  recognizer wins. So the wrapper's tap recognizer won the arena and the
+  `EditableText`'s internal tap handler never fired.
+- Net effect: `_focusNode.requestFocus()` WAS called (focus briefly gained),
+  but the `EditableText` never ran its internal tap logic, so the platform
+  InputMethodManager (IMM) never bound to the EditText view. On Android the
+  IMM logs "ssi() view is not EditText" and immediately hides the keyboard;
+  on iOS the field fails to become first responder. The user could not type.
+
+### Fix (`lib/features/hunter_mode/widgets/chat_composer_bar.dart`)
+- Removed the wrapping `GestureDetector` (and its `HitTestBehavior.opaque`).
+  The composer's `build` now returns the `Row` directly so the `TextField`
+  is exposed with no competing tap recognizer.
+- Moved the explicit focus request onto the `TextField`'s own `onTap`
+  callback (`onTap: () => _focusNode.requestFocus()`). `TextField.onTap` is
+  invoked as part of `EditableText`'s INTERNAL tap handling (not as a
+  separate gesture recognizer), so it does NOT compete in the arena -- the
+  `EditableText` runs its full tap logic (cursor placement + IMM binding)
+  AND the explicit `requestFocus()` fires, so the keyboard binds correctly
+  and stays open while typing.
+- `onTapOutside: (_) => _focusNode.unfocus()` retained (graceful focus
+  release on a tap outside the field).
+- The stable `ValueKey('chatComposerBar')` + retained `FocusNode` +
+  `TextEditingController` (created once in the isolated State, disposed in
+  `dispose`) are unchanged -- the composer-state-isolation contract from
+  the prior phase is preserved.
+
+### Outfitter dashboard integration (verified, no change needed)
+- `_BookingCard` delegates the chat UI to the shared `BookingChatThread`
+  widget via a `GlobalKey<BookingChatThreadState>` (`_chatThreadKey`); the
+  external affordances (the unread-mail indicator + the "CHAT" action
+  button) call `_chatThreadKey.currentState?.toggleExpanded()`. The thread
+  owns its own `_isExpanded` + `_chatScrollController`; the `ChatComposerBar`
+  is rendered as a child of the thread's expanded `Column`. This wiring is
+  structurally identical to the hunter side (which uses an inline
+  `_buildChatDrawer` + `_isChatExpanded`) and to the Custom Package Builder
+  confirmation view -- all three consume the SAME `ChatComposerBar`, so the
+  fix applies uniformly.
+- The outfitter card's gesture detectors (`InkWell` on the custom-items
+  expandable header + the unread-mail indicator) and the outer
+  `ListView.builder` do NOT sit between the `ChatComposerBar`'s `TextField`
+  and its focus target, so they cannot steal pointer events or focus. The
+  `ListView` uses the default `HitTestBehavior` (translucent) and does not
+  register a `TapGestureRecognizer`, so taps on the composer pass through
+  to the `TextField` unimpeded.
+- `Scaffold.resizeToAvoidBottomInset: true` is already declared on the
+  outfitter dashboard `Scaffold` (line 78) so the body resizes for the
+  keyboard and the composer lifts smoothly instead of unmounting.
+
+### Tests (`test/chat_composer_bar_test.dart`, +2 tests, all pass)
+- **"the composer is NOT wrapped in a GestureDetector that would steal the
+  tap from the TextField"** -- the regression guard for the root cause:
+  uses `find.ancestor(of: TextField, matching: GestureDetector)` to assert
+  NO `GestureDetector` sits between the `TextField` and the composer's root
+  `Row`. If a future change re-introduces an opaque wrapper, this test
+  fails with the exact rationale.
+- **"tapping the TextField requests focus on the retained FocusNode"** --
+  taps the `TextField` and asserts `focusNode.hasFocus` becomes true,
+  proving the `TextField`'s own `onTap` requests focus without arena
+  contention (the keyboard binds + stays open).
+- The existing 3 tests (input + send button present; controller persists
+  across a parent rebuild; send icon when idle) still pass.
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings**, 278 infos
+  (all pre-existing `avoid_print` / `deprecated_member_use` / style hints
+  in unrelated files; the changed files are analyzer-clean -- "No issues
+  found").
+- `flutter test` (full suite): **All 652 tests passed**, zero failures
+  (was 650; +2 = the new composer-focus tests). No regressions.
+- Environment note: installed Flutter 3.29.1 stable (CI pin) + `unzip` +
+  `libsqlite3-dev` (the SDK + system deps had been removed since the prior
+  session).
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side widget fix + tests).
+- Files: `lib/features/hunter_mode/widgets/chat_composer_bar.dart`
+  (removed wrapping `GestureDetector` + moved focus request to
+  `TextField.onTap`), `test/chat_composer_bar_test.dart` (+2 tests),
+  `AGENTS.md`.
+

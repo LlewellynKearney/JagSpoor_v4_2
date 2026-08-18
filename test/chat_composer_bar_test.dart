@@ -110,6 +110,70 @@ void main() {
     expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
+
+  testWidgets(
+      'the composer is NOT wrapped in a GestureDetector that would steal '
+      'the tap from the TextField (the keyboard-focus / IMM contract)',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ChatComposerBar(
+          bookingId: 'b1',
+          theme: theme,
+          senderName: 'Hunter',
+        ),
+      ),
+    ));
+
+    // A parent GestureDetector with HitTestBehavior.opaque competes with the
+    // TextField's own TapGestureRecognizer in the gesture arena and wins
+    // (last-registered recognizer wins a default arena), stealing the tap so
+    // the EditableText's internal handler never fires -> the IMM never binds
+    // to the EditText -> "ssi() view is not EditText" + immediate keyboard
+    // hide. The composer must expose the TextField directly (no opaque
+    // wrapper) so the TextField's own tap handling requests focus.
+    final textField = find.byType(TextField);
+    expect(textField, findsOneWidget);
+    // No GestureDetector may sit between the TextField and the composer's
+    // root Row (an opaque wrapper there is what steals the tap).
+    final gestureAncestor = find.ancestor(
+      of: textField,
+      matching: find.byType(GestureDetector),
+    );
+    expect(gestureAncestor, findsNothing,
+        reason:
+            'A parent GestureDetector would steal the tap from the TextField '
+            'and break the IMM keyboard binding; the TextField must handle '
+            'its own tap (onTap -> requestFocus) without arena contention.');
+  });
+
+  testWidgets(
+      'tapping the TextField requests focus on the retained FocusNode '
+      '(keyboard stays open for typing)',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ChatComposerBar(
+          bookingId: 'b1',
+          theme: theme,
+          senderName: 'Hunter',
+        ),
+      ),
+    ));
+
+    final textField = tester.widget<TextField>(find.byType(TextField));
+    final focusNode = textField.focusNode!;
+    expect(focusNode.hasFocus, isFalse);
+
+    // Tap the field -- the TextField's own onTap requests focus (no competing
+    // GestureDetector steals the pointer).
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue,
+        reason: 'Tapping the TextField must request focus so the keyboard '
+            'binds to the EditText and stays open while typing.');
+  });
 }
 
 /// A parent widget that rebuilds on demand so the tests can assert the
