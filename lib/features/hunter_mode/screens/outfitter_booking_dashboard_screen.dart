@@ -429,6 +429,29 @@ class _BookingCardState extends State<_BookingCard> {
         },
         'id': widget.bookingId,
       };
+      // VALIDATION GATE: resolve the window from the FINAL payload (not just
+      // widget.data) so the check reflects exactly what the calendar service
+      // will resolve. If the window resolves successfully, NEVER show the
+      // "No hunt dates on file" warning -- force straight through to the
+      // platform calendar. A subsequent `launched == false` can then only
+      // mean the device calendar rejected the event (no calendar app,
+      // permission denied, user cancel), which is reported accurately below
+      // -- never as a false-positive "no dates" warning.
+      final resolvedWindow =
+          BookingCalendarEventBuilder.resolveWindow(payload);
+      if (resolvedWindow == null) {
+        if (!mounted) return;
+        if (messenger != null) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'No hunt dates on file for this booking -- cannot add to calendar.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
       final launched =
           await BookingCalendarService.instance.addToCalendar(payload);
       if (!mounted) return;
@@ -436,7 +459,11 @@ class _BookingCardState extends State<_BookingCard> {
         content: Text(
           launched
               ? 'Opening your calendar to save this hunt...'
-              : 'No hunt dates on file for this booking -- cannot add to calendar.',
+              // The window WAS resolved, so a `false` here means the device
+              // calendar rejected the event (no calendar app, permission
+              // denied, user cancel) -- NOT a missing-dates problem.
+              : 'Could not open your device calendar. Check that a calendar '
+                  'app is installed and permissions are granted.',
         ),
         backgroundColor: launched ? Colors.green : Colors.orange,
       );
