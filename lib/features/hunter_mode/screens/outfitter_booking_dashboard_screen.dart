@@ -75,6 +75,7 @@ class _OutfitterBookingDashboardScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: widget.theme.backgroundColor,
       appBar: AppBar(
         title: Text(
@@ -247,6 +248,33 @@ class _BookingCardState extends State<_BookingCard> {
   bool _isChatExpanded = false;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  // Retained FocusNode so the composer keeps keyboard focus across the
+  // Scaffold's keyboard-inset rebuilds (prevents the keyboard "kick-out").
+  final FocusNode _chatFocusNode = FocusNode();
+  // Local mirror of the persisted `addedToCalendar` flag so the button flips
+  // to "✓ ADDED TO CALENDAR" immediately after a successful add (without
+  // waiting for the booking stream to re-emit).
+  bool _addedToCalendar = false;
+
+  @override
+  void dispose() {
+    _chatController.dispose();
+    _chatScrollController.dispose();
+    _chatFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BookingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the local flag in sync with the persisted booking doc field so a
+    // stream re-emit doesn't reset a freshly-added state, and a doc that
+    // already carries the flag renders added on first mount.
+    final persisted = widget.data['addedToCalendar'] == true;
+    if (persisted != _addedToCalendar) {
+      _addedToCalendar = persisted;
+    }
+  }
 
   Future<void> _updateStatus(String newStatus) async {
     setState(() {
@@ -455,6 +483,23 @@ class _BookingCardState extends State<_BookingCard> {
       final launched =
           await BookingCalendarService.instance.addToCalendar(payload);
       if (!mounted) return;
+      if (launched) {
+        // Persist the added-flag to the booking doc so it survives app
+        // restarts + is visible to the other party, then flip the local
+        // state so the button immediately disables + re-styles without
+        // waiting for the booking stream to re-emit. Best-effort: a
+        // Firestore write failure is swallowed (the local flag still flips
+        // so the UX is correct for this session).
+        setState(() => _addedToCalendar = true);
+        try {
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(widget.bookingId)
+              .update({'addedToCalendar': true});
+        } catch (e) {
+          debugPrint('[BookingCalendar] Failed to persist addedToCalendar: $e');
+        }
+      }
       final snackBar = SnackBar(
         content: Text(
           launched
@@ -684,6 +729,13 @@ class _BookingCardState extends State<_BookingCard> {
 
   @override
   Widget build(BuildContext context) {
+    // Seed the local added-flag from the persisted doc field on the first
+    // build (covers first mount; subsequent stream updates are handled in
+    // didUpdateWidget). Uses the local _addedToCalendar as a write-once guard
+    // so a successful add is never cleared by a stale stream re-emit.
+    if (!_addedToCalendar && widget.data['addedToCalendar'] == true) {
+      _addedToCalendar = true;
+    }
     final totalPrice = (widget.data['totalHunterPriceRands'] ?? 0).toDouble();
     final status = widget.data['status'] ?? BookingStatus.pendingApproval;
     final packageId = widget.data['packageId'] ?? 'Unknown';
@@ -1093,6 +1145,9 @@ class _BookingCardState extends State<_BookingCard> {
 
     // Archived / completed / declined / cancelled: (for finalized Confirmed /
     // Completed bookings) save the hunt to the native device calendar.
+    // After a successful add the persisted `addedToCalendar` flag flips the
+    // button to a muted "✓ ADDED TO CALENDAR" state + disables further taps
+    // to prevent redundant adds.
     final canAddToCalendar = status == BookingStatus.confirmed ||
         status == BookingStatus.completed;
     return Column(
@@ -1102,19 +1157,32 @@ class _BookingCardState extends State<_BookingCard> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _addToCalendar,
+              // Disable once added so the outfitter cannot re-trigger the
+              // calendar insertion for the same booking.
+              onPressed: _addedToCalendar ? null : _addToCalendar,
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
+                backgroundColor: _addedToCalendar
+                    ? Colors.grey
+                    : Colors.green.shade700,
+                disabledBackgroundColor: Colors.grey,
                 foregroundColor: Colors.white,
+                disabledForegroundColor: Colors.white70,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              icon: const Icon(Icons.event_available_rounded, size: 20),
-              label: const Text(
-                'ADD HUNT TO CALENDAR',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              icon: Icon(
+                _addedToCalendar
+                    ? Icons.check_circle_rounded
+                    : Icons.event_available_rounded,
+                size: 20,
+              ),
+              label: Text(
+                _addedToCalendar
+                    ? '✓ ADDED TO CALENDAR'
+                    : 'ADD HUNT TO CALENDAR',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -1435,7 +1503,13 @@ class _BookingCardState extends State<_BookingCard> {
                     children: [
                       Expanded(
                         child: TextField(
+                          // Stable key + retained FocusNode keep the composer
+                          // mounted + focused across the Scaffold's keyboard
+                          // inset rebuilds (prevents the keyboard "kick-out").
+                          key: const ValueKey('outfitterChatComposer'),
                           controller: _chatController,
+                          focusNode: _chatFocusNode,
+                          scrollPadding: const EdgeInsets.only(bottom: 80),
                           style: TextStyle(color: widget.theme.textColor),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',

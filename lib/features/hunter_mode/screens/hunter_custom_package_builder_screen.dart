@@ -325,10 +325,26 @@ class _HunterCustomPackageBuilderScreenState
   Future<void> _addToCalendar() async {
     final booking = _bookingDoc;
     if (booking == null) return;
+    final bookingId = _createdBookingId;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final launched = await BookingCalendarService.instance.addToCalendar(booking);
       if (!mounted) return;
+      if (launched && bookingId != null) {
+        // Persist the added-flag to the booking doc so it survives app
+        // restarts + is visible to the outfitter. The booking-doc stream
+        // subscription will re-emit + setState, flipping the button to the
+        // "✓ ADDED TO CALENDAR" state. Best-effort: a Firestore write
+        // failure is swallowed (the snackbar still reports success).
+        try {
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(bookingId)
+              .update({'addedToCalendar': true});
+        } catch (e) {
+          debugPrint('[BookingCalendar] Failed to persist addedToCalendar: $e');
+        }
+      }
       messenger.showSnackBar(
         SnackBar(
           content: Text(launched
@@ -358,6 +374,7 @@ class _HunterCustomPackageBuilderScreenState
   Widget build(BuildContext context) {
     final theme = widget.theme;
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
         title: Text(
@@ -737,6 +754,9 @@ class _HunterCustomPackageBuilderScreenState
     final status =
         (_bookingDoc?['status'] as String?) ?? BookingStatus.pendingApproval;
     final canAddToCalendar = _canAddToCalendar();
+    // The booking-doc stream re-emits after the persisted
+    // `addedToCalendar` flag is written, so this is reactive.
+    final addedToCalendar = _bookingDoc?['addedToCalendar'] == true;
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 12, 16, SafeBottomInset.of(context)),
       children: [
@@ -801,18 +821,31 @@ class _HunterCustomPackageBuilderScreenState
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _addToCalendar,
+              // Disable once added so the hunter cannot re-trigger the
+              // calendar insertion for the same booking.
+              onPressed: addedToCalendar ? null : _addToCalendar,
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
+                backgroundColor: addedToCalendar
+                    ? Colors.grey
+                    : Colors.green.shade700,
+                disabledBackgroundColor: Colors.grey,
                 foregroundColor: Colors.white,
+                disabledForegroundColor: Colors.white70,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
-              icon: const Icon(Icons.event_available_rounded, size: 20),
-              label: const Text(
-                'ADD HUNT TO CALENDAR',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              icon: Icon(
+                addedToCalendar
+                    ? Icons.check_circle_rounded
+                    : Icons.event_available_rounded,
+                size: 20,
+              ),
+              label: Text(
+                addedToCalendar
+                    ? '✓ ADDED TO CALENDAR'
+                    : 'ADD HUNT TO CALENDAR',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),

@@ -7715,3 +7715,102 @@ a key-spelling mismatch.
   `test/package_quantity_test.dart` (+4 dual-key tests),
   `test/farm_game_price_list_stream_test.dart` (+1 test + assertions),
   `AGENTS.md`.
+
+
+## Chat keyboard kick-out fix + "Add to Calendar" post-success button state (added 2026-08-18)
+
+Two-part UX fix: (1) the chat composer on the hunter + outfitter booking
+cards (and the reusable `BookingChatThread` in the Custom Package Builder
+confirmation view) dropped keyboard focus / collapsed when the software
+keyboard opened; (2) the "ADD HUNT TO CALENDAR" button gave no persistent
+success state after a successful add.
+
+### Task 1 — Chat keyboard kick-out fix
+- Root cause: the chat composer `TextField` had no retained `FocusNode` and
+  no stable `ValueKey`. When the Scaffold resized for the software keyboard
+  (`resizeToAvoidBottomInset` default true), the booking-card ListView
+  reflowed and the composer element could lose focus / unmount, collapsing
+  the open chat drawer ("kick-out").
+- Fix applied across the three chat surfaces:
+  - **`BookingChatThread`** (`lib/features/hunter_mode/widgets/booking_chat_thread.dart`):
+    added a retained `FocusNode _chatFocusNode` (disposed in `dispose`),
+    bound to the composer `TextField` with a stable
+    `key: ValueKey('bookingChatComposer')` + `scrollPadding:
+    EdgeInsets.only(bottom: 80)` so the keyboard never hides the field.
+  - **`_HunterBookingCard`** (marketplace
+    `hunter_package_marketplace_screen.dart`): added
+    `FocusNode _chatFocusNode` + `dispose` wiring; the inline
+    `_buildChatDrawer` composer `TextField` now carries
+    `key: ValueKey('hunterChatComposer')` + `focusNode: _chatFocusNode` +
+    `scrollPadding`.
+  - **`_BookingCard`** (outfitter `outfitter_booking_dashboard_screen.dart`):
+    same — `FocusNode _chatFocusNode` + dispose + `key:
+    ValueKey('outfitterChatComposer')` + `scrollPadding` on the inline chat
+    drawer composer. (The card State previously had NO `dispose`, so the
+    `TextEditingController` + `ScrollController` were leaking; the new
+    `dispose` fixes that leak too.)
+- The three top-level Scaffolds (marketplace, outfitter dashboard, custom
+  package builder) now declare `resizeToAvoidBottomInset: true` explicitly
+  (was implicit/default) to document the intent that the body resizes for
+  the keyboard so the composer lifts smoothly instead of unmounting.
+
+### Task 2 — "Add to Calendar" post-success button state
+- The booking doc now carries an `addedToCalendar: true` flag persisted on a
+  successful calendar add, and the button flips to a muted "✓ ADDED TO
+  CALENDAR" state (grey background, `check_circle_rounded` icon, disabled
+  `onPressed`) so the user sees a persistent success state and cannot
+  re-trigger the calendar insertion for the same booking.
+- **`_HunterBookingCard`** + **`_BookingCard`**:
+  - New local `bool _addedToCalendar` field, seeded from
+    `widget.data['addedToCalendar']` on the first `build` (write-once guard
+    so a stale stream re-emit never clears a freshly-added state) + kept in
+    sync via `didUpdateWidget` (so a doc that already carries the flag
+    renders added on mount, and a stream re-emit after the outfitter /
+    hunter persists the flag is reflected).
+  - `_addToCalendar` now, on `launched == true`, `setState(() =>
+    _addedToCalendar = true)` AND best-effort `Firestore.update(
+    {'addedToCalendar': true})` on `bookings/{bookingId}` (a Firestore
+    write failure is swallowed via `debugPrint`; the local flag still flips
+    so the UX is correct for the session).
+  - Button UI: `onPressed: _addedToCalendar ? null : _addToCalendar`;
+    `backgroundColor: _addedToCalendar ? Colors.grey : Colors.green.shade700`;
+    `disabledBackgroundColor: Colors.grey`; icon flips to
+    `check_circle_rounded`; label flips to "✓ ADDED TO CALENDAR".
+- **Custom Package Builder confirmation view** (`hunter_custom_package_builder_screen.dart`):
+  - `_addToCalendar` now persists `addedToCalendar: true` to the booking
+    doc on `launched == true`. The booking-doc stream subscription
+    (`_bookingSub`) re-emits + `setState`s, so the confirmation view
+    re-renders with the added state reactively (no local flag needed here —
+    the stream is the source of truth).
+  - The confirmation view derives `addedToCalendar = _bookingDoc?['addedToCalendar'] == true`
+    and applies the same button state flip (grey / check / disabled / "✓
+    ADDED TO CALENDAR").
+
+### Verification
+- `flutter analyze` (4 touched files: `booking_chat_thread.dart`,
+  `hunter_package_marketplace_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`,
+  `hunter_custom_package_builder_screen.dart`): **No issues found** (0
+  errors, 0 warnings, 0 infos introduced; project baseline unchanged). The
+  `analysis_options.yaml` auto-touched by the analyzer was reverted before
+  commit.
+- `flutter test` (full suite): **All 707 tests passed**, zero failures. No
+  regressions (the calendar-service suite still covers the event-build
+  contract; the new local-flag persistence is a UI-state concern exercised
+  by the existing builder widget tests + the calendar-service package-
+  fallback suite).
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side UI state + a best-effort `bookings` field write; the existing
+  `bookings` rule already permits the booking parties to update non-status
+  fields, and `addedToCalendar` is a non-status field so the
+  `request.resource.data.status == resource.data.status` guard admits it).
+- Files: `lib/features/hunter_mode/widgets/booking_chat_thread.dart`
+  (FocusNode + key + scrollPadding + dispose),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (Scaffold resize flag + FocusNode + key + scrollPadding + dispose +
+  `_addedToCalendar` + didUpdateWidget + persist + button state),
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (same set),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (Scaffold resize flag + persist + reactive added-state button),
+  `AGENTS.md`.

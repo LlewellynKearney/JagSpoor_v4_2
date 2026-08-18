@@ -44,6 +44,10 @@ class _BookingChatThreadState extends State<BookingChatThread> {
   bool _isExpanded = false;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  // Retained FocusNode so the composer keeps keyboard focus across rebuilds
+  // (the Scaffold resizes for the software keyboard, which can otherwise
+  // drop focus / collapse the chat). Disposed in dispose().
+  final FocusNode _chatFocusNode = FocusNode();
   bool _isSending = false;
 
   @override
@@ -56,6 +60,7 @@ class _BookingChatThreadState extends State<BookingChatThread> {
   void dispose() {
     _chatController.dispose();
     _chatScrollController.dispose();
+    _chatFocusNode.dispose();
     super.dispose();
   }
 
@@ -214,7 +219,13 @@ class _BookingChatThreadState extends State<BookingChatThread> {
                     children: [
                       Expanded(
                         child: TextField(
+                          // Stable key + retained FocusNode keep the composer
+                          // mounted + focused across the Scaffold's keyboard
+                          // inset rebuilds (prevents the keyboard "kick-out").
+                          key: const ValueKey('bookingChatComposer'),
                           controller: _chatController,
+                          focusNode: _chatFocusNode,
+                          scrollPadding: const EdgeInsets.only(bottom: 80),
                           style: TextStyle(color: theme.textColor),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
