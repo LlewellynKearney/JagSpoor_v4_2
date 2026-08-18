@@ -7626,3 +7626,92 @@ date field.
   `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
   (edit prefill hardened),
   `test/parse_firestore_date_test.dart` (NEW, 22 tests), `AGENTS.md`.
+
+## Universal dual-key date synchronization on bookings + packages (added 2026-08-18)
+
+Guarantees that the hunt-window date keys `availabilityStart`/
+`availabilityEnd` and `startDate`/`endDate` are always written + read
+interchangeably across every booking + package flow, so no downstream
+screen / widget / calendar resolver can ever miss the hunt window purely on
+a key-spelling mismatch.
+
+### Point 1 — `resolveWindow` dual-key contract (verified + documented)
+- `BookingCalendarEventBuilder.resolveWindow`
+  (`lib/features/hunter_mode/services/booking_calendar_service.dart`)
+  already scanned the exhaustive `startAliases` / `endAliases` lists
+  (which include `availabilityStart`, `startDate`, `checkInDate`,
+  `huntStart`, `huntDate` + their snake_case variants + the `end`
+  counterparts) in priority order, treating any matching key as the
+  start/end interchangeably. So a booking with `availabilityStart` uses it
+  as the start; a booking with `startDate` treats it identically. No
+  logic change was needed; a **dual-key guarantee docstring** was added to
+  `resolveWindow` making the interchangeability contract explicit (it
+  documents that bookings carry BOTH key sets — written by the Point-2
+  change below — and packages carry `availabilityStart`/`availabilityEnd`
+  from `PackagePricing.toMap`, so the resolver finds the window under
+  whichever alias is present).
+
+### Point 2 — `bookPackage` dual-key resolution + write
+  (`lib/features/hunter_mode/services/package_booking_manager.dart`)
+- The package's hunt window is now resolved with a **dual-key fallback**:
+  `availabilityStart = pkgData['availabilityStart'] ?? pkgData['startDate']`
+  (mirrored for `availabilityEnd`/`endDate`). Previously `bookPackage` read
+  ONLY `pkgData['availabilityStart']`/`pkgData['availabilityEnd']` — so a
+  package that stored its window under `startDate`/`endDate` (a legacy /
+  third-party alias) resolved to null and NO date keys were written to the
+  booking. Now a package with either key set produces a dated booking.
+- The booking doc now carries **BOTH key sets** explicitly:
+  `startDate`, `endDate`, `availabilityStart`, `availabilityEnd` (each
+  guarded `if (... != null)` so a no-date package writes none). The
+  resolved `availabilityStart`/`availabilityEnd` locals carry the
+  dual-key fallback, so when the package stored its window under
+  `startDate`/`endDate` only, the booking still ends up with both sets
+  populated from the single source value. A downstream consumer reading
+  either key always finds a value.
+
+### Point 3 — `submitCustomPackageBooking` dual-key parity
+  (`lib/features/hunter_mode/services/farm_game_price_list_manager.dart`)
+- The custom-package booking path previously wrote only `checkInDate`/
+  `checkOutDate`. It now ALSO mirrors them onto `startDate`/`endDate`
+  AND `availabilityStart`/`availabilityEnd`, matching the dual-key
+  guarantee `bookPackage` writes for marketplace bookings. So the custom-
+  built booking is self-contained for the calendar resolver (which scans
+  all alias families) and for any UI card reading either key.
+
+### Tests
+- `test/package_quantity_test.dart` +4 structural tests (in the
+  `bookPackage transaction logic` group) encoding the dual-key resolution
+  + write contract: package with `availabilityStart` populates both sets;
+  package with only `startDate`/`endDate` falls back + writes both sets;
+  `availabilityStart` wins over `startDate` when both present; a no-date
+  package writes no date keys (the calendar fallback then consults the
+  package doc).
+- `test/farm_game_price_list_stream_test.dart`: the existing
+  `submitCustomPackageBooking` test gained assertions that all four date
+  aliases (`startDate`/`endDate`/`availabilityStart`/`availabilityEnd`)
+  are populated; +1 new test verifying `BookingCalendarEventBuilder
+  .resolveWindow` resolves the hunt window from a custom-package booking's
+  dual-key payload (start + calendar-exclusive end).
+- The existing 53-test `booking_calendar_service_test` suite (incl. the
+  alias priority sweep + camelCase-wins-over-snake_case) still passes.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin) on the 5 touched files:
+  **0 errors, 0 warnings** (only 2 pre-existing `info`s in unchanged
+  helper locals `_service`/`_seedSpecies` at
+  `test/farm_game_price_list_stream_test.dart:26/32`, not in edited code).
+- `flutter test` (full suite): **All 707 tests passed**, 0 failures
+  (was 702; +5 new). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side booking-doc enrichment + resolver documentation + tests).
+- Commit `3d53aae` pushed to `origin/main` (`d3cd0f8..3d53aae`); local +
+  origin in sync, working tree clean.
+- Files: `lib/features/hunter_mode/services/booking_calendar_service.dart`
+  (`resolveWindow` dual-key docstring),
+  `lib/features/hunter_mode/services/package_booking_manager.dart`
+  (`bookPackage` dual-key resolution + both-set write),
+  `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (`submitCustomPackageBooking` dual-key mirror),
+  `test/package_quantity_test.dart` (+4 dual-key tests),
+  `test/farm_game_price_list_stream_test.dart` (+1 test + assertions),
+  `AGENTS.md`.
