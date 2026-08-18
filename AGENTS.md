@@ -8076,3 +8076,74 @@ marketplace -- name, tappable phone (tel: intent), and tappable email
   (contact card + state + url_launcher import),
   `test/outfitter_contact_resolver_test.dart` (NEW, 10 tests), `AGENTS.md`.
 
+
+## Reusable OutfitterContactCard + My Bookings contact card (added 2026-08-18)
+
+Extracted the Package Details contact card into a reusable widget and wired
+it into the hunter "My Bookings" card so a hunter can view the outfitter /
+farm manager contact details (name + role, tappable phone `tel:` intent,
+tappable email `mailto:` intent) for an active or confirmed booking.
+
+### New reusable widget: `OutfitterContactCard`
+(`lib/features/hunter_mode/widgets/outfitter_contact_card.dart`)
+- `StatefulWidget` that owns its own contact-resolution state (loading /
+  resolved / unavailable). Resolves the contact asynchronously via
+  `OutfitterContactResolver.instance.resolve(source)` from the
+  `outfitterId` (+ optional `farmId`) carried on the supplied document map.
+- `didUpdateWidget` re-resolves when the underlying document's
+  `outfitterId` / `farmId` changes (covers a `ListView` builder recycling
+  the card for a new booking), so the card never shows a stale contact.
+- Three render states: a compact loading spinner; a graceful "Contact
+  details are not available for this booking yet. Use the in-app chat to
+  reach the outfitter." fallback (older records / missing docs / offline /
+  `[core/no-app]`); and the resolved primary contact name + role label
+  ("Farm Manager" / "Outfitter") + tappable phone (`tel:`) and email
+  (`mailto:`) rows via `url_launcher.launchUrl`, each an `InkWell` with an
+  open-in-new icon + a failed-launch snackbar (messenger captured
+  pre-async-gap, `mounted` guarded).
+- Accepts an optional `heading` override so the Package Details sheet
+  ("CONTACT THE OUTFITTER") and the My Bookings card can share the widget
+  verbatim.
+
+### Package Details sheet (`_BookingConfirmationSheet`) refactored
+- The inline `_buildContactCard` + the 6 private contact helper methods +
+  `_launchUrl` + `_contact`/`_isContactLoading` state + `initState`/
+  `_resolveContact` were removed from `_BookingConfirmationSheetState`.
+  The sheet now renders `<OutfitterContactCard source: widget.data,
+  theme: widget.theme>` -- a single line replacing ~230 lines of
+  duplicated UI + state. The `outfitter_contact_resolver` +
+  `url_launcher` imports were dropped from the screen (the widget owns
+  them).
+
+### Hunter "My Bookings" card (`_HunterBookingCard`) -- new contact card
+- The card now renders `<OutfitterContactCard source: widget.data,
+  theme: widget.theme>` between the date-change banners and the chat
+  drawer -- the natural place for a hunter to find the outfitter / farm
+  manager contact details for an active or confirmed booking. Renders on
+  every booking (active, awaiting payment, confirmed, completed) so the
+  hunter can reach the outfitter at any stage of the lifecycle. The card's
+  async resolution + loading/fallback states mean a freshly-opened booking
+  list never blocks on the Firestore read.
+
+### Tests (`test/outfitter_contact_card_test.dart`, 4 widget tests, all pass)
+- Heading renders immediately while loading.
+- Resolves to the "not available" fallback when no contact data is
+  resolvable (production singleton path in the test env -> `[core/no-app]`
+  caught -> empty contact).
+- The fallback mentions the in-app chat.
+- Accepts a custom heading.
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (278 infos, all
+  pre-existing; the new files are analyzer-clean). `analysis_options.yaml`
+  auto-touched by the analyzer was reverted before commit.
+- `flutter test` (full suite): **All 666 tests passed**, zero failures
+  (was 662; +4 = the new contact card widget tests). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side widget extraction + UI wiring; the reads use the existing
+  `isSignedIn()` rules).
+- Files: `lib/features/hunter_mode/widgets/outfitter_contact_card.dart`
+  (NEW), `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (sheet refactored to use the widget + My Bookings card wired),
+  `test/outfitter_contact_card_test.dart` (NEW, 4 tests), `AGENTS.md`.
+
