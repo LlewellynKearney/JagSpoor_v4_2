@@ -7999,3 +7999,80 @@ Package Builder confirmation view).
   `TextField.onTap`), `test/chat_composer_bar_test.dart` (+2 tests),
   `AGENTS.md`.
 
+
+## Package Details -- outfitter / farm manager contact card (added 2026-08-18)
+
+Added a "CONTACT THE OUTFITTER" card to the Package Details bottom sheet
+(`_BookingConfirmationSheet` in `hunter_package_marketplace_screen.dart`) so a
+hunter can reach the outfitter / farm manager directly from the package
+marketplace -- name, tappable phone (tel: intent), and tappable email
+(mailto: intent) -- with graceful loading + fallback states.
+
+### New service: `OutfitterContactResolver`
+(`lib/features/hunter_mode/services/outfitter_contact_resolver.dart`)
+- `OutfitterContactResolver.instance` (singleton, lazy Firestore getter so
+  constructing it before `Firebase.initializeApp()` does not throw
+  `[core/no-app]`). `resolve(packageData)` fetches:
+  1. **Outfitter profile** from `outfitters/{outfitterId}` -- resolves
+     `displayName` (with `businessName` / `name` aliases), `email`, and
+     `phoneNumber` (with `phone` / `cellNumber` aliases).
+  2. **Farm manager** (when the package carries a `farmId`) from
+     `farm_managers` `.where('farmId').limit(1)` -- resolves `managerName`
+     (with `name` alias), `managerEmail` (with `email` alias), and
+     `managerCell` (with `cellNr` / `phone` aliases).
+- Both fetches are best-effort: a missing doc, a missing field, or a Firestore
+  error (offline / permissions / `[core/no-app]`) is caught and yields a
+  partially-populated `OutfitterContact` (empty strings) so the UI renders
+  graceful fallbacks instead of crashing.
+- `OutfitterContact` model: immutable snapshot with `has*` getters +
+  `primaryContactName` / `primaryPhone` / `primaryEmail` / `primaryContactRole`
+  (the farm manager takes precedence as the primary contact when one is
+  assigned; otherwise the outfitter is the primary).
+- `@visibleForTesting forTesting(FirebaseFirestore)` injection seam so the
+  resolver can be exercised against `FakeFirebaseFirestore` (mirrors the
+  `OpticLogService.forTesting` / `FeedbackFirebaseService` pattern).
+- Firestore rules: `outfitters` + `farm_managers` both allow
+  `read: if isSignedIn()` (verified), so a signed-in hunter can read them.
+  No rules / index change required (the `farm_managers` `.where('farmId')`
+  equality query uses the automatic single-field index).
+
+### Package Details card (`_BookingConfirmationSheet`)
+- New `_buildContactCard()` rendered between the Price Breakdown and the
+  warning banner. Three render states:
+  - **Loading** (`_isContactLoading`): a compact spinner + "Loading contact
+    details..." row.
+  - **No contacts** (`!hasAnyContact`): a graceful "Contact details are not
+    available for this package yet. Submit a booking request and use the
+    in-app chat to reach the outfitter." fallback (older records / missing
+    docs).
+  - **Contacts resolved**: the primary contact name + role label
+    ("Farm Manager" / "Outfitter"), a tappable phone row (`tel:` intent via
+    `url_launcher.launchUrl`), and a tappable email row (`mailto:` intent).
+    Each row is an `InkWell` with an open-in-new icon; a failed launch
+    surfaces an orange/red snackbar (messenger captured pre-async-gap).
+- `_resolveContact()` runs in `initState` (best-effort, try/catch -> empty
+  contact on error).
+
+### Tests (`test/outfitter_contact_resolver_test.dart`, 10 tests, all pass)
+- Resolves outfitter profile (canonical + alias field names).
+- Resolves a farm manager as the primary contact when assigned (manager
+  precedence); resolves via the `cellNr` alias.
+- Returns an empty contact when the outfitter doc / outfitterId is missing.
+- Does not throw when a farmId is present but no manager is assigned.
+- Falls back gracefully on a Firestore fetch error (`[core/no-app]`).
+- `OutfitterContact` getters: empty-contact contract; primary-contact
+  fallback to outfitter when manager has no name.
+
+### Verification
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (279 infos, all
+  pre-existing `avoid_print` / `deprecated_member_use` / style hints in
+  unrelated files; the new files are analyzer-clean).
+- `flutter test` (full suite): **All 662 tests passed**, zero failures
+  (was 652; +10 = the new contact resolver tests). No regressions.
+- No Firestore rules / index / Storage / manifest changes (pure client-side
+  service + UI; the reads use existing `isSignedIn()` rules).
+- Files: `lib/features/hunter_mode/services/outfitter_contact_resolver.dart`
+  (NEW), `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`
+  (contact card + state + url_launcher import),
+  `test/outfitter_contact_resolver_test.dart` (NEW, 10 tests), `AGENTS.md`.
+

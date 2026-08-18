@@ -8,10 +8,12 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 import '../services/booking_date_formatter.dart';
+import '../services/outfitter_contact_resolver.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/pricing_math.dart';
 import '../widgets/chat_composer_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -797,6 +799,37 @@ class _BookingConfirmationSheet extends StatefulWidget {
 
 class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   bool _isLoading = false;
+  // Contact details (outfitter / farm manager) resolved async from the
+  // package's outfitterId + farmId. Null while loading; an empty
+  // OutfitterContact when resolution completes with no contacts.
+  OutfitterContact? _contact;
+  bool _isContactLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveContact();
+  }
+
+  Future<void> _resolveContact() async {
+    try {
+      final contact =
+          await OutfitterContactResolver.instance.resolve(widget.data);
+      if (mounted) {
+        setState(() {
+          _contact = contact;
+          _isContactLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _contact = const OutfitterContact();
+          _isContactLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -911,6 +944,9 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // Contact the outfitter / farm manager card.
+            _buildContactCard(),
 
             // Warning
             Container(
@@ -1262,6 +1298,210 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
   String _formatZAR(double value) =>
       'R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+
+  /// Contact card: surfaces the outfitter / farm manager name, phone (tappable
+  /// tel: intent), and email (tappable mailto: intent) so a hunter can reach
+  /// out directly from the Package Details view. Renders a compact loading
+  /// state while the contact is resolved, and a graceful "not available"
+  /// fallback when no contact fields are present on the outfitter/manager
+  /// records (older records / missing docs).
+  Widget _buildContactCard() {
+    final theme = widget.theme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.contact_phone_rounded,
+                  color: theme.accentColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'CONTACT THE OUTFITTER',
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isContactLoading)
+            _contactLoadingRow(theme)
+          else if (_contact == null || !_contact!.hasAnyContact)
+            _contactUnavailableRow(theme)
+          else
+            _contactDetailsRows(theme, _contact!),
+        ],
+      ),
+    );
+  }
+
+  Widget _contactLoadingRow(ThemeController theme) {
+    return Row(
+      children: [
+        const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          'Loading contact details...',
+          style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  Widget _contactUnavailableRow(ThemeController theme) {
+    return Row(
+      children: [
+        Icon(Icons.info_outline, color: theme.subtitleColor, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Contact details are not available for this package yet. '
+            'Submit a booking request and use the in-app chat to reach the '
+            'outfitter.',
+            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _contactDetailsRows(ThemeController theme, OutfitterContact contact) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Primary contact name + role.
+        _contactNameRow(theme, contact),
+        if (contact.primaryPhone.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _contactActionRow(
+            theme: theme,
+            icon: Icons.phone_rounded,
+            label: contact.primaryPhone,
+            onTap: () => _launchUrl('tel:${contact.primaryPhone}'),
+          ),
+        ],
+        if (contact.primaryEmail.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _contactActionRow(
+            theme: theme,
+            icon: Icons.email_rounded,
+            label: contact.primaryEmail,
+            onTap: () => _launchUrl('mailto:${contact.primaryEmail}'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _contactNameRow(ThemeController theme, OutfitterContact contact) {
+    return Row(
+      children: [
+        Icon(Icons.person_rounded, color: theme.accentColor, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                contact.primaryContactName,
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                contact.primaryContactRole,
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A tappable contact row (phone / email) that launches the platform
+  /// tel: / mailto: intent via url_launcher.
+  Widget _contactActionRow({
+    required ThemeController theme,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            children: [
+              Icon(icon, color: theme.accentColor, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: theme.accentColor,
+                    fontSize: 13,
+                    decoration: TextDecoration.underline,
+                    decorationColor: theme.accentColor.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+              Icon(Icons.open_in_new_rounded,
+                  color: theme.subtitleColor, size: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String uri) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final parsed = Uri.parse(uri);
+      final launched = await launchUrl(parsed);
+      if (!launched && mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Could not open $uri.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Could not open link: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _confirmBooking() async {
     setState(() {
