@@ -164,38 +164,112 @@ class BookingCalendarEventBuilder {
     return null;
   }
 
-  /// Resolves the hunt start/end window from a booking document.
+  /// Exhaustive ordered list of date-field aliases the resolver accepts for
+  /// the hunt START. Priority is top-to-bottom: a post-date-change-approval
+  /// confirmed date wins, then the custom-package check-in, then the package
+  /// availability window, then generic start/hunt fields. Both the canonical
+  /// camelCase keys the app writes (`availabilityStart`, `startDate`,
+  /// `checkInDate`, `huntStart`, `huntDate`) AND snake_case variants
+  /// (`availability_start`, `start_date`, `check_in_date`, `hunt_start`)
+  /// are accepted so a legacy / third-party-written doc can never defeat
+  /// resolution purely on a key-spelling mismatch.
+  static const List<String> startAliases = [
+    'confirmedStartDate',
+    'confirmed_start_date',
+    'checkInDate',
+    'check_in_date',
+    'availabilityStart',
+    'availability_start',
+    'startDate',
+    'start_date',
+    'huntStart',
+    'hunt_start',
+    'huntDate',
+    'hunt_date',
+  ];
+
+  /// Exhaustive ordered list of date-field aliases for the hunt END. Same
+  /// rationale + priority mirroring [startAliases].
+  static const List<String> endAliases = [
+    'confirmedEndDate',
+    'confirmed_end_date',
+    'checkOutDate',
+    'check_out_date',
+    'availabilityEnd',
+    'availability_end',
+    'endDate',
+    'end_date',
+    'huntEnd',
+    'hunt_end',
+  ];
+
+  /// Resolves the hunt start/end window from a booking (or merged package)
+  /// document by scanning the exhaustive alias lists in priority order.
   ///
-  /// Priority (start): `confirmedStartDate` (post-date-change-approval) ->
-  /// `checkInDate` (custom package builder) -> `availabilityStart` ->
-  /// `startDate` -> `huntDate`.
-  /// Priority (end): `confirmedEndDate` -> `checkOutDate` ->
-  /// `availabilityEnd` -> `endDate` (falls back to start when absent so the
-  /// calendar event spans at least the hunt day).
+  /// Returns `null` only when NO start alias resolves to a usable date -- in
+  /// that case the caller surfaces a "no dates on file" message. The end
+  /// falls back to the start (single-day window) when no end alias resolves,
+  /// so a one-day hunt always yields a valid window.
   ///
   /// The returned `end` is normalized to the start of the day *after* the
   /// hunt's final day so the native calendar renders the full final day for
   /// an all-day event.
+  ///
+  /// Emits debug logs of the raw keys/values found so a "No hunt dates on
+  /// file" can be diagnosed instantly from the device logs.
   static ({DateTime start, DateTime end})? resolveWindow(
     Map<String, dynamic> booking,
   ) {
-    final start = resolveDate(booking['confirmedStartDate']) ??
-        resolveDate(booking['checkInDate']) ??
-        resolveDate(booking['availabilityStart']) ??
-        resolveDate(booking['startDate']) ??
-        resolveDate(booking['huntDate']);
-    if (start == null) return null;
-    final end = resolveDate(booking['confirmedEndDate']) ??
-        resolveDate(booking['checkOutDate']) ??
-        resolveDate(booking['availabilityEnd']) ??
-        resolveDate(booking['endDate']) ??
-        start;
+    DateTime? start;
+    String? startKey;
+    for (final alias in startAliases) {
+      final resolved = resolveDate(booking[alias]);
+      if (resolved != null) {
+        start = resolved;
+        startKey = alias;
+        break;
+      }
+    }
+    if (start == null) {
+      debugPrint('[BookingCalendar] resolveWindow: no start date resolved. '
+          'Scanned aliases (none matched): ${startAliases.join(", ")}. '
+          'Raw booking keys: ${booking.keys.toList()}. '
+          'Date-ish values: ${_dateishValues(booking)}.');
+      return null;
+    }
+    DateTime? end;
+    String? endKey;
+    for (final alias in endAliases) {
+      final resolved = resolveDate(booking[alias]);
+      if (resolved != null) {
+        end = resolved;
+        endKey = alias;
+        break;
+      }
+    }
+    end ??= start; // Single-day window when no end alias resolves.
     final normalizedEnd =
         end.isBefore(start) ? start : DateTime(end.year, end.month, end.day);
+    debugPrint('[BookingCalendar] resolveWindow: start=$start (key=$startKey), '
+        'end=$end (key=$endKey) -> window ${DateTime(start.year, start.month, start.day)} '
+        '.. ${normalizedEnd.add(const Duration(days: 1))}.');
     return (
       start: DateTime(start.year, start.month, start.day),
       end: normalizedEnd.add(const Duration(days: 1)),
     );
+  }
+
+  /// Returns a compact map of the booking's date-ish fields (non-null values
+  /// under any of the start/end aliases) for the no-start-resolved debug log
+  /// so a developer can see exactly what date data IS present when the
+  /// resolver fails.
+  static Map<String, dynamic> _dateishValues(Map<String, dynamic> booking) {
+    final result = <String, dynamic>{};
+    for (final alias in {...startAliases, ...endAliases}) {
+      final v = booking[alias];
+      if (v != null) result[alias] = v.toString();
+    }
+    return result;
   }
 
   /// Builds the [Event] title from the package name + farm name.

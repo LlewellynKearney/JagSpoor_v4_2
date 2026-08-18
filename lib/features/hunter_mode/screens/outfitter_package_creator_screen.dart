@@ -792,6 +792,36 @@ class _OutfitterPackageCreatorScreenState
       return;
     }
 
+    // Availability dates are REQUIRED: the booking calendar resolver
+    // (BookingCalendarEventBuilder.resolveWindow) reads the hunt window from
+    // the booking doc, which copies it from the package at booking time. A
+    // package published with no dates produces bookings with no dates ->
+    // "No hunt dates on file" on every booking card. Block publish/edit here
+    // so the root cause never reaches the booking flow.
+    if (_availabilityStart == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Please select an availability Start Date -- the hunt window is required for booking + calendar.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    // End date defaults to the start date (single-day hunt) rather than
+    // blocking -- a one-day package is valid.
+    final effectiveEnd = _availabilityEnd ?? _availabilityStart;
+    if (effectiveEnd!.isBefore(_availabilityStart!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Availability End Date cannot be before the Start Date.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -807,7 +837,11 @@ class _OutfitterPackageCreatorScreenState
         lineItems: _lineItems.values.toList(),
         speciesItems: List<SpeciesLineItem>.from(_speciesItems),
         availabilityStart: _availabilityStart,
-        availabilityEnd: _availabilityEnd,
+        // effectiveEnd defaults to _availabilityStart when the outfitter
+        // leaves End blank (single-day hunt) so the package doc always
+        // carries a non-null end -- the booking calendar resolver requires
+        // a start AND produces a valid end from it.
+        availabilityEnd: effectiveEnd,
       );
 
       final isEditing = _editingPackageId != null;

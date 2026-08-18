@@ -7288,3 +7288,83 @@ creation → calendar fallback pipeline across Hunter + Outfitter modes.
   (`submitCustomPackageBooking` farm-region resolution + farmName backfill),
   `test/farm_game_price_list_stream_test.dart` (+3 tests +
   `booking_calendar_service` import), `AGENTS.md`.
+
+## Definitive "No hunt dates on file" root-cause fix + exhaustive resolver aliases (added 2026-08-18)
+
+### Root cause (definitive)
+- The package creator's date picker (`outfitter_package_creator_screen.dart`)
+  was **OPTIONAL**: `_publishPackage` validated title/description/price/
+  quantity but NEVER validated that `_availabilityStart`/`_availabilityEnd`
+  were non-null. An outfitter could publish a package without picking any
+  dates → `PackagePricing.toMap()` wrote `availabilityStart: null` /
+  `availabilityEnd: null` → `bookPackage`'s `if (availabilityStart != null)`
+  guard skipped copying → the booking had ZERO date fields →
+  `resolveWindow` returned null → "No hunt dates on file". The package
+  fallback couldn't help because the package doc ITSELF had null dates.
+  **The keys all matched; the issue was missing dates, not key mismatch.**
+
+### Task 1 fix — require availability dates at publish/edit (definitive fix)
+- `outfitter_package_creator_screen.dart` `_publishPackage`: added a
+  hard validation gate requiring `_availabilityStart != null` (clear red
+  snackbar: "Please select an availability Start Date -- the hunt window is
+  required for booking + calendar."). `_availabilityEnd` defaults to the
+  start (single-day hunt is valid) rather than blocking; an end-before-start
+  is rejected. The downstream `PackagePricing(availabilityEnd: effectiveEnd)`
+  now always carries a non-null end. This stops "No hunt dates on file" at
+  the source — a newly published package ALWAYS carries a valid hunt window,
+  so every booking derived from it carries one too.
+
+### Task 2 fix — exhaustive resolver aliases + debug logging
+- `booking_calendar_service.dart` `resolveWindow` refactored from a chained
+  `??` cascade to a priority-ordered scan over two exhaustive alias lists:
+  - `startAliases` (12): `confirmedStartDate`, `confirmed_start_date`,
+    `checkInDate`, `check_in_date`, `availabilityStart`,
+    `availability_start`, `startDate`, `start_date`, `huntStart`,
+    `hunt_start`, `huntDate`, `hunt_date`.
+  - `endAliases` (10): `confirmedEndDate`, `confirmed_end_date`,
+    `checkOutDate`, `check_out_date`, `availabilityEnd`,
+    `availability_end`, `endDate`, `end_date`, `huntEnd`, `hunt_end`.
+  - Both the canonical camelCase keys the app writes AND snake_case
+    variants are accepted so a legacy / third-party-written doc can never
+    defeat resolution on a key-spelling mismatch. camelCase wins when both
+    are present (canonical priority).
+  - **Debug logging**: on success, logs the matched start/end keys + the
+    resolved window; on failure (no start resolved), logs the scanned
+    aliases, the raw booking keys, and the date-ish values found — so a
+    "No hunt dates on file" can be diagnosed instantly from device logs.
+  - `_dateishValues` helper surfaces exactly what date data IS present
+    when the resolver fails (no silent null).
+  - Behaviour preserved exactly for the canonical keys (existing 44 tests
+    pass unchanged): priority order, single-day fallback, end-before-start
+    clamp, Timestamp/ISO/DateTime/num parsing.
+
+### Tests
+- `test/booking_calendar_service_test.dart` +9 tests (all pass): snake_case
+  `availability_start`/`availability_end`, `start_date`/`end_date`,
+  `check_in_date`/`check_out_date`, `huntStart`/`huntEnd` (camelCase),
+  `hunt_start`/`hunt_end` (snake_case), `confirmed_start_date`/
+  `confirmed_end_date`; camelCase-wins-over-snake_case priority; the full
+  start-alias priority sweep; single-day window when only a start resolves.
+
+### Verification
+- `flutter analyze` (3 touched files): only the 2 pre-existing
+  `DropdownButtonFormField.value` deprecation infos in the creator (only
+  on Flutter ≥3.33, NOT the CI 3.29.1 pin; project uses `value:` for
+  cross-version compat); the changed code + the resolver + the test are
+  analyzer-clean ("No issues found"). `analysis_options.yaml` +
+  `pubspec.lock` auto-touched by `flutter pub get` were reverted before
+  commit.
+- `flutter test test/booking_calendar_service_test.dart`: 53/53 pass (was
+  44; +9 alias/priority tests). Debug logging verified live in test output.
+- `flutter test` (full suite): **All 669 tests passed**, 0 failures (was
+  660; +9). No regressions.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side validation gate + resolver refactor; the package doc's
+  `availabilityStart`/`availabilityEnd` Timestamp serialization in
+  `PackagePricing.toMap()` is unchanged).
+- Files: `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`
+  (required-dates validation gate + `effectiveEnd` default),
+  `lib/features/hunter_mode/services/booking_calendar_service.dart`
+  (`resolveWindow` exhaustive alias scan + debug logging +
+  `_dateishValues` + `startAliases`/`endAliases` const lists),
+  `test/booking_calendar_service_test.dart` (+9 tests), `AGENTS.md`.

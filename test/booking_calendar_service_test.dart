@@ -146,6 +146,96 @@ void main() {
       expect(window!.start, DateTime(2026, 9, 14));
       expect(window.end, DateTime(2026, 9, 17));
     });
+
+    // ── Exhaustive alias hardening (snake_case + huntStart/huntEnd) ──
+
+    test('resolves snake_case availability_start / availability_end', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'availability_start': '2026-09-14',
+        'availability_end': '2026-09-17',
+      });
+      expect(window!.start, DateTime(2026, 9, 14));
+      expect(window.end, DateTime(2026, 9, 18));
+    });
+
+    test('resolves snake_case start_date / end_date', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'start_date': '2026-10-01',
+        'end_date': '2026-10-03',
+      });
+      expect(window!.start, DateTime(2026, 10, 1));
+      expect(window.end, DateTime(2026, 10, 4));
+    });
+
+    test('resolves snake_case check_in_date / check_out_date', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'check_in_date': '2026-11-05',
+        'check_out_date': '2026-11-08',
+      });
+      expect(window!.start, DateTime(2026, 11, 5));
+      expect(window.end, DateTime(2026, 11, 9));
+    });
+
+    test('resolves huntStart / huntEnd (camelCase)', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'huntStart': '2026-12-10',
+        'huntEnd': '2026-12-12',
+      });
+      expect(window!.start, DateTime(2026, 12, 10));
+      expect(window.end, DateTime(2026, 12, 13));
+    });
+
+    test('resolves snake_case hunt_start / hunt_end', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'hunt_start': '2026-12-10',
+        'hunt_end': '2026-12-12',
+      });
+      expect(window!.start, DateTime(2026, 12, 10));
+      expect(window.end, DateTime(2026, 12, 13));
+    });
+
+    test('resolves snake_case confirmed_start_date / confirmed_end_date', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'confirmed_start_date': '2026-09-14',
+        'confirmed_end_date': '2026-09-17',
+      });
+      expect(window!.start, DateTime(2026, 9, 14));
+      expect(window.end, DateTime(2026, 9, 18));
+    });
+
+    test('camelCase wins over snake_case when both are present '
+        '(priority + canonical-key match)', () {
+      // availabilityStart (camelCase) appears earlier in the alias list than
+      // availability_start, and is the canonical key the app writes.
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'availabilityStart': '2026-09-14', // canonical
+        'availability_start': '2026-01-01', // snake_case -- must NOT win
+      });
+      expect(window!.start, DateTime(2026, 9, 14));
+    });
+
+    test('start aliases priority order: confirmedStartDate > checkInDate > '
+        'availabilityStart > startDate > huntStart > huntDate', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'confirmedStartDate': '2026-09-14',
+        'checkInDate': '2026-10-01',
+        'availabilityStart': '2026-08-01',
+        'startDate': '2026-07-01',
+        'huntStart': '2026-06-01',
+        'huntDate': '2026-05-01',
+      });
+      expect(window!.start, DateTime(2026, 9, 14)); // confirmedStartDate wins
+    });
+
+    test('single-day window when a start resolves but no end alias matches '
+        '(end falls back to start)', () {
+      final window = BookingCalendarEventBuilder.resolveWindow({
+        'huntStart': '2026-09-20',
+        // no end alias present
+      });
+      expect(window!.start, DateTime(2026, 9, 20));
+      expect(window.end, DateTime(2026, 9, 21)); // start + 1 day
+    });
   });
 
   group('BookingCalendarEventBuilder.buildTitle', () {
