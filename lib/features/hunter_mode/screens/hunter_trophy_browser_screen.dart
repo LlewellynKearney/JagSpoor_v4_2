@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../widgets/trophy_booking_confirmation_sheet.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
   final ThemeController theme;
@@ -18,7 +19,6 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
   String? _selectedProvince;
   String _searchQuery = '';
   List<Map<String, dynamic>> _trophies = [];
-  final Set<String> _selectedTrophyIds = {};
   bool _isLoading = true;
 
   // South African provinces
@@ -44,46 +44,91 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
   Future<void> _loadTrophies() async {
     setState(() => _isLoading = true);
     try {
-      QuerySnapshot snapshot;
-
       // Load from the dedicated outfitter trophy stock collection
       // (`trophy_stock`), distinct from the hunter's personal Digital Trophy
       // Room (`trophies`, scoped by `ownerId`).
-      if (_selectedProvince != null &&
-          _selectedProvince!.isNotEmpty &&
-          _selectedProvince != 'All Provinces') {
-        snapshot =
-            await FirebaseFirestore.instance
-                .collection(
-                    OutfitterEnterpriseManager.trophyStockCollection)
-                .where('province', isEqualTo: _selectedProvince)
-                .where('availableCount', isGreaterThan: 0)
-                .get();
-      } else {
-        snapshot =
-            await FirebaseFirestore.instance
-                .collection(
-                    OutfitterEnterpriseManager.trophyStockCollection)
-                .where('availableCount', isGreaterThan: 0)
-                .get();
+      //
+      // The stock documents carry ONLY a `farmId` (no denormalised farmName /
+      // province) -- see `OutfitterEnterpriseManager.syncTrophyStock`. The
+      // province filter therefore cannot run server-side on `trophy_stock`
+      // (previously the filter matched ZERO documents for any specific
+      // province because `province` does not exist there). We load all stock
+      // with `availableCount > 0`, resolve the parent `farms` docs, and apply
+      // the province filter client-side on the resolved location.
+      final snapshot = await FirebaseFirestore.instance
+          .collection(OutfitterEnterpriseManager.trophyStockCollection)
+          .where('availableCount', isGreaterThan: 0)
+          .get();
+
+      // Resolve the parent farm documents (farmId -> farm data) so each card
+      // displays the REAL farm name + location instead of the "Unknown Farm"
+      // fallback. Mirrors the farm-resolution join the package marketplace
+      // performs on `packages` -> `farms`.
+      final farmIds = <String>{};
+      for (final doc in snapshot.docs) {
+        final trophyData = doc.data() as Map<String, dynamic>?;
+        final farmId = (trophyData?['farmId'] as String?) ?? '';
+        if (farmId.isNotEmpty) farmIds.add(farmId);
       }
+      final farmDataById = <String, Map<String, dynamic>>{};
+      if (farmIds.isNotEmpty) {
+        try {
+          final farmsSnapshot = await FirebaseFirestore.instance
+              .collection('farms')
+              .where(FieldPath.documentId, whereIn: farmIds.toList())
+              .get();
+          for (final farmDoc in farmsSnapshot.docs) {
+            farmDataById[farmDoc.id] = farmDoc.data();
+          }
+        } catch (_) {
+          // A farm lookup failure must never block the trophy list -- the
+          // cards fall back to the raw ids / "Unknown Farm" placeholders.
+        }
+      }
+
+      final provinceFilter = _selectedProvince;
+      final bool filterByProvince = provinceFilter != null &&
+          provinceFilter.isNotEmpty &&
+          provinceFilter != 'All Provinces';
 
       final List<Map<String, dynamic>> loadedTrophies = [];
 
       for (final trophyDoc in snapshot.docs) {
         final trophyData = trophyDoc.data() as Map<String, dynamic>?;
         if (trophyData == null) continue;
+
+        final farmId = (trophyData['farmId'] as String?) ?? '';
+        final farmData = farmDataById[farmId];
+
+        // Farm display name: prefer a denormalised `farmName` on the stock
+        // doc (legacy), then the resolved `farms` doc's `name`, then the
+        // fallback. This is what fixes "Unknown Farm" for stock docs that
+        // only carry `farmId`.
+        final farmName = resolveFarmName(trophyData, farmData);
+        final province = resolveTrophyProvince(trophyData, farmData);
+        final town = resolveTown(trophyData, farmData);
+
+        // Client-side province filter (see the comment above -- the stock
+        // collection has no `province` field to filter server-side).
+        if (filterByProvince) {
+          if (province.toLowerCase() != provinceFilter.toLowerCase()) {
+            continue;
+          }
+        }
+
         loadedTrophies.add({
           'id': trophyDoc.id,
-          'farmId': trophyData['farmId'] ?? '',
-          'farmName': trophyData['farmName'] ?? 'Unknown Farm',
-          'province': trophyData['province'] ?? '',
-          'species': trophyData['species'] ?? 'Unknown',
+          'farmId': farmId,
+          'farmName': farmName,
+          'province': province,
+          'town': town,
+          'species': (trophyData['species'] as String?) ?? 'Unknown',
           'available': trophyData['availableCount'] ?? 0,
           'pricePerTrophy': trophyData['pricePerTrophyRands'] ?? 0.0,
-          'sex': trophyData['sex'] ?? 'Mixed',
-          'outfitterId': trophyData['outfitterId'] ?? '',
-          'imageUrl': trophyData['imageUrl']?.toString() ?? '',
+          'sex': (trophyData['sex'] as String?) ?? 'Mixed',
+          'outfitterId': (trophyData['outfitterId'] as String?) ?? '',
+          'imageUrl': resolveImageUrl(trophyData),
+          'trophyMeasurement': resolveMeasurement(trophyData),
         });
       }
 
@@ -114,102 +159,22 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
     }).toList();
   }
 
-  void _toggleTrophySelection(String trophyId) {
-    setState(() {
-      if (_selectedTrophyIds.contains(trophyId)) {
-        _selectedTrophyIds.remove(trophyId);
-      } else {
-        _selectedTrophyIds.add(trophyId);
-      }
-    });
-  }
-
-  Future<void> _addToBookingLog() async {
-    if (_selectedTrophyIds.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select at least one trophy'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // Show confirmation dialog with selected items
-    final selectedTrophies =
-        _filteredTrophies
-            .where((t) => _selectedTrophyIds.contains(t['id']))
-            .toList();
-
-    if (!mounted) return;
-    final confirmed = await showDialog<bool>(
+  /// Opens the standard Booking Details / Confirmation Sheet for a tapped
+  /// trophy stock card -- the same flow the package marketplace + custom
+  /// package builder use (full item details, outfitter contact info, pricing,
+  /// then the atomic booking transaction on confirm). After a successful
+  /// booking the stock list reloads so the card's availability count drops by
+  /// one immediately.
+  void _openBookingSheet(Map<String, dynamic> trophy) {
+    showModalBottomSheet(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            backgroundColor: widget.theme.cardColor,
-            title: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.green),
-                const SizedBox(width: 8),
-                Text(
-                  'Add to Booking Log',
-                  style: TextStyle(color: widget.theme.textColor),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Selected ${selectedTrophies.length} trophy(ies):',
-                    style: TextStyle(color: widget.theme.subtitleColor),
-                  ),
-                  const SizedBox(height: 8),
-                  ...selectedTrophies.map(
-                    (t) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        '• ${t['species']} from ${t['farmName']}',
-                        style: TextStyle(color: widget.theme.textColor),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                child: const Text('Confirm'),
-              ),
-            ],
-          ),
-    );
-
-    if (confirmed == true) {
-      // TODO: Save to booking log collection
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${selectedTrophies.length} trophy(ies) to your booking log!',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      setState(() {
-        _selectedTrophyIds.clear();
-      });
-    }
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => TrophyBookingConfirmationSheet(
+        trophy: trophy,
+        theme: widget.theme,
+      ),
+    ).then((_) => _loadTrophies());
   }
 
   /// High-contrast dark amber bordered fallback visual placeholder container for missing trophy images
@@ -303,17 +268,6 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
         backgroundColor: theme.backgroundColor,
         foregroundColor: theme.textColor,
         elevation: 0,
-        actions: [
-          if (_selectedTrophyIds.isNotEmpty)
-            TextButton.icon(
-              onPressed: _addToBookingLog,
-              icon: const Icon(Icons.add_shopping_cart, color: Colors.green),
-              label: Text(
-                '${_selectedTrophyIds.length} Selected',
-                style: const TextStyle(color: Colors.green),
-              ),
-            ),
-        ],
       ),
       body: Column(
         children: [
@@ -442,10 +396,6 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                       itemCount: _filteredTrophies.length,
                       itemBuilder: (context, index) {
                         final trophy = _filteredTrophies[index];
-                        final trophyId = trophy['id'] as String;
-                        final isSelected = _selectedTrophyIds.contains(
-                          trophyId,
-                        );
                         final price =
                             (trophy['pricePerTrophy'] as num?)?.toDouble() ??
                             0.0;
@@ -460,20 +410,18 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
-                              color:
-                                  isSelected
-                                      ? Colors.green
-                                      : theme.accentColor.withValues(
-                                        alpha: 0.2,
-                                      ),
-                              width: isSelected ? 2 : 1,
+                              color: theme.accentColor.withValues(
+                                alpha: 0.2,
+                              ),
+                              width: 1,
                             ),
                           ),
                           child: InkWell(
-                            onTap:
-                                available > 0
-                                    ? () => _toggleTrophySelection(trophyId)
-                                    : null,
+                            // Tapping a card opens the standard Booking
+                            // Details / Confirmation Sheet (the same flow the
+                            // package marketplace + custom package builder
+                            // use) instead of the old multi-select quick-add.
+                            onTap: () => _openBookingSheet(trophy),
                             borderRadius: BorderRadius.circular(12),
                             child: Padding(
                               padding: const EdgeInsets.all(16),
@@ -525,17 +473,6 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                                       children: [
                                         Row(
                                           children: [
-                                            if (isSelected)
-                                              const Padding(
-                                                padding: EdgeInsets.only(
-                                                  right: 6,
-                                                ),
-                                                child: Icon(
-                                                  Icons.check_circle,
-                                                  color: Colors.green,
-                                                  size: 18,
-                                                ),
-                                              ),
                                             Expanded(
                                               child: Text(
                                                 trophy['species'] as String? ??
@@ -560,7 +497,11 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                                             const SizedBox(width: 4),
                                             Expanded(
                                               child: Text(
-                                                '${trophy['farmName']} • ${trophy['province']}',
+                                                // Resolved farm display name +
+                                                // town/province (never the
+                                                // raw farmId / "Unknown Farm"
+                                                // when a farms doc resolves).
+                                                locationLabel(trophy),
                                                 style: TextStyle(
                                                   color: theme.subtitleColor,
                                                   fontSize: 12,
@@ -664,49 +605,112 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
           ),
         ],
       ),
-      bottomNavigationBar:
-          _selectedTrophyIds.isNotEmpty
-              ? Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.cardColor,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  child: ElevatedButton(
-                    onPressed: _addToBookingLog,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.add_shopping_cart),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Add ${_selectedTrophyIds.length} Trophy(ies) to Booking Log',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-              : null,
     );
   }
+}
+
+/// Resolves the display farm name for a trophy stock document.
+///
+/// Stock documents carry ONLY a `farmId` (see
+/// `OutfitterEnterpriseManager.syncTrophyStock`) -- the farm's display name
+/// must be looked up from the resolved `farms` document. A legacy
+/// denormalised `farmName` on the stock doc (non-empty) wins; otherwise the
+/// farm doc's `name`; otherwise the raw fallback the card renders when a
+/// farm truly cannot be resolved. Pure function -- unit-testable without
+/// Firestore.
+String resolveFarmName(
+  Map<String, dynamic> trophyData,
+  Map<String, dynamic>? farmData,
+) {
+  final denormalised = (trophyData['farmName'] as String?)?.trim();
+  if (denormalised != null && denormalised.isNotEmpty) return denormalised;
+  final fromFarm = (farmData?['name'] as String?)?.trim();
+  if (fromFarm != null && fromFarm.isNotEmpty) return fromFarm;
+  return 'Unknown Farm';
+}
+
+/// Resolves the province for a trophy stock document: an explicit `province`
+/// on the stock doc wins; otherwise the resolved farm doc's `province`.
+String resolveTrophyProvince(
+  Map<String, dynamic> trophyData,
+  Map<String, dynamic>? farmData,
+) {
+  final onDoc = (trophyData['province'] as String?)?.trim();
+  if (onDoc != null && onDoc.isNotEmpty) return onDoc;
+  return (farmData?['province'] as String?)?.trim() ?? '';
+}
+
+/// Resolves the town/district locality for a trophy stock document: an
+/// explicit `town` / `district` on the stock doc wins; otherwise the farm
+/// doc's `town`, then the farm doc's `district` (the SA town-level locality
+/// farms carry), mirroring the marketplace's town resolution.
+String resolveTown(
+  Map<String, dynamic> trophyData,
+  Map<String, dynamic>? farmData,
+) {
+  final docTown = (trophyData['town'] as String?)?.trim();
+  if (docTown != null && docTown.isNotEmpty) return docTown;
+  final docDistrict = (trophyData['district'] as String?)?.trim();
+  if (docDistrict != null && docDistrict.isNotEmpty) return docDistrict;
+  final farmTown = (farmData?['town'] as String?)?.trim();
+  if (farmTown != null && farmTown.isNotEmpty) return farmTown;
+  return (farmData?['district'] as String?)?.trim() ?? '';
+}
+
+/// Resolves the farm location label rendered on the card, e.g.
+/// "Bosveld Ranch • Waterberg, Limpopo". Omits empty parts so the label
+/// never renders a dangling separator.
+String resolveLocationLabel(
+  Map<String, dynamic> trophyData,
+  Map<String, dynamic>? farmData,
+) {
+  final farmName = resolveFarmName(trophyData, farmData);
+  final town = resolveTown(trophyData, farmData);
+  final province = resolveTrophyProvince(trophyData, farmData);
+  final parts = [town, province].where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return farmName;
+  return '$farmName • ${parts.join(', ')}';
+}
+
+/// Resolves a display image URL for the stock doc: an explicit `imageUrl`
+/// wins; otherwise the first entry of the `trophyPhotoUrls` array (the field
+/// `OutfitterEnterpriseManager.syncTrophyStock` actually writes); otherwise
+/// an empty string (the card renders the placeholder).
+String resolveImageUrl(Map<String, dynamic> trophyData) {
+  final direct = (trophyData['imageUrl'] as String?)?.trim();
+  if (direct != null && direct.isNotEmpty) return direct;
+  final photos = trophyData['trophyPhotoUrls'];
+  if (photos is List) {
+    for (final entry in photos) {
+      final url = entry?.toString().trim() ?? '';
+      if (url.isNotEmpty) return url;
+    }
+  }
+  return '';
+}
+
+/// Resolves the trophy measurement in inches from the dual-alias fields the
+/// stock doc writes (`trophyMeasurement` / `trophyLengthInches`). Tolerates
+/// numeric + numeric-string storage. Returns null when absent.
+double? resolveMeasurement(Map<String, dynamic> trophyData) {
+  double? parse(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
+  }
+
+  return parse(trophyData['trophyMeasurement']) ??
+      parse(trophyData['trophyLengthInches']);
+}
+
+/// Joins the card's pre-resolved location fields ("farm • town, province"),
+/// omitting empty parts so the label never renders a dangling separator.
+String locationLabel(Map<String, dynamic> trophy) {
+  final farmName = (trophy['farmName'] as String?) ?? 'Unknown Farm';
+  final parts = [
+    (trophy['town'] as String?) ?? '',
+    (trophy['province'] as String?) ?? '',
+  ].where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return farmName;
+  return '$farmName • ${parts.join(', ')}';
 }

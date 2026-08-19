@@ -8776,3 +8776,118 @@ silently swallowed taps. Both are detailed below.
   (invalid-farm guard + empty/error actions + retry-capable streams),
   `test/copyright_footer_test.dart` (NEW),
   `test/custom_package_builder_screen_test.dart` (extended), `AGENTS.md`.
+
+
+## Phase -- Custom Package Builder card spacing + Trophy Registry farm resolution & standard booking flow (added 2026-08-19)
+
+Three UI / booking-flow fixes delivered as one unit.
+
+### Task 1 -- Custom Package Builder farm card spacing cleanup
+- `custom_package_farm_selection_screen.dart` `_FarmCard`: the metadata
+  chip `Wrap` (province / district / species count / "service rates" pill)
+  previously had only `spacing: 6` and NO `runSpacing`, so a wrapped second
+  chip row sat flush against the first (awkward vertical crowding). Now
+  `spacing: 8, runSpacing: 6`; the title-to-chips gap grew 4 -> 8; and the
+  `_chip` helper renders a clean bordered pill (8-radius + an
+  accentColor-0.18 border, accent icon, 8x5 padding). Chips now align
+  cleanly without awkward wrapping or crowding.
+
+### Task 2 -- "Unknown Farm" in Trophy Registry (root cause + fix)
+- Root cause: `trophy_stock` documents carry ONLY a `farmId` (see
+  `OutfitterEnterpriseManager.syncTrophyStock` -- no denormalised farmName /
+  province / imageUrl). The browser read `farmName` off the stock doc (where
+  it does not exist) so every card fell back to "Unknown Farm". Two sibling
+  defects: the province filter ran SERVER-side on
+  `trophy_stock.province` (a field that does not exist there), matching ZERO
+  documents for any specific province; and `imageUrl` was read directly
+  while `syncTrophyStock` writes a `trophyPhotoUrls` array.
+- `hunter_trophy_browser_screen.dart` `_loadTrophies` rewritten: loads all
+  stock with `availableCount > 0` (no provincial server query), collects the
+  unique non-empty `farmId`s, batch-fetches `farms` docs
+  (`FieldPath.documentId whereIn`, mirroring the farm-selection join), then
+  enriches every trophy with farm name + province + town via new PURE
+  resolver functions (unit-testable without Firestore):
+  - `resolveFarmName(trophy, farm?)` -- denormalised `farmName` (legacy) ??
+    farm `name` ?? 'Unknown Farm'.
+  - `resolveTrophyProvince(trophy, farm?)` -- trophy `province` ?? farm
+    `province` ?? '' (the client-side province filter runs on this).
+  - `resolveTown(trophy, farm?)` -- trophy `town`/`district` ?? farm `town`
+    ?? farm `district` ?? ''.
+  - `resolveLocationLabel(trophy, farm?)` -- "Bosveld Ranch • Waterberg,
+    Limpopo", empty parts omitted.
+  - `resolveImageUrl(trophy)` -- explicit `imageUrl` ?? first
+    `trophyPhotoUrls` ?? '' (fixes the placeholder-on-every-card bug).
+  - `resolveMeasurement(trophy)` -- `trophyMeasurement` ??
+    `trophyLengthInches` alias, num-or-string tolerant.
+  The card's location row uses `locationLabel(trophy)` over the pre-resolved
+  map. Farms readable by any signed-in hunter per `firestore.rules`.
+
+### Task 3 -- Trophy Registry card tap -> standard booking confirmation flow
+- Replaced the entire multi-select quick-add (`_selectedTrophyIds` /
+  `_toggleTrophySelection` / `_addToBookingLog` "Add to Booking Log"
+  AlertDialog + the selection bottom bar + the "N Selected" AppBar action)
+  with the standard flow: tapping a trophy card opens
+  `TrophyBookingConfirmationSheet` (NEW,
+  `lib/features/hunter_mode/widgets/trophy_booking_confirmation_sheet.dart`)
+  -- a modal bottom sheet mirroring the package marketplace's confirmation
+  sheet exactly (handle, "Trophy Details" title, meta summary chips, the
+  TROPHY STOCK ITEM breakdown, the Total Price row, the same
+  `OutfitterContactCard`, the approval warning, the sold-out banner, and the
+  Cancel / "BOOK THIS TROPHY" action row).
+- NEW `PackageBookingManager.bookTrophyStock({trophyId, outfitterId,
+  pricePerTrophyRands, species?, sex?, trophyMeasurement?, farmId?,
+  farmName?, district?, province?})`: an atomic `runTransaction` that (1)
+  reads the stock doc, (2) throws `PackageSoldOutException` when
+  `availableCount <= 0` or status != 'available', (3) creates the booking
+  record with `packageId: 'CUSTOM_BUILT'` + `isTrophyStockBooking: true` +
+  `trophyStockId` + a one-entry `selectedItemsList` + `status:
+  BookingStatus.pendingApproval` (standard routing -> outfitter Incoming
+  Booking Requests dashboard renders the expandable custom-items section +
+  APPROVE/DECLINE; hunter "My Bookings" tab renders it as a standard
+  booking), and (4) decrements `availableCount` by 1 and flips `status` to
+  'sold_out' when it hits 0 -- all in the same transaction (no race).
+  On sheet close the browser reloads so availability drops immediately.
+- `firestore.rules` `trophy_stock` block split the blanket
+  `ownerOrAdmin('outfitterId')` write into `create` (owner/admin), `delete`
+  (owner/admin), and `update` (`isOwner() || isStockDecrement() ||
+  isAdmin()`) where the new `isStockDecrement()` helper (mirroring the
+  `packages` `isInventoryDecrement` contract) permits a signed-in hunter's
+  TIGHTLY-SCOPED decrement: outfitterId/species/farmId/pricePerTrophyRands
+  frozen, `availableCount` strictly lower, status unchanged or 'sold_out'.
+  **Deploy reminder**: `npx firebase-tools deploy --only firestore:rules` in
+  a credentialed env to activate the hunter decrement allowance; until
+  deployed the booking transaction fails with permission-denied (surfaced
+  as the generic "Booking failed" snackbar).
+
+### Tests
+- `test/trophy_registry_resolver_test.dart` (NEW, 24 tests): farm-name /
+  province / town / location-label / image-url / measurement resolvers.
+- `test/trophy_booking_contract_test.dart` (NEW, 12 tests): standard-sheet
+  wiring (showModalBottomSheet + TrophyBookingConfirmationSheet + quick-add
+  removal + BookTrophyStock confirm), the booking transaction contract
+  (transaction + atomic guard + CUSTOM_BUILT routing + pending status +
+  safe decrement + sold_out flip), guard / status-flip pure logic, and the
+  Task-1 chip spacing contract.
+- `test/firestore_rules_seeding_test.dart` (+1 test): the trophy_stock
+  hunter-decrement rule contract (isStockDecrement + update split +
+  strictly-lower count).
+
+### Verification
+- `flutter analyze` (local Flutter 3.47.0 stable): 0 errors, 0 warnings,
+  307 pre-existing infos (unchanged baseline; the changed/new files are
+  analyzer-clean). `analysis_options.yaml` auto-touched by `flutter pub
+  get` / analyze was reverted before commit (documented baseline pattern).
+- `flutter test` (full suite): **All 821 tests passed** (was 784; +37 =
+  24 resolver + 12 booking-contract + 1 rules test). No regressions.
+- No Storage / index / pubspec / manifest changes (pure client-side +
+  rules; `farms` read was already `isSignedIn()`; the only new write path
+  is the hunter decrement covered by the rules change above).
+- Files: `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`
+  (chip spacing), `lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart`
+  (farm resolution + booking-sheet rewire + quick-add removal),
+  `lib/features/hunter_mode/widgets/trophy_booking_confirmation_sheet.dart`
+  (NEW), `lib/features/hunter_mode/services/package_booking_manager.dart`
+  (`bookTrophyStock`), `firestore.rules` (trophy_stock decrement),
+  `test/trophy_registry_resolver_test.dart` (NEW),
+  `test/trophy_booking_contract_test.dart` (NEW),
+  `test/firestore_rules_seeding_test.dart` (+1), `AGENTS.md`.

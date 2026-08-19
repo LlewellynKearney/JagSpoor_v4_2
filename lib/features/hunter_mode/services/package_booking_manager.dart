@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
+import 'outfitter_enterprise_manager.dart';
 
 class PackageBookingManager {
   static final PackageBookingManager _instance =
@@ -368,6 +369,169 @@ class PackageBookingManager {
         'updatedAt': FieldValue.serverTimestamp(),
       });
     });
+  }
+
+  // ==========================================
+  // HUNTER - BOOK TROPHY STOCK
+  // ==========================================
+  /// Books one animal out of an outfitter's saleable trophy stock inventory
+  /// (the `trophy_stock` collection). This is the standard booking flow the
+  /// Trophy Registry & Booking browser executes when a hunter confirms the
+  /// Booking Details / Confirmation Sheet -- it mirrors [bookPackage]:
+  /// atomically creates the booking record with the canonical pending status
+  /// AND safely decrements the stock's `availableCount` in the same
+  /// transaction, so two hunters cannot both grab the last animal.
+  ///
+  /// The booking is written with `packageId: 'CUSTOM_BUILT'` +
+  /// `isTrophyStockBooking: true` + a one-entry `selectedItemsList`, so it
+  /// routes through the standard booking pipeline exactly like a custom /
+  /// package booking: it appears in the outfitter's Incoming Booking Requests
+  /// dashboard (with the expandable item breakdown + APPROVE / DECLINE
+  /// actions) AND in the hunter's "My Bookings" tab, with status
+  /// [BookingStatus.pendingApproval].
+  ///
+  /// Parameters:
+  /// - [trophyId]: Firestore document ID of the trophy stock entry.
+  /// - [outfitterId]: The owning outfitter's uid (from the stock doc).
+  /// - [pricePerTrophyRands]: The price for the single trophy animal (must
+  ///   be > 0). The hunter pays the base trophy cost -- there is no platform
+  ///   commission.
+  /// - [species]/[sex]/[trophyMeasurement]/[farmId]/[farmName]/[district]/
+  ///   [province]: display + routing fields copied onto the booking so the
+  ///   booking card is self-contained (matching the package booking flow's
+  ///   farm-location enrichment). Omitted when blank.
+  ///
+  /// Returns: the new booking document ID.
+  ///
+  /// Throws:
+  /// - Exception if the user is not authenticated, the trophy id is empty,
+  ///   the price is not positive, or the outfitter tries to book their own
+  ///   stock.
+  /// - [PackageSoldOutException] when the stock has no remaining availability
+  ///   (or is already sold out) at transaction time.
+  Future<String> bookTrophyStock({
+    required String trophyId,
+    required String outfitterId,
+    required double pricePerTrophyRands,
+    String? species,
+    String? sex,
+    double? trophyMeasurement,
+    String? farmId,
+    String? farmName,
+    String? district,
+    String? province,
+  }) async {
+    // Validate authentication
+    if (_currentUserId == null) {
+      throw Exception('User must be authenticated to book a trophy');
+    }
+
+    // Prevent the outfitter from booking their own trophy stock
+    if (_currentUserId == outfitterId) {
+      throw Exception('Outfitters cannot book their own trophy stock');
+    }
+
+    // Validate inputs
+    if (trophyId.trim().isEmpty) {
+      throw Exception('Trophy stock ID cannot be empty');
+    }
+    if (pricePerTrophyRands <= 0) {
+      throw Exception('Price per trophy must be greater than zero');
+    }
+
+    final trophyRef = _firestore
+        .collection(OutfitterEnterpriseManager.trophyStockCollection)
+        .doc(trophyId.trim());
+    String bookingId = '';
+
+    // Atomic booking + stock decrement. The transaction guarantees the
+    // availability check and the decrement are consistent under concurrent
+    // bookings -- two hunters cannot both grab the last animal.
+    await _firestore.runTransaction((transaction) async {
+      final trophySnap = await transaction.get(trophyRef);
+      if (!trophySnap.exists) {
+        throw Exception('Trophy stock entry not found');
+      }
+
+      final trophyData = trophySnap.data() as Map<String, dynamic>;
+      final currentQty =
+          (trophyData['availableCount'] as num?)?.toInt() ?? 0;
+      final currentStatus = (trophyData['status'] as String?) ?? 'available';
+
+      // Reject the booking when no animals remain or the entry is already
+      // sold out (the last booking flips the status to 'sold_out').
+      if (currentQty <= 0 || currentStatus != 'available') {
+        throw PackageSoldOutException(
+          packageId: trophyId,
+          message: 'This trophy is no longer available.',
+        );
+      }
+
+      final resolvedSpecies = (species != null && species.trim().isNotEmpty)
+          ? species.trim()
+          : ((trophyData['species'] as String?) ?? 'Trophy');
+
+      // Create the booking inside the same transaction. The 'CUSTOM_BUILT'
+      // packageId + one-entry selectedItemsList route it through the standard
+      // pipeline (the outfitter dashboard renders the custom-items expandable
+      // section with APPROVE / DECLINE; the hunter "My Bookings" tab renders
+      // it as a standard booking card).
+      final bookingRef = _firestore.collection('bookings').doc();
+      bookingId = bookingRef.id;
+      transaction.set(bookingRef, {
+        'packageId': 'CUSTOM_BUILT',
+        'isTrophyStockBooking': true,
+        'trophyStockId': trophyId.trim(),
+        'packageName': 'Trophy Hunt - $resolvedSpecies',
+        'outfitterId': outfitterId.trim(),
+        'hunterId': _currentUserId,
+        'bookingType': 'trophy_stock',
+        'species': resolvedSpecies,
+        if (sex != null && sex.trim().isNotEmpty) 'sex': sex.trim(),
+        if (trophyMeasurement != null && trophyMeasurement > 0) ...{
+          'trophyMeasurement': trophyMeasurement,
+          'trophyLengthInches': trophyMeasurement,
+        },
+        if (farmId != null && farmId.isNotEmpty) 'farmId': farmId,
+        if (farmName != null && farmName.isNotEmpty) 'farmName': farmName,
+        if (district != null && district.isNotEmpty) 'district': district,
+        if (province != null && province.isNotEmpty) 'province': province,
+        'selectedItemsList': [
+          {
+            'name': resolvedSpecies,
+            if (sex != null && sex.trim().isNotEmpty) 'sex': sex.trim(),
+            'itemType': 'species',
+            'quantity': 1,
+            'unitPriceHunterZAR': pricePerTrophyRands,
+            'lineTotal': pricePerTrophyRands,
+            'hunterPrice': pricePerTrophyRands,
+            'basePrice': pricePerTrophyRands,
+            if (trophyMeasurement != null && trophyMeasurement > 0)
+              'trophyMeasurementInches': trophyMeasurement,
+            'trophyStockId': trophyId.trim(),
+          },
+        ],
+        // The hunter pays the base trophy cost; there is no platform
+        // commission.
+        'basePriceRands': pricePerTrophyRands,
+        'totalHunterPriceRands': pricePerTrophyRands,
+        'status': BookingStatus.pendingApproval,
+        'bookingTimestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Decrement the stock. When the last animal is claimed, flip the entry
+      // to 'sold_out' so the Trophy Registry shows it as no longer available.
+      final newQty = currentQty - 1;
+      transaction.update(trophyRef, {
+        'availableCount': newQty,
+        if (newQty <= 0) 'status': 'sold_out',
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+    });
+
+    return bookingId;
   }
 
   /// Restocks a sold-out / low-stock package by setting [quantityAvailable]

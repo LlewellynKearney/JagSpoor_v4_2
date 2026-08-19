@@ -349,9 +349,14 @@ class _FarmCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Wrap(
-                        spacing: 6,
+                        spacing: 8,
+                        // Wrapped chip rows need vertical breathing room too --
+                        // without runSpacing a second row of chips sits flush
+                        // against the first (the awkward wrapping the layout
+                        // cleanup targets).
+                        runSpacing: 6,
                         children: [
                           if (farm.province != null &&
                               farm.province!.isNotEmpty)
@@ -381,16 +386,19 @@ class _FarmCard extends StatelessWidget {
 
   Widget _chip(IconData icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: theme.accentColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.accentColor.withValues(alpha: 0.18),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: theme.subtitleColor),
-          const SizedBox(width: 4),
+          Icon(icon, size: 12, color: theme.accentColor),
+          const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(color: theme.subtitleColor, fontSize: 11),

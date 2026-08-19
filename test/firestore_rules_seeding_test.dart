@@ -231,7 +231,32 @@ void main() {
       final block = _blockFor(rules, 'trophy_stock');
       expect(block, contains("ownerOrAdmin('outfitterId')"),
           reason: 'Only the owning outfitter (or an admin) may create / '
-              'update / delete trophy stock entries.');
+              'delete trophy stock entries.');
+    });
+
+    test('trophy_stock: hunter stock-decrement allowed on update (booking '
+        'flow)', () {
+      // The hunter booking flow (`PackageBookingManager.bookTrophyStock`)
+      // decrements `availableCount` in the same atomic transaction. The
+      // update rule must therefore ALSO permit a signed-in hunter's tightly
+      // scoped decrement (mirrors the `packages` isInventoryDecrement
+      // allowance): identity + price fields frozen, count strictly lower.
+      final block = _blockFor(rules, 'trophy_stock');
+      expect(block, contains('function isStockDecrement()'),
+          reason: 'The hunter booking txn needs a decrement-only update '
+              'allowance on trophy_stock.');
+      expect(
+          block,
+          contains(
+              'allow update: if isOwner() || isStockDecrement() || isAdmin();'),
+          reason: 'trophy_stock update must permit owner OR the hunter '
+              'decrement (booking) OR admin.');
+      expect(
+          block,
+          contains('request.resource.data.availableCount\n'
+              '              < resource.data.availableCount'),
+          reason: 'The decrement allowance must strictly REQUIRE the '
+              'availableCount to decrease (a hunter can never raise stock).');
     });
 
     test('trophies (hunter room) match block still exists', () {

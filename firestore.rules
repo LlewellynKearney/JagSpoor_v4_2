@@ -218,10 +218,38 @@ service cloud.firestore {
     // above) so the outfitter's saleable inventory never collides with a
     // hunter's harvested trophy log. Read is open to any signed-in user so
     // the Trophy Registry & marketplace can display outfitter stock to
-    // hunters. Writes are restricted to the owning outfitter (or an admin).
+    // hunters. Writes are restricted to the owning outfitter (or an admin),
+    // PLUS a tightly-scoped hunter-decrement allowance (mirrors `packages`):
+    // the hunter's atomic booking transaction (`PackageBookingManager
+    // .bookTrophyStock`) decrements `availableCount` (and flips the status to
+    // `sold_out` when it reaches 0); every price/species/farm/identity field
+    // must be unchanged, so a hunter can ONLY lower the stock count (never
+    // raise it) and cannot tamper with pricing.
     match /trophy_stock/{trophyId} {
+      function isOwner() {
+        return isSignedIn()
+          && resource.data.outfitterId == request.auth.uid;
+      }
+      // A hunter booking one animal out of the stock may only: lower
+      // `availableCount`, optionally set status to 'sold_out', and bump
+      // `lastUpdated`. Every other field (price, species, farmId, outfitter
+      // identity) must be unchanged.
+      function isStockDecrement() {
+        return isSignedIn()
+          && request.resource.data.outfitterId == resource.data.outfitterId
+          && request.resource.data.species == resource.data.species
+          && request.resource.data.farmId == resource.data.farmId
+          && request.resource.data.pricePerTrophyRands
+              == resource.data.pricePerTrophyRands
+          && request.resource.data.availableCount
+              < resource.data.availableCount
+          && (request.resource.data.status == resource.data.status
+              || request.resource.data.status == 'sold_out');
+      }
       allow read: if isSignedIn();
-      allow create, update, delete: if ownerOrAdmin('outfitterId');
+      allow create: if ownerOrAdmin('outfitterId');
+      allow update: if isOwner() || isStockDecrement() || isAdmin();
+      allow delete: if ownerOrAdmin('outfitterId');
     }
 
     // Per-farm game price lists (outfitterId). Each entry is a single
