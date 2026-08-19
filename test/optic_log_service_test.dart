@@ -118,6 +118,69 @@ void main() {
       expect(updated.optic.opticName, 'Updated');
       expect(updated.savedAt, DateTime(2026, 1, 1));
     });
+
+    test('toMap dual-stamps ownerId alongside userId', () {
+      final entry = OpticLogEntry(
+        userId: 'uid-7',
+        firearmId: 'farm-doc-7',
+        firearmLabel: 'Label',
+        optic: OpticProfile.defaults,
+        savedAt: DateTime(2026, 1, 1),
+      );
+      final map = entry.toMap();
+      expect(map['userId'], 'uid-7');
+      expect(map['ownerId'], 'uid-7');
+    });
+
+    test('fromMap falls back to ownerId when userId is absent', () {
+      final entry = OpticLogEntry.fromMap({
+        'ownerId': 'uid-8',
+        'firearmId': 'farm-doc-8',
+        'optic': OpticProfile.defaults.toJson(),
+      });
+      expect(entry.userId, 'uid-8');
+    });
+
+    test('fromMap prefers userId over ownerId when both are present', () {
+      final entry = OpticLogEntry.fromMap({
+        'userId': 'canonical',
+        'ownerId': 'legacy',
+      });
+      expect(entry.userId, 'canonical');
+    });
+
+    test('fromMap builds the optic from top-level flat legacy fields', () {
+      // Legacy docs stored the optic fields at the document root (no nested
+      // `optic` submap) -- the history card must still render the optic
+      // identity instead of "Unnamed optic".
+      final entry = OpticLogEntry.fromMap({
+        'userId': 'uid-9',
+        'firearmId': 'farm-doc-9',
+        'opticName': 'Leupold VX-6HD',
+        'turretUnit': 'MRAD',
+        'clickValue': 0.1,
+        'focalPlane': 'FFP',
+        'reticleType': 'TMOA',
+        'nativeMagnification': 18.0,
+        'currentMagnification': 12.0,
+      });
+      expect(entry.optic.opticName, 'Leupold VX-6HD');
+      expect(entry.optic.turretUnitLabel, 'MRAD');
+      expect(entry.optic.clickValue, 0.1);
+      expect(entry.optic.focalPlaneLabel, 'FFP');
+      expect(entry.optic.reticleType, 'TMOA');
+      expect(entry.optic.nativeMagnification, 18.0);
+      expect(entry.optic.currentMagnification, 12.0);
+    });
+
+    test('fromMap prefers the nested optic submap over flat fields', () {
+      final entry = OpticLogEntry.fromMap({
+        'userId': 'uid-10',
+        'opticName': 'Flat Name (ignored)',
+        'optic': {'opticName': 'Nested Name'},
+      });
+      expect(entry.optic.opticName, 'Nested Name');
+    });
   });
 
   group('firearmLabelForOpticLog', () {
@@ -257,6 +320,88 @@ void main() {
       // Newest first.
       expect(entries.map((e) => e.firearmLabel).toList(),
           ['Newest', 'Mid', 'Oldest']);
+    });
+
+    test('logSave dual-stamps userId AND ownerId on the written doc', () async {
+      final fake = FakeFirebaseFirestore();
+      const uid = 'dual-stamp-user';
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => uid,
+      );
+      await service.logSave(
+        firearmId: 'rifle-1',
+        firearmLabel: 'Label',
+        optic: OpticProfile.defaults,
+      );
+      final snap = await fake.collection('optic_logs').get();
+      expect(snap.docs, hasLength(1));
+      expect(snap.docs.first.data()['userId'], uid);
+      expect(snap.docs.first.data()['ownerId'], uid);
+    });
+
+    test('returns legacy docs stamped with ownerId only (userId absent)', () async {
+      final fake = FakeFirebaseFirestore();
+      // A legacy doc stamped with ONLY `ownerId` (no `userId`) -- the old
+      // userId-only equality query missed these, so the history rendered
+      // empty even though entries existed.
+      await fake.collection('optic_logs').add({
+        'ownerId': 'me',
+        'firearmId': 'rifle-legacy',
+        'firearmLabel': 'Legacy Flat',
+        'opticName': 'Leupold VX-6HD',
+        'turretUnit': 'MRAD',
+        'savedAt': Timestamp.now(),
+      });
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => 'me',
+      );
+
+      final entries = await service.getMyOpticLogsStream().first;
+      expect(entries, hasLength(1));
+      expect(entries.first.userId, 'me');
+      expect(entries.first.firearmId, 'rifle-legacy');
+      // Flat legacy optic fields are mapped onto the optic profile.
+      expect(entries.first.optic.opticName, 'Leupold VX-6HD');
+      expect(entries.first.optic.turretUnitLabel, 'MRAD');
+    });
+
+    test('returns the union of userId- and ownerId-stamped docs (no cross-user leak)', () async {
+      final fake = FakeFirebaseFirestore();
+      await fake.collection('optic_logs').add({
+        'userId': 'me',
+        'firearmId': 'r-canonical',
+        'firearmLabel': 'Canonical',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.now(),
+      });
+      await fake.collection('optic_logs').add({
+        'ownerId': 'me',
+        'firearmId': 'r-legacy',
+        'firearmLabel': 'Legacy',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.now(),
+      });
+      await fake.collection('optic_logs').add({
+        'userId': 'someone-else',
+        'ownerId': 'someone-else',
+        'firearmId': 'r-other',
+        'firearmLabel': 'Other',
+        'optic': OpticProfile.defaults.toJson(),
+        'savedAt': Timestamp.now(),
+      });
+      final service = OpticLogService.forTesting(
+        firestore: fake,
+        currentUserIdResolver: () => 'me',
+      );
+
+      final entries = await service.getMyOpticLogsStream().first;
+      expect(entries, hasLength(2));
+      expect(
+        entries.map((e) => e.firearmId).toSet(),
+        {'r-canonical', 'r-legacy'},
+      );
     });
   });
 }

@@ -124,6 +124,9 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                   final speciesRevenue = List<Map<String, dynamic>>.from(
                     data['speciesRevenue'] ?? [],
                   );
+                  final farmRevenue = List<Map<String, dynamic>>.from(
+                    data['farmRevenue'] ?? [],
+                  );
                   final monthlyStats = List<Map<String, dynamic>>.from(
                     data['monthlyStats'] ?? [],
                   );
@@ -413,6 +416,103 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Income per Farm Breakdown
+                      Container(
+                        decoration: BoxDecoration(
+                          color: widget.theme.cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: widget.theme.accentColor.withValues(
+                              alpha: 0.2,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.landscape_rounded,
+                                    color: widget.theme.accentColor,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Income per Farm',
+                                      style: TextStyle(
+                                        color: widget.theme.textColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  ContextualInfoIcon(
+                                    title: 'Income per Farm',
+                                    iconColor: widget.theme.accentColor,
+                                    description:
+                                        'Total ZAR revenue each farm has generated from earned bookings (payment-verified Confirmed + Completed bookings) associated with that farm.',
+                                    concepts: const [
+                                      ExplanationConcept(
+                                        label: 'Per-farm revenue',
+                                        detail:
+                                            'Sum of booking totals (base price) for bookings whose farmId matches the farm. Farms with no earned bookings yet are listed at R 0.',
+                                      ),
+                                      ExplanationConcept(
+                                        label: 'Unassigned / Other',
+                                        detail:
+                                            'Bookings without a farmId (or referencing a farm that no longer exists) roll up under Unassigned / Other.',
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1),
+                            if (farmRevenue.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Center(
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.landscape_rounded,
+                                        color: widget.theme.subtitleColor
+                                            .withValues(alpha: 0.5),
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'No farm revenue data yet',
+                                        style: TextStyle(
+                                          color: widget.theme.subtitleColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              ...farmRevenue
+                                  .take(8)
+                                  .map(
+                                    (item) => _FarmRevenueRow(
+                                      farm: item['farm'] ?? 'Unknown Farm',
+                                      revenue:
+                                          (item['revenue'] ?? 0).toDouble(),
+                                      bookings:
+                                          (item['bookings'] ?? 0).toInt(),
+                                      theme: widget.theme,
+                                    ),
+                                  ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       // Monthly Booking Trends
                       Container(
                         decoration: BoxDecoration(
@@ -568,6 +668,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
       final packages = await _tryCount(_getPackagesData);
       final pendingBookings = await _tryCount(_getPendingBookingsCount);
       final speciesData = await _tryList(_getSpeciesRevenueData);
+      final farmRevenueData = await _tryList(_getFarmRevenueData);
       final monthlyData = await _tryList(_getMonthlyStatsData);
 
       yield {
@@ -579,6 +680,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
           'pendingBookings': pendingBookings,
         },
         'speciesRevenue': speciesData,
+        'farmRevenue': farmRevenueData,
         'monthlyStats': monthlyData,
       };
     }
@@ -660,6 +762,38 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
     final uid = _currentUserId;
     if (uid == null) return const [];
     return OutfitterAnalyticsService.instance.getSpeciesRevenueBreakdown(uid);
+  }
+
+  /// Aggregates the per-farm income (total ZAR revenue from earned
+  /// bookings associated with each farmId) for the "Income per Farm"
+  /// breakdown card. Reuses the same pure
+  /// [RevenueAnalyticsReportExporter.aggregateFarmRevenue] aggregation the
+  /// PDF export uses, so the on-screen card and the exported report always
+  /// agree.
+  Future<List<Map<String, dynamic>>> _getFarmRevenueData() async {
+    final uid = _currentUserId;
+    if (uid == null) return const [];
+
+    final farmSnap = await FirebaseFirestore.instance
+        .collection('farms')
+        .where('outfitterId', isEqualTo: uid)
+        .get();
+    final farmNames = <String, String>{
+      for (final f in farmSnap.docs)
+        f.id: (f.data()['name'] ?? 'Unknown Farm') as String,
+    };
+
+    final earnedSnap = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('outfitterId', isEqualTo: uid)
+        .where('status',
+            whereIn: OutfitterAnalyticsService.earnedBookingStatuses)
+        .get();
+
+    return RevenueAnalyticsReportExporter.aggregateFarmRevenue(
+      earnedSnap.docs.map((d) => d.data()),
+      farmNames,
+    );
   }
 
   Future<List<Map<String, dynamic>>> _getMonthlyStatsData() async {
@@ -1014,6 +1148,71 @@ class _SpeciesRevenueRow extends StatelessWidget {
                 ),
                 Text(
                   '$count booking${count != 1 ? 's' : ''}',
+                  style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            'R ${revenue.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+            style: const TextStyle(
+              color: Colors.green,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FarmRevenueRow extends StatelessWidget {
+  final String farm;
+  final double revenue;
+  final int bookings;
+  final ThemeController theme;
+
+  const _FarmRevenueRow({
+    required this.farm,
+    required this.revenue,
+    required this.bookings,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.brown.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              Icons.landscape_rounded,
+              color: Colors.brown,
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  farm,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  '$bookings earned booking${bookings != 1 ? 's' : ''}',
                   style: TextStyle(color: theme.subtitleColor, fontSize: 11),
                 ),
               ],

@@ -127,6 +127,14 @@ class OutfitterAnalyticsService {
                   packageData['district'] as String? ??
                   farmData?['district'] as String? ??
                   '';
+              // Town name: prefer an explicit `town` field on the package or
+              // the associated farm; fall back to the district (the SA
+              // town-level locality farms carry) so hunters see the location
+              // at a glance on the marketplace card.
+              final packageTown =
+                  packageData['town'] as String? ??
+                  farmData?['town'] as String? ??
+                  packageDistrict;
 
               // Apply filters
               bool matchesProvince =
@@ -147,6 +155,7 @@ class OutfitterAnalyticsService {
                   'farmName': farmData?['name'] ?? 'Unknown Farm',
                   'province': packageProvince,
                   'district': packageDistrict,
+                  'town': packageTown,
                 });
               }
             }

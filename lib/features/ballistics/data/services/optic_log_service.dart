@@ -35,32 +35,68 @@ class OpticLogEntry {
   /// Snapshot-free constructor used by tests (and by [fromFirestore]) so the
   /// parsing contract is unit-testable without a Firestore emulator. Accepts
   /// the raw doc map + an optional doc id.
+  ///
+  /// Tolerant of legacy field shapes:
+  /// - `userId` falls back to `ownerId` (docs written before the canonical
+  ///   `userId` stamp).
+  /// - the `optic` submap falls back to top-level optic fields (`opticName`,
+  ///   `turretUnit`, `clickValue`, `focalPlane`, `reticleType`,
+  ///   `nativeMagnification`, `currentMagnification`, `tubeDiameterMm`,
+  ///   `heightOverBoreInches`) so a flat legacy document still renders its
+  ///   optic identity instead of "Unnamed optic".
   factory OpticLogEntry.fromMap(Map<String, dynamic> data, {String? id}) {
     return OpticLogEntry(
       id: id,
-      userId: (data['userId'] as String?) ?? '',
+      userId: (data['userId'] as String?) ??
+          (data['ownerId'] as String?) ??
+          '',
       firearmId: (data['firearmId'] as String?) ?? '',
       firearmLabel: (data['firearmLabel'] as String?) ??
           (data['firearmName'] as String?) ??
           'Unknown firearm',
-      optic: _opticFromMap(data['optic']),
+      optic: _opticFromData(data),
       savedAt: (data['savedAt'] as Timestamp?)?.toDate() ??
           (data['createdAt'] as Timestamp?)?.toDate() ??
           DateTime.now(),
     );
   }
 
-  static OpticProfile _opticFromMap(dynamic raw) {
+  /// Resolves the optic profile from the nested `optic` submap, falling back
+  /// to top-level optic fields on the document for legacy flat writes.
+  static OpticProfile _opticFromData(Map<String, dynamic> data) {
+    final raw = data['optic'];
     if (raw is Map) {
       return OpticProfile.fromJson(
         raw.map((k, v) => MapEntry(k.toString(), v)),
       );
+    }
+    // Legacy flat shape: optic fields stored at the document root.
+    const opticKeys = [
+      'opticName',
+      'turretUnit',
+      'clickValue',
+      'focalPlane',
+      'reticleType',
+      'nativeMagnification',
+      'currentMagnification',
+      'tubeDiameterMm',
+      'heightOverBoreInches',
+    ];
+    if (opticKeys.any(data.containsKey)) {
+      return OpticProfile.fromJson({
+        for (final key in opticKeys)
+          if (data[key] != null) key: data[key],
+      });
     }
     return OpticProfile.defaults;
   }
 
   Map<String, dynamic> toMap() => {
         'userId': userId,
+        // Dual-stamp `ownerId` so the entry is matched by the history
+        // query's userId OR ownerId branch (and by the owner-scoped rules
+        // regardless of which alias an older ruleset checks).
+        'ownerId': userId,
         'firearmId': firearmId,
         'firearmLabel': firearmLabel,
         'optic': optic.toJson(),
@@ -143,6 +179,9 @@ class OpticLogService {
     try {
       await _firestore.collection('optic_logs').add({
         'userId': uid,
+        // Dual-stamp `ownerId` so the history query's userId OR ownerId
+        // branch matches every entry this user writes.
+        'ownerId': uid,
         'firearmId': firearmId,
         'firearmLabel': firearmLabel,
         'optic': optic.toJson(),
@@ -180,15 +219,26 @@ class OpticLogService {
     return OfflineStreamGuard.offlineResilient(
       _firestore
           .collection('optic_logs')
-          .where('userId', isEqualTo: uid)
+          // Match entries stamped with EITHER the canonical `userId` or the
+          // legacy `ownerId` alias so history written by any app version
+          // populates (an equality on `userId` alone missed legacy docs).
+          .where(
+            Filter.or(
+              Filter('userId', isEqualTo: uid),
+              Filter('ownerId', isEqualTo: uid),
+            ),
+          )
           .snapshots()
-          // Sort client-side (newest first) so the equality-only query does
-          // not require the `userId ASC + savedAt DESC` composite index.
+          // Sort client-side (newest first) so the query does not require a
+          // composite index. De-duplicate by doc id so an entry stamped with
+          // BOTH aliases (which satisfies both OR branches) renders once.
           .map((snapshot) {
-        final logs = snapshot.docs
-            .map((doc) => OpticLogEntry.fromFirestore(doc))
-            .toList();
-        logs.sort((a, b) => b.savedAt.compareTo(a.savedAt));
+        final byId = <String, OpticLogEntry>{};
+        for (final doc in snapshot.docs) {
+          byId[doc.id] = OpticLogEntry.fromFirestore(doc);
+        }
+        final logs = byId.values.toList()
+          ..sort((a, b) => b.savedAt.compareTo(a.savedAt));
         return logs;
       }),
       fallback: const <OpticLogEntry>[],

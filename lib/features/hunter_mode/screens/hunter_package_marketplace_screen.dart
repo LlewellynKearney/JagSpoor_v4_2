@@ -7,6 +7,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
+import '../services/booking_activity_classifier.dart';
 import '../services/booking_date_formatter.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
@@ -46,7 +47,7 @@ class _HunterPackageMarketplaceScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -84,6 +85,7 @@ class _HunterPackageMarketplaceScreenState
               tabs: const [
                 Tab(text: '📦 Packages'),
                 Tab(text: '📋 My Bookings'),
+                Tab(text: '🗂 Past Hunts'),
               ],
             ),
           ),
@@ -95,8 +97,11 @@ class _HunterPackageMarketplaceScreenState
               children: [
                 // Packages Tab
                 _buildPackagesTab(theme),
-                // My Bookings Tab
-                _buildMyBookingsTab(theme),
+                // My Bookings Tab — active / upcoming hunts only.
+                _buildMyBookingsTab(theme, pastOnly: false),
+                // Past Hunts Tab — completed / declined / cancelled bookings
+                // and hunts whose dates have passed.
+                _buildMyBookingsTab(theme, pastOnly: true),
               ],
             ),
           ),
@@ -254,12 +259,14 @@ class _HunterPackageMarketplaceScreenState
                           <String, dynamic>{};
                   final farmName = packageData['farmName'] as String? ?? '';
                   final province = packageData['province'] as String? ?? '';
+                  final town = packageData['town'] as String? ?? '';
 
                   return _PackageCard(
                     packageId: packageId,
                     data: data,
                     farmName: farmName,
                     province: province,
+                    town: town,
                     theme: theme,
                     onTap: () => _showBookingSheet(context, packageId, data),
                   );
@@ -273,7 +280,12 @@ class _HunterPackageMarketplaceScreenState
     );
   }
 
-  Widget _buildMyBookingsTab(ThemeController theme) {
+  /// Builds a bookings list tab. When [pastOnly] is false this is the "My
+  /// Bookings" tab — only active / upcoming hunts (pending, awaiting payment,
+  /// or confirmed bookings whose hunt dates have not passed). When [pastOnly]
+  /// is true this is the "Past Hunts" archive — completed / declined /
+  /// cancelled bookings and hunts whose final day has already passed.
+  Widget _buildMyBookingsTab(ThemeController theme, {required bool pastOnly}) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
       return Center(
@@ -307,7 +319,7 @@ class _HunterPackageMarketplaceScreenState
 
         // Sort bookings in-memory by timestamp (descending)
         final docs = snapshot.data?.docs ?? [];
-        final bookings = List<QueryDocumentSnapshot>.from(docs)
+        final sorted = List<QueryDocumentSnapshot>.from(docs)
           ..sort((a, b) {
             final aTime = a['bookingTimestamp'] as Timestamp?;
             final bTime = b['bookingTimestamp'] as Timestamp?;
@@ -317,19 +329,29 @@ class _HunterPackageMarketplaceScreenState
             return bTime.compareTo(aTime);
           });
 
+        // Split active / upcoming hunts from the past-hunt archive.
+        final bookings = sorted.where((booking) {
+          final isPast = BookingActivityClassifier.isPastHunt(
+            booking.data() as Map<String, dynamic>,
+          );
+          return pastOnly ? isPast : !isPast;
+        }).toList();
+
         if (bookings.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.book_online_rounded,
+                  pastOnly
+                      ? Icons.history_rounded
+                      : Icons.book_online_rounded,
                   color: theme.accentColor.withValues(alpha: 0.5),
                   size: 64,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'No bookings yet',
+                  pastOnly ? 'No past hunts yet' : 'No active bookings',
                   style: TextStyle(
                     color: theme.textColor,
                     fontSize: 18,
@@ -338,7 +360,9 @@ class _HunterPackageMarketplaceScreenState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Book a package to coordinate with outfitters',
+                  pastOnly
+                      ? 'Completed and finished hunts will appear here'
+                      : 'Book a package to coordinate with outfitters',
                   style: TextStyle(color: theme.subtitleColor),
                 ),
               ],
@@ -396,6 +420,7 @@ class _PackageCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final String farmName;
   final String province;
+  final String town;
   final ThemeController theme;
   final VoidCallback onTap;
 
@@ -404,6 +429,7 @@ class _PackageCard extends StatelessWidget {
     required this.data,
     required this.farmName,
     required this.province,
+    required this.town,
     required this.theme,
     required this.onTap,
   });
@@ -485,6 +511,33 @@ class _PackageCard extends StatelessWidget {
                             fontSize: 16,
                           ),
                         ),
+                        // Town name directly below the package title so the
+                        // hunter sees the hunt location at a glance.
+                        if (town.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_city_rounded,
+                                color: theme.accentColor,
+                                size: 13,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  town,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: theme.accentColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         // Location info
                         Row(
@@ -495,15 +548,19 @@ class _PackageCard extends StatelessWidget {
                               size: 14,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              farmName.isNotEmpty
-                                  ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
-                                  : province.isNotEmpty
-                                      ? province
-                                      : 'Location TBD',
-                              style: TextStyle(
-                                color: theme.subtitleColor,
-                                fontSize: 12,
+                            Expanded(
+                              child: Text(
+                                farmName.isNotEmpty
+                                    ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
+                                    : province.isNotEmpty
+                                        ? province
+                                        : 'Location TBD',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: theme.subtitleColor,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ],

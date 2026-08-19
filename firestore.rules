@@ -183,10 +183,16 @@ service cloud.firestore {
     // scoped so a hunter can review their own saved optics + configuration
     // changes but cannot read another hunter's log. Admin full access.
     match /optic_logs/{logId} {
-      allow read: if isAdmin() || isOwnerOf('userId');
+      // Read accepts BOTH owner-field aliases: the canonical `userId` and the
+      // legacy `ownerId` (the history stream queries `userId OR ownerId`).
+      allow read: if isAdmin()
+        || isOwnerOf('userId')
+        || isOwnerOf('ownerId');
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin() || isOwnerOf('userId');
+      allow update, delete: if isAdmin()
+        || isOwnerOf('userId')
+        || isOwnerOf('ownerId');
     }
 
     // Hunter personal trophies (Digital Trophy Room) — stamped `ownerId`.
