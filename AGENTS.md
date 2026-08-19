@@ -8512,3 +8512,88 @@ dashboard (`outfitter_revenue_screen.dart`).
   `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`
   (collection fix + tolerant pending count + `_tryCount`/`_tryList`),
   `test/outfitter_dashboard_counts_test.dart` (NEW, 17 tests), `AGENTS.md`.
+
+
+## Phase -- Income per Farm BI section, marketplace town, My Bookings archive split, optic history fix (added 2026-08-19)
+
+Four coordinated updates delivered as one unit.
+
+### Task 1 -- Income per Farm on the Enterprise BI screen
+- New `_getFarmRevenueData()` in `outfitter_revenue_screen.dart`: fetches the
+  outfitter's `farms` (id->name) + earned bookings (`status whereIn
+  OutfitterAnalyticsService.earnedBookingStatuses` = Confirmed + Completed)
+  and aggregates per-farm ZAR revenue via the shared pure
+  `RevenueAnalyticsReportExporter.aggregateFarmRevenue` -- the on-screen card
+  and the PDF export now share one aggregation, so they always agree.
+- New "Income per Farm" section rendered directly below the Species Revenue
+  Breakdown: one `_FarmRevenueRow` per farm (name, earned-booking count,
+  total ZAR revenue, top 8 by revenue), empty state, and a
+  `ContextualInfoIcon` explainer. Payload wired through
+  `_combinedAnalyticsStream` as `farmRevenue` with the per-metric `_tryList`
+  degradation (a failing query shows an empty section, never errors the page).
+
+### Task 2 -- Town name on the Package Marketplace card
+- `OutfitterAnalyticsService.getFilteredPackagesStream` now resolves a `town`
+  field into the enriched package map: `packageData['town']` ??
+  `farmData['town']` ?? `district` (the SA town-level locality farms carry).
+- `_PackageCard` renders the town directly below the package title (accent
+  `location_city` row); both location rows gained ellipsis guards.
+
+### Task 3 -- My Bookings split into Active + Past Hunts
+- New pure `BookingActivityClassifier`
+  (`lib/features/hunter_mode/services/booking_activity_classifier.dart`):
+  `isPastHunt(booking, {now})` is true when the normalized status is terminal
+  (Completed / Declined / Cancelled -- tolerant of legacy spellings via
+  `BookingStatus.normalize`) OR the hunt window's final day has passed
+  (uses `BookingDateFormatter.resolveWindow`; `window.end` is
+  calendar-exclusive). Everything else -- pending, awaiting payment,
+  confirmed with future dates, or no dates yet -- stays ACTIVE.
+  `isActiveHunt` is the exact complement. The optional `now` param makes the
+  date comparison deterministic in tests.
+- The marketplace is now 3 tabs: "📦 Packages" / "📋 My Bookings"
+  (active + upcoming only) / "🗂 Past Hunts" (the archive), sharing one
+  parameterized `_buildMyBookingsTab(theme, {required bool pastOnly})` list
+  builder with per-tab empty states. The split is computed in-memory after
+  the existing client-side timestamp sort (no new Firestore query / index).
+
+### Task 4 -- Saved optics history (optic_logs) empty list
+- **Root causes**: (a) the history query used a `userId == uid`-only
+  equality, so legacy docs stamped with `ownerId` never matched; (b)
+  `OpticLogEntry.fromMap` only read the nested `optic` submap, so legacy
+  flat documents (top-level `opticName`/`turretUnit`/etc.) rendered as
+  "Unnamed optic" with defaults.
+- `OpticLogService.getMyOpticLogsStream` now queries
+  `Filter.or(Filter('userId', isEqualTo: uid), Filter('ownerId', isEqualTo: uid))`,
+  de-duplicates by doc id, and keeps the client-side newest-first sort (no
+  composite-index dependency).
+- `logSave` + `OpticLogEntry.toMap` dual-stamp `userId` AND `ownerId`.
+- `OpticLogEntry.fromMap` tolerates the `ownerId` alias for `userId` and
+  builds the optic from top-level flat legacy fields (`opticName`,
+  `turretUnit`, `clickValue`, `focalPlane`, `reticleType`,
+  `nativeMagnification`, `currentMagnification`, `tubeDiameterMm`,
+  `heightOverBoreInches`) when the nested `optic` submap is absent; the
+  submap wins when both are present.
+- `firestore.rules` `optic_logs` read/update/delete now accept BOTH owner
+  aliases (`isOwnerOf('userId') || isOwnerOf('ownerId')`); create still
+  requires `request.resource.data.userId == request.auth.uid`.
+  **Deploy reminder**: `npx firebase-tools deploy --only firestore:rules` in
+  a credentialed env to activate the ownerId-alias read (the OR query is
+  permission-denied until the rule covers both branches).
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline).
+- `flutter test` (full suite): **All 771 tests passed**, zero failures
+  (+33 = `test/booking_activity_classifier_test.dart` 17,
+  `test/optic_log_service_test.dart` +10,
+  `test/enterprise_and_marketplace_ui_contract_test.dart` 14 structural
+  source-contract tests locking the screen wiring + the rules alias).
+- Files: `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_analytics_service.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/services/booking_activity_classifier.dart` (NEW),
+  `lib/features/ballistics/data/services/optic_log_service.dart`,
+  `firestore.rules`,
+  `test/booking_activity_classifier_test.dart` (NEW),
+  `test/optic_log_service_test.dart` (extended),
+  `test/enterprise_and_marketplace_ui_contract_test.dart` (NEW), `AGENTS.md`.
