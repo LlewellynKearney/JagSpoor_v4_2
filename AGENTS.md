@@ -8694,3 +8694,85 @@ three real end-to-end defects and locked them with tests.
   (`normalizeItem` passthrough), `test/custom_package_farm_selection_resolver_test.dart`
   (NEW, 7), `test/farm_game_price_list_stream_test.dart` (+1), `AGENTS.md`.
 
+
+## Phase -- Custom Package Builder blank-loading fix + CopyrightFooter tap-swallowing root-cause fix (added 2026-08-19)
+
+Fixed the hunter Custom Package Builder "blank / unresponsive" screen issue
+end-to-end. The robust state-handling shims (invalid-farmId error state,
+explicit loading indicator, friendly empty state with back button, retry on
+stream error) were added first; the forensic investigation then uncovered a
+genuine app-wide rendering/root-cause defect in `CopyrightFooter` that
+silently swallowed taps. Both are detailed below.
+
+### Task 1 -- Robust state handling in the builder (no blank loading)
+(`lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`)
+- **Invalid farmId**: `build()` now returns `_buildInvalidFarmScaffold`
+  ("Invalid farm reference" error state + "BACK TO FARM SELECTION" button)
+  when `widget.farmId.isEmpty` -- the price-list streams are never
+  subscribed for invalid route args. The AppBar title falls back to
+  "Custom Package Builder" when `farmName` is blank.
+- **Loading**: the explicit `_LoadingView` (`CircularProgressIndicator` +
+  "Loading farm price list...") branch was already in place and is
+  verified by tests; it is rendered while either cached stream is still in
+  `ConnectionState.waiting` with no data.
+- **Empty**: the no-pricing branch now renders "No price lists published
+  for this farm yet" with a friendly detail line AND a "BACK TO FARM
+  SELECTION" `FilledButton` (`Navigator.maybePop`) -- no stranded blank.
+- **Error**: the stream-error branch gained a primary "RETRY" action
+  (`_retryStreams` -- the cached `_speciesStream`/`_ratesStream` were
+  changed from `late final` to re-assignable `late` + `_initStreams()` so a
+  retry re-subscribes cleanly) and a secondary "BACK TO FARM SELECTION"
+  text button, via new optional `actionLabel`/`secondaryAction` params on
+  `_StateBanner`.
+
+### Task 2 -- ROOT CAUSE: CopyrightFooter Center-of-doom tap swallowing
+(`lib/core/widgets/copyright_footer.dart`)
+- The builder's empty/invalid-state "BACK TO FARM SELECTION" button was
+  untappable, and the forensic render/hit-test investigation traced it to a
+  **real app-wide defect**: `CopyrightFooter` was built as
+  `Padding > Center > Text`. When placed in a Scaffold's
+  `bottomNavigationBar` slot (as the builder + several screens do), the
+  slot offers LOOSE constraints with the FULL screen height, and `Center`
+  expands to fill it -- an invisible full-height overlay whose centered
+  text sits mid-screen. Because the Scaffold's `CustomMultiChildLayoutBox`
+  hit-tests the `bottomNavigationBar` slot BEFORE the body slot
+  (reverse z-order), a tap landing on the overlay's text is consumed and
+  the body slot is never hit-tested -- body buttons under the text's band
+  silently never fire (button rects were still rendered with zero-height
+  body slots, compounding the symptom in tests).
+- Fix: replaced `Center` with `SizedBox(width: double.infinity)` +
+  `Text(textAlign: TextAlign.center)` -- identical visual centring, but the
+  footer now shrink-wraps to the caption height (~30px) at the true bottom
+  of the screen and never overlays the body. This single fix unblocks taps
+  on every screen that uses `CopyrightFooter` as a `bottomNavigationBar`.
+- The widget's doc comment now records the Center-of-doom warning so a
+  future refactor does not regress.
+
+### Tests
+- `test/copyright_footer_test.dart` (NEW, 3): caption renders; REGRESSION
+  guard asserting the footer caption stays a short bottom strip (<100px
+  tall, top>500px on the 800x600 test surface) AND that a mid-screen body
+  button still receives taps when the footer is a `bottomNavigationBar`.
+- `test/custom_package_builder_screen_test.dart` (extended 9-->14):
+  empty-state message updated to the new friendly copy; NEW -- empty state
+  renders the "BACK TO FARM SELECTION" button; tapping it pops the builder;
+  an empty `farmId` renders the invalid-farm error state (with the back
+  button) and never subscribes/hangs on streams; helper renamed
+  `buildScreen` (lint hygiene).
+- The existing 9 builder-state tests (loading/empty/error/production
+  scenarios) pass unmodified apart from the empty-message copy update.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 pre-existing infos, unchanged-to-slightly-lower baseline; changed
+  files are analyzer-clean). `analysis_options.yaml` was not auto-touched.
+- `flutter test` (full suite): **All 784 tests passed**, zero failures
+  (was 779; +5 = 3 new builder-state tests + 2 new footer tests). The
+  previously-failing pop test now passes with the footer fix; not a flake.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side UI/state handling + the footer widget fix).
+- Files: `lib/core/widgets/copyright_footer.dart` (Center-of-doom fix),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (invalid-farm guard + empty/error actions + retry-capable streams),
+  `test/copyright_footer_test.dart` (NEW),
+  `test/custom_package_builder_screen_test.dart` (extended), `AGENTS.md`.

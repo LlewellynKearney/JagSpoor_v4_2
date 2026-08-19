@@ -29,9 +29,19 @@ class CopyrightFooter extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final subtitleColor = (isDark ? const Color(0xFFB0B0B0) : const Color(0xFF5D4037))
         .withValues(alpha: 0.7);
+    // NOTE: do NOT use a `Center` here. When this widget is placed in a
+    // Scaffold's `bottomNavigationBar` slot the slot is offered loose
+    // constraints with the FULL screen height as the max, and a `Center`
+    // expands to fill it -- the footer then covers the whole screen with an
+    // invisible widget whose centered text absorbs taps in the middle band
+    // (the bottomNavigationBar slot is hit-tested before the body slot, so
+    // body buttons under the text never receive the tap). A
+    // `SizedBox(width: double.infinity)` keeps the horizontal centring via
+    // TextAlign.center while shrink-wrapping the height to the caption.
     return Padding(
       padding: padding,
-      child: Center(
+      child: SizedBox(
+        width: double.infinity,
         child: Text(
           caption,
           textAlign: TextAlign.center,

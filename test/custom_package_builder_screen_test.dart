@@ -36,10 +36,10 @@ void main() {
     theme = ThemeController();
   });
 
-  HunterCustomPackageBuilderScreen _buildScreen() =>
+  HunterCustomPackageBuilderScreen buildScreen({String farmId = 'farm-1'}) =>
       HunterCustomPackageBuilderScreen(
         theme: theme,
-        farmId: 'farm-1',
+        farmId: farmId,
         farmName: 'Test Farm',
         outfitterId: 'outfitter-1',
       );
@@ -47,7 +47,7 @@ void main() {
   testWidgets('renders the Scaffold with the farm name AppBar (not blank)',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: _buildScreen(),
+      home: buildScreen(),
     ));
 
     // The AppBar must render the farm name -- proves the screen is not a
@@ -58,7 +58,7 @@ void main() {
   testWidgets('renders a defined empty state (not blank) when the farm has no visible pricing',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: _buildScreen(),
+      home: buildScreen(),
     ));
     await tester.pumpAndSettle();
 
@@ -67,19 +67,75 @@ void main() {
     // returns `Stream.empty()` (completes with no data) and the service-rates
     // stream returns `Stream.value(FarmServiceRates.empty)`. The builder's
     // StreamBuilder therefore lands in the empty-state branch and renders the
-    // "No pricing published yet" banner -- NOT a blank screen. This is the
-    // core "fix the blank screen" contract: every branch renders a defined
-    // widget instead of an empty Container / hung spinner.
-    expect(find.text('No pricing published yet'), findsOneWidget);
+    // "No price lists published for this farm yet" banner -- NOT a blank
+    // screen. This is the core "fix the blank screen" contract: every branch
+    // renders a defined widget instead of an empty Container / hung spinner.
+    expect(find.text('No price lists published for this farm yet'),
+        findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing,
         reason: 'Stream.empty() completes immediately; the empty-state (not '
             'the loading spinner) is the correct render for an unauthenticated '
             'caller with no visible pricing.');
   });
 
+  testWidgets('the empty state renders a BACK TO FARM SELECTION button',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: buildScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No price lists published for this farm yet'),
+        findsOneWidget);
+    expect(find.text('BACK TO FARM SELECTION'), findsOneWidget);
+  });
+
+  testWidgets('tapping the empty-state back button pops the builder',
+      (tester) async {
+    // Push the builder on top of a launcher route, then tap the back button
+    // and verify the screen pops back to the launcher (no stranded blank).
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (ctx) => Center(
+          child: ElevatedButton(
+            onPressed: () => Navigator.of(ctx).push(
+              MaterialPageRoute(builder: (_) => buildScreen()),
+            ),
+            child: const Text('OPEN BUILDER'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('OPEN BUILDER'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No price lists published for this farm yet'),
+        findsOneWidget);
+
+    await tester.tap(find.text('BACK TO FARM SELECTION'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('OPEN BUILDER'), findsOneWidget);
+    expect(find.text('BACK TO FARM SELECTION'), findsNothing);
+  });
+
+  testWidgets('an empty farmId renders the invalid-farm error state (never blank streams)',
+      (tester) async {
+    // An empty/blank farmId means the route args are invalid (deep link,
+    // stale farm card, direct navigation). The screen must NOT subscribe to
+    // the price-list streams that would hang in a blank state; it renders a
+    // clear error + a way back instead.
+    await tester.pumpWidget(MaterialApp(home: buildScreen(farmId: '')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid farm reference'), findsOneWidget);
+    expect(find.text('BACK TO FARM SELECTION'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing,
+        reason: 'An invalid farmId must not subscribe to the streams; the '
+            'screen renders the error state immediately, not a hung loader.');
+  });
+
   testWidgets('renders the CopyrightFooter', (tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: _buildScreen(),
+      home: buildScreen(),
     ));
     await tester.pumpAndSettle();
 
@@ -117,12 +173,14 @@ void main() {
         () => 'hunter-1';
 
     try {
-      await tester.pumpWidget(MaterialApp(home: _buildScreen()));
+      await tester.pumpWidget(MaterialApp(home: buildScreen()));
       await tester.pump(); // first frame
 
       final spinners = find.byType(CircularProgressIndicator).evaluate().length;
-      final banners =
-          find.text('No pricing published yet').evaluate().length;
+      final banners = find
+          .text('No price lists published for this farm yet')
+          .evaluate()
+          .length;
       // The body MUST paint at least one visible state widget on the first
       // frame -- a loading spinner OR the empty-state banner. This is the
       // regression guard for the "completely blank, no loading spinner, no
@@ -145,13 +203,13 @@ void main() {
         () => 'hunter-1';
 
     try {
-      await tester.pumpWidget(MaterialApp(home: _buildScreen()));
+      await tester.pumpWidget(MaterialApp(home: buildScreen()));
       await tester.pumpAndSettle();
 
       // No farm_pricelists docs + no farm_service_rates doc -> both streams
       // emit empty -> the empty-state banner renders. NOT a blank body, and
       // NOT a hung spinner.
-      expect(find.text('No pricing published yet'), findsOneWidget);
+      expect(find.text('No price lists published for this farm yet'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     } finally {
       FarmGamePriceListManager.instance.firestoreForTesting = null;
@@ -181,10 +239,10 @@ void main() {
       // streams inline in build().
       await tester.pumpWidget(_RebuildProbe(
         theme: theme,
-        builder: (ctx) => _buildScreen(),
+        builder: (ctx) => buildScreen(),
       ));
       await tester.pumpAndSettle();
-      expect(find.text('No pricing published yet'), findsOneWidget);
+      expect(find.text('No price lists published for this farm yet'), findsOneWidget);
 
       // Trigger an in-place setState on the parent (the child State is
       // preserved, so the cached `late final` stream fields survive).
@@ -193,7 +251,7 @@ void main() {
 
       // The body stays on the empty-state banner -- it does NOT flash blank
       // or revert to a hung spinner, because the streams were not recreated.
-      expect(find.text('No pricing published yet'), findsOneWidget);
+      expect(find.text('No price lists published for this farm yet'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing,
           reason: 'An in-place setState rebuild must not reset the cached '
               'streams to waiting; the body stays on the settled empty-state, '

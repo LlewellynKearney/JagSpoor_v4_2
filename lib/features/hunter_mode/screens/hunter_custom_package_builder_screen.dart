@@ -91,11 +91,12 @@ class _HunterCustomPackageBuilderScreenState
   // ConnectionState.waiting -> the loading guard fired -> a re-build loop that
   // never let the screen settle on real data (and on some device / timing
   // combos left the body painting nothing visible between AppBar and footer).
-  // Caching the streams once stabilises the StreamBuilders so they emit data
-  // and stay subscribed for the screen's lifetime (the documented project
-  // pattern -- see ballistic_calc_screen / scope_tools_bottom_sheet).
-  late final Stream<List<FarmGamePriceEntry>> _speciesStream;
-  late final Stream<FarmServiceRates> _ratesStream;
+  // Caching the streams stabilises the StreamBuilders so they stay subscribed
+  // for the screen's lifetime (the documented project pattern -- see
+  // ballistic_calc_screen / scope_tools_bottom_sheet). They are re-assignable
+  // (not `final`) so the error-state RETRY action can re-subscribe on demand.
+  late Stream<List<FarmGamePriceEntry>> _speciesStream;
+  late Stream<FarmServiceRates> _ratesStream;
 
   @override
   void initState() {
@@ -103,9 +104,20 @@ class _HunterCustomPackageBuilderScreenState
     // Cache the streams once so build() never re-creates them. Both getters
     // are hunter-readable (no owner-scoped filter) and null-uid-safe (return
     // Stream.empty() / Stream.value(empty) for an unauthenticated caller).
+    _initStreams();
+  }
+
+  void _initStreams() {
     _speciesStream =
         _priceListManager.getFarmPriceListStreamForHunter(widget.farmId);
     _ratesStream = _priceListManager.getFarmServiceRatesStream(widget.farmId);
+  }
+
+  /// Re-subscribes both price-list streams after a stream error surfaced in
+  /// the error-state banner. Rebuilding the streams (fresh `.snapshots()`
+  /// subscriptions) + `setState` lets the `StreamBuilder`s retry cleanly.
+  void _retryStreams() {
+    setState(_initStreams);
   }
 
   @override
@@ -338,12 +350,19 @@ class _HunterCustomPackageBuilderScreenState
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    // Guard: an empty/blank farmId means the route args are invalid (deep
+    // link, stale farm card, direct navigation). Never subscribe to the
+    // price-list streams; show a clear error + a way back instead of a
+    // blank screen.
+    if (widget.farmId.isEmpty) {
+      return _buildInvalidFarmScaffold(theme);
+    }
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
         title: Text(
-          widget.farmName,
+          widget.farmName.isEmpty ? 'Custom Package Builder' : widget.farmName,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: theme.backgroundColor,
@@ -353,6 +372,37 @@ class _HunterCustomPackageBuilderScreenState
       body: _createdBookingId == null
           ? _buildBuilderView(theme)
           : _buildConfirmationView(theme),
+      bottomNavigationBar: const SafeArea(
+        top: false,
+        child: CopyrightFooter.tight(),
+      ),
+    );
+  }
+
+  /// Full-screen error state for an invalid (empty / blank) [farmId]. Shows a
+  /// clear message and a way back to the farm-selection list instead of a
+  /// blank loading screen.
+  Widget _buildInvalidFarmScaffold(ThemeController theme) {
+    return Scaffold(
+      backgroundColor: theme.backgroundColor,
+      appBar: AppBar(
+        title: const Text(
+          'Custom Package Builder',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: theme.backgroundColor,
+        foregroundColor: theme.textColor,
+        elevation: 0,
+      ),
+      body: _StateBanner(
+        icon: Icons.error_outline_rounded,
+        message: 'Invalid farm reference',
+        detail: 'The selected farm could not be identified. Return to the '
+            'farm list and choose a valid farm to build a custom package.',
+        theme: theme,
+        actionLabel: 'BACK TO FARM SELECTION',
+        onAction: () => Navigator.of(context).maybePop(),
+      ),
       bottomNavigationBar: const SafeArea(
         top: false,
         child: CopyrightFooter.tight(),
@@ -391,6 +441,10 @@ class _HunterCustomPackageBuilderScreenState
                 message: 'Could not load this farm\'s price list.',
                 detail: '${speciesSnapshot.error ?? ratesSnapshot.error}',
                 theme: theme,
+                actionLabel: 'RETRY',
+                onAction: _retryStreams,
+                secondaryActionLabel: 'BACK TO FARM SELECTION',
+                onSecondaryAction: () => Navigator.of(context).maybePop(),
               );
             }
             _speciesItems = speciesSnapshot.data ?? const [];
@@ -400,11 +454,13 @@ class _HunterCustomPackageBuilderScreenState
             if (_speciesItems.isEmpty && _feeItems.isEmpty) {
               return _StateBanner(
                 icon: Icons.price_check_outlined,
-                message: 'No pricing published yet',
-                detail: 'This farm has not published a game price list or '
-                    'service rates yet. Please check back later or contact '
-                    'the outfitter.',
+                message: 'No price lists published for this farm yet',
+                detail: 'The outfitter has not published any game prices or '
+                    'service rates for this farm yet. Please check back '
+                    'later or contact the outfitter.',
                 theme: theme,
+                actionLabel: 'BACK TO FARM SELECTION',
+                onAction: () => Navigator.of(context).maybePop(),
               );
             }
 
@@ -1063,11 +1119,23 @@ class _StateBanner extends StatelessWidget {
     required this.message,
     required this.detail,
     required this.theme,
+    this.actionLabel,
+    this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
   });
   final IconData icon;
   final String message;
   final String detail;
   final ThemeController theme;
+
+  /// Optional primary action (e.g. 'BACK TO FARM SELECTION' / 'RETRY').
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  /// Optional secondary (text) action rendered below the primary one.
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,6 +1162,26 @@ class _StateBanner extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: theme.subtitleColor, fontSize: 13),
             ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: Text(actionLabel!),
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.accentColor,
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ],
+            if (secondaryActionLabel != null && onSecondaryAction != null)
+              TextButton(
+                onPressed: onSecondaryAction,
+                child: Text(
+                  secondaryActionLabel!,
+                  style: TextStyle(color: theme.subtitleColor),
+                ),
+              ),
           ],
         ),
       ),
