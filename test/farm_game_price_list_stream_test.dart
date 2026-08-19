@@ -396,6 +396,79 @@ void main() {
       expect(data.containsKey('province'), isFalse);
     });
 
+    test('passes the builder\'s gender / horn / limit / fee-unit spec fields '
+        'through to the booking (normalizeItem passthrough)', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = bookingService(uid: 'hunter-1', firestore: fake);
+
+      final bookingId = await service.submitCustomPackageBooking(
+        farmId: 'farm-1',
+        farmName: 'Test Farm',
+        outfitterId: 'outfitter-1',
+        selectedItems: [
+          {
+            'name': 'Kudu',
+            'displayLabel': 'Kudu',
+            'speciesName': 'Kudu',
+            'sex': 'Male',
+            'sexLabel': 'Male',
+            'trophySizeRange': '>50"',
+            'hornTuskLength': '52"',
+            'hornTuskUnit': 'inches',
+            'itemType': 'species',
+            'feeType': null,
+            'quantityLimit': 3,
+            'quantity': 2,
+            'unitPriceHunterZAR': 5000.0,
+            'lineTotal': 10000.0,
+            'outfitterBasePrice': 5000.0,
+            'hunterDisplayPriceZAR': 5000.0,
+          },
+        ],
+        lodgingCatering: [
+          {
+            'name': 'Overnight Accommodation (Hunter)',
+            'displayLabel': 'Overnight Accommodation (Hunter)',
+            'itemType': 'fee',
+            'feeType': 'overnight_accommodation_hunter',
+            'feeUnitLabel': 'Per night',
+            'quantityNoun': 'nights',
+            'quantity': 3,
+            'unitPriceHunterZAR': 800.0,
+            'lineTotal': 2400.0,
+            'outfitterBasePrice': 800.0,
+            'hunterDisplayPriceZAR': 800.0,
+          },
+        ],
+        combinedTotalZAR: 12400.0,
+      );
+
+      final data =
+          (await fake.collection('bookings').doc(bookingId).get()).data()!;
+
+      // Species line: gender / horn / limit specs survive the normalization.
+      final speciesLine =
+          (data['selectedItemsList'] as List).first as Map<String, dynamic>;
+      expect(speciesLine['sex'], 'Male');
+      expect(speciesLine['sexLabel'], 'Male');
+      expect(speciesLine['trophySizeRange'], '>50"');
+      expect(speciesLine['hornTuskLength'], '52"');
+      expect(speciesLine['hornTuskUnit'], 'inches');
+      expect(speciesLine['quantityLimit'], 3);
+      expect(speciesLine['itemType'], 'species');
+      expect(speciesLine['feeType'], isNull);
+
+      // Fee line: the per-category unit semantics survive the normalization.
+      final feeLine = (data['lodgingCateringList'] as List).first
+          as Map<String, dynamic>;
+      expect(feeLine['itemType'], 'fee');
+      expect(feeLine['feeType'], 'overnight_accommodation_hunter');
+      expect(feeLine['feeUnitLabel'], 'Per night');
+      expect(feeLine['quantityNoun'], 'nights');
+      expect(feeLine['quantity'], 3);
+      expect(feeLine['hunterPrice'], 800.0);
+    });
+
     test(
         'dual-key sync: the date resolver (resolveWindow) reads the hunt '
         'window from a custom-package booking regardless of which alias a '

@@ -8597,3 +8597,100 @@ Four coordinated updates delivered as one unit.
   `test/booking_activity_classifier_test.dart` (NEW),
   `test/optic_log_service_test.dart` (extended),
   `test/enterprise_and_marketplace_ui_contract_test.dart` (NEW), `AGENTS.md`.
+
+## Phase -- Custom Package Builder wired to `farm_pricelists` + orphaned-booking guards (added 2026-08-19)
+
+Audited the hunter Custom Package Builder end-to-end against the
+`farm_pricelists` collection (fields per the data screenshot: `farmId`,
+`outfitterId`, `speciesName`, `gender`, `hornTuskLength`, `price`, `qty`).
+The query/display path was already correct from prior phases; this pass fixed
+three real end-to-end defects and locked them with tests.
+
+### Audit result (verified correct, no change)
+- **Query source**: `hunter_custom_package_builder_screen.dart` streams
+  `FarmGamePriceListManager.getFarmPriceListStreamForHunter(farmId)` (queries
+  `farm_pricelists` `.where('farmId')` only -- hunter-readable per the
+  `read: isSignedIn()` rule; client-side species sort, no composite-index
+  dependency; wrapped in `OfflineStreamGuard`). The farm-selection screen
+  (`custom_package_farm_selection_screen.dart`) groups `farm_pricelists` docs
+  by `farmId` (+ `farm_service_rates` fallback) and filters out farms with
+  no published pricing.
+- **Model field mapping**: `FarmGamePriceEntry.fromFirestore`/`fromMap` map
+  exactly the screenshot fields (`farmId`, `outfitterId`, `speciesName`,
+  `qty`, `price`, `gender`, `hornTuskLength`, `hornTuskUnit`) and tolerate
+  aliases (`name`, `quantity`, `priceZAR`, `priceRands`, `sex`, `horn`,
+  `tusk`).
+- **UI display**: species rows render gender chips (suppressed when 'Any'),
+  horn/tusk display labels with unit suffix, "max N" limit chips, and a
+  quantity stepper capped at the outfitter's published `qty`; itemized
+  service-rate rows render the per-category unit semantics; grand total +
+  submit confirmation view.
+
+### Fix 1 -- Farm-selection outfitterId resolution (`custom_package_farm_selection_screen.dart`)
+- **Root cause**: the `farmId -> outfitterId` map used `putIfAbsent`, keeping
+  the FIRST `farm_pricelists` entry's `outfitterId` even when it was blank --
+  despite the comment claiming "the first entry that carries a non-empty
+  outfitterId wins". A farm whose earliest-written price-list entry had a
+  blank `outfitterId` resolved to `''`, and the builder wrote an ORPHANED
+  booking (the outfitter dashboard queries `outfitterId == uid`, so they
+  never saw it).
+- Extracted a pure top-level `resolveOutfittersByFarm(Iterable<Map>)`:
+  the first entry carrying a NON-EMPTY `outfitterId` wins; a later non-empty
+  value backfills an empty/missing one; a known non-empty id is never
+  overwritten. The same prefer-non-empty rule now applies to the
+  `farm_service_rates` merge (previously also `putIfAbsent`).
+
+### Fix 2 -- Builder outfitterId fallback + guard (`hunter_custom_package_builder_screen.dart`)
+- New `_resolvedOutfitterId()`: prefers the farm-selection-resolved id;
+  falls back to the `outfitterId` stamped on the streamed `farm_pricelists`
+  entries themselves (every price-list doc carries it). `_submitBooking`
+  blocks with a clear "This farm's price list does not identify its
+  outfitter. Please go back and re-select the farm." error when the id is
+  still unresolved -- no orphaned booking can be written.
+
+### Fix 3 -- Spec passthrough to the booking (`farm_game_price_list_manager.dart` + builder)
+- `submitCustomPackageBooking`'s `normalizeItem` previously DROPPED the
+  builder's collected spec fields, so gender / horn-tusk / quantity-limit /
+  fee-unit data vanished from the booking doc. It now passes through
+  `hornTuskLength`, `hornTuskUnit`, `quantityLimit`, `itemType`, `feeType`,
+  `feeUnitLabel`, `quantityNoun` (alongside the existing `sex`, `sexLabel`,
+  `trophySizeRange`). The builder's `_collectSelectedSpecies` now also
+  emits `hornTuskUnit`.
+
+### Tests
+- `test/custom_package_farm_selection_resolver_test.dart` (NEW, 7 tests):
+  farm->outfitter mapping; non-empty backfill of empty/missing id; known id
+  never overwritten; blank/missing farmId skipped; empty input; all-blank
+  farm resolves to '' (builder guard surfaces a clear error).
+- `test/farm_game_price_list_stream_test.dart` (+1 test): the
+  `submitCustomPackageBooking` normalization passes gender / horn-tusk /
+  hornTuskUnit / quantityLimit / itemType / feeType / feeUnitLabel /
+  quantityNoun through to `selectedItemsList` + `lodgingCateringList`.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**, 278
+  infos (unchanged pre-existing baseline; the changed/new files are
+  analyzer-clean). The only issues in the edited test file are the
+  documented pre-existing `no_leading_underscores_for_local_identifiers`
+  infos at lines 26/32.
+- `flutter test` (full suite): **All 779 passed**, zero failures (was 771;
+  +8 = 7 resolver + 1 passthrough). No regressions.
+- Environment note: re-installed Flutter 3.29.1 stable (CI pin) at
+  `/home/openhands/flutter` (the SDK had been removed since the prior
+  session); `apt-get install unzip xz-utils libsqlite3-dev` and the
+  `/usr/lib/x86_64-linux-gnu/libsqlite3.so -> libsqlite3.so.0` symlink for
+  the sqflite-FFI integration tests. The `flutter test` tool emits a
+  pre-existing spurious "Unexpected child config found under flutter"
+  pubspec warning on EVERY test run (verified on untouched test files too);
+  non-blocking, unrelated to this change.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side resolution + passthrough + tests; `farm_pricelists` read is
+  already `isSignedIn()` per `firestore.rules`).
+- Files: `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`
+  (`resolveOutfittersByFarm` + prefer-non-empty merge),
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`
+  (`_resolvedOutfitterId` + guard + hornTuskUnit),
+  `lib/features/hunter_mode/services/farm_game_price_list_manager.dart`
+  (`normalizeItem` passthrough), `test/custom_package_farm_selection_resolver_test.dart`
+  (NEW, 7), `test/farm_game_price_list_stream_test.dart` (+1), `AGENTS.md`.
+

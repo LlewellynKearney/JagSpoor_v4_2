@@ -178,6 +178,7 @@ class _HunterCustomPackageBuilderScreenState
         'sex': e.gender,
         'sexLabel': e.gender,
         'hornTuskLength': e.hornTuskLength,
+        'hornTuskUnit': e.hornTuskUnit,
         'itemType': 'species',
         'feeType': null,
         'quantity': qty,
@@ -214,6 +215,19 @@ class _HunterCustomPackageBuilderScreenState
     return out;
   }
 
+  /// The outfitter id this custom package is booked against. Prefers the id
+  /// resolved by the farm-selection screen; falls back to the `outfitterId`
+  /// stamped on the streamed `farm_pricelists` entries themselves (every
+  /// price-list doc carries it) so a stale/blank farm-card id never produces
+  /// an orphaned booking the outfitter cannot see.
+  String _resolvedOutfitterId() {
+    if (widget.outfitterId.isNotEmpty) return widget.outfitterId;
+    for (final entry in _speciesItems) {
+      if (entry.outfitterId.isNotEmpty) return entry.outfitterId;
+    }
+    return '';
+  }
+
   Future<void> _submitBooking() async {
     if (_totalLineCount == 0) {
       _showError('Please add at least one species or service line.');
@@ -222,6 +236,12 @@ class _HunterCustomPackageBuilderScreenState
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       _showError('Please log in to continue');
+      return;
+    }
+    final outfitterId = _resolvedOutfitterId();
+    if (outfitterId.isEmpty) {
+      _showError('This farm\'s price list does not identify its outfitter. '
+          'Please go back and re-select the farm.');
       return;
     }
 
@@ -234,7 +254,7 @@ class _HunterCustomPackageBuilderScreenState
       final bookingId = await _priceListManager.submitCustomPackageBooking(
         farmId: widget.farmId,
         farmName: widget.farmName,
-        outfitterId: widget.outfitterId,
+        outfitterId: outfitterId,
         pricelistId: 'farm_pricelists:${widget.farmId}',
         selectedItems: selectedItems,
         lodgingCatering: lodgingCatering,

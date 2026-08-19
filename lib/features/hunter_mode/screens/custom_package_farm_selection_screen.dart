@@ -55,13 +55,14 @@ class _CustomPackageFarmSelectionScreenState
 
       // farmId -> outfitterId (the first entry that carries a non-empty
       // outfitterId wins, so a farm with stale entries still resolves).
-      final byFarm = <String, String>{};
+      final byFarm = resolveOutfittersByFarm(
+        pricelists.docs.map((doc) => doc.data()),
+      );
       final speciesCount = <String, int>{};
       for (final doc in pricelists.docs) {
         final data = doc.data();
         final farmId = (data['farmId'] as String?) ?? '';
         if (farmId.isEmpty) continue;
-        byFarm.putIfAbsent(farmId, () => (data['outfitterId'] as String?) ?? '');
         speciesCount[farmId] = (speciesCount[farmId] ?? 0) + 1;
       }
 
@@ -71,10 +72,14 @@ class _CustomPackageFarmSelectionScreenState
           .collection('farm_service_rates')
           .get();
       for (final doc in serviceRates.docs) {
-        byFarm.putIfAbsent(doc.id, () {
-          final data = doc.data();
-          return (data['outfitterId'] as String?) ?? '';
-        });
+        final outfitterId =
+            (doc.data()['outfitterId'] as String?) ?? '';
+        final existing = byFarm[doc.id];
+        // Same prefer-non-empty rule as the price-list resolution: never
+        // overwrite a known outfitter id, but backfill an empty one.
+        if (existing == null || (existing.isEmpty && outfitterId.isNotEmpty)) {
+          byFarm[doc.id] = outfitterId;
+        }
         speciesCount.putIfAbsent(doc.id, () => 0);
       }
 
@@ -394,4 +399,31 @@ class _FarmCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Resolves `farmId -> outfitterId` from raw `farm_pricelists` document maps.
+///
+/// The first entry that carries a NON-EMPTY `outfitterId` wins, so a farm
+/// whose earliest-written price-list entry has a missing/blank `outfitterId`
+/// still resolves to the real outfitter once any entry for the farm carries
+/// one. (The previous `putIfAbsent` implementation kept the FIRST entry's
+/// `outfitterId` even when it was empty, so the builder received a blank
+/// outfitter id and wrote an orphaned booking the outfitter never saw.)
+///
+/// Entries with a missing/blank `farmId` are skipped. Pure function over the
+/// document data maps -- unit-testable without Firestore.
+Map<String, String> resolveOutfittersByFarm(
+  Iterable<Map<String, dynamic>> priceListDocs,
+) {
+  final byFarm = <String, String>{};
+  for (final data in priceListDocs) {
+    final farmId = (data['farmId'] as String?) ?? '';
+    if (farmId.isEmpty) continue;
+    final outfitterId = (data['outfitterId'] as String?) ?? '';
+    final existing = byFarm[farmId];
+    if (existing == null || (existing.isEmpty && outfitterId.isNotEmpty)) {
+      byFarm[farmId] = outfitterId;
+    }
+  }
+  return byFarm;
 }

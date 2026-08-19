@@ -527,13 +527,23 @@ class FarmGamePriceListManager {
     final double basePrice = combinedTotalZAR;
 
     // Normalise a line item into the shape the outfitter booking dashboard
-    // already renders (`name` + `hunterPrice` + `quantity`).
+    // already renders (`name` + `hunterPrice` + `quantity`). The builder's
+    // gender / horn-tusk / quantity-limit / fee-unit spec fields are passed
+    // through (not dropped) so the booked itinerary retains every spec the
+    // hunter saw on the price list.
     Map<String, dynamic> normalizeItem(Map<String, dynamic> item) => {
           'name': item['name'] ?? item['displayLabel'] ?? 'Unknown',
           'speciesId': item['speciesId'],
           'sex': item['sex'],
           'sexLabel': item['sexLabel'],
           'trophySizeRange': item['trophySizeRange'],
+          'hornTuskLength': item['hornTuskLength'],
+          'hornTuskUnit': item['hornTuskUnit'],
+          'quantityLimit': item['quantityLimit'],
+          'itemType': item['itemType'],
+          'feeType': item['feeType'],
+          'feeUnitLabel': item['feeUnitLabel'],
+          'quantityNoun': item['quantityNoun'],
           'quantity': item['quantity'] ?? 1,
           'unitPriceHunterZAR': item['unitPriceHunterZAR'] ??
               item['hunterDisplayPriceZAR'] ??
