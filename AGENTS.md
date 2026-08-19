@@ -8457,3 +8457,58 @@ Intelligence dashboard (`outfitter_revenue_screen.dart`).
   `lib/features/hunter_mode/services/revenue_analytics_report_exporter.dart`,
   `test/species_revenue_breakdown_test.dart` (NEW),
   `test/revenue_analytics_report_exporter_test.dart` (NEW), `AGENTS.md`.
+
+
+## Phase -- Outfitter dashboard Managers + Pending counts showing 0 (added 2026-08-19)
+
+Two count-card fixes on the outfitter Enterprise Business Intelligence
+dashboard (`outfitter_revenue_screen.dart`).
+
+### Task 1 -- Managers card (showed 0)
+- **Root cause**: `_getManagersData()` queried the nonexistent `managers`
+  collection instead of `farm_managers` (the collection
+  `OutfitterEnterpriseManager.assignManager` writes to, stamped with
+  `outfitterId` == the caller's uid). The query matched no documents, so
+  the Managers card always rendered 0. Fixed the collection name.
+
+### Task 2 -- Pending bookings card (showed 0)
+- **Root cause**: `_getPendingBookingsCount()` used a strict server-side
+  `status == 'Pending Approval'` equality match, which silently misses
+  pending bookings whose status was written with a legacy case / spelling
+  variant (`'pending'`, `'Pending'`, `'pending_approval'`).
+- New `BookingStatus.normalize(String?)` -- the single source of truth for
+  tolerant status matching: case-insensitive, `_`/`-` treated as spaces,
+  maps legacy aliases (`pending`/`Pending` -> Pending Approval;
+  `Approved`/`Pending Deposit`/`Pending Payment` -> Awaiting Payment;
+  `Paid` -> Confirmed; `Canceled` -> Cancelled); unknown statuses pass
+  through trimmed + unchanged (never silently remapped); null/blank ->
+  null. New `BookingStatus.isPendingApproval(String?)` helper.
+- `_getPendingBookingsCount()` now uses a single-equality `outfitterId`
+  query (no composite-index dependency) + the tolerant client-side
+  `BookingStatus.isPendingApproval` match.
+
+### Robustness -- per-metric graceful degradation
+- Each auxiliary metric in `_combinedAnalyticsStream` (farms / managers /
+  packages / pending / species / monthly) now runs through `_tryCount` /
+  `_tryList` wrappers that degrade to 0 / empty on any failure
+  (permissions, offline with no cache, missing index), so one failing
+  query can never error the whole dashboard stream into the "Error
+  loading analytics" banner.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline).
+- `flutter test` (full suite): **All 738 tests passed**, zero failures
+  (+17 = `test/outfitter_dashboard_counts_test.dart`: normalize +
+  isPendingApproval unit tests + structural source-contract regression
+  guards asserting the screen queries `farm_managers` (not `managers`),
+  filters bookings by `outfitterId`, and uses the tolerant
+  `BookingStatus.isPendingApproval` match).
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  query fixes; `farm_managers` read is already `isSignedIn()` and
+  `bookings` read is already outfitter-scoped per `firestore.rules`).
+- Files: `lib/features/hunter_mode/models/booking_status.dart`
+  (`normalize` + `isPendingApproval`),
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`
+  (collection fix + tolerant pending count + `_tryCount`/`_tryList`),
+  `test/outfitter_dashboard_counts_test.dart` (NEW, 17 tests), `AGENTS.md`.
