@@ -191,6 +191,157 @@ class OutfitterAnalyticsService {
     );
   }
 
+  // ==========================================
+  // SPECIES REVENUE BREAKDOWN
+  // ==========================================
+
+  /// Aggregates the per-species revenue breakdown for an outfitter's earned
+  /// (payment-verified: Confirmed / Completed) bookings.
+  ///
+  /// Species revenue is resolved from two data sources per booking:
+  /// - **Custom harvested species** -- a custom-package booking carries its
+  ///   own `selectedItemsList` line items (`name` + `quantity` + `lineTotal` /
+  ///   `unitPriceHunterZAR`), written by
+  ///   `FarmGamePriceListManager.submitCustomPackageBooking`.
+  /// - **Package animals** -- a marketplace booking references
+  ///   `packages/{packageId}`, whose `speciesItems` carry `speciesName` +
+  ///   `quantity` + `pricePerAnimal` / `total`.
+  ///
+  /// Returns the aggregated rows sorted by revenue (desc), each
+  /// `{species, revenue, count}`. Empty when no earned booking carries
+  /// species data (the dashboard then shows its "No species revenue data
+  /// yet" empty state).
+  Future<List<Map<String, dynamic>>> getSpeciesRevenueBreakdown(
+      String outfitterId) async {
+    final snapshot = await _firestore
+        .collection('bookings')
+        .where('outfitterId', isEqualTo: outfitterId)
+        .where('status', whereIn: earnedBookingStatuses)
+        .get();
+
+    final bookings = snapshot.docs.map((d) => d.data()).toList();
+
+    // Fetch the linked package docs for bookings that do not carry their own
+    // species line items (marketplace bookings keep the species list on the
+    // package doc). Custom-package bookings ('CUSTOM_BUILT') have no package
+    // doc, so they are never fetched.
+    final packageIds = <String>{};
+    for (final data in bookings) {
+      if (hasInlineSpeciesItems(data)) continue;
+      final packageId = (data['packageId'] as String?)?.trim();
+      if (packageId != null &&
+          packageId.isNotEmpty &&
+          packageId != 'CUSTOM_BUILT') {
+        packageIds.add(packageId);
+      }
+    }
+    final packagesById = <String, Map<String, dynamic>>{};
+    for (final packageId in packageIds) {
+      try {
+        final pkg =
+            await _firestore.collection('packages').doc(packageId).get();
+        final data = pkg.data();
+        if (data != null) packagesById[packageId] = data;
+      } catch (_) {
+        // A deleted / unreadable package simply contributes no species.
+      }
+    }
+
+    return aggregateSpeciesRevenue(bookings, packagesById);
+  }
+
+  /// Whether a booking document carries its own species line items (custom
+  /// harvested species) instead of referencing a package's species list.
+  static bool hasInlineSpeciesItems(Map<String, dynamic> booking) {
+    final items = booking['selectedItemsList'];
+    return items is List && items.isNotEmpty;
+  }
+
+  /// Pure aggregation of per-species revenue + harvest counts from booking
+  /// records (and their linked package records). Dependency-free so the
+  /// breakdown can be unit-tested without the Firestore emulator.
+  ///
+  /// [bookings] are raw `bookings` document maps (already filtered to the
+  /// earned statuses by the caller). [packagesById] maps `packageId` -> the
+  /// raw `packages` document map, used to resolve the species list for
+  /// marketplace bookings that do not carry inline `selectedItemsList`.
+  ///
+  /// Returns rows sorted by revenue descending (alphabetical tie-break),
+  /// each `{species, revenue, count}`.
+  static List<Map<String, dynamic>> aggregateSpeciesRevenue(
+    Iterable<Map<String, dynamic>> bookings,
+    Map<String, Map<String, dynamic>> packagesById,
+  ) {
+    final revenueBySpecies = <String, double>{};
+    final countBySpecies = <String, int>{};
+
+    void accumulate(String? rawName, num? rawQty, double revenue) {
+      final species = rawName?.trim() ?? '';
+      if (species.isEmpty) return;
+      final qty = rawQty?.toInt() ?? 1;
+      final safeQty = qty < 1 ? 1 : qty;
+      revenueBySpecies[species] =
+          (revenueBySpecies[species] ?? 0.0) + revenue;
+      countBySpecies[species] = (countBySpecies[species] ?? 0) + safeQty;
+    }
+
+    for (final booking in bookings) {
+      if (hasInlineSpeciesItems(booking)) {
+        // Custom harvested species (custom-package booking).
+        final items = booking['selectedItemsList'] as List;
+        for (final raw in items.whereType<Map>()) {
+          final item = Map<String, dynamic>.from(raw);
+          final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+          final lineTotal = (item['lineTotal'] as num?)?.toDouble();
+          final unitPrice =
+              (item['unitPriceHunterZAR'] as num?)?.toDouble() ??
+                  (item['hunterPrice'] as num?)?.toDouble() ??
+                  0.0;
+          accumulate(
+            (item['name'] ?? item['speciesName'] ?? item['speciesId'])
+                as String?,
+            qty,
+            lineTotal ?? unitPrice * qty,
+          );
+        }
+        continue;
+      }
+
+      // Marketplace booking: resolve the linked package's advertised species.
+      final packageId = (booking['packageId'] as String?)?.trim();
+      final package = packageId == null ? null : packagesById[packageId];
+      final speciesItems = package?['speciesItems'];
+      if (speciesItems is! List) continue;
+      for (final raw in speciesItems.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+        final total = (item['total'] as num?)?.toDouble();
+        final pricePerAnimal =
+            (item['pricePerAnimal'] as num?)?.toDouble() ?? 0.0;
+        accumulate(
+          (item['speciesName'] ?? item['name']) as String?,
+          qty,
+          total ?? pricePerAnimal * qty,
+        );
+      }
+    }
+
+    final rows = revenueBySpecies.keys
+        .map((species) => <String, dynamic>{
+              'species': species,
+              'revenue': revenueBySpecies[species],
+              'count': countBySpecies[species] ?? 0,
+            })
+        .toList();
+    rows.sort((a, b) {
+      final byRevenue =
+          (b['revenue'] as double).compareTo(a['revenue'] as double);
+      if (byRevenue != 0) return byRevenue;
+      return (a['species'] as String).compareTo(b['species'] as String);
+    });
+    return rows;
+  }
+
   /// Get available trophy stock summary across all farms
   Future<Map<String, dynamic>> getTrophyStockSummary(String outfitterId) async {
     final snapshot =

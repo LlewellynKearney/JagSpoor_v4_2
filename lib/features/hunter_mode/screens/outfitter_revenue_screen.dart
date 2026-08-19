@@ -620,7 +620,9 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _getSpeciesRevenueData() async {
-    return [];
+    final uid = _currentUserId;
+    if (uid == null) return const [];
+    return OutfitterAnalyticsService.instance.getSpeciesRevenueBreakdown(uid);
   }
 
   Future<List<Map<String, dynamic>>> _getMonthlyStatsData() async {

@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/pdf_document_engine.dart';
 import '../models/booking_status.dart';
 import '../services/outfitter_analytics_service.dart';
+import 'pricing_math.dart';
 
 /// Revenue & Farm Analytics report PDF, rendered through the universal
 /// [JagSpoorPdfDocument] engine. Aggregates gross revenue, net earnings,
@@ -67,6 +68,19 @@ class RevenueAnalyticsReportExporter {
         .get();
     final pendingBookings = pendingSnap.docs.length;
 
+    // Earned (payment-verified) bookings -- aggregated per farm for the
+    // Farm Revenue Breakdown section.
+    final earnedSnap = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('outfitterId', isEqualTo: outfitterId)
+        .where('status',
+            whereIn: OutfitterAnalyticsService.earnedBookingStatuses)
+        .get();
+    final farmRevenue = aggregateFarmRevenue(
+      earnedSnap.docs.map((d) => d.data()),
+      farmNames,
+    );
+
     final doc = await JagSpoorPdfDocument.create(
       title: 'Revenue & Farm Analytics Report',
       documentId: 'ANALYTICS-${DateTime.now().millisecondsSinceEpoch}',
@@ -74,7 +88,7 @@ class RevenueAnalyticsReportExporter {
 
     doc.addPage(
       margin: 28,
-      content: _buildContent(
+      content: buildContent(
         grossEarnings: grossEarnings,
         netEarnings: netEarnings,
         totalBookings: totalBookings,
@@ -83,6 +97,7 @@ class RevenueAnalyticsReportExporter {
         totalPackages: totalPackages,
         pendingBookings: pendingBookings,
         managers: managers,
+        farmRevenue: farmRevenue,
       ),
     );
 
@@ -93,7 +108,10 @@ class RevenueAnalyticsReportExporter {
     );
   }
 
-  pw.Widget _buildContent({
+  /// Pure content builder -- returns a `pw.Widget` tree that the engine wraps
+  /// in the standard branded header + footer. Stateless + side-effect free so
+  /// it can be exercised in a unit test by rendering the document to bytes.
+  pw.Widget buildContent({
     required double grossEarnings,
     required double netEarnings,
     required int totalBookings,
@@ -102,6 +120,7 @@ class RevenueAnalyticsReportExporter {
     required int totalPackages,
     required int pendingBookings,
     required List<Map<String, String>> managers,
+    required List<Map<String, dynamic>> farmRevenue,
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -129,6 +148,33 @@ class RevenueAnalyticsReportExporter {
           JagSpoorPdfTheme.infoRow('Assigned Farm Managers', '$totalManagers'),
         ]),
 
+        // ── Farm revenue breakdown ──
+        JagSpoorPdfTheme.sectionBar('Farm Revenue Breakdown (ZAR)'),
+        if (farmRevenue.isEmpty)
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(10),
+            child: pw.Text('No farms registered.',
+                style: JagSpoorPdfTheme.body),
+          )
+        else
+          JagSpoorPdfTheme.dataTable(
+            headers: ['Farm', 'Bookings', 'Revenue (ZAR)'],
+            columnWidths: [190, 80, 150],
+            rows: farmRevenue
+                .map((row) => [
+                      (row['farm'] as String?) ?? 'Unknown Farm',
+                      '${row['bookings'] ?? 0}',
+                      JagSpoorPdfTheme.formatZAR(
+                          (row['revenue'] as num?)?.toDouble() ?? 0.0),
+                    ])
+                .toList(),
+          ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+            'Revenue per farm is aggregated from payment-verified (Confirmed '
+            '/ Completed) bookings associated with each farmId.',
+            style: JagSpoorPdfTheme.caption),
+
         // ── Farm manager directory ──
         JagSpoorPdfTheme.sectionBar('Farm Manager Directory'),
         if (managers.isEmpty)
@@ -151,5 +197,77 @@ class RevenueAnalyticsReportExporter {
           ),
       ],
     );
+  }
+
+  /// Pure aggregation of per-farm revenue from booking records.
+  /// Dependency-free so the breakdown can be unit-tested without the
+  /// Firestore emulator.
+  ///
+  /// [bookings] are raw `bookings` document maps (already filtered to the
+  /// earned statuses by the caller). [farmNames] maps `farmId` -> the farm's
+  /// display name (from the `farms` collection).
+  ///
+  /// Every registered farm is listed -- a farm with no earned bookings shows
+  /// R 0.00 so the report explicitly states how much revenue each farm
+  /// generated. Revenue per booking is resolved via
+  /// [PricingMath.resolveHunterTotal] (the base price, with the stored total
+  /// as a legacy fallback). Bookings whose `farmId` is missing or does not
+  /// match a registered farm are grouped under an `Unassigned / Other` row
+  /// (appended last) so no revenue is silently dropped.
+  ///
+  /// Returns rows sorted by revenue descending (farms with zero revenue last,
+  /// alphabetical tie-break), each `{farmId, farm, revenue, bookings}`.
+  static List<Map<String, dynamic>> aggregateFarmRevenue(
+    Iterable<Map<String, dynamic>> bookings,
+    Map<String, String> farmNames,
+  ) {
+    final revenueByFarm = <String, double>{};
+    final bookingsByFarm = <String, int>{};
+
+    // Seed every registered farm at zero so it is explicitly listed even
+    // when it has no earned bookings yet.
+    for (final farmId in farmNames.keys) {
+      revenueByFarm[farmId] = 0.0;
+      bookingsByFarm[farmId] = 0;
+    }
+
+    const unassignedKey = '__unassigned__';
+    for (final data in bookings) {
+      final rawFarmId = (data['farmId'] as String?)?.trim() ?? '';
+      final farmId =
+          rawFarmId.isNotEmpty && farmNames.containsKey(rawFarmId)
+              ? rawFarmId
+              : unassignedKey;
+      final revenue = PricingMath.resolveHunterTotal(
+        totalHunterPrice:
+            (data['totalHunterPriceRands'] as num?)?.toDouble(),
+        basePrice: (data['basePriceRands'] as num?)?.toDouble() ?? 0.0,
+      );
+      revenueByFarm[farmId] = (revenueByFarm[farmId] ?? 0.0) + revenue;
+      bookingsByFarm[farmId] = (bookingsByFarm[farmId] ?? 0) + 1;
+    }
+
+    String labelFor(String farmId) => farmId == unassignedKey
+        ? 'Unassigned / Other'
+        : (farmNames[farmId] ?? 'Unknown Farm');
+
+    final rows = revenueByFarm.keys
+        // Drop the unassigned bucket entirely when nothing rolled up to it.
+        .where((farmId) =>
+            farmId != unassignedKey || (bookingsByFarm[farmId] ?? 0) > 0)
+        .map((farmId) => <String, dynamic>{
+              'farmId': farmId,
+              'farm': labelFor(farmId),
+              'revenue': revenueByFarm[farmId],
+              'bookings': bookingsByFarm[farmId] ?? 0,
+            })
+        .toList();
+    rows.sort((a, b) {
+      final byRevenue =
+          (b['revenue'] as double).compareTo(a['revenue'] as double);
+      if (byRevenue != 0) return byRevenue;
+      return (a['farm'] as String).compareTo(b['farm'] as String);
+    });
+    return rows;
   }
 }
