@@ -97,6 +97,54 @@ class BookingStatus {
       status != null && archivedStatuses.contains(status);
 
   // ==========================================
+  // STATUS NORMALIZATION
+  // ==========================================
+
+  /// Normalizes a raw booking `status` string to its canonical
+  /// [BookingStatus] constant, tolerating the case + spelling variants that
+  /// appear in legacy booking documents (e.g. `'pending'`, `'Pending'`,
+  /// `'pending_approval'`, `'Approved'`, `'Pending Deposit'`, `'Paid'`).
+  ///
+  /// Comparison is case-insensitive with `_` / `-` treated as spaces. Returns
+  /// the trimmed input unchanged when no canonical match is found (an
+  /// unknown status is never silently remapped). Returns `null` for a null /
+  /// blank input.
+  static String? normalize(String? status) {
+    final raw = status?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    final key = raw.toLowerCase().replaceAll(RegExp(r'[_\-]'), ' ');
+    switch (key) {
+      case 'pending approval':
+      case 'pending':
+        return pendingApproval;
+      case 'awaiting payment':
+      case 'approved':
+      case 'pending deposit':
+      case 'pending payment':
+        return approvedAwaitingPayment;
+      case 'confirmed':
+      case 'paid':
+        return confirmed;
+      case 'completed':
+        return completed;
+      case 'declined':
+        return declined;
+      case 'cancelled':
+      case 'canceled':
+        return cancelled;
+      default:
+        return raw;
+    }
+  }
+
+  /// Returns true if [status] represents a hunter-submitted booking request
+  /// that is still awaiting outfitter review (the "Pending" dashboard card
+  /// state). Tolerates legacy case / spelling variants via [normalize] so a
+  /// pending booking written by any app version increments the counter.
+  static bool isPendingApproval(String? status) =>
+      normalize(status) == pendingApproval;
+
+  // ==========================================
   // STATE-MACHINE TRANSITION RULES
   // ==========================================
   // Pure validation helpers that encode the off-platform booking lifecycle

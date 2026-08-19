@@ -560,12 +560,15 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
         OutfitterAnalyticsService.instance.getRevenueSummaryStream(uid);
 
     await for (final revenue in revenueStream) {
-      final farms = await _getFarmsData();
-      final managers = await _getManagersData();
-      final packages = await _getPackagesData();
-      final pendingBookings = await _getPendingBookingsCount();
-      final speciesData = await _getSpeciesRevenueData();
-      final monthlyData = await _getMonthlyStatsData();
+      // Each auxiliary metric degrades independently to a zero / empty state
+      // on failure (permissions, offline with no cache, missing index) so one
+      // bad query never errors the whole dashboard stream.
+      final farms = await _tryCount(_getFarmsData);
+      final managers = await _tryCount(_getManagersData);
+      final packages = await _tryCount(_getPackagesData);
+      final pendingBookings = await _tryCount(_getPendingBookingsCount);
+      final speciesData = await _tryList(_getSpeciesRevenueData);
+      final monthlyData = await _tryList(_getMonthlyStatsData);
 
       yield {
         'revenue': revenue,
@@ -581,6 +584,26 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
     }
   }
 
+  /// Runs a count query, degrading to 0 on any failure (a failing metric
+  /// must never take down the whole analytics stream).
+  Future<int> _tryCount(Future<int> Function() query) async {
+    try {
+      return await query();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Runs a list query, degrading to an empty list on any failure.
+  Future<List<Map<String, dynamic>>> _tryList(
+      Future<List<Map<String, dynamic>>> Function() query) async {
+    try {
+      return await query();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<int> _getFarmsData() async {
     final snapshot =
         await FirebaseFirestore.instance
@@ -591,9 +614,13 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
   }
 
   Future<int> _getManagersData() async {
+    // Farm managers are written to the `farm_managers` collection by
+    // `OutfitterEnterpriseManager.assignManager` (stamped with the owning
+    // outfitter's uid). The previous `managers` collection name matched no
+    // documents, so the Managers card always showed 0.
     final snapshot =
         await FirebaseFirestore.instance
-            .collection('managers')
+            .collection('farm_managers')
             .where('outfitterId', isEqualTo: _currentUserId)
             .get();
     return snapshot.docs.length;
@@ -610,13 +637,23 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
   }
 
   Future<int> _getPendingBookingsCount() async {
+    final uid = _currentUserId;
+    if (uid == null) return 0;
+    // Single-equality query (no composite-index dependency) + tolerant
+    // client-side status match. A strict server-side
+    // `status == 'Pending Approval'` silently misses pending bookings whose
+    // status was written by an older app version with a case / spelling
+    // variant ('pending', 'Pending', 'pending_approval'), so the Pending
+    // card showed 0 even when un-reviewed requests existed.
     final snapshot =
         await FirebaseFirestore.instance
             .collection('bookings')
-            .where('outfitterId', isEqualTo: _currentUserId)
-            .where('status', isEqualTo: BookingStatus.pendingApproval)
+            .where('outfitterId', isEqualTo: uid)
             .get();
-    return snapshot.docs.length;
+    return snapshot.docs
+        .where((doc) =>
+            BookingStatus.isPendingApproval(doc.data()['status'] as String?))
+        .length;
   }
 
   Future<List<Map<String, dynamic>>> _getSpeciesRevenueData() async {
