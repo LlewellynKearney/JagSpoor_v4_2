@@ -8397,3 +8397,63 @@ Three coordinated changes delivered as one logical unit.
   `outfitter_contact_card.dart`, `firestore.rules`,
   `test/outfitter_contact_card_test.dart`, `AGENTS.md`.
 
+
+
+## Phase -- Species Revenue Breakdown fix + Farm Revenue Breakdown in analytics PDF (added 2026-08-19)
+
+Two reporting/analytics fixes on the outfitter Enterprise Business
+Intelligence dashboard (`outfitter_revenue_screen.dart`).
+
+### Task 1 -- Species Revenue Breakdown (was hardcoded empty)
+- **Root cause**: `_getSpeciesRevenueData()` in
+  `outfitter_revenue_screen.dart` returned a hardcoded `[]`, so the Species
+  Revenue Breakdown card always rendered "No species revenue data yet".
+- New `OutfitterAnalyticsService.getSpeciesRevenueBreakdown(outfitterId)`:
+  queries earned bookings (`status whereIn earnedBookingStatuses` =
+  Confirmed / Completed), then resolves species revenue from two sources:
+  - **Custom harvested species** -- the booking's own `selectedItemsList`
+    (`name` + `quantity` + `lineTotal` / `unitPriceHunterZAR` /
+    `hunterPrice`), written by
+    `FarmGamePriceListManager.submitCustomPackageBooking`.
+  - **Package animals** -- the linked `packages/{packageId}` doc's
+    `speciesItems` (`speciesName` + `quantity` + `pricePerAnimal` /
+    `total`); package docs are fetched only for bookings without inline
+    species items (`CUSTOM_BUILT` is never fetched).
+- New pure static `OutfitterAnalyticsService.aggregateSpeciesRevenue(
+  bookings, packagesById)` + `hasInlineSpeciesItems(booking)` helper:
+  aggregates revenue + harvest counts by species name, sorted desc by
+  revenue (alphabetical tie-break). Blank species names skipped; qty < 1
+  clamped to 1. Unit-testable without the Firestore emulator.
+- `_getSpeciesRevenueData()` now delegates to the service (null-uid -> []).
+
+### Task 2 -- Farm Revenue Breakdown in the analytics PDF export
+- `RevenueAnalyticsReportExporter.generateAndShare` now also fetches earned
+  bookings and renders a new **"Farm Revenue Breakdown (ZAR)"** section
+  (Farm / Bookings / Revenue table) directly above the Farm Manager
+  Directory, aggregating total ZAR revenue per `farmId` via
+  `PricingMath.resolveHunterTotal` (base price preferred; stored total as
+  legacy fallback).
+- New pure static `RevenueAnalyticsReportExporter.aggregateFarmRevenue(
+  bookings, farmNames)`: every registered farm is listed (R 0.00 when it
+  has no earned bookings); bookings with a missing/unknown `farmId` roll up
+  under an "Unassigned / Other" row (omitted when empty). Sorted desc by
+  revenue.
+- `_buildContent` -> public `buildContent` (mirrors
+  `FarmPriceListPdfExporter.buildContent`) so the PDF layout is
+  unit-testable by rendering the branded document to bytes.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline).
+- `flutter test` (full suite): **All 721 tests passed**, zero failures
+  (+27 = `test/species_revenue_breakdown_test.dart` 13 +
+  `test/revenue_analytics_report_exporter_test.dart` 14, incl. full branded
+  PDF-to-bytes render tests).
+- No Firestore rules / index / Storage / pubspec changes (pure client-side
+  aggregation + PDF layout; the `bookings` / `packages` reads use existing
+  `isSignedIn()` / owner-scoped rules).
+- Files: `lib/features/hunter_mode/services/outfitter_analytics_service.dart`,
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `lib/features/hunter_mode/services/revenue_analytics_report_exporter.dart`,
+  `test/species_revenue_breakdown_test.dart` (NEW),
+  `test/revenue_analytics_report_exporter_test.dart` (NEW), `AGENTS.md`.
