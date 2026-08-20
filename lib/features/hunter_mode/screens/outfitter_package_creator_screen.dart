@@ -13,6 +13,7 @@ import '../../../core/services/image_service.dart';
 import '../../../models/animal.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 class OutfitterPackageCreatorScreen extends StatefulWidget {
   final ThemeController theme;
@@ -918,19 +919,26 @@ class _OutfitterPackageCreatorScreenState
 
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           _editingPackageId != null ? '🏕️ Edit Package' : '🏕️ Publish Package',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
-      body: Form(
-        key: _formKey,
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: Form(
+          key: _formKey,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+          padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.of(context).padding.top + kToolbarHeight + 16,
+              16,
+              SafeBottomInset.of(context)),
           children: [
             // ── IMAGE GALLERY ──────────────────────────────────────────────
             _buildSectionLabel('PACKAGE GALLERY', theme),
@@ -1242,6 +1250,7 @@ class _OutfitterPackageCreatorScreenState
             const SizedBox(height: 16),
             const CopyrightFooter(),
           ],
+        ),
         ),
       ),
     );

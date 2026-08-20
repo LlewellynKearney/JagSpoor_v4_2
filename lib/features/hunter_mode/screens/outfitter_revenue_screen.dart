@@ -8,6 +8,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/revenue_analytics_report_exporter.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 class OutfitterRevenueScreen extends StatefulWidget {
   final ThemeController theme;
@@ -54,24 +55,28 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: widget.theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           '📊 Enterprise Business Intelligence',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: widget.theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: widget.theme.textColor,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_rounded),
+          OutfitterActionChip(
+            icon: Icons.picture_as_pdf_rounded,
             tooltip: 'Export Revenue & Analytics Report',
+            iconColor: widget.theme.accentColor,
             onPressed: _exportReport,
           ),
         ],
       ),
-      body:
-          _currentUserId == null
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: widget.theme.backgroundColor,
+        child: SafeArea(
+          child: _currentUserId == null
               ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -637,6 +642,8 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                   );
                 },
               ),
+        ),
+      ),
     );
   }
 

@@ -13,6 +13,7 @@ import '../../../utils/image_helper.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/trophy_inventory_report_exporter.dart';
 import '../services/user_role_resolver.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 /// Resolves the display photo URL for a trophy-stock document: the first
 /// entry of `trophyPhotoUrls` first, then the explicit `photoUrl` fallback.
@@ -717,24 +718,32 @@ class _OutfitterTrophyStockScreenState
 
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           '🥩 Trophy Inventory Stock',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: theme.textColor,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_rounded),
+          OutfitterActionChip(
+            icon: Icons.picture_as_pdf_rounded,
             tooltip: 'Export Trophy Inventory Report',
+            iconColor: theme.accentColor,
             onPressed: _exportReport,
           ),
         ],
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.of(context).padding.top + kToolbarHeight + 16,
+              16,
+              SafeBottomInset.of(context)),
         children: [
           // Trophy Stock Sync Form
           Container(
@@ -1596,6 +1605,7 @@ class _OutfitterTrophyStockScreenState
           const SizedBox(height: 16),
           const CopyrightFooter(),
         ],
+        ),
       ),
     );
   }

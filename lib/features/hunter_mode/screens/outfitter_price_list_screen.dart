@@ -10,6 +10,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 import '../services/farm_game_price_csv_importer.dart';
 import '../services/farm_game_price_list_manager.dart';
 import '../services/farm_price_list_pdf_exporter.dart';
@@ -216,6 +217,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     final theme = widget.theme;
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           'Farm Game Price List',
@@ -224,28 +226,38 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
-          IconButton(
-            icon: Icon(Icons.picture_as_pdf_rounded, color: theme.accentColor),
+          // High-contrast chips keep the action icons readable against the
+          // bright sunrise region of the bushveld background.
+          OutfitterActionChip(
+            icon: Icons.picture_as_pdf_rounded,
             tooltip: 'Export to PDF',
+            iconColor: theme.accentColor,
             onPressed: _exportingPdf ? null : _exportPdf,
           ),
-          IconButton(
-            icon: Icon(Icons.upload_file_rounded, color: theme.accentColor),
+          OutfitterActionChip(
+            icon: Icons.upload_file_rounded,
             tooltip: 'Import CSV',
+            iconColor: theme.accentColor,
             onPressed: _importCsv,
           ),
-          IconButton(
-            icon: Icon(Icons.refresh, color: theme.accentColor),
+          OutfitterActionChip(
+            icon: Icons.refresh,
             tooltip: 'Refresh farms',
+            iconColor: theme.accentColor,
             onPressed: _loadFarms,
           ),
         ],
       ),
-      body: _buildBody(),
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: SafeArea(
+          child: _buildBody(),
+        ),
+      ),
       floatingActionButton: (_selectedFarmId == null)
           ? null
           : FloatingActionButton(

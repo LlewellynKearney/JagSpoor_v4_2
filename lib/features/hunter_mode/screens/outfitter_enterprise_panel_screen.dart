@@ -11,6 +11,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../utils/image_helper.dart';
 import '../models/farm_config.dart';
 import '../services/outfitter_enterprise_manager.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 /// Resolves the display photo URL for a `farms` document: the explicit
 /// `photoUrl` first, then the first entry of the `photoUrls` array. Returns
@@ -941,17 +942,24 @@ class _OutfitterEnterprisePanelScreenState
 
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           '🏡 Farm Control Panel',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.of(context).padding.top + kToolbarHeight + 16,
+              16,
+              SafeBottomInset.of(context)),
         children: [
           // Farm Registration Section
           _buildSectionCard(
@@ -1562,6 +1570,7 @@ class _OutfitterEnterprisePanelScreenState
           const SizedBox(height: 16),
           const CopyrightFooter(),
         ],
+        ),
       ),
     );
   }

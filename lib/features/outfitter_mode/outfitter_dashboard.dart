@@ -16,17 +16,21 @@ import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import 'widgets/outfitter_scaffold.dart';
 
 class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
 
   /// Bushveld landscape shown full-screen behind the dashboard content.
+  /// Alias of the shared [OutfitterBushveldBackground] constant, kept so any
+  /// consumer referencing the dashboard-level name (tests) still compiles.
   static const String kBackgroundImageUrl =
-      'https://images.unsplash.com/photo-1516426122078-c23e76319801?auto=format&fit=crop&w=1600&q=80';
+      OutfitterBushveldBackground.kBackgroundImageUrl;
 
   /// Local asset fallback when the network image is unavailable (offline /
-  /// off-grid). Bundled via `assets/images/` in pubspec.yaml.
-  static const String kBackgroundFallbackAsset = 'assets/images/Greater Kudu.jpg';
+  /// off-grid). Alias of the shared constant.
+  static const String kBackgroundFallbackAsset =
+      OutfitterBushveldBackground.kBackgroundFallbackAsset;
 
   const OutfitterDashboard({super.key, required this.theme});
 
@@ -86,8 +90,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
           body: Stack(
             fit: StackFit.expand,
             children: [
-              _buildBackgroundImage(),
-              _buildScrim(),
+              OutfitterBushveldBackground.backgroundImage(
+                fallbackColor: widget.theme.backgroundColor,
+              ),
+              OutfitterBushveldBackground.scrim(),
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : Container(
@@ -348,39 +354,6 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     }
   }
 
-  /// Full-screen bushveld photo; falls back to a bundled bushveld asset
-  /// (offline) and finally to the theme background color.
-  Widget _buildBackgroundImage() {
-    return Image.network(
-      OutfitterDashboard.kBackgroundImageUrl,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Image.asset(
-        OutfitterDashboard.kBackgroundFallbackAsset,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            Container(color: widget.theme.backgroundColor),
-      ),
-    );
-  }
-
-  /// Semi-transparent dark gradient scrim so the dashboard text and cards
-  /// stay high-contrast and readable over any photo exposure.
-  Widget _buildScrim() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0x99000000), // ~60% black (strongest at the top / AppBar)
-            Color(0x66000000), // ~40% black (mid frame)
-            Color(0xB3000000), // ~70% black (darkest at the bottom text run)
-          ],
-        ),
-      ),
-    );
-  }
-
   PreferredSizeWidget _buildAppBar(
     BuildContext context,
     ThemeController theme,
@@ -427,12 +400,18 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             theme: theme,
             activeMode: AdminMode.outfitter,
           ),
-        IconButton(
-          icon: Icon(Icons.settings_rounded, color: theme.accentColor),
+        // High-contrast chip keeps the icon readable against the bright
+        // sunrise region of the bushveld background in both Day/Night modes.
+        OutfitterActionChip(
+          icon: Icons.settings_rounded,
+          tooltip: 'Outfitter settings',
+          iconColor: theme.accentColor,
           onPressed: () => _showSettingsBottomSheet(context, theme),
         ),
-        IconButton(
-          icon: Icon(Icons.lock_reset_rounded, color: theme.accentColor),
+        OutfitterActionChip(
+          icon: Icons.lock_reset_rounded,
+          tooltip: 'Sign out',
+          iconColor: theme.accentColor,
           onPressed: () {
             UserRoleResolver.instance.reset();
             Navigator.pushReplacement(

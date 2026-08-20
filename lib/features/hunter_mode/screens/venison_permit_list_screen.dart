@@ -6,6 +6,7 @@ import '../services/venison_permit_manager.dart';
 import '../services/venison_permit_pdf_exporter.dart';
 import '../widgets/venison_permit_details_sheet.dart';
 import 'venison_permit_form_screen.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 /// Permit log / manager for issued SA venison transport & hunt permits.
 ///
@@ -53,12 +54,13 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
 
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           widget.isOutfitterMode ? 'Issued Permits' : 'My Transport Permits',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
@@ -69,7 +71,10 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('New Permit'),
       ),
-      body: Column(
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: SafeArea(
+          child: Column(
         children: [
           _buildSearchBar(theme),
           Expanded(
@@ -113,6 +118,8 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
             ),
           ),
         ],
+          ),
+        ),
       ),
     );
   }

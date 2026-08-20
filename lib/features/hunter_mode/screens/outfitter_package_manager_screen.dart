@@ -6,6 +6,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/package_pricing.dart';
 import '../services/package_booking_manager.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 import 'outfitter_package_creator_screen.dart';
 
 /// Outfitter "My Packages" management screen.
@@ -221,10 +222,11 @@ class _OutfitterPackageManagerScreenState
     final theme = widget.theme;
     return Scaffold(
       backgroundColor: theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('📦 My Packages',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: theme.textColor,
         elevation: 0,
       ),
@@ -239,7 +241,9 @@ class _OutfitterPackageManagerScreenState
         backgroundColor: theme.accentColor,
         child: const Icon(Icons.add, color: Colors.black),
       ),
-      body: Column(
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: theme.backgroundColor,
+        child: Column(
         children: [
           // Status filter chips.
           Container(
@@ -317,6 +321,7 @@ class _OutfitterPackageManagerScreenState
             ),
           ),
         ],
+        ),
       ),
     );
   }

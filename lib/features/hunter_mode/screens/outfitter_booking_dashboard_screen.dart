@@ -12,6 +12,7 @@ import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
 import '../widgets/hunter_contact_card.dart';
+import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -82,6 +83,7 @@ class _OutfitterBookingDashboardScreenState
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: widget.theme.backgroundColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           UserRoleResolver.instance.isManager
@@ -89,7 +91,7 @@ class _OutfitterBookingDashboardScreenState
               : '💳 Booking Requests',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: widget.theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         foregroundColor: widget.theme.textColor,
         elevation: 0,
         bottom: TabBar(
@@ -109,7 +111,10 @@ class _OutfitterBookingDashboardScreenState
           ],
         ),
       ),
-      body: StreamBuilder(
+      body: OutfitterBushveldBackground.stack(
+        fallbackColor: widget.theme.backgroundColor,
+        child: SafeArea(
+          child: StreamBuilder(
         stream: _bookingQuery.snapshots(),
         builder: (context, AsyncSnapshot snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -191,6 +196,8 @@ class _OutfitterBookingDashboardScreenState
             ],
           );
         },
+          ),
+        ),
       ),
     );
   }

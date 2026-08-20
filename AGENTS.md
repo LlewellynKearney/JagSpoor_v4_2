@@ -9248,3 +9248,66 @@ correct fallback when only one alias is known.
   `test/venison_permit_manager_test.dart`, `AGENTS.md`.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side model + manager stamping logic).
+
+
+## Phase -- Outfitter portal global bushveld background rollout + top-right icon contrast chips (added 2026-08-20)
+
+Two coordinated changes delivered as one unit.
+
+### Task 1 -- Top-right action icons contrast fix
+- New `OutfitterActionChip` in the shared
+  `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart`: a
+  high-contrast circular chip (translucent ~45% black circle + faint white
+  rim) wrapping an AppBar action icon so the glyph stays clearly readable
+  against the bright sunrise portion of the bushveld background in both
+  light and dark modes. Replaces the raw accent-only `IconButton`s:
+  - outfitter dashboard: settings + sign-out chips;
+  - price list: PDF export, CSV import, refresh chips;
+  - trophy stock: PDF export chip;
+  - revenue/BI: PDF export chip.
+
+### Task 2 -- Shared outfitter scaffold & global rollout
+- New shared `OutfitterBushveldBackground` helper in
+  `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart` exposing
+  `backgroundImage` (the bushveld network photo with the bundled
+  `Greater Kudu.jpg` offline fallback then theme-color fallback),
+  `scrim` (the 60%/40%/70% black gradient), and `stack` (photo + scrim +
+  content layered), plus an `OutfitterScaffold` convenience Scaffold
+  wrapper. The dashboard's duplicated `_buildBackgroundImage`/`_buildScrim`
+  helpers were removed in favour of the shared helper (the dashboard-level
+  `kBackgroundImageUrl`/`kBackgroundFallbackAsset` constants are now aliases
+  so existing tests/consumers still compile).
+- Rolled the shared background stack out across every outfitter-side
+  screen so the whole portal carries the immersive bushveld aesthetic:
+  Farm Management (enterprise panel), Trophy Stock Inventory, Package
+  Publishing (creator), Package Management (my packages), Price Lists,
+  Incoming Booking Requests (booking dashboard), the Permit Log, and the
+  Enterprise BI (revenue) screen. Each Scaffold gained
+  `extendBodyBehindAppBar: true` + a transparent AppBar; scrollable bodies
+  got the `MediaQuery.padding.top + kToolbarHeight` top inset, non-scroll
+  Column/StreamBuilder bodies got a `SafeArea` wrapper.
+- New `test/outfitter_scaffold_rollout_test.dart` (13 structural tests):
+  every outfitter screen renders the shared background stack; the action
+  chips exist and are applied (dashboard settings/sign-out, price-list
+  triple icons, trophy-stock + revenue PDF icons); the raw low-contrast
+  IconButtons are gone.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 pre-existing infos, unchanged baseline; all changed/new files
+  analyzer-clean).
+- `flutter test` (full suite): **All 913 tests passed** (was 899; +14 =
+  13 rollout + 1 structural; no regressions).
+- Files: `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart`
+  (NEW), `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_creator_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_price_list_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `lib/features/hunter_mode/screens/venison_permit_list_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_revenue_screen.dart`,
+  `test/outfitter_scaffold_rollout_test.dart` (NEW), `AGENTS.md`.
+- No Firestore / Storage / rules / index / pubspec / manifest changes
+  (pure presentation-layer).
