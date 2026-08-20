@@ -20,6 +20,14 @@ import '../admin/widgets/admin_mode_switcher.dart';
 class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
 
+  /// Bushveld landscape shown full-screen behind the dashboard content.
+  static const String kBackgroundImageUrl =
+      'https://images.unsplash.com/photo-1516426122078-c23e76319801?auto=format&fit=crop&w=1600&q=80';
+
+  /// Local asset fallback when the network image is unavailable (offline /
+  /// off-grid). Bundled via `assets/images/` in pubspec.yaml.
+  static const String kBackgroundFallbackAsset = 'assets/images/Greater Kudu.jpg';
+
   const OutfitterDashboard({super.key, required this.theme});
 
   @override
@@ -39,19 +47,26 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   }
 
   Future<void> _resolveUserRole() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
-      final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-      if (!mounted) return;
-      setState(() {
-        _isManager = UserRoleResolver.instance.isManager;
-        _assignedFarmId = UserRoleResolver.instance.assignedFarmId;
-        _isAdmin = admin;
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
+        final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+        if (!mounted) return;
+        setState(() {
+          _isManager = UserRoleResolver.instance.isManager;
+          _assignedFarmId = UserRoleResolver.instance.assignedFarmId;
+          _isAdmin = admin;
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      // Firebase not yet initialized (cold-launch race / widget test) — the
+      // dashboard still renders with default (non-manager) role flags; the
+      // route guard upstream already vetted the caller's role.
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -64,8 +79,15 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
 
         return Scaffold(
           backgroundColor: widget.theme.backgroundColor,
+          // Full-bleed the bushveld background + scrim behind the (transparent)
+          // AppBar; the content's top inset is added to the ListView padding.
+          extendBodyBehindAppBar: true,
           appBar: _buildAppBar(context, widget.theme, conceptLabel),
-          body:
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildBackgroundImage(),
+              _buildScrim(),
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : Container(
@@ -90,11 +112,13 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 20.0,
-                            vertical: 12.0,
                           ),
                           child: ListView(
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.only(
+                                top: MediaQuery.of(context).padding.top +
+                                    kToolbarHeight +
+                                    12,
                                 bottom: SafeBottomInset.of(context)),
                             children: [
                               _buildStatusBanner(widget.theme),
@@ -109,7 +133,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: widget.theme.textColor.withAlpha(180),
+                              // White over the photo scrim — readable in both
+                              // Day and Night mode (the theme text color sits
+                              // only on opaque cards over this background).
+                              color: Colors.white.withAlpha(210),
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 1.2,
@@ -303,6 +330,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                       ), // ConstrainedBox
                     ), // Center
                   ), // Container
+            ],
+          ),
         );
       },
     );
@@ -319,6 +348,39 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     }
   }
 
+  /// Full-screen bushveld photo; falls back to a bundled bushveld asset
+  /// (offline) and finally to the theme background color.
+  Widget _buildBackgroundImage() {
+    return Image.network(
+      OutfitterDashboard.kBackgroundImageUrl,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => Image.asset(
+        OutfitterDashboard.kBackgroundFallbackAsset,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            Container(color: widget.theme.backgroundColor),
+      ),
+    );
+  }
+
+  /// Semi-transparent dark gradient scrim so the dashboard text and cards
+  /// stay high-contrast and readable over any photo exposure.
+  Widget _buildScrim() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0x99000000), // ~60% black (strongest at the top / AppBar)
+            Color(0x66000000), // ~40% black (mid frame)
+            Color(0xB3000000), // ~70% black (darkest at the bottom text run)
+          ],
+        ),
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar(
     BuildContext context,
     ThemeController theme,
@@ -333,7 +395,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: theme.textColor,
+              // White over the photo scrim — readable in both Day and Night
+              // mode (raw on-purpose; the scrim makes this a camera-overlay
+              // style surface).
+              color: Colors.white,
               fontWeight: FontWeight.w700,
               fontSize: 18,
               letterSpacing: 1.0,
@@ -343,8 +408,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: theme.accentColor,
+            style: const TextStyle(
+              // Gold reads on the dark scrim in both modes (the light-mode
+              // accent brown would wash out).
+              color: Color(0xFFD4AF37),
               fontWeight: FontWeight.w500,
               fontSize: 12,
               letterSpacing: 1.0,

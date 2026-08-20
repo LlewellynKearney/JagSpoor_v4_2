@@ -9143,3 +9143,62 @@ without a booking context.
   `firestore.rules`, `test/venison_permit_model_test.dart` (NEW),
   `test/venison_permit_manager_test.dart` (NEW),
   `test/firestore_rules_seeding_test.dart`, `AGENTS.md`.
+
+
+## Phase -- Outfitter portal bushveld background image (added 2026-08-20)
+
+Applied a full-screen bushveld background to the Outfitter portal screen
+(`lib/features/outfitter_mode/outfitter_dashboard.dart` -- no
+`outfitter_portal_screen.dart` exists; the portal screen is the outfitter
+dashboard).
+
+### Layout
+- The `Scaffold` body is now a `Stack(fit: StackFit.expand)` with three
+  layers:
+  1. `_buildBackgroundImage()` -- `Image.network` of the bushveld photo
+     (`https://images.unsplash.com/photo-1516426122078-c23e76319801?auto=format&fit=crop&w=1600&q=80`,
+     exposed as `OutfitterDashboard.kBackgroundImageUrl`), `BoxFit.cover`,
+     with a two-step fallback chain: a bundled bushveld asset
+     (`assets/images/Greater Kudu.jpg`, `kBackgroundFallbackAsset`) when the
+     network image fails (offline/off-grid), then the theme background
+     color if the asset also fails.
+  2. `_buildScrim()` -- a semi-transparent dark `LinearGradient` scrim
+     (60% -> 40% -> 70% black, top -> mid -> bottom) so text and cards stay
+     high-contrast over any photo exposure.
+  3. The existing dashboard content (status banner, section label, feature
+     cards, footer) layered on top, unchanged apart from the top inset.
+- `extendBodyBehindAppBar: true` full-bleeds the photo behind the
+  (already transparent) AppBar; the ListView's top padding now includes
+  `MediaQuery.padding.top + kToolbarHeight + 12` so content clears the
+  AppBar.
+- Cross-theme contrast: the two texts rendered directly on the scrim (the
+  AppBar two-line title and the OUTFITTER OPERATIONS / FARM MANAGEMENT HUD
+  section label) now use white / gold (`#D4AF37`) instead of the theme
+  text/accent color, since the default Day theme's dark text would be
+  unreadable on the dark scrim. Card contents remain theme-colored (they
+  sit on opaque `theme.cardColor` surfaces). This is the same raw-white
+  exception already documented for camera-overlay HUD screens.
+
+### Resilience
+- `_resolveUserRole` is now wrapped in try/catch: if Firebase Auth is
+  unavailable (cold-launch race or widget-test env) the dashboard renders
+  with default non-manager flags instead of hanging on the loading
+  spinner. The route guard upstream still enforces role access.
+
+### Tests
+- `test/outfitter_dashboard_background_test.dart` (NEW, 5 widget tests):
+  body is a Stack with >= 3 layers; first child is an `Image` backed by a
+  `NetworkImage` with `kBackgroundImageUrl` and `BoxFit.cover`; the scrim
+  is a pure-black alpha `LinearGradient`; the dashboard content (status
+  banner, section label, feature cards) still renders; the screen renders
+  when Firebase auth is unavailable.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline; new test uses the
+  non-deprecated `Color.r/g/b/a` fields).
+- `flutter test` (full suite): **All 897 tests passed** (was 892; +5 new).
+- Files: `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `test/outfitter_dashboard_background_test.dart` (NEW), `AGENTS.md`.
+- No Firestore / Storage / rules / index / pubspec / manifest changes
+  (pure presentation-layer).
