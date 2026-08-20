@@ -7,9 +7,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
+import '../models/farm_details.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 import '../services/farm_game_price_list_manager.dart';
+import '../widgets/photo_gallery_strip.dart';
 
 /// Hunter **Custom Package Builder** form.
 ///
@@ -38,16 +40,23 @@ class HunterCustomPackageBuilderScreen extends StatefulWidget {
 
   /// Farm the custom package is being built against.
   final String farmId;
-  final String farmName;
+
+  /// Full farm snapshot (name / location / size / contact / photos). Used to
+  /// render the farm header panel at the top of the builder page.
+  final FarmDetails farmDetails;
 
   /// Outfitter who owns the farm / price list.
   final String outfitterId;
+
+  /// Convenience accessor: the farm's display name (legacy callers used
+  /// `farmName`).
+  String get farmName => farmDetails.displayName;
 
   const HunterCustomPackageBuilderScreen({
     super.key,
     required this.theme,
     required this.farmId,
-    required this.farmName,
+    required this.farmDetails,
     required this.outfitterId,
   });
 
@@ -475,6 +484,8 @@ class _HunterCustomPackageBuilderScreenState
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 12, 16, SafeBottomInset.of(context)),
       children: [
+        _buildFarmHeader(theme),
+        const SizedBox(height: 16),
         _buildDatesCard(theme),
         const SizedBox(height: 12),
         _buildPartyCard(theme),
@@ -508,6 +519,90 @@ class _HunterCustomPackageBuilderScreenState
         ],
         _buildSubmitCard(theme),
       ],
+    );
+  }
+
+  /// Prominent farm header shown at the top of the builder page: the farm's
+  /// full photo gallery (every photo the outfitter uploaded at registration,
+  /// tap to view full screen) plus the farm detail chips (province,
+  /// district / town, size, contact number, registration number).
+  Widget _buildFarmHeader(ThemeController theme) {
+    final farm = widget.farmDetails;
+    final chips = farm.infoChips;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.agriculture_rounded,
+                  color: theme.accentColor, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  farm.displayName,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final (icon, label) in chips)
+                  _farmChip(theme, icon, label),
+              ],
+            ),
+          ],
+          if (farm.photoUrls.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            PhotoGalleryStrip(
+              urls: farm.photoUrls,
+              theme: theme,
+              height: 170,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _farmChip(ThemeController theme, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: theme.accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.accentColor.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: theme.accentColor),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 

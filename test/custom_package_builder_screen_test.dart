@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/core/theme/app_theme.dart';
+import 'package:jagspoor/features/hunter_mode/models/farm_details.dart';
 import 'package:jagspoor/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart';
 import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 
@@ -40,7 +41,10 @@ void main() {
       HunterCustomPackageBuilderScreen(
         theme: theme,
         farmId: farmId,
-        farmName: 'Test Farm',
+        farmDetails: const FarmDetails(
+          farmId: 'farm-1',
+          name: 'Test Farm',
+        ),
         outfitterId: 'outfitter-1',
       );
 

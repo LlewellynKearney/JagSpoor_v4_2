@@ -8981,3 +8981,94 @@ Six coordinated updates delivered as one unit.
   `test/admin_outfitters_count_test.dart` (NEW),
   `test/booking_category_classifier_test.dart` (NEW),
   `test/farm_and_trophy_photo_resolver_test.dart` (NEW), `AGENTS.md`.
+
+
+## Phase -- Hunter photo galleries, payment text, farm/agent detail panels (added 2026-08-20)
+
+Four hunter-side enhancements delivered as one unit.
+
+### Shared building blocks (NEW)
+- `lib/features/hunter_mode/services/photo_gallery_resolver.dart` -- pure
+  `resolveGalleryUrls(Map)` that collects photo URLs across all known
+  field aliases (`imageUrls` / `photoUrls` / `trophyPhotoUrls` / `photoUrl`
+  / `imageUrl`) in priority order, de-duplicated, non-string entries
+  ignored (strings-only guard), blank entries skipped, URLs trimmed.
+- `lib/features/hunter_mode/widgets/photo_gallery_strip.dart`
+  (`PhotoGalleryStrip`) -- a horizontally scrollable gallery that renders
+  EVERY photo URL via the resilient `AdaptiveImage` pipeline, with a
+  "N photos -- swipe to browse" position chip and a tap-to-open full-screen
+  `InteractiveViewer` viewer. Returns `SizedBox.shrink` on empty.
+- `lib/features/hunter_mode/models/farm_details.dart` -- `FarmDetails`
+  immutable farm snapshot (name / district / province / town / contact /
+  registration / size / photoUrls) with alias-tolerant `fromMap`
+  (`name`/`farmName`, `town`/`district`, gallery resolver) + display
+  getters (`displayName`, `primaryPhotoUrl`, `infoChips`). Same file
+  carries `FarmThumbnail` (rounded thumb + clean terrain placeholder).
+- `lib/features/hunter_mode/services/farm_details_resolver.dart`
+  (`FarmDetailsResolver` singleton) -- async `farms/{farmId}` fetch with a
+  `@visibleForTesting static firestoreForTesting` seam; swallows errors
+  into an empty-details snapshot (never throws).
+
+### Task 1 -- Multiple photos on Package Marketplace details
+- `_BookingConfirmationSheet` in `hunter_package_marketplace_screen.dart`
+  now renders a `PhotoGalleryStrip` (full gallery, tap-to-fullscreen) above
+  the itemized breakdown -- every image the outfitter uploaded on the
+  package (previously the sheet had no gallery at all; the card's own
+  preview only handled one feed). The package card's `_buildGallery` was
+  also switched to the shared `PhotoGalleryStrip` (the inline
+  `CachedNetworkImage` strip + its import were removed).
+
+### Task 2 -- Payment information text updated
+- The info-icon note in the package details sheet now reads "Booking
+  request is sent for outfitter approval. On approval please contact the
+  outfitter to arrange for payment." (was "...the total price is due to
+  confirm your dates.").
+
+### Task 3 -- Farm images & details in the Custom Package Builder
+- Farm-selection `_BookableFarm` now carries a `FarmDetails` (name /
+  location / size / contact / registration / full photo gallery resolved
+  via `_farmDetailsFrom(doc)`), and `_FarmCard` renders a `FarmThumbnail`
+  (60px) instead of the generic terrain icon tile.
+- `HunterCustomPackageBuilderScreen` takes `farmDetails` instead of
+  `farmName` (the only other caller was the widget test, updated). The
+  builder body now renders a prominent FARM header panel at the top: farm
+  name + detail chips (province / district / town / size ha / contact /
+  registration) + the full farm photo gallery (tap-to-fullscreen) -- see
+  `_buildFarmHeader`.
+
+### Task 4 -- Farm details & trophy photos in the Trophy Booking sheet
+- `TrophyBookingConfirmationSheet` now renders (a) a trophy photo gallery
+  (every `trophyPhotoUrls` attachment, tap-to-fullscreen) below the species
+  title, and (b) a FARM DETAILS panel (name + all detail chips + the farm's
+  own photo gallery) above the item breakdown.
+- The sheet seeds farm details from an optional `farmDetails` param, else
+  the raw farm map the Trophy Registry browser now embeds under `farmData`
+  (its existing `farms` join), else asynchronously resolves
+  `farms/{farmId}` via `FarmDetailsResolver` and updates reactively (slim
+  loading row while in flight).
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 pre-existing infos, unchanged baseline; all changed/new files
+  analyzer-clean -- `debugPrint`, `AdaptiveImage`, and resolver files all
+  clean).
+- `flutter test` (full suite): **All 861 tests passed** (was 847; +14 new
+  in `test/photo_gallery_and_farm_details_test.dart` -- gallery resolver
+  dedup/trim/non-string/null-safety, `FarmDetails.fromMap` alias + chips,
+  `FarmDetailsResolver` fake-Firestore resolution). The existing
+  `custom_package_builder_screen_test` was updated to the new `farmDetails`
+  constructor param and still passes. No regressions.
+- Files: `lib/features/hunter_mode/services/photo_gallery_resolver.dart`
+  (NEW), `lib/features/hunter_mode/widgets/photo_gallery_strip.dart` (NEW),
+  `lib/features/hunter_mode/models/farm_details.dart` (NEW),
+  `lib/features/hunter_mode/services/farm_details_resolver.dart` (NEW),
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart`,
+  `lib/features/hunter_mode/widgets/trophy_booking_confirmation_sheet.dart`,
+  `test/photo_gallery_and_farm_details_test.dart` (NEW),
+  `test/custom_package_builder_screen_test.dart` (updated), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  hunter-side UI + pure resolvers; photo reads use existing signed-in
+  Storage read rules).

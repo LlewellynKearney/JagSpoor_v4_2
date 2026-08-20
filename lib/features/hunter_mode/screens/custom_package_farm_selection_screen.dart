@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../models/farm_details.dart';
+import '../services/photo_gallery_resolver.dart';
 import 'hunter_custom_package_builder_screen.dart';
 
 /// First step of the Custom Package Builder flow: lets the hunter pick which
@@ -38,6 +40,25 @@ class _CustomPackageFarmSelectionScreenState
   void initState() {
     super.initState();
     _loadFarms();
+  }
+
+  /// Builds the [FarmDetails] for a `farms` document snapshot.
+  FarmDetails _farmDetailsFrom(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final d = doc.data() ?? const <String, dynamic>{};
+    return FarmDetails(
+      farmId: doc.id,
+      outfitterId: (d['outfitterId'] as String?) ?? '',
+      name: (d['name'] as String?) ?? '',
+      district: d['district'] as String?,
+      province: d['province'] as String?,
+      town: d['town'] as String?,
+      contactNumber: d['contactNumber'] as String?,
+      registrationNumber: d['registrationNumber'] as String?,
+      sizeHectares: (d['sizeHectares'] as num?)?.toDouble(),
+      photoUrls: resolveGalleryUrls(d),
+    );
   }
 
   Future<void> _loadFarms() async {
@@ -102,14 +123,11 @@ class _CustomPackageFarmSelectionScreenState
 
       final farms = <_BookableFarm>[];
       for (final doc in farmsSnapshot.docs) {
-        final data = doc.data();
         final farmId = doc.id;
         final outfitterId = byFarm[farmId] ?? '';
         farms.add(_BookableFarm(
           farmId: farmId,
-          farmName: (data['name'] as String?) ?? 'Unnamed Farm',
-          district: data['district'] as String?,
-          province: data['province'] as String?,
+          farmDetails: _farmDetailsFrom(doc),
           outfitterId: outfitterId,
           speciesCount: speciesCount[farmId] ?? 0,
           hasServiceRates: serviceRates.docs.any((d) => d.id == farmId),
@@ -145,7 +163,7 @@ class _CustomPackageFarmSelectionScreenState
         builder: (context) => HunterCustomPackageBuilderScreen(
           theme: widget.theme,
           farmId: farm.farmId,
-          farmName: farm.farmName,
+          farmDetails: farm.farmDetails,
           outfitterId: farm.outfitterId,
         ),
       ),
@@ -275,22 +293,22 @@ class _CustomPackageFarmSelectionScreenState
 
 class _BookableFarm {
   final String farmId;
-  final String farmName;
-  final String? district;
-  final String? province;
+  final FarmDetails farmDetails;
   final String outfitterId;
   final int speciesCount;
   final bool hasServiceRates;
 
   _BookableFarm({
     required this.farmId,
-    required this.farmName,
-    this.district,
-    this.province,
+    required this.farmDetails,
     required this.outfitterId,
     required this.speciesCount,
     required this.hasServiceRates,
   });
+
+  String get farmName => farmDetails.displayName;
+  String? get district => farmDetails.district;
+  String? get province => farmDetails.province;
 }
 
 class _FarmCard extends StatelessWidget {
@@ -325,14 +343,10 @@ class _FarmCard extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.terrain_rounded,
-                      color: theme.accentColor, size: 28),
+                FarmThumbnail(
+                  photoUrl: farm.farmDetails.primaryPhotoUrl,
+                  theme: theme,
+                  size: 60,
                 ),
                 const SizedBox(width: 14),
                 Expanded(

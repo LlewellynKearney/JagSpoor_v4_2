@@ -129,6 +129,9 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
           'outfitterId': (trophyData['outfitterId'] as String?) ?? '',
           'imageUrl': resolveImageUrl(trophyData),
           'trophyMeasurement': resolveMeasurement(trophyData),
+          // Raw parent-farm snapshot for the confirmation sheet's FARM
+          // DETAILS panel (name / location / size / contact / photos).
+          if (farmData != null) 'farmData': farmData,
         });
       }
 

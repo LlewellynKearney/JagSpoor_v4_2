@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -11,8 +10,10 @@ import '../services/booking_activity_classifier.dart';
 import '../services/booking_date_formatter.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
+import '../services/photo_gallery_resolver.dart';
 import '../services/pricing_math.dart';
 import '../widgets/outfitter_contact_card.dart';
+import '../widgets/photo_gallery_strip.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -794,44 +795,10 @@ class _PackageCard extends StatelessWidget {
   /// Horizontal strip of uploaded package gallery images. Returns an empty
   /// [SizedBox] when the package has no images so the card layout is unchanged.
   Widget _buildGallery(ThemeController theme) {
-    final raw = data['imageUrls'];
-    final urls =
-        raw is List ? raw.whereType<String>().toList() : const <String>[];
-    if (urls.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
+    return PhotoGalleryStrip(
+      urls: resolveGalleryUrls(data),
+      theme: theme,
       height: 96,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: urls.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
-              imageUrl: urls[index],
-              fit: BoxFit.cover,
-              width: 128,
-              height: 96,
-              placeholder: (_, __) => Container(
-                width: 128,
-                color: theme.backgroundColor,
-                child: const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ),
-              errorWidget: (_, __, ___) => Container(
-                width: 128,
-                color: theme.backgroundColor,
-                child: Icon(Icons.broken_image, color: theme.subtitleColor),
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -940,6 +907,14 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             _packageMetaSummary(pricing),
             const SizedBox(height: 16),
 
+            // Photo gallery — every image the outfitter loaded on the
+            // package (imageUrls / photoUrls), tap to view full screen.
+            PhotoGalleryStrip(
+              urls: resolveGalleryUrls(widget.data),
+              theme: widget.theme,
+            ),
+            const SizedBox(height: 16),
+
             // Itemized / all-inclusive breakdown.
             _breakdownSection(pricing, inclusions, basePrice),
             const SizedBox(height: 16),
@@ -990,7 +965,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                   Expanded(
                     child: Text(
                       'Booking request is sent for outfitter approval. On '
-                      'approval the total price is due to confirm your dates.',
+                      'approval please contact the outfitter to arrange for '
+                      'payment.',
                       style: TextStyle(
                         color: Colors.amber.shade700,
                         fontSize: 13,

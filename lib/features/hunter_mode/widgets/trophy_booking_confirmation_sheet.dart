@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../models/farm_details.dart';
 import '../models/package_pricing.dart';
+import '../services/farm_details_resolver.dart';
 import '../services/package_booking_manager.dart';
+import '../services/photo_gallery_resolver.dart';
 import 'outfitter_contact_card.dart';
+import 'photo_gallery_strip.dart';
 
 /// Standard Booking Details / Confirmation Sheet for a Trophy Registry stock
 /// entry. Mirrors the package marketplace's booking confirmation sheet
@@ -23,10 +27,16 @@ class TrophyBookingConfirmationSheet extends StatefulWidget {
   final Map<String, dynamic> trophy;
   final ThemeController theme;
 
+  /// Optional pre-resolved farm snapshot (the Trophy Registry browser joins
+  /// `farms` docs). When omitted, the sheet resolves the farm details
+  /// asynchronously from the trophy's `farmId` and updates reactively.
+  final FarmDetails? farmDetails;
+
   const TrophyBookingConfirmationSheet({
     super.key,
     required this.trophy,
     required this.theme,
+    this.farmDetails,
   });
 
   @override
@@ -37,6 +47,48 @@ class TrophyBookingConfirmationSheet extends StatefulWidget {
 class _TrophyBookingConfirmationSheetState
     extends State<TrophyBookingConfirmationSheet> {
   bool _isLoading = false;
+
+  /// The farm snapshot rendered by the header panel. Seeded from
+  /// [TrophyBookingConfirmationSheet.farmDetails]; a missing or partial
+  /// snapshot (e.g. no photos resolved yet) is asynchronously re-resolved
+  /// from the trophy's `farmId` and updated once.
+  FarmDetails? _farmDetails;
+  bool _farmLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from an explicitly-passed snapshot, else the raw farm map the
+    // Trophy Registry browser embeds under `farmData`.
+    if (widget.farmDetails != null) {
+      _farmDetails = widget.farmDetails;
+    } else if (widget.trophy['farmData'] is Map<String, dynamic>) {
+      _farmDetails = FarmDetails.fromMap(
+          widget.trophy['farmData'] as Map<String, dynamic>);
+    }
+    if (_farmDetails == null || _farmDetails!.photoUrls.isEmpty) {
+      _resolveFarmDetails();
+    }
+  }
+
+  Future<void> _resolveFarmDetails() async {
+    final farmId = (widget.trophy['farmId'] as String?) ?? '';
+    if (farmId.isEmpty) return;
+    setState(() => _farmLoading = true);
+    try {
+      final resolved =
+          await FarmDetailsResolver.instance.resolveFarm(farmId);
+      if (!mounted) return;
+      setState(() {
+        _farmDetails = resolved;
+        _farmLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Farm details resolution failed: $e');
+      if (!mounted) return;
+      setState(() => _farmLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +157,16 @@ class _TrophyBookingConfirmationSheetState
             ),
             const SizedBox(height: 12),
 
+            // Trophy photo gallery — every photo the outfitter attached to
+            // this trophy animal (trophyPhotoUrls), tap to view full screen.
+            PhotoGalleryStrip(
+              urls: resolveGalleryUrls(trophy),
+              theme: theme,
+              height: 170,
+            ),
+            if (resolveGalleryUrls(trophy).isNotEmpty)
+              const SizedBox(height: 12),
+
             // Meta summary chips (species / sex / measurement / farm).
             Wrap(
               spacing: 8,
@@ -123,6 +185,12 @@ class _TrophyBookingConfirmationSheetState
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+
+            // Parent farm details panel (name, location, size, contact,
+            // registration) — resolved asynchronously when the browser's
+            // farm join was incomplete.
+            _buildFarmPanel(theme),
             const SizedBox(height: 16),
 
             // Item breakdown (the single trophy line).
@@ -338,6 +406,93 @@ class _TrophyBookingConfirmationSheetState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// The parent farm panel: farm name + full detail chips (province,
+  /// district, town, size, contact number, registration number) + the farm's
+  /// own photo gallery when available. Renders a slim loading indicator while
+  /// the async resolution is in flight, and nothing when there is genuinely
+  /// no farm info (the meta chips above already cover the fallback location).
+  Widget _buildFarmPanel(ThemeController theme) {
+    final farm = _farmDetails;
+    if (farm == null) {
+      if (!_farmLoading) return const SizedBox.shrink();
+      return Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.accentColor,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Loading farm details...',
+            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+          ),
+        ],
+      );
+    }
+    final chips = farm.infoChips;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.agriculture_rounded,
+                  color: theme.accentColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'FARM DETAILS',
+                style: TextStyle(
+                  color: theme.subtitleColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            farm.displayName,
+            style: TextStyle(
+              color: theme.textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final (icon, label) in chips)
+                  _metaChip(icon, label),
+              ],
+            ),
+          ],
+          if (farm.photoUrls.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            PhotoGalleryStrip(
+              urls: farm.photoUrls,
+              theme: theme,
+              height: 120,
+            ),
+          ],
+        ],
       ),
     );
   }
