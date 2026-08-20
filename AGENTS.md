@@ -9311,3 +9311,81 @@ Two coordinated changes delivered as one unit.
   `test/outfitter_scaffold_rollout_test.dart` (NEW), `AGENTS.md`.
 - No Firestore / Storage / rules / index / pubspec / manifest changes
   (pure presentation-layer).
+
+
+## Phase -- Outfitter portal light-mode contrast sweep (OutfitterUi helpers) (added 2026-08-20)
+
+Light-mode readability fix across every outfitter screen: the bushveld
+background photo has a bright sunrise exposure in its upper portion, so the
+default Day-theme colors (translucent white cards, washed-out subtitles)
+failed contrast.
+
+### Shared `OutfitterUi` helper (NEW)
+- `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart` gained an
+  `OutfitterUi` class -- the single source of truth for outfitter light-mode
+  contrast:
+  - `lightTitle` (`Color(0xFF2C221E)` dark espresso) -- screen titles /
+    primary headers in light mode.
+  - `lightCard` (`Color(0xFAF7F2EC)` cream, 98% opacity) -- card/form-fill
+    surfaces in light mode.
+  - `lightCardBorder` (`Color(0xFFD6C8BC)`) -- defined card/input borders in
+    light mode.
+  - `lightBody` (`Color(0xFF4A3B32)`) -- subtitles / descriptions / hint
+    text in light mode.
+  - Resolvers: `titleColor(theme)` (espresso light / white dark),
+    `cardColor(theme)` (cream light / theme card dark),
+    `cardBorderColor(theme)` (defined warm border light / faint white rim
+    dark), `subtitleColor(theme)` (warm brown light / theme subtitle dark),
+    plus `cardDecoration(...)` and `inputDecoration(...)` convenience
+    builders. All dark-mode branches delegate to the standard
+    `ThemeController` palette (the scrim keeps those readable).
+
+### Task fixes applied across 10 files
+- **My Packages top-of-screen overlap** (`outfitter_package_manager_screen.dart`):
+  a `SizedBox(height: MediaQuery.padding.top + kToolbarHeight)` spacer was
+  added above the status-filter chip bar so it renders cleanly below the
+  back button + title under the transparent full-bleed AppBar
+  (`extendBodyBehindAppBar: true`). The chip bar itself is now a cream
+  container with a defined bottom border.
+- **High-contrast screen titles**: every outfitter AppBar title +
+  `foregroundColor` (My Packages, Farm Control Panel, Publish Package,
+  Trophy Stock Inventory, Price List, Incoming Booking Requests, Permit
+  Log, Revenue/BI) now uses `OutfitterUi.titleColor(theme)` (dark espresso
+  in light mode). The dashboard's on-scrim AppBar two-line title + section
+  label use espresso in Day mode and white/gold in Night mode.
+- **Card & form contrast**: card surfaces, filter-chip bars, search fields,
+  `_inputDecoration` fills, and add-tile containers across the enterprise
+  panel, trophy stock, package creator, price list, booking dashboard,
+  revenue/BI, and permit list now use `OutfitterUi.cardColor(theme)` +
+  `OutfitterUi.cardBorderColor(theme)` instead of translucent white +
+  faint accent-tinted borders. Configured-state distinctions (e.g. the
+  service-rate / line-item rows) keep a solid accent border in light mode
+  and the tinted accent in dark mode. All body-level
+  `theme.subtitleColor` refs were swapped to
+  `OutfitterUi.subtitleColor(theme)`; dialog / bottom-sheet
+  (`widget.theme.*`) refs were intentionally left on the theme palette.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 pre-existing infos -- down 1 from the 278 baseline).
+- `flutter test` (full suite): **All 913 tests passed**, zero failures.
+  No regressions.
+- Environment note: re-installed Flutter 3.29.1 stable at
+  `/home/openhands/flutter` (SDK had been removed since the prior session)
+  + `apt-get install unzip xz-utils libsqlite3-dev` and the
+  `/usr/lib/x86_64-linux-gnu/libsqlite3.so -> libsqlite3.so.0` symlink for
+  the sqflite-FFI integration tests.
+- Commit `72cdefa` pushed to `origin/main` (`faa7cb5..72cdefa`).
+- Files: `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart`
+  (`OutfitterUi`),
+  `lib/features/hunter_mode/screens/outfitter_package_manager_screen.dart`,
+  `outfitter_booking_dashboard_screen.dart`,
+  `outfitter_enterprise_panel_screen.dart`,
+  `outfitter_package_creator_screen.dart`,
+  `outfitter_price_list_screen.dart`,
+  `outfitter_revenue_screen.dart`,
+  `outfitter_trophy_stock_screen.dart`,
+  `venison_permit_list_screen.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`.
+- No Firestore / Storage / rules / index / pubspec / manifest changes
+  (pure presentation-layer contrast sweep).
