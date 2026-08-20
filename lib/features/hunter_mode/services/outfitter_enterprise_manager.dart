@@ -91,6 +91,7 @@ class OutfitterEnterpriseManager {
     String? contactNumber,
     String? registrationNumber,
     FarmCostConfig? costConfig,
+    String? photoUrl,
   }) async {
     if (_currentUserId == null) {
       throw Exception('User must be authenticated to add a farm');
@@ -113,6 +114,10 @@ class OutfitterEnterpriseManager {
           ? null
           : registrationNumber!.trim(),
       if (costConfig != null) FarmConfigField.costConfig: costConfig.toMap(),
+      if (photoUrl != null && photoUrl.trim().isNotEmpty) ...{
+        'photoUrl': photoUrl.trim(),
+        'photoUrls': [photoUrl.trim()],
+      },
       'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

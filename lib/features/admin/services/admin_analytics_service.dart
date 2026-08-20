@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../../auth/services/user_role_provider.dart';
 import '../../hunter_mode/models/booking_status.dart';
 import '../../hunter_mode/services/outfitter_enterprise_manager.dart';
@@ -67,8 +68,15 @@ class AdminAnalyticsService {
   AdminAnalyticsService._();
   static final AdminAnalyticsService instance = AdminAnalyticsService._();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  /// Test seam: inject a fake Firestore (e.g. `FakeFirebaseFirestore`) so the
+  /// aggregation queries can run without a live Firebase app.
+  @visibleForTesting
+  static FirebaseFirestore? firestoreForTesting;
+
+  // Lazy getters so constructing the singleton before `Firebase.initializeApp`
+  // (cold-launch race / widget test) does not throw `[core/no-app]`.
+  FirebaseFirestore get _db => firestoreForTesting ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   Future<int> _count(CollectionReference<Map<String, dynamic>> ref) async {
     final agg = await ref.count().get();
@@ -87,7 +95,7 @@ class AdminAnalyticsService {
   /// contribute 0 and the remaining metrics still render.
   Future<AdminMetrics> fetchEntityMetrics() async {
     final results = await Future.wait([
-      _safeCount(() => _count(_db.collection('outfitters'))),
+      _safeCount(_countAllOutfitters),
       _safeCount(() => _countQuery(
           _db.collection('users').where('role', isEqualTo: 'hunter'))),
       _safeCount(() => _count(_db.collection('packages'))),
@@ -135,6 +143,28 @@ class AdminAnalyticsService {
     } catch (_) {
       return 0;
     }
+  }
+
+  /// Counts every registered outfitter as the union of:
+  /// - `users` docs with `role == 'outfitter'` (self-registered via role
+  ///   selection — the most common path), and
+  /// - `outfitters` collection docs (admin-provisioned via the
+  ///   `adminCreateOutfitter` Cloud Function / user management service).
+  ///
+  /// Both sources are matched by document id, so an outfitter present in both
+  /// collections is counted exactly once. Previously only the `outfitters`
+  /// collection was counted, which returned 0 whenever all outfitters had
+  /// self-registered (their record lives solely on `users/{uid}.role`).
+  Future<int> _countAllOutfitters() async {
+    final ids = <String>{};
+    final usersSnap = await _db
+        .collection('users')
+        .where('role', isEqualTo: 'outfitter')
+        .get();
+    ids.addAll(usersSnap.docs.map((d) => d.id));
+    final outfittersSnap = await _db.collection('outfitters').get();
+    ids.addAll(outfittersSnap.docs.map((d) => d.id));
+    return ids.length;
   }
 
   /// Sums gross booking revenue for bookings whose `bookingTimestamp`

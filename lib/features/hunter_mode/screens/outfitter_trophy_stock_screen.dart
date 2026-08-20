@@ -9,9 +9,25 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/services/image_service.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../utils/image_helper.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/trophy_inventory_report_exporter.dart';
 import '../services/user_role_resolver.dart';
+
+/// Resolves the display photo URL for a trophy-stock document: the first
+/// entry of `trophyPhotoUrls` first, then the explicit `photoUrl` fallback.
+/// Returns an empty string when no photo is present (the caller renders a
+/// clean placeholder).
+String resolveTrophyStockPhotoUrl(Map<String, dynamic> data) {
+  final list = (data['trophyPhotoUrls'] as List?)?.whereType<String>() ??
+      const <String>[];
+  for (final url in list) {
+    if (url.trim().isNotEmpty) return url.trim();
+  }
+  final direct = (data['photoUrl'] as String?)?.trim() ?? '';
+  if (direct.isNotEmpty) return direct;
+  return '';
+}
 
 class OutfitterTrophyStockScreen extends StatefulWidget {
   final ThemeController theme;
@@ -573,6 +589,52 @@ class _OutfitterTrophyStockScreenState
       }
     }
     return urls;
+  }
+
+  /// Thumbnail for a "Current Stock by Farm" per-species row: the trophy's
+  /// uploaded photo via the resilient [AdaptiveImage] pipeline, or a clean
+  /// placeholder icon when the entry has no photo.
+  Widget _trophyStockThumbnail(
+      Map<String, dynamic> data, ThemeController theme) {
+    final url = resolveTrophyStockPhotoUrl(data);
+    if (url.isEmpty) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: theme.accentColor.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          Icons.pets_rounded,
+          color: theme.subtitleColor,
+          size: 18,
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: AdaptiveImage(
+          imagePath: url,
+          fit: BoxFit.cover,
+          width: 40,
+          height: 40,
+          errorWidget: Container(
+            width: 40,
+            height: 40,
+            color: theme.accentColor.withValues(alpha: 0.15),
+            child: Icon(
+              Icons.pets_rounded,
+              color: theme.subtitleColor,
+              size: 18,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSpeciesPicker() {
@@ -1485,11 +1547,8 @@ class _OutfitterTrophyStockScreenState
                                                 vertical: 4, horizontal: 4),
                                             child: Row(
                                               children: [
-                                                Icon(
-                                                  Icons.pets_rounded,
-                                                  color: theme.subtitleColor,
-                                                  size: 16,
-                                                ),
+                                                _trophyStockThumbnail(
+                                                    data, theme),
                                                 const SizedBox(width: 8),
                                                 Expanded(
                                                   child: Text(

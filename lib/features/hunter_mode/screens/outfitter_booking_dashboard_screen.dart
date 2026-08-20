@@ -6,6 +6,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
+import '../services/booking_category_classifier.dart';
 import '../services/booking_date_formatter.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../services/package_booking_manager.dart';
@@ -27,6 +28,10 @@ class _OutfitterBookingDashboardScreenState
     with SingleTickerProviderStateMixin {
   late Query _bookingQuery;
   late TabController _tabController;
+
+  /// The active category filter for the request lists. `null` shows every
+  /// booking; otherwise only bookings of that category are listed.
+  BookingCategory? _categoryFilter;
 
   @override
   void initState() {
@@ -157,15 +162,125 @@ class _OutfitterBookingDashboardScreenState
             }
           }
 
-          return TabBarView(
-            controller: _tabController,
+          // Apply the category filter (standard / custom / trophy) selected
+          // via the filter chips below the AppBar. `null` = show all.
+          bool matchesCategory(QueryDocumentSnapshot doc) {
+            final filter = _categoryFilter;
+            if (filter == null) return true;
+            final data = doc.data() as Map<String, dynamic>;
+            return BookingCategoryClassifier.classify(data) == filter;
+          }
+
+          final filteredActive =
+              activeBookings.where(matchesCategory).toList();
+          final filteredArchived =
+              archivedBookings.where(matchesCategory).toList();
+
+          return Column(
             children: [
-              _buildBookingList(activeBookings, isArchived: false),
-              _buildBookingList(archivedBookings, isArchived: true),
+              _buildCategoryFilterBar(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildBookingList(filteredActive, isArchived: false),
+                    _buildBookingList(filteredArchived, isArchived: true),
+                  ],
+                ),
+              ),
             ],
           );
         },
       ),
+    );
+  }
+
+  /// The three category filter buttons shown under the AppBar (plus an "All"
+  /// reset chip). Selecting a chip filters both the Active Requests and
+  /// Archived lists to that booking category.
+  Widget _buildCategoryFilterBar() {
+    final theme = widget.theme;
+    return Container(
+      width: double.infinity,
+      color: theme.backgroundColor,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: [
+            _categoryChip(
+              theme,
+              label: 'All',
+              icon: Icons.apps_rounded,
+              selected: _categoryFilter == null,
+              onSelected: () => setState(() => _categoryFilter = null),
+            ),
+            const SizedBox(width: 8),
+            _categoryChip(
+              theme,
+              label: 'Standard Hunting Packages',
+              icon: Icons.inventory_2_rounded,
+              selected: _categoryFilter == BookingCategory.standard,
+              onSelected: () =>
+                  setState(() => _categoryFilter = BookingCategory.standard),
+            ),
+            const SizedBox(width: 8),
+            _categoryChip(
+              theme,
+              label: 'Custom Hunting Packages',
+              icon: Icons.tune_rounded,
+              selected: _categoryFilter == BookingCategory.custom,
+              onSelected: () =>
+                  setState(() => _categoryFilter = BookingCategory.custom),
+            ),
+            const SizedBox(width: 8),
+            _categoryChip(
+              theme,
+              label: 'Trophy Hunt Requests',
+              icon: Icons.emoji_events_rounded,
+              selected: _categoryFilter == BookingCategory.trophy,
+              onSelected: () =>
+                  setState(() => _categoryFilter = BookingCategory.trophy),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryChip(
+    ThemeController theme, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    return FilterChip(
+      showCheckmark: false,
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: selected ? Colors.white : theme.accentColor,
+      ),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : theme.textColor,
+        fontWeight: FontWeight.w600,
+        fontSize: 12,
+      ),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      backgroundColor: theme.cardColor,
+      selectedColor: theme.accentColor,
+      side: BorderSide(
+        color: selected
+            ? theme.accentColor
+            : theme.accentColor.withValues(alpha: 0.35),
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -175,6 +290,13 @@ class _OutfitterBookingDashboardScreenState
     required bool isArchived,
   }) {
     if (bookings.isEmpty) {
+      final filterLabel = switch (_categoryFilter) {
+        BookingCategory.standard => 'standard hunting package',
+        BookingCategory.custom => 'custom hunting package',
+        BookingCategory.trophy => 'trophy hunt',
+        null => null,
+      };
+      final suffix = filterLabel != null ? ' $filterLabel' : '';
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -188,7 +310,9 @@ class _OutfitterBookingDashboardScreenState
             ),
             const SizedBox(height: 16),
             Text(
-              isArchived ? 'No archived bookings' : 'No active requests',
+              isArchived
+                  ? 'No archived$suffix bookings'
+                  : 'No active$suffix requests',
               style: TextStyle(
                 color: widget.theme.textColor,
                 fontSize: 18,

@@ -8891,3 +8891,93 @@ Three UI / booking-flow fixes delivered as one unit.
   `test/trophy_registry_resolver_test.dart` (NEW),
   `test/trophy_booking_contract_test.dart` (NEW),
   `test/firestore_rules_seeding_test.dart` (+1), `AGENTS.md`.
+
+
+## Phase -- Admin outfitters count fix, hunter logout, farm/trophy photos, booking category filters (added 2026-08-20)
+
+Six coordinated updates delivered as one unit.
+
+### Task 1 -- Admin portal "Outfitters" count showed 0
+- **Root cause**: outfitters exist in TWO collections -- `users` docs with
+  `role == 'outfitter'` (self-registered via role selection, the common
+  path) and `outfitters` docs (admin-provisioned via the
+  `adminCreateOutfitter` Cloud Function / user management service).
+  `AdminAnalyticsService.fetchEntityMetrics` only counted the `outfitters`
+  collection, so it returned 0 when every outfitter had self-registered.
+- **Fix**: new `_countAllOutfitters()` unions the document ids of
+  `users.where('role', isEqualTo: 'outfitter')` and the `outfitters`
+  collection, so each outfitter is counted exactly once regardless of
+  source. The eager `final _db`/`_auth` field initializers were converted
+  to lazy getters (cold-launch-safe) with a `@visibleForTesting static
+  firestoreForTesting` seam.
+- Tests: `test/admin_outfitters_count_test.dart` (6 tests via
+  `FakeFirebaseFirestore`): zero-state, users-only, outfitters-only, union,
+  dedup-across-collections, hunter/role-less exclusion.
+
+### Task 2 -- Logout button in Hunter Profile
+- `hunter_profile_screen.dart`: a prominent branded `ElevatedButton.icon`
+  "LOGOUT" (accent background, white bold label, `Icons.logout_rounded`) in
+  the ACCOUNT SECURITY section under Change Password. Confirmation dialog,
+  then `AuthGateService().signOut()` (which also resets `UserRoleProvider`
+  + `AdminAuthGuard`) and `pushNamedAndRemoveUntil('/', (_) => false)` back
+  to the auth screen. Error path surfaces a red snackbar and re-enables the
+  button.
+
+### Task 3 -- Farm photo upload during farm registration
+- `outfitter_enterprise_panel_screen.dart` Register New Farm form: new
+  "FARM PHOTO (OPTIONAL)" section with Take Photo (camera) / From Gallery
+  tiles via `ImageService.pickAndCompressImage` (1280px, JPEG q80), a
+  preview with remove badge, and upload to
+  `farm_photos/{outfitterId}/{timestamp}.jpg` on submit (best-effort --
+  upload failure does not block farm registration).
+- `OutfitterEnterpriseManager.addFarm` gained optional `photoUrl`; writes
+  both `photoUrl` and `photoUrls: [url]` on the `farms` doc.
+- `storage.rules`: new owner-scoped `match /farm_photos/{uid}/{allPaths=**}`
+  write block. **Deploy reminder**: `npx firebase-tools deploy --only storage`.
+
+### Task 4 -- Farm thumbnails in the Farm Control Panel
+- Registered Farms cards now render a 52x52 rounded thumbnail via the
+  resilient `AdaptiveImage` pipeline (explicit `photoUrl` first, then first
+  `photoUrls` entry), with the clean landscape-icon placeholder when no
+  photo exists. Pure top-level `resolveFarmPhotoUrl(Map)` resolver
+  (unit-testable).
+
+### Task 5 -- Thumbnails in the Trophy Stock Inventory
+- "Current Stock by Farm" per-species rows now render a 40x40 rounded
+  thumbnail via `AdaptiveImage` (first `trophyPhotoUrls` entry, then
+  `photoUrl` fallback), with a clean pets-icon placeholder. Pure top-level
+  `resolveTrophyStockPhotoUrl(Map)` resolver (unit-testable).
+- Tests for both resolvers: `test/farm_and_trophy_photo_resolver_test.dart`
+  (11 tests).
+
+### Task 6 -- Incoming Booking Requests category filters
+- New pure `lib/features/hunter_mode/services/booking_category_classifier.dart`
+  (`BookingCategory {standard, custom, trophy}` + `classify(Map)`): trophy
+  wins over custom (`isTrophyStockBooking` / `trophyStockId`), then custom
+  (`isCustomPackage` / `packageId == 'CUSTOM_BUILT'`), else standard.
+- `outfitter_booking_dashboard_screen.dart`: a horizontal filter-chip bar
+  under the AppBar -- All / Standard Hunting Packages / Custom Hunting
+  Packages / Trophy Hunt Requests -- filters BOTH the Active Requests and
+  Archived lists in-memory (no new Firestore query/index). Empty-state copy
+  is filter-aware.
+- Tests: `test/booking_category_classifier_test.dart` (9 tests).
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 pre-existing infos, unchanged baseline; all changed/new files
+  analyzer-clean).
+- `flutter test` (full suite): **All 847 tests passed** (was 821; +26 new).
+  No regressions. Re-installed Flutter 3.29.1 at `/home/openhands/flutter`
+  + `/usr/lib/x86_64-linux-gnu/libsqlite3.so -> libsqlite3.so.0` symlink
+  for the sqflite-FFI integration tests (documented sandbox pattern).
+- Files: `lib/features/admin/services/admin_analytics_service.dart`,
+  `lib/features/hunter_mode/hunter_profile_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_trophy_stock_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `lib/features/hunter_mode/services/outfitter_enterprise_manager.dart`,
+  `lib/features/hunter_mode/services/booking_category_classifier.dart` (NEW),
+  `storage.rules`,
+  `test/admin_outfitters_count_test.dart` (NEW),
+  `test/booking_category_classifier_test.dart` (NEW),
+  `test/farm_and_trophy_photo_resolver_test.dart` (NEW), `AGENTS.md`.

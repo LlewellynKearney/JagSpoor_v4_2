@@ -40,6 +40,11 @@ service firebase.storage {
     match /firearm_photos/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
+    // Farm registration photos — `farm_photos/{outfitterUid}/`. Owner-scoped:
+    // the second segment is the authenticated outfitter's own uid.
+    match /farm_photos/{uid}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
     match /hunters/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
     }

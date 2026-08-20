@@ -1,11 +1,31 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../../core/services/image_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../utils/image_helper.dart';
 import '../models/farm_config.dart';
 import '../services/outfitter_enterprise_manager.dart';
+
+/// Resolves the display photo URL for a `farms` document: the explicit
+/// `photoUrl` first, then the first entry of the `photoUrls` array. Returns
+/// an empty string when no photo is present (the caller renders a clean
+/// placeholder).
+String resolveFarmPhotoUrl(Map<String, dynamic> data) {
+  final direct = (data['photoUrl'] as String?)?.trim() ?? '';
+  if (direct.isNotEmpty) return direct;
+  final list = (data['photoUrls'] as List?)?.whereType<String>() ??
+      const <String>[];
+  for (final url in list) {
+    if (url.trim().isNotEmpty) return url.trim();
+  }
+  return '';
+}
 
 class OutfitterEnterprisePanelScreen extends StatefulWidget {
   final ThemeController theme;
@@ -59,6 +79,11 @@ class _OutfitterEnterprisePanelScreenState
   bool _isAssigningManager = false;
   bool _isUpdatingFarm = false;
 
+  /// Compressed farm photo picked for the Register New Farm form (camera or
+  /// gallery). Uploaded to Firebase Storage on submit and persisted on the
+  /// `farms/{farmId}` doc as `photoUrl`.
+  File? _farmPhotoFile;
+
   @override
   void dispose() {
     _farmNameController.dispose();
@@ -89,6 +114,55 @@ class _OutfitterEnterprisePanelScreenState
     _vehicleFeeController.dispose();
     _guideFeeController.dispose();
     super.dispose();
+  }
+
+  /// Lets the outfitter capture a farm photo with the camera or select one
+  /// from the gallery. The picked image is compressed via [ImageService] and
+  /// held in [_farmPhotoFile] until the farm is submitted.
+  Future<void> _pickFarmPhoto(ImageSource source) async {
+    try {
+      final File? compressed = await ImageService.pickAndCompressImage(
+        source: source,
+        quality: 80,
+        minWidth: 1280,
+        minHeight: 1280,
+      );
+      if (compressed == null) return;
+      setState(() => _farmPhotoFile = compressed);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Could not pick photo: $e'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeFarmPhoto() {
+    setState(() => _farmPhotoFile = null);
+  }
+
+  /// Uploads the picked farm photo to Firebase Storage and returns the
+  /// download URL, or `null` when no photo was picked. Upload failures are
+  /// non-fatal — the farm is still registered without a photo.
+  Future<String?> _uploadFarmPhoto() async {
+    final file = _farmPhotoFile;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (file == null || uid == null) return null;
+    try {
+      final path =
+          'farm_photos/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      return await ImageService.uploadCompressedPhoto(
+        imageFile: file,
+        storagePath: path,
+      );
+    } catch (e) {
+      debugPrint('Farm photo upload failed: $e');
+      return null;
+    }
   }
 
   Future<void> _addFarm() async {
@@ -140,6 +214,7 @@ class _OutfitterEnterprisePanelScreenState
         : null;
 
     try {
+      final photoUrl = await _uploadFarmPhoto();
       await OutfitterEnterpriseManager.instance.addFarm(
         name: _farmNameController.text.trim(),
         district: _districtController.text.trim(),
@@ -153,9 +228,11 @@ class _OutfitterEnterprisePanelScreenState
                 ? null
                 : _createRegistrationNumberController.text.trim(),
         costConfig: costConfig,
+        photoUrl: photoUrl,
       );
 
       if (mounted) {
+        setState(() => _farmPhotoFile = null);
         _farmNameController.clear();
         _districtController.clear();
         _provinceController.clear();
@@ -693,6 +770,171 @@ class _OutfitterEnterprisePanelScreenState
     );
   }
 
+  /// Photo picker for the Register New Farm form: a preview of the picked
+  /// farm photo (with a remove button) or two entry tiles to take a photo
+  /// with the camera / select one from the gallery.
+  Widget _buildFarmPhotoPicker(ThemeController theme) {
+    final photo = _farmPhotoFile;
+    if (photo != null) {
+      return Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(
+              photo,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                height: 160,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: theme.cardColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: theme.accentColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Icon(
+                  Icons.broken_image_rounded,
+                  color: theme.subtitleColor,
+                  size: 40,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.6),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _removeFarmPhoto,
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: _farmPhotoTile(
+            theme,
+            icon: Icons.photo_camera_rounded,
+            label: 'Take Photo',
+            onTap: () => _pickFarmPhoto(ImageSource.camera),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _farmPhotoTile(
+            theme,
+            icon: Icons.photo_library_rounded,
+            label: 'From Gallery',
+            onTap: () => _pickFarmPhoto(ImageSource.gallery),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Thumbnail for a Registered Farms card: the farm's uploaded photo via
+  /// the resilient [AdaptiveImage] pipeline, or a clean placeholder icon
+  /// when the farm has no photo.
+  Widget _farmThumbnail(Map<String, dynamic> data, ThemeController theme) {
+    final url = resolveFarmPhotoUrl(data);
+    if (url.isEmpty) {
+      return Container(
+        width: 52,
+        height: 52,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: theme.accentColor.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          Icons.landscape_rounded,
+          color: theme.accentColor,
+          size: 24,
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 52,
+        height: 52,
+        child: AdaptiveImage(
+          imagePath: url,
+          fit: BoxFit.cover,
+          width: 52,
+          height: 52,
+          errorWidget: Container(
+            width: 52,
+            height: 52,
+            color: theme.accentColor.withValues(alpha: 0.2),
+            child: Icon(
+              Icons.landscape_rounded,
+              color: theme.accentColor,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _farmPhotoTile(
+    ThemeController theme, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: theme.accentColor.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: theme.accentColor, size: 28),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
@@ -811,6 +1053,11 @@ class _OutfitterEnterprisePanelScreenState
                       theme: theme,
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  _sectionHeader(theme, 'FARM PHOTO (OPTIONAL)',
+                      Icons.photo_camera_rounded),
+                  const SizedBox(height: 12),
+                  _buildFarmPhotoPicker(theme),
                   const SizedBox(height: 24),
                   _sectionHeader(theme, 'COST RATES (PACKAGE BUILDER)',
                       Icons.payments_outlined),
@@ -1182,20 +1429,7 @@ class _OutfitterEnterprisePanelScreenState
                             children: [
                               Row(
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: theme.accentColor.withValues(
-                                        alpha: 0.2,
-                                      ),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Icon(
-                                      Icons.landscape_rounded,
-                                      color: theme.accentColor,
-                                      size: 20,
-                                    ),
-                                  ),
+                                  _farmThumbnail(data, theme),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(

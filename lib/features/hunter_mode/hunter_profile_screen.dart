@@ -9,6 +9,7 @@ import '../../core/widgets/copyright_footer.dart';
 import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
+import '../authentication/services/auth_gate_service.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
 
@@ -976,6 +977,31 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       onTap: _showChangePasswordDialog,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _logout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.theme.accentColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
+                      icon: const Icon(Icons.logout_rounded, size: 20),
+                      label: const Text(
+                        'LOGOUT',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 32),
 
                   // Delete Account & All Personal Data - Danger Zone
@@ -1233,6 +1259,59 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
 
   Future<void> _showChangePasswordDialog() async {
     await ChangePasswordDialog.show(context);
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: widget.theme.cardColor,
+        title: Text(
+          'Sign Out',
+          style: TextStyle(color: widget.theme.textColor),
+        ),
+        content: Text(
+          'Are you sure you want to sign out of your JagSpoor account?',
+          style: TextStyle(color: widget.theme.subtitleColor),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'CANCEL',
+              style: TextStyle(color: widget.theme.subtitleColor),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.theme.accentColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('SIGN OUT'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await AuthGateService().signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Sign out failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleAccountDeletion() async {
