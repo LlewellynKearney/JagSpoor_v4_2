@@ -14,6 +14,12 @@ class VenisonTransportPermit {
   // ── Issuing parties ──
   final String outfitterId;
   final String? hunterId;
+
+  /// Hunter-user alias stamped alongside [hunterId] so permits written by any
+  /// app version (which historically stamped only `userId` on some paths, or
+  /// omitted `hunterId` entirely for permits issued without a booking) are
+  /// still readable by the designated hunter.
+  final String? userId;
   final String? bookingId;
 
   // ── Hunter block ──
@@ -50,6 +56,7 @@ class VenisonTransportPermit {
     required this.permitNumber,
     required this.outfitterId,
     this.hunterId,
+    this.userId,
     this.bookingId,
     required this.hunterName,
     required this.hunterIdNumber,
@@ -85,7 +92,11 @@ class VenisonTransportPermit {
       id: map['id'] as String?,
       permitNumber: map['permitNumber'] as String? ?? '',
       outfitterId: map['outfitterId'] as String? ?? '',
-      hunterId: map['hunterId'] as String?,
+      // Alias tolerance: legacy docs may carry only `userId` (or `hunterId`)
+      // for the designated hunter. Treat either spelling as the same party so
+      // a permit never silently goes unread by the hunter on a key mismatch.
+      hunterId: map['hunterId'] as String? ?? map['userId'] as String?,
+      userId: map['userId'] as String? ?? map['hunterId'] as String?,
       bookingId: map['bookingId'] as String?,
       hunterName: map['hunterName'] as String? ?? '',
       hunterIdNumber: map['hunterIdNumber'] as String? ?? '',
@@ -115,7 +126,11 @@ class VenisonTransportPermit {
     return {
       'permitNumber': permitNumber,
       'outfitterId': outfitterId,
+      // Dual-stamp BOTH aliases so hunter-side list queries (and the Firestore
+      // rules read allowance) match whether they filter on `hunterId` or
+      // `userId`.
       if (hunterId != null) 'hunterId': hunterId,
+      if (userId != null) 'userId': userId,
       if (bookingId != null) 'bookingId': bookingId,
       'hunterName': hunterName,
       'hunterIdNumber': hunterIdNumber,
@@ -137,6 +152,10 @@ class VenisonTransportPermit {
       'status': status,
     };
   }
+
+  /// The designated hunter's uid regardless of which alias was stamped on the
+  /// document (`hunterId` preferred, `userId` fallback).
+  String? get effectiveHunterId => hunterId ?? userId;
 
   /// True when both parties have signed the permit.
   bool get isFullySigned =>

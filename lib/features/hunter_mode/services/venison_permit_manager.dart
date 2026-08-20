@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/services/offline_stream_guard.dart';
 import '../models/venison_transport_permit.dart';
 
@@ -19,14 +20,75 @@ import '../models/venison_transport_permit.dart';
 /// Both Hunters and Outfitters may issue permits; read access is governed by the
 /// Firestore rules (`hunterId` OR `outfitterId` party).
 class VenisonPermitManager {
-  static final VenisonPermitManager _instance = VenisonPermitManager._internal();
+  VenisonPermitManager._({this.firestoreForTesting, this.currentUserIdResolverForTesting});
+
+  static final VenisonPermitManager _instance = VenisonPermitManager._();
   static VenisonPermitManager get instance => _instance;
 
-  VenisonPermitManager._internal();
+  /// Test seam: inject a Firestore instance (e.g. `FakeFirebaseFirestore`) so
+  /// the query/write contract can be unit-tested without a live Firebase app.
+  /// Lazy so constructing the service before `Firebase.initializeApp()` never
+  /// throws `[core/no-app]`. Mirrors the `OpticLogService` test pattern.
+  @visibleForTesting
+  FirebaseFirestore? firestoreForTesting;
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseFirestore get _firestore =>
+      firestoreForTesting ?? FirebaseFirestore.instance;
+
+  /// Test seam: inject a uid resolver so the null-uid -> empty-stream branch
+  /// and the dual-alias hunter query contract can be unit-tested without a
+  /// real signed-in user. A wrapped `[core/no-app]` (cold-launch race / widget
+  /// test) resolves to null instead of throwing.
+  @visibleForTesting
+  String? Function()? currentUserIdResolverForTesting;
+
+  String? get _currentUserId {
+    if (currentUserIdResolverForTesting != null) {
+      return currentUserIdResolverForTesting!();
+    }
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Storage is resolved lazily so a test / cold-launch construction never
+  // touches FirebaseStorage before the app (or test harness) is initialized.
+  FirebaseStorage get _storage => FirebaseStorage.instance;
+
+  /// Test-only constructor: build a fresh, isolated manager (not the
+  /// process-wide singleton) bound to an injectable Firestore + uid resolver.
+  @visibleForTesting
+  factory VenisonPermitManager.forTesting({
+    required FirebaseFirestore firestore,
+    required String? Function() currentUserIdResolver,
+  }) {
+    return VenisonPermitManager._(
+      firestoreForTesting: firestore,
+      currentUserIdResolverForTesting: currentUserIdResolver,
+    );
+  }
+
+  /// Resolves the uid of the hunter the permit is issued to.
+  ///
+  /// Priority: (1) an explicit `permitHunterId` (carried on the model when the
+  /// permit was opened from a booking); (2) when the issuing user is NOT the
+  /// outfitter (i.e. the hunter self-issues their own permit), the issuer's
+  /// own uid; (3) `null` -- an outfitter issuing a permit without a booking
+  /// context has no uid to stamp until the hunter countersigns.
+  ///
+  /// Pure / unit-testable; no I/O.
+  static String? resolveHunterUid({
+    String? permitHunterId,
+    required String issuerUid,
+    required String outfitterId,
+  }) {
+    final explicit = permitHunterId?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    if (issuerUid.isNotEmpty && issuerUid != outfitterId) return issuerUid;
+    return null;
+  }
 
   /// Issues a new venison transport permit. Both signature PNGs are optional —
   /// a permit can be saved unsigned and countersigned later, but a fully legal
@@ -38,15 +100,30 @@ class VenisonPermitManager {
     Uint8List? hunterSignatureBytes,
     Uint8List? outfitterSignatureBytes,
   }) async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) {
+    final issuerUid = _currentUserId;
+    if (issuerUid == null) {
       throw Exception('User must be authenticated to issue a permit');
     }
+
+    // Resolve + dual-stamp the hunter's uid under BOTH `hunterId` and
+    // `userId` so the hunter's permit list (and the Firestore read rules)
+    // match the permit regardless of which alias a consumer queries. Without
+    // this, permits issued without a booking context carried no hunter uid at
+    // all and were invisible to the hunter.
+    final effectiveHunterUid = resolveHunterUid(
+      permitHunterId: permit.hunterId,
+      issuerUid: issuerUid,
+      outfitterId: permit.outfitterId,
+    );
 
     // 1. Create the document first to obtain a stable permitId.
     final baseData = {
       ...permit.toMap(),
       'outfitterId': permit.outfitterId,
+      if (effectiveHunterUid != null) ...{
+        'hunterId': effectiveHunterUid,
+        'userId': effectiveHunterUid,
+      },
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -114,41 +191,59 @@ class VenisonPermitManager {
   /// Reactive stream of permits for the authenticated user.
   ///
   /// Outfitters see permits they issued (`outfitterId`); hunters see permits
-  /// issued to them (`hunterId`). Resolved via [UserRoleResolver] upstream —
-  /// here we simply query both fields against the current uid and merge.
+  /// issued to them under EITHER the canonical `hunterId` OR the `userId`
+  /// alias, so permits written by any app version (some paths historically
+  /// stamped only `userId`, or stamped no hunter uid at all) still render for
+  /// the designated hunter.
+  ///
+  /// The query intentionally does NOT use `.orderBy('createdAt')` server-side:
+  /// an equality/OR + orderBy combo requires a composite index; sorting
+  /// client-side after the single-field-equality read avoids the missing-index
+  /// error entirely (the established project pattern). The stream is wrapped
+  /// in [OfflineStreamGuard.offlineResilient] so a hard error emits the
+  /// fallback instead of hanging the consuming StreamBuilder.
   Stream<List<VenisonTransportPermit>> getMyPermitsStream({
     required bool isOutfitter,
-  }) async* {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      yield [];
-      return;
-    }
+  }) {
+    final uid = _currentUserId;
+    if (uid == null) return Stream.value(const <VenisonTransportPermit>[]);
 
-    final field = isOutfitter ? 'outfitterId' : 'hunterId';
-    yield* OfflineStreamGuard.offlineResilient(
-      _firestore
-          .collection('venison_permits')
-          .where(field, isEqualTo: currentUser.uid)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          // De-duplicate by document id so a permit can never render twice,
-          // even if the upstream query or a future merge of the outfitterId +
-          // hunterId streams ever returns the same doc twice.
-          .map((snapshot) {
-            final seen = <String>{};
-            return snapshot.docs
-                .where((doc) => seen.add(doc.id))
-                .map((doc) {
-                  final data = Map<String, dynamic>.from(doc.data());
-                  data['id'] = doc.id;
-                  return VenisonTransportPermit.fromMap(data);
-                })
-                .toList();
-          }),
+    final query = isOutfitter
+        ? _firestore
+            .collection('venison_permits')
+            .where('outfitterId', isEqualTo: uid)
+        : _firestore.collection('venison_permits').where(
+              Filter.or(
+                Filter('hunterId', isEqualTo: uid),
+                Filter('userId', isEqualTo: uid),
+              ),
+            );
+
+    return OfflineStreamGuard.offlineResilient(
+      query.snapshots().map(_snapshotToPermits),
       fallback: const <VenisonTransportPermit>[],
       debugLabel: 'venison_permits',
     );
+  }
+
+  /// Maps a snapshot to the permit list: de-duplicated by document id (so a
+  /// permit stamped with BOTH aliases, which satisfies both OR branches,
+  /// renders once) and sorted newest-first client-side.
+  static List<VenisonTransportPermit> _snapshotToPermits(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final byId = <String, VenisonTransportPermit>{};
+    for (final doc in snapshot.docs) {
+      final data = Map<String, dynamic>.from(doc.data());
+      data['id'] = doc.id;
+      byId[doc.id] = VenisonTransportPermit.fromMap(data);
+    }
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    final permits = byId.values.toList()
+      ..sort(
+        (a, b) => (b.createdAt ?? epoch).compareTo(a.createdAt ?? epoch),
+      );
+    return permits;
   }
 
   /// Fetch a single permit by ID. Reads cache-first so an offline lookup

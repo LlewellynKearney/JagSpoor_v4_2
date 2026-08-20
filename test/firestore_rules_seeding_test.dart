@@ -356,6 +356,54 @@ void main() {
               'outfitter trophy_stock collection.');
     });
   });
+
+  group('venison_permits hunter visibility contract', () {
+    test('venison_permits match block exists', () {
+      final rules = _loadRules();
+      final block = _blockFor(rules, 'venison_permits');
+      expect(block, isNotEmpty);
+    });
+
+    test('read grants the hunter via hunterId', () {
+      final block = _blockFor(_loadRules(), 'venison_permits');
+      expect(
+        block.contains('resource.data.hunterId == request.auth.uid'),
+        isTrue,
+      );
+    });
+
+    test('read grants the hunter via the userId alias (dual-stamp)', () {
+      final block = _blockFor(_loadRules(), 'venison_permits');
+      expect(
+        block.contains('resource.data.userId == request.auth.uid'),
+        isTrue,
+        reason: 'The read rule must accept the userId alias so permits '
+            'stamped with only the legacy alias remain readable by the hunter.',
+      );
+    });
+
+    test('read grants the issuing outfitter + admin', () {
+      final block = _blockFor(_loadRules(), 'venison_permits');
+      expect(
+        block.contains('resource.data.outfitterId == request.auth.uid'),
+        isTrue,
+      );
+      expect(block.contains('isAdmin()'), isTrue);
+    });
+
+    test('read requires authentication (not public)', () {
+      final block = _blockFor(_loadRules(), 'venison_permits');
+      expect(block.contains('allow read: if isSignedIn()'), isTrue);
+    });
+
+    test('delete stays least-privilege (outfitter owner or admin)', () {
+      final block = _blockFor(_loadRules(), 'venison_permits');
+      expect(
+        block.contains("allow delete: if isOwnerOf('outfitterId') || isAdmin()"),
+        isTrue,
+      );
+    });
+  });
 }
 
 /// Loads `firestore.rules` from the project root.

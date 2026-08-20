@@ -312,14 +312,17 @@ service cloud.firestore {
     match /venison_permits/{permitId} {
       // Read: any signed-in user who is a party to the permit (the
       // outfitter who issued it via `outfitterId`, or the hunter it was
-      // issued to via `hunterId`) or an admin. Both
-      // `.where('outfitterId', isEqualTo: uid)` and
-      // `.where('hunterId', isEqualTo: uid)` list/stream queries succeed
-      // because the server evaluates this rule against every returned doc
-      // and guarantees each one satisfies the field condition.
+      // issued to via `hunterId` OR its `userId` alias -- both are
+      // dual-stamped at issue time) or an admin. The hunter-side
+      // list/stream query uses Filter.or(`hunterId` == uid, `userId` == uid),
+      // which succeeds because the server evaluates this rule against every
+      // returned doc and guarantees each one satisfies at least one field
+      // condition. The `userId` branch also keeps legacy docs (which only
+      // carried the `userId` alias) readable by the designated hunter.
       allow read: if isSignedIn() && (
         resource.data.outfitterId == request.auth.uid ||
         resource.data.hunterId == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
         isAdmin()
       );
       // Create / update: any signed-in user may write permit data (both the

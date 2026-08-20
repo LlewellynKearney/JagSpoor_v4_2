@@ -9072,3 +9072,74 @@ Four hunter-side enhancements delivered as one unit.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   hunter-side UI + pure resolvers; photo reads use existing signed-in
   Storage read rules).
+
+
+## Phase -- Venison permits hunter-side visibility fix (added 2026-08-20)
+
+Fixed the hunter-side venison permit list showing nothing for permits issued
+without a booking context.
+
+### Root cause
+- The `venison_permits` docs carried an `outfitterId` but often NO `hunterId`:
+  permits issued from the outfitter form without a `bookingId` prefill wrote
+  `hunterId: null`, and hunter-self-issued permits stamped no hunter uid at
+  all. The hunter-side permit stream queried only `.where('hunterId',
+  isEqualTo: uid)`, and `fromMap` read only the `hunterId` key -- so those
+  permits never rendered for the hunter.
+- The `venison_permits` Firestore read rule granted
+  `outfitterId == uid || hunterId == uid`, so a client-side widening alone
+  would still be denied by the rules.
+
+### Fixes (mirror the `optic_logs` dual-alias pattern)
+- Model (`venison_transport_permit.dart`): new `userId` alias field;
+  `fromMap` treats `hunterId`/`userId` as the same party (either spelling
+  resolves); `toMap` dual-stamps both; new `effectiveHunterId` getter.
+- Manager (`venison_permit_manager.dart`):
+  - `issueVenisonPermit` resolves the hunter's uid via the pure static
+    `resolveHunterUid` (explicit `permitHunterId` wins; else the issuer uid
+    when the issuer != outfitter -- hunter self-issue; else null) and stamps
+    BOTH `hunterId` and `userId` on the doc.
+  - `getMyPermitsStream(isOutfitter: false)` now queries
+    `Filter.or(Filter('hunterId', isEqualTo: uid), Filter('userId',
+    isEqualTo: uid))`; the server-side `.orderBy('createdAt')` was removed in
+    favour of client-side newest-first sorting (avoids the missing-composite-
+    index failure mode). De-duplicated by doc id (dual-stamped docs match
+    both OR branches).
+  - Lazy Firestore/Storage getters + `@visibleForTesting`
+    `firestoreForTesting`/`currentUserIdResolverForTesting` seams with a
+    `forTesting` factory (mirrors `OpticLogService`) so construction before
+    `Firebase.initializeApp()` no longer throws `[core/no-app]`.
+- Rules (`firestore.rules`): the `venison_permits` read grant now also accepts
+  `resource.data.userId == request.auth.uid` so the OR-query and legacy
+  userId-stamped documents are readable; create/update remain `isSignedIn()`;
+  delete stays least-privilege (`isOwnerOf('outfitterId') || isAdmin()`).
+  **Deploy reminder**: `npx firebase-tools deploy --only firestore:rules` in
+  a credentialed env to activate the widened read.
+
+### Tests
+- `test/venison_permit_model_test.dart` (11): alias tolerance
+  (`userId`->`hunterId`, `hunterId`->`userId`, both, neither),
+  `effectiveHunterId`, toMap dual-stamp / omission contract, round-trip.
+- `test/venison_permit_manager_test.dart` (14): hunter stream matches
+  `hunterId` alias, matches legacy `userId`-only docs, excludes other hunters,
+  dual-stamp dedupe, client-side newest-first sort, outfitter stream,
+  `resolveHunterUid` (explicit wins / self-issue stamps issuer / outfitter
+  stamps null / blank falls through), issue-write dual-stamping (booking-
+  linked and self-issue), unauth rejection -- via `FakeFirebaseFirestore` +
+  the `forTesting` seam.
+- `test/firestore_rules_seeding_test.dart` (+6 structural tests): the
+  `venison_permits` read grant accepts `hunterId` AND `userId` aliases +
+  outfitter/admin, isSignedIn required, least-privilege delete.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline).
+- `flutter test` (full suite): **All 892 tests passed** (was 861; +31 new).
+- Environment note: re-installed Flutter 3.29.1 stable at
+  `/home/openhands/flutter` + `libsqlite3-dev` for the sqflite-FFI
+  integration tests.
+- Files: `lib/features/hunter_mode/models/venison_transport_permit.dart`,
+  `lib/features/hunter_mode/services/venison_permit_manager.dart`,
+  `firestore.rules`, `test/venison_permit_model_test.dart` (NEW),
+  `test/venison_permit_manager_test.dart` (NEW),
+  `test/firestore_rules_seeding_test.dart`, `AGENTS.md`.
