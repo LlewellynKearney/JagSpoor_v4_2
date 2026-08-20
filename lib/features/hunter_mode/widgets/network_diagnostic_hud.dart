@@ -73,9 +73,10 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   }
 
   // Simulates pressure sensor updates for demonstration
+  Timer? _pressureTimer;
   void _simulatePressureUpdates() {
     // Update pressure every 5 seconds to simulate sensor readings
-    Timer.periodic(const Duration(seconds: 5), (timer) {
+    _pressureTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -147,15 +148,23 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     _loadQueueSize();
   }
 
+  /// Best-effort queue-size read: an offline-persistence failure (e.g. no
+  /// sqflite database factory on web / an uninitialized test env or a cold
+  /// launch) is swallowed — the HUD simply shows the previous count.
   Future<void> _loadQueueSize() async {
-    final queueSize = await OfflineSyncQueue.instance.getQueueSize();
-    if (mounted) {
-      setState(() => _pendingQueueCount = queueSize);
+    try {
+      final queueSize = await OfflineSyncQueue.instance.getQueueSize();
+      if (mounted) {
+        setState(() => _pendingQueueCount = queueSize);
+      }
+    } catch (_) {
+      // Persistence unavailable — leave the displayed count unchanged.
     }
   }
 
   @override
   void dispose() {
+    _pressureTimer?.cancel();
     _connectivitySubscription?.cancel();
     _pulseController.dispose();
     super.dispose();

@@ -5,6 +5,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/farm_details.dart';
 import '../services/photo_gallery_resolver.dart';
+import '../widgets/hunter_scaffold.dart';
 import 'hunter_custom_package_builder_screen.dart';
 
 /// First step of the Custom Package Builder flow: lets the hunter pick which
@@ -173,21 +174,24 @@ class _CustomPackageFarmSelectionScreenState
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
       appBar: AppBar(
         title: const Text(
           '🦌 Custom Package Builder',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
-      body: RefreshIndicator(
-        color: theme.accentColor,
-        onRefresh: _loadFarms,
-        child: _buildBody(theme),
+      body: SafeArea(
+        top: true,
+        child: RefreshIndicator(
+          color: theme.accentColor,
+          onRefresh: _loadFarms,
+          child: _buildBody(theme),
+        ),
       ),
       bottomNavigationBar: const SafeArea(
         top: false,
@@ -214,14 +218,14 @@ class _CustomPackageFarmSelectionScreenState
               Text(
                 'Could not load farms',
                 style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontSize: 18,
                     fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
                 _error!,
-                style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -254,7 +258,7 @@ class _CustomPackageFarmSelectionScreenState
                 Text(
                   'No bookable farms yet',
                   style: TextStyle(
-                      color: theme.textColor,
+                      color: HunterUi.titleColor(theme),
                       fontSize: 18,
                       fontWeight: FontWeight.bold),
                 ),
@@ -265,7 +269,7 @@ class _CustomPackageFarmSelectionScreenState
                     'Outfitters must publish a price list (species + service '
                     'rates) for a farm before you can build a custom package '
                     'against it.',
-                    style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                    style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -327,7 +331,7 @@ class _FarmCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         elevation: 0,
         child: InkWell(
@@ -356,7 +360,7 @@ class _FarmCard extends StatelessWidget {
                       Text(
                         farm.farmName,
                         style: TextStyle(
-                          color: theme.textColor,
+                          color: HunterUi.titleColor(theme),
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -415,7 +419,7 @@ class _FarmCard extends StatelessWidget {
           const SizedBox(width: 5),
           Text(
             label,
-            style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+            style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 11),
           ),
         ],
       ),

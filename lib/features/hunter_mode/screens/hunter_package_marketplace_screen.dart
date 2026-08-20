@@ -14,6 +14,7 @@ import '../services/photo_gallery_resolver.dart';
 import '../services/pricing_math.dart';
 import '../widgets/outfitter_contact_card.dart';
 import '../widgets/photo_gallery_strip.dart';
+import '../widgets/hunter_scaffold.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -61,52 +62,54 @@ class _HunterPackageMarketplaceScreenState
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
       appBar: AppBar(
         title: const Text(
           '🎯 Package Marketplace',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
-      body: Column(
-        children: [
-          // Tab Bar
-          Container(
-            color: theme.cardColor,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: theme.accentColor,
-              unselectedLabelColor: theme.subtitleColor,
-              indicatorColor: theme.accentColor,
-              tabs: const [
-                Tab(text: '📦 Packages'),
-                Tab(text: '📋 My Bookings'),
-                Tab(text: '🗂 Past Hunts'),
-              ],
+      body: SafeArea(
+        top: true,
+        child: Column(
+          children: [
+            // Tab Bar
+            Container(
+              color: HunterUi.cardColor(theme),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: theme.accentColor,
+                unselectedLabelColor: HunterUi.subtitleColor(theme),
+                indicatorColor: theme.accentColor,
+                tabs: const [
+                  Tab(text: '📦 Packages'),
+                  Tab(text: '📋 My Bookings'),
+                  Tab(text: '🗂 Past Hunts'),
+                ],
+              ),
             ),
-          ),
 
-          // Tab Views
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Packages Tab
-                _buildPackagesTab(theme),
-                // My Bookings Tab — active / upcoming hunts only.
-                _buildMyBookingsTab(theme, pastOnly: false),
-                // Past Hunts Tab — completed / declined / cancelled bookings
-                // and hunts whose dates have passed.
-                _buildMyBookingsTab(theme, pastOnly: true),
-              ],
+            // Tab Views
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // Packages Tab
+                  _buildPackagesTab(theme),
+                  // My Bookings Tab — active / upcoming hunts only.
+                  _buildMyBookingsTab(theme, pastOnly: false),
+                  // Past Hunts Tab — completed / declined / cancelled bookings
+                  // and hunts whose dates have passed.
+                  _buildMyBookingsTab(theme, pastOnly: true),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -118,7 +121,7 @@ class _HunterPackageMarketplaceScreenState
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             border: Border(
               bottom: BorderSide(
                 color: theme.accentColor.withValues(alpha: 0.2),
@@ -147,8 +150,8 @@ class _HunterPackageMarketplaceScreenState
                     child: DropdownButton<String>(
                       value: _selectedProvince ?? 'All Provinces',
                       isExpanded: true,
-                      dropdownColor: theme.cardColor,
-                      style: TextStyle(color: theme.textColor),
+                      dropdownColor: HunterUi.cardColor(theme),
+                      style: TextStyle(color: HunterUi.titleColor(theme)),
                       icon: Icon(
                         Icons.arrow_drop_down,
                         color: theme.accentColor,
@@ -158,7 +161,7 @@ class _HunterPackageMarketplaceScreenState
                           value: province,
                           child: Text(
                             province,
-                            style: TextStyle(color: theme.textColor),
+                            style: TextStyle(color: HunterUi.titleColor(theme)),
                           ),
                         );
                       }).toList(),
@@ -175,7 +178,7 @@ class _HunterPackageMarketplaceScreenState
               if (_selectedProvince != null) ...[
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: Icon(Icons.clear_rounded, color: theme.subtitleColor),
+                  icon: Icon(Icons.clear_rounded, color: HunterUi.subtitleColor(theme)),
                   onPressed: () {
                     setState(() {
                       _selectedProvince = null;
@@ -208,7 +211,7 @@ class _HunterPackageMarketplaceScreenState
                       const SizedBox(height: 16),
                       Text(
                         'Error loading packages',
-                        style: TextStyle(color: theme.textColor),
+                        style: TextStyle(color: HunterUi.titleColor(theme)),
                       ),
                     ],
                   ),
@@ -233,7 +236,7 @@ class _HunterPackageMarketplaceScreenState
                             ? 'No packages in $_selectedProvince'
                             : 'No packages available',
                         style: TextStyle(
-                          color: theme.textColor,
+                          color: HunterUi.titleColor(theme),
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -241,7 +244,7 @@ class _HunterPackageMarketplaceScreenState
                       const SizedBox(height: 8),
                       Text(
                         'Check back soon for hunting packages',
-                        style: TextStyle(color: theme.subtitleColor),
+                        style: TextStyle(color: HunterUi.subtitleColor(theme)),
                       ),
                     ],
                   ),
@@ -292,7 +295,7 @@ class _HunterPackageMarketplaceScreenState
       return Center(
         child: Text(
           'Please sign in to view your bookings',
-          style: TextStyle(color: theme.textColor),
+          style: TextStyle(color: HunterUi.titleColor(theme)),
         ),
       );
     }
@@ -354,7 +357,7 @@ class _HunterPackageMarketplaceScreenState
                 Text(
                   pastOnly ? 'No past hunts yet' : 'No active bookings',
                   style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -364,7 +367,7 @@ class _HunterPackageMarketplaceScreenState
                   pastOnly
                       ? 'Completed and finished hunts will appear here'
                       : 'Book a package to coordinate with outfitters',
-                  style: TextStyle(color: theme.subtitleColor),
+                  style: TextStyle(color: HunterUi.subtitleColor(theme)),
                 ),
               ],
             ),
@@ -471,7 +474,7 @@ class _PackageCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
@@ -507,7 +510,7 @@ class _PackageCard extends StatelessWidget {
                         Text(
                           title,
                           style: TextStyle(
-                            color: theme.textColor,
+                            color: HunterUi.titleColor(theme),
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
@@ -545,7 +548,7 @@ class _PackageCard extends StatelessWidget {
                           children: [
                             Icon(
                               Icons.location_on_rounded,
-                              color: theme.subtitleColor,
+                              color: HunterUi.subtitleColor(theme),
                               size: 14,
                             ),
                             const SizedBox(width: 4),
@@ -559,7 +562,7 @@ class _PackageCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: theme.subtitleColor,
+                                  color: HunterUi.subtitleColor(theme),
                                   fontSize: 12,
                                 ),
                               ),
@@ -629,7 +632,7 @@ class _PackageCard extends StatelessWidget {
               // Description
               Text(
                 description,
-                style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -716,7 +719,7 @@ class _PackageCard extends StatelessWidget {
                   Text(
                     '+${inclusions.length - 4} more inclusions',
                     style: TextStyle(
-                      color: theme.subtitleColor,
+                      color: HunterUi.subtitleColor(theme),
                       fontSize: 11,
                       fontStyle: FontStyle.italic,
                     ),
@@ -783,7 +786,7 @@ class _PackageCard extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: theme.subtitleColor,
+              color: HunterUi.subtitleColor(theme),
               fontSize: 11,
             ),
           ),
@@ -848,7 +851,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: widget.theme.cardColor,
+        color: HunterUi.cardColor(widget.theme),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.only(
@@ -868,7 +871,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: widget.theme.subtitleColor.withValues(alpha: 0.3),
+                  color: HunterUi.subtitleColor(widget.theme).withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -888,7 +891,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                   child: Text(
                     'Package Details',
                     style: TextStyle(
-                      color: widget.theme.textColor,
+                      color: HunterUi.titleColor(widget.theme),
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1017,7 +1020,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: widget.theme.textColor,
+                      foregroundColor: HunterUi.titleColor(widget.theme),
                       side: BorderSide(
                         color: widget.theme.accentColor.withValues(alpha: 0.5),
                       ),
@@ -1115,7 +1118,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
           Text(
             label,
             style: TextStyle(
-              color: widget.theme.subtitleColor,
+              color: HunterUi.subtitleColor(widget.theme),
               fontSize: 12,
             ),
           ),
@@ -1149,7 +1152,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                     ? 'ITEMIZED BREAKDOWN'
                     : 'ALL-INCLUSIVE PACKAGE',
                 style: TextStyle(
-                  color: widget.theme.subtitleColor,
+                  color: HunterUi.subtitleColor(widget.theme),
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.0,
@@ -1163,7 +1166,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
               Text(
                 'No itemized lines published.',
                 style: TextStyle(
-                    color: widget.theme.subtitleColor,
+                    color: HunterUi.subtitleColor(widget.theme),
                     fontStyle: FontStyle.italic,
                     fontSize: 13),
               ),
@@ -1194,7 +1197,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
               Text(
                 'ADVERTISED SPECIES',
                 style: TextStyle(
-                  color: widget.theme.subtitleColor,
+                  color: HunterUi.subtitleColor(widget.theme),
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.0,
@@ -1215,7 +1218,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             Text(
               'INCLUSIONS',
               style: TextStyle(
-                color: widget.theme.subtitleColor,
+                color: HunterUi.subtitleColor(widget.theme),
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.0,
@@ -1271,7 +1274,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 Text(
                   label,
                   style: TextStyle(
-                    color: widget.theme.textColor,
+                    color: HunterUi.titleColor(widget.theme),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1279,7 +1282,7 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 Text(
                   detail,
                   style: TextStyle(
-                    color: widget.theme.subtitleColor,
+                    color: HunterUi.subtitleColor(widget.theme),
                     fontSize: 11,
                   ),
                 ),
@@ -1378,7 +1381,7 @@ class _PriceRow extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: isTotal ? theme.textColor : theme.subtitleColor,
+            color: isTotal ? HunterUi.titleColor(theme) : HunterUi.subtitleColor(theme),
             fontSize: isTotal ? 14 : 13,
             fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
           ),
@@ -1386,7 +1389,7 @@ class _PriceRow extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: isTotal ? Colors.green : theme.textColor,
+            color: isTotal ? Colors.green : HunterUi.titleColor(theme),
             fontSize: isTotal ? 18 : 14,
             fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
           ),
@@ -1470,7 +1473,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: widget.theme.cardColor,
+        color: HunterUi.cardColor(widget.theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _getStatusColor(status).withValues(alpha: 0.3),
@@ -1503,7 +1506,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                       Text(
                         packageName,
                         style: TextStyle(
-                          color: widget.theme.textColor,
+                          color: HunterUi.titleColor(widget.theme),
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                         ),
@@ -1580,7 +1583,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                         child: Text(
                           'Hunt dates: $dateLabel',
                           style: TextStyle(
-                            color: widget.theme.textColor,
+                            color: HunterUi.titleColor(widget.theme),
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1712,7 +1715,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: widget.theme.cardColor,
+      backgroundColor: HunterUi.cardColor(widget.theme),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1739,7 +1742,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                         height: 4,
                         decoration: BoxDecoration(
                           color:
-                              widget.theme.subtitleColor.withValues(alpha: 0.3),
+                              HunterUi.subtitleColor(widget.theme).withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -1753,7 +1756,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                         Text(
                           'Request Date Change',
                           style: TextStyle(
-                            color: widget.theme.textColor,
+                            color: HunterUi.titleColor(widget.theme),
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1764,7 +1767,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                     Text(
                       'Propose new dates for your outfitter to approve or decline.',
                       style: TextStyle(
-                        color: widget.theme.subtitleColor,
+                        color: HunterUi.subtitleColor(widget.theme),
                         fontSize: 13,
                       ),
                     ),
@@ -1822,11 +1825,11 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: reasonController,
-                      style: TextStyle(color: widget.theme.textColor),
+                      style: TextStyle(color: HunterUi.titleColor(widget.theme)),
                       maxLines: 3,
                       decoration: InputDecoration(
                         hintText: 'Reason for date change (optional)...',
-                        hintStyle: TextStyle(color: widget.theme.subtitleColor),
+                        hintStyle: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
                         filled: true,
                         fillColor: widget.theme.backgroundColor,
                         border: OutlineInputBorder(
@@ -1845,7 +1848,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                           child: OutlinedButton(
                             onPressed: () => Navigator.pop(sheetContext),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: widget.theme.textColor,
+                              foregroundColor: HunterUi.titleColor(widget.theme),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
@@ -1953,7 +1956,7 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                   Text(
                     label,
                     style: TextStyle(
-                      color: widget.theme.subtitleColor,
+                      color: HunterUi.subtitleColor(widget.theme),
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1964,8 +1967,8 @@ class _HunterBookingCardState extends State<_HunterBookingCard> {
                         : 'Select date',
                     style: TextStyle(
                       color: value != null
-                          ? widget.theme.textColor
-                          : widget.theme.subtitleColor,
+                          ? HunterUi.titleColor(widget.theme)
+                          : HunterUi.subtitleColor(widget.theme),
                       fontSize: 13,
                       fontWeight:
                           value != null ? FontWeight.w600 : FontWeight.normal,

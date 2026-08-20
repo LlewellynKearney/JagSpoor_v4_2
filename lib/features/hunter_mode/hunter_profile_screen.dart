@@ -12,6 +12,7 @@ import '../auth/change_password_dialog.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
+import 'widgets/hunter_scaffold.dart';
 
 class HunterProfileScreen extends StatefulWidget {
   final ThemeController theme;
@@ -81,7 +82,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   Widget _buildUnitPreferenceCard() {
     final fmt = MeasurementFormatter.instance;
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
@@ -101,7 +102,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                 Text(
                   'Unit Preference',
                   style: TextStyle(
-                    color: widget.theme.textColor,
+                    color: HunterUi.titleColor(widget.theme),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -111,7 +112,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
             Text(
               'Measurement units shown across Hunter Mode (weights, distances, barrel lengths, temperature).',
               style: TextStyle(
-                color: widget.theme.subtitleColor,
+                color: HunterUi.subtitleColor(widget.theme),
                 fontSize: 11,
               ),
             ),
@@ -130,7 +131,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   selectedBorderColor: widget.theme.accentColor,
                   selectedColor: widget.theme.backgroundColor,
                   fillColor: widget.theme.accentColor,
-                  color: widget.theme.textColor,
+                  color: HunterUi.titleColor(widget.theme),
                   constraints: const BoxConstraints(minHeight: 40),
                   children: const [
                     Padding(
@@ -445,24 +446,24 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
           appBar: AppBar(
             title: Text(
               'Hunter Profile',
               style: TextStyle(
-                color: widget.theme.textColor,
+                color: HunterUi.titleColor(widget.theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: widget.theme.backgroundColor,
-            iconTheme: IconThemeData(color: widget.theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: const IconThemeData(color: Colors.white),
             elevation: 0,
           ),
           body: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               16,
-              16,
+              MediaQuery.of(context).padding.top + kToolbarHeight + 8,
               16,
               16 + MediaQuery.of(context).padding.bottom,
             ),
@@ -477,13 +478,13 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: widget.theme.subtitleColor,
+                      color: HunterUi.subtitleColor(widget.theme),
                       letterSpacing: 1.5,
                     ),
                   ),
                   const SizedBox(height: 12),
                   Card(
-                    color: widget.theme.cardColor,
+                    color: HunterUi.cardColor(widget.theme),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
@@ -493,7 +494,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                     child: ListTile(
                       title: Text(
                         'Dark Mode Ambient',
-                        style: TextStyle(color: widget.theme.textColor),
+                        style: TextStyle(color: HunterUi.titleColor(widget.theme)),
                       ),
                       trailing: Switch(
                         value: widget.theme.isDarkMode,
@@ -505,7 +506,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   _buildUnitPreferenceCard(),
                   const SizedBox(height: 12),
                   Card(
-                    color: widget.theme.cardColor,
+                    color: HunterUi.cardColor(widget.theme),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
@@ -554,7 +555,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                             width: 120,
                             height: 120,
                             decoration: BoxDecoration(
-                              color: widget.theme.cardColor,
+                              color: HunterUi.cardColor(widget.theme),
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: widget.theme.accentColor,
@@ -581,7 +582,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                           return Icon(
                                             Icons.person,
                                             size: 60,
-                                            color: widget.theme.subtitleColor,
+                                            color: HunterUi.subtitleColor(widget.theme),
                                           );
                                         },
                                       ),
@@ -589,7 +590,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                     : Icon(
                                       Icons.add_a_photo,
                                       size: 40,
-                                      color: widget.theme.subtitleColor,
+                                      color: HunterUi.subtitleColor(widget.theme),
                                     ),
                           ),
                           if (!_isUploading)
@@ -617,7 +618,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                     child: Text(
                       'Tap to upload photo',
                       style: TextStyle(
-                        color: widget.theme.subtitleColor,
+                        color: HunterUi.subtitleColor(widget.theme),
                         fontSize: 12,
                       ),
                     ),
@@ -632,7 +633,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                     'are mandatory. You cannot use the app until these are '
                     'completed.',
                     style: TextStyle(
-                      color: widget.theme.subtitleColor,
+                      color: HunterUi.subtitleColor(widget.theme),
                       fontSize: 11,
                     ),
                   ),
@@ -834,7 +835,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       color:
                           _isBatterySaverEnabled
                               ? Colors.orange.withValues(alpha: 0.1)
-                              : widget.theme.cardColor,
+                              : HunterUi.cardColor(widget.theme),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color:
@@ -866,7 +867,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                 'Off-Grid Battery Optimization',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: widget.theme.textColor,
+                                  color: HunterUi.titleColor(widget.theme),
                                   fontSize: 14,
                                 ),
                               ),
@@ -879,7 +880,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                                   color:
                                       _isBatterySaverEnabled
                                           ? Colors.orange
-                                          : widget.theme.subtitleColor,
+                                          : HunterUi.subtitleColor(widget.theme),
                                   fontSize: 11,
                                 ),
                               ),
@@ -900,7 +901,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   CheckboxListTile(
                     title: Text(
                       'Basic First Aid Certified',
-                      style: TextStyle(color: widget.theme.textColor),
+                      style: TextStyle(color: HunterUi.titleColor(widget.theme)),
                     ),
                     value: _hasFirstAid,
                     onChanged:
@@ -947,7 +948,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   _buildSectionHeader('ACCOUNT SECURITY'),
                   const SizedBox(height: 12),
                   Card(
-                    color: widget.theme.cardColor,
+                    color: HunterUi.cardColor(widget.theme),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
@@ -961,18 +962,18 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                       title: Text(
                         'Change Password',
-                        style: TextStyle(color: widget.theme.textColor),
+                        style: TextStyle(color: HunterUi.titleColor(widget.theme)),
                       ),
                       subtitle: Text(
                         'Re-authenticate and set a new password.',
                         style: TextStyle(
-                          color: widget.theme.subtitleColor,
+                          color: HunterUi.subtitleColor(widget.theme),
                           fontSize: 12,
                         ),
                       ),
                       trailing: Icon(
                         Icons.chevron_right,
-                        color: widget.theme.subtitleColor,
+                        color: HunterUi.subtitleColor(widget.theme),
                       ),
                       onTap: _showChangePasswordDialog,
                     ),
@@ -1043,7 +1044,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           'Permanently delete your account and all associated personal data from the JagSpoor ecosystem.',
                           style: TextStyle(
                             fontSize: 12,
-                            color: widget.theme.subtitleColor,
+                            color: HunterUi.subtitleColor(widget.theme),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -1086,7 +1087,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.bold,
-        color: widget.theme.subtitleColor,
+        color: HunterUi.subtitleColor(widget.theme),
         letterSpacing: 1.5,
       ),
     );
@@ -1102,7 +1103,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   }) {
     return TextFormField(
       controller: controller,
-      style: TextStyle(color: widget.theme.textColor),
+      style: TextStyle(color: HunterUi.titleColor(widget.theme)),
       keyboardType: keyboardType,
       enabled: enabled,
       validator: validator,
@@ -1111,9 +1112,9 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         labelText: label,
         hintText: hint,
         hintStyle: TextStyle(
-          color: widget.theme.subtitleColor.withValues(alpha: 0.5),
+          color: HunterUi.subtitleColor(widget.theme).withValues(alpha: 0.5),
         ),
-        labelStyle: TextStyle(color: widget.theme.subtitleColor),
+        labelStyle: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
         border: OutlineInputBorder(
           borderSide: BorderSide(color: widget.theme.accentColor),
         ),
@@ -1124,7 +1125,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         ),
         disabledBorder: OutlineInputBorder(
           borderSide: BorderSide(
-            color: widget.theme.subtitleColor.withValues(alpha: 0.3),
+            color: HunterUi.subtitleColor(widget.theme).withValues(alpha: 0.3),
           ),
         ),
       ),
@@ -1137,7 +1138,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       barrierDismissible: false,
       builder:
           (context) => AlertDialog(
-            backgroundColor: widget.theme.cardColor,
+            backgroundColor: HunterUi.cardColor(widget.theme),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
@@ -1156,7 +1157,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                 Text(
                   'Delete Account',
                   style: TextStyle(
-                    color: widget.theme.textColor,
+                    color: HunterUi.titleColor(widget.theme),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1169,7 +1170,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                 Text(
                   'This action is IRREVERSIBLE and will permanently wipe ALL records from the system including:',
                   style: TextStyle(
-                    color: widget.theme.textColor,
+                    color: HunterUi.titleColor(widget.theme),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1216,7 +1217,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                 onPressed: () => Navigator.of(context).pop(false),
                 child: Text(
                   'CANCEL',
-                  style: TextStyle(color: widget.theme.subtitleColor),
+                  style: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
                 ),
               ),
               ElevatedButton(
@@ -1249,7 +1250,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: HunterUi.subtitleColor(widget.theme), fontSize: 13),
             ),
           ),
         ],
@@ -1265,21 +1266,21 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: widget.theme.cardColor,
+        backgroundColor: HunterUi.cardColor(widget.theme),
         title: Text(
           'Sign Out',
-          style: TextStyle(color: widget.theme.textColor),
+          style: TextStyle(color: HunterUi.titleColor(widget.theme)),
         ),
         content: Text(
           'Are you sure you want to sign out of your JagSpoor account?',
-          style: TextStyle(color: widget.theme.subtitleColor),
+          style: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(
               'CANCEL',
-              style: TextStyle(color: widget.theme.subtitleColor),
+              style: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
             ),
           ),
           ElevatedButton(

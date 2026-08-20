@@ -1,5 +1,78 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- HunterScaffold: Solitary Acacia background + global hunter portal rollout (added 2026-08-21)
+
+Mirrors the `OutfitterScaffold` architecture for the hunter portal. New
+`lib/features/hunter_mode/widgets/hunter_scaffold.dart` exposes the full
+shared-surface stack:
+
+- **`HunterAcaciaBackground`** -- the primary network photo is the Solitary
+  Acacia (`https://images.unsplash.com/photo-1523805009345-7448845a9094`),
+  full-screen `BoxFit.cover` with a two-step fallback chain: the bundled
+  `assets/images/Greater Kudu.jpg` offline fallback, then the theme
+  background color. `scrim()` is the adaptive black `LinearGradient`
+  (60% top / 40% mid / 70% bottom). `stack(child, fallbackColor)` layers
+  photo + scrim + content.
+- **`HunterUi`** -- light-mode contrast helpers. `lightTitle` /
+  `lightBody = Color(0xFF2C221E)` (dark espresso for titles/descriptions);
+  `lightCard = Color(0xF5FCF9F5)` (solid warm off-white/cream at 96%
+  opacity); `lightCardBorder = Color(0xFFD6C8BC)`. `titleColor` /
+  `cardColor` / `cardBorderColor` / `subtitleColor` resolvers; in dark mode
+  they delegate to the standard `ThemeController` palette (white title,
+  theme card/subtitle), so Day/Night stays correct. `cardDecoration` +
+  `inputDecoration` helpers for cards + form fields.
+- **`HunterScaffold`** -- a `Scaffold` pre-configured with the acacia
+  background stack behind the body; `extendBodyBehindAppBar: appBar != null`
+  full-bleeds the photo behind the transparent AppBar. Call sites wrap
+  non-scroll bodies in `SafeArea(top: true)` and scrollables carry a
+  `MediaQuery.padding.top + kToolbarHeight` top inset (no header overlap).
+- **`HunterActionChip`** -- high-contrast circular AppBar action chip
+  (translucent ~45% black circle + faint white rim) like `OutfitterActionChip`,
+  so the glyph stays readable against the bright region of the photo.
+- **Rollout** (all use `HunterScaffold` + `HunterUi` resolvers, transparent
+  AppBar, dark-on-scrim or espresso-on-cream text):
+  - **Dashboard** (`hunter_dashboard.dart`) -- theme-toggle + profile
+    settings icons converted to `HunterActionChip`; the admin
+    `AdminModeSwitcherButton` is wrapped in `HunterActionChip.decoration()`.
+    `_resolveAdmin` + `_enforceProfileOnboarding` are now try/catch-hardened
+    so an unavailable Firebase Auth (cold launch / test env) never crashes
+    the dashboard (mirrors the outfitter dashboard resilience).
+  - **Marketplace** (`hunter_package_marketplace_screen.dart`) -- TabBar,
+    province dropdown, all package/booking cards + booking confirmation
+    sheet converted to `HunterUi` colors; `SafeArea(top: true)` around the
+    Column body.
+  - **Venison Permits** (`hunter_venison_permit_log_screen.dart`) --
+    `SafeArea`-wrapped Column, cream search field + cards, espresso text.
+  - **Profile** (`hunter_profile_screen.dart`) -- `SingleChildScrollView`
+    top inset; cards + inputs cream, espresso text.
+  - **Custom Package Builder** (`hunter_custom_package_builder_screen.dart`
+    + `custom_package_farm_selection_screen.dart`) -- both Scaffolds
+    converted; farm cards cream with farm thumbnails.
+- **`NetworkDiagnosticHud` leak fix** -- its pressure-update `Timer.periodic`
+  was never stored/cancelled (leak + widget-test failure), and
+  `_loadQueueSize` could throw when sqflite was uninitialized (web / test
+  env). Timer now stored + cancelled in `dispose()`, and the queue-size read
+  is try/catch hardened (best-effort).
+- **Tests** -- `test/hunter_scaffold_rollout_test.dart` (14 tests): the
+  acacia helper URL/fallback/scrim contract, `HunterScaffold`/
+  `HunterUi`/`HunterActionChip` structural contract, per-screen rollout
+  checks (source-parsed, mirroring `outfitter_scaffold_rollout_test`), plus
+  widget tests rendering `HunterScaffold` (Stack contract), `HunterActionChip`
+  (circle decoration), and `HunterDashboard` (resilient without Firebase).
+- **Verification** -- `flutter analyze lib test`: 0 errors, 0 warnings (277
+  pre-existing infos unchanged). `flutter test`: **All 927 tests passed**
+  (was 913; +14 new). Flutter 3.29.1 (CI pin) re-installed at
+  `/home/openhands/flutter`; `libsqlite3.so` symlink for sqflite FFI tests.
+- Files: `lib/features/hunter_mode/widgets/hunter_scaffold.dart` (NEW),
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/hunter_mode/hunter_profile_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_venison_permit_log_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
+  `lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart`,
+  `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart` (leak fix),
+  `test/hunter_scaffold_rollout_test.dart` (NEW).
+
 ## Canonical project context (added 2026-08-12)
 
 - `context.md` is now the **single source of truth** for architecture, features,

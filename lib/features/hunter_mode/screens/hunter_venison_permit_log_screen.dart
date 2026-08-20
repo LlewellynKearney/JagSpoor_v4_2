@@ -5,6 +5,7 @@ import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
 import '../services/venison_permit_pdf_exporter.dart';
 import '../widgets/venison_permit_details_sheet.dart';
+import '../widgets/hunter_scaffold.dart';
 import 'venison_permit_form_screen.dart';
 
 /// Dedicated hunter-facing log of issued SA venison / game transport & hunt
@@ -48,21 +49,20 @@ class _HunterVenisonPermitLogScreenState
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
       appBar: AppBar(
         title: Text(
           'MY VENISON PERMITS',
           style: TextStyle(
-            color: theme.textColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.w900,
             letterSpacing: 1.2,
             fontSize: 16,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -80,9 +80,11 @@ class _HunterVenisonPermitLogScreenState
         icon: const Icon(Icons.add_rounded),
         label: const Text('New Permit'),
       ),
-      body: Column(
-        children: [
-          _buildSearchBar(theme),
+      body: SafeArea(
+        top: true,
+        child: Column(
+          children: [
+            _buildSearchBar(theme),
           Expanded(
             child: StreamBuilder<List<VenisonTransportPermit>>(
               stream: _permitManager.getMyPermitsStream(isOutfitter: false),
@@ -140,6 +142,7 @@ class _HunterVenisonPermitLogScreenState
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -150,11 +153,11 @@ class _HunterVenisonPermitLogScreenState
       child: TextField(
         controller: _searchController,
         onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-        style: TextStyle(color: theme.textColor),
+        style: TextStyle(color: HunterUi.titleColor(theme)),
         decoration: InputDecoration(
           hintText: 'Search permit no., farm, outfitter, or species',
-          hintStyle: TextStyle(color: theme.subtitleColor),
-          prefixIcon: Icon(Icons.search_rounded, color: theme.subtitleColor),
+          hintStyle: TextStyle(color: HunterUi.subtitleColor(theme)),
+          prefixIcon: Icon(Icons.search_rounded, color: HunterUi.subtitleColor(theme)),
           suffixIcon: _query.isNotEmpty
               ? IconButton(
                   icon: const Icon(Icons.clear_rounded),
@@ -165,7 +168,7 @@ class _HunterVenisonPermitLogScreenState
                 )
               : null,
           filled: true,
-          fillColor: theme.cardColor,
+          fillColor: HunterUi.cardColor(theme),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
@@ -245,7 +248,7 @@ class _HunterVenisonPermitLogScreenState
             Text(
               title,
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
@@ -254,7 +257,7 @@ class _HunterVenisonPermitLogScreenState
             const SizedBox(height: 8),
             Text(
               message,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
               textAlign: TextAlign.center,
             ),
           ],
@@ -302,7 +305,7 @@ class _HunterPermitCard extends StatelessWidget {
     final statusColor = _statusColor(permit.status);
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
@@ -339,7 +342,7 @@ class _HunterPermitCard extends StatelessWidget {
                               ? 'Permit'
                               : permit.permitNumber,
                           style: TextStyle(
-                            color: theme.textColor,
+                            color: HunterUi.titleColor(theme),
                             fontWeight: FontWeight.w900,
                             fontSize: 14,
                           ),
@@ -482,14 +485,14 @@ class _DetailGrid extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(r.icon, color: theme.subtitleColor, size: 16),
+                      Icon(r.icon, color: HunterUi.subtitleColor(theme), size: 16),
                       const SizedBox(width: 8),
                       SizedBox(
                         width: 96,
                         child: Text(
                           r.label,
                           style: TextStyle(
-                            color: theme.subtitleColor,
+                            color: HunterUi.subtitleColor(theme),
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -499,7 +502,7 @@ class _DetailGrid extends StatelessWidget {
                         child: Text(
                           r.value.isEmpty ? '—' : r.value,
                           style: TextStyle(
-                            color: theme.textColor,
+                            color: HunterUi.titleColor(theme),
                             fontSize: 12,
                           ),
                           maxLines: r.multiline ? 3 : 1,

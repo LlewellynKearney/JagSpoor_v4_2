@@ -28,6 +28,7 @@ import 'screens/hunter_venison_permit_log_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
+import 'widgets/hunter_scaffold.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -55,25 +56,41 @@ class _HunterDashboardState extends State<HunterDashboard> {
   /// stack, a deep link, or a profile edit that cleared a mandatory field),
   /// redirect them to the Hunter Profile screen to complete onboarding
   /// before they can use any main app features. Admins are not gated.
+  ///
+  /// Best-effort: a Firestore/auth failure (offline, or an uninitialized
+  /// Firebase app in a cold-launch/test environment) is swallowed so the
+  /// dashboard always renders instead of crashing.
   Future<void> _enforceProfileOnboarding() async {
-    final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-    if (isAdmin) return;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final status =
-        await HunterProfileCompleteness.instance.statusFor(uid);
-    if (!status.isComplete && mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => HunterProfileScreen(theme: widget.theme),
-        ),
-        (_) => false,
-      );
+    try {
+      final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+      if (isAdmin) return;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final status =
+          await HunterProfileCompleteness.instance.statusFor(uid);
+      if (!status.isComplete && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HunterProfileScreen(theme: widget.theme),
+          ),
+          (_) => false,
+        );
+      }
+    } catch (_) {
+      // Auth/Firestore unavailable (offline or test env) — do not gate.
     }
   }
 
+  /// Resolves admin flag; wrapped in try/catch so an unavailable
+  /// auth/Firestore (offline or test env) never hangs or crashes the
+  /// dashboard — it simply renders with a non-admin flag.
   Future<void> _resolveAdmin() async {
-    final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+    bool admin = false;
+    try {
+      admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+    } catch (_) {
+      admin = false;
+    }
     if (!mounted) return;
     setState(() => _isAdmin = admin);
   }
@@ -416,49 +433,54 @@ class _HunterDashboardState extends State<HunterDashboard> {
       animation: theme,
       builder: (context, _) {
         final features = allFeatures;
-        return Scaffold(
-          backgroundColor: theme.backgroundColor,
+        return HunterScaffold(
+          theme: theme,
           appBar: AppBar(
             title: Text(
               'Jagspoor: Hunter Mode',
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: theme.backgroundColor,
-            iconTheme: IconThemeData(color: theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: const IconThemeData(color: Colors.white),
             elevation: 0,
             actions: [
               if (_isAdmin)
-                AdminModeSwitcherButton(
-                  theme: theme,
-                  activeMode: AdminMode.hunter,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Container(
+                    decoration: HunterActionChip.decoration(),
+                    child: AdminModeSwitcherButton(
+                      theme: theme,
+                      activeMode: AdminMode.hunter,
+                    ),
+                  ),
                 ),
-              IconButton(
-                tooltip: theme.isDarkMode ? 'Switch to Day Mode' : 'Switch to Night Mode',
-                icon: Icon(
-                  theme.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-                  color: theme.accentColor,
-                ),
+              HunterActionChip(
+                tooltip: theme.isDarkMode
+                    ? 'Switch to Day Mode'
+                    : 'Switch to Night Mode',
+                icon: theme.isDarkMode ? Icons.light_mode : Icons.dark_mode,
                 onPressed: () => theme.toggleThemeMode(),
               ),
-              IconButton(
-                icon: Icon(Icons.settings_rounded, color: theme.accentColor),
-                onPressed:
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HunterProfileScreen(theme: theme),
-                      ),
-                    ),
+              HunterActionChip(
+                tooltip: 'Hunter Profile',
+                icon: Icons.settings_rounded,
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HunterProfileScreen(theme: theme),
+                  ),
+                ),
               ),
             ],
           ),
           body: ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              0,
+              MediaQuery.of(context).padding.top + kToolbarHeight + 8,
               16,
               16 + MediaQuery.of(context).padding.bottom,
             ),
@@ -467,11 +489,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
               const NetworkDiagnosticHud(),
               const SizedBox(height: 16),
               Card(
-                color: theme.cardColor,
+                color: HunterUi.cardColor(theme),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
-                    color: theme.accentColor.withValues(alpha: 0.2),
+                    color: HunterUi.cardBorderColor(theme),
                   ),
                 ),
                 child: ListTile(
@@ -484,13 +506,14 @@ class _HunterDashboardState extends State<HunterDashboard> {
                     'SYSTEM ACTIVE',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: theme.textColor,
+                      color: HunterUi.titleColor(theme),
                       letterSpacing: 1.2,
                     ),
                   ),
                   subtitle: Text(
                     'GPS Link Established. All tracking modules ready.',
-                    style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                    style: TextStyle(
+                        color: HunterUi.subtitleColor(theme), fontSize: 13),
                   ),
                 ),
               ),
@@ -500,7 +523,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: theme.subtitleColor,
+                  color: HunterUi.subtitleColor(theme),
                   letterSpacing: 1.5,
                 ),
               ),
@@ -524,9 +547,12 @@ class _HunterDashboardState extends State<HunterDashboard> {
   ) {
     final bool isFavorite = favoriteIds.contains(feature.id);
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: HunterUi.cardBorderColor(theme)),
+      ),
       child: Stack(
         children: [
           InkWell(
@@ -547,7 +573,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: theme.textColor,
+                            color: HunterUi.titleColor(theme),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -555,7 +581,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                           feature.description,
                           style: TextStyle(
                             fontSize: 13,
-                            color: theme.subtitleColor,
+                            color: HunterUi.subtitleColor(theme),
                           ),
                         ),
                       ],
@@ -574,7 +600,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 splashRadius: 24,
                 icon: Icon(
                   isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: isFavorite ? theme.accentColor : theme.subtitleColor,
+                  color: isFavorite
+                      ? theme.accentColor
+                      : HunterUi.subtitleColor(theme),
                 ),
                 onPressed: () => _toggleFavorite(feature.id),
               ),

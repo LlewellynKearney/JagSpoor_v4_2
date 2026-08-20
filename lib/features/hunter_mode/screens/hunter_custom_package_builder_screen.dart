@@ -12,6 +12,7 @@ import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
 import '../services/farm_game_price_list_manager.dart';
 import '../widgets/photo_gallery_strip.dart';
+import '../widgets/hunter_scaffold.dart';
 
 /// Hunter **Custom Package Builder** form.
 ///
@@ -366,21 +367,23 @@ class _HunterCustomPackageBuilderScreenState
     if (widget.farmId.isEmpty) {
       return _buildInvalidFarmScaffold(theme);
     }
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
       appBar: AppBar(
         title: Text(
           widget.farmName.isEmpty ? 'Custom Package Builder' : widget.farmName,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
-      body: _createdBookingId == null
-          ? _buildBuilderView(theme)
-          : _buildConfirmationView(theme),
+      body: SafeArea(
+        top: true,
+        child: _createdBookingId == null
+            ? _buildBuilderView(theme)
+            : _buildConfirmationView(theme),
+      ),
       bottomNavigationBar: const SafeArea(
         top: false,
         child: CopyrightFooter.tight(),
@@ -392,25 +395,28 @@ class _HunterCustomPackageBuilderScreenState
   /// clear message and a way back to the farm-selection list instead of a
   /// blank loading screen.
   Widget _buildInvalidFarmScaffold(ThemeController theme) {
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
       appBar: AppBar(
         title: const Text(
           'Custom Package Builder',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
-      body: _StateBanner(
-        icon: Icons.error_outline_rounded,
-        message: 'Invalid farm reference',
-        detail: 'The selected farm could not be identified. Return to the '
-            'farm list and choose a valid farm to build a custom package.',
-        theme: theme,
-        actionLabel: 'BACK TO FARM SELECTION',
-        onAction: () => Navigator.of(context).maybePop(),
+      body: SafeArea(
+        top: true,
+        child: _StateBanner(
+          icon: Icons.error_outline_rounded,
+          message: 'Invalid farm reference',
+          detail: 'The selected farm could not be identified. Return to the '
+              'farm list and choose a valid farm to build a custom package.',
+          theme: theme,
+          actionLabel: 'BACK TO FARM SELECTION',
+          onAction: () => Navigator.of(context).maybePop(),
+        ),
       ),
       bottomNavigationBar: const SafeArea(
         top: false,
@@ -532,7 +538,7 @@ class _HunterCustomPackageBuilderScreenState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
       ),
@@ -548,7 +554,7 @@ class _HunterCustomPackageBuilderScreenState
                 child: Text(
                   farm.displayName,
                   style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -599,7 +605,7 @@ class _HunterCustomPackageBuilderScreenState
           const SizedBox(width: 5),
           Text(
             label,
-            style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+            style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 11),
           ),
         ],
       ),
@@ -610,7 +616,7 @@ class _HunterCustomPackageBuilderScreenState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
       ),
@@ -646,7 +652,7 @@ class _HunterCustomPackageBuilderScreenState
               child: Text(
                 '$_huntingDays hunting day${_huntingDays != 1 ? 's' : ''}',
                 style: TextStyle(
-                    color: theme.subtitleColor, fontSize: 12),
+                    color: HunterUi.subtitleColor(theme), fontSize: 12),
               ),
             ),
         ],
@@ -671,14 +677,14 @@ class _HunterCustomPackageBuilderScreenState
           children: [
             Text(label,
                 style: TextStyle(
-                    color: theme.subtitleColor, fontSize: 11)),
+                    color: HunterUi.subtitleColor(theme), fontSize: 11)),
             const SizedBox(height: 2),
             Text(
               value == null
                   ? 'Select date'
                   : _toIsoDate(value),
               style: TextStyle(
-                  color: theme.textColor,
+                  color: HunterUi.titleColor(theme),
                   fontWeight: FontWeight.w600,
                   fontSize: 14),
             ),
@@ -692,7 +698,7 @@ class _HunterCustomPackageBuilderScreenState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
       ),
@@ -722,7 +728,7 @@ class _HunterCustomPackageBuilderScreenState
       children: [
         Expanded(
           child: Text(label,
-              style: TextStyle(color: theme.textColor, fontSize: 14)),
+              style: TextStyle(color: HunterUi.titleColor(theme), fontSize: 14)),
         ),
         Row(
           mainAxisSize: MainAxisSize.min,
@@ -733,7 +739,7 @@ class _HunterCustomPackageBuilderScreenState
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text('$value',
                   style: TextStyle(
-                      color: theme.textColor,
+                      color: HunterUi.titleColor(theme),
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
             ),
@@ -759,7 +765,7 @@ class _HunterCustomPackageBuilderScreenState
           shape: BoxShape.circle,
         ),
         child: Icon(icon,
-            color: onTap != null ? theme.accentColor : theme.subtitleColor,
+            color: onTap != null ? theme.accentColor : HunterUi.subtitleColor(theme),
             size: 18),
       ),
     );
@@ -785,7 +791,7 @@ class _HunterCustomPackageBuilderScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.accentColor.withValues(alpha: 0.4)),
       ),
@@ -804,13 +810,13 @@ class _HunterCustomPackageBuilderScreenState
                       '$_hunterCount hunter${_hunterCount != 1 ? 's' : ''}'
                       '${_observerCount > 0 ? ' · $_observerCount observer${_observerCount != 1 ? 's' : ''}' : ''}',
                       style: TextStyle(
-                          color: theme.subtitleColor, fontSize: 12),
+                          color: HunterUi.subtitleColor(theme), fontSize: 12),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Grand Total (incl. all fees):',
                       style: TextStyle(
-                          color: theme.textColor,
+                          color: HunterUi.titleColor(theme),
                           fontSize: 14,
                           fontWeight: FontWeight.w500),
                     ),
@@ -875,7 +881,7 @@ class _HunterCustomPackageBuilderScreenState
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: _statusColor(status, theme).withValues(alpha: 0.4)),
@@ -888,7 +894,7 @@ class _HunterCustomPackageBuilderScreenState
               Text(
                 'Request Submitted!',
                 style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontSize: 18,
                     fontWeight: FontWeight.bold),
               ),
@@ -898,7 +904,7 @@ class _HunterCustomPackageBuilderScreenState
                 'sent to the outfitter for review. Use the contact details on '
                 'your booking card to arrange payment directly with the outfitter.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+                style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
               ),
               const SizedBox(height: 12),
               Container(
@@ -987,12 +993,12 @@ class _SpeciesQtyRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isSelected
               ? theme.accentColor
-              : theme.textColor.withValues(alpha: 0.1),
+              : HunterUi.titleColor(theme).withValues(alpha: 0.1),
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -1005,7 +1011,7 @@ class _SpeciesQtyRow extends StatelessWidget {
                 Text(
                   name,
                   style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontSize: 15,
                     fontWeight:
                         isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -1028,7 +1034,7 @@ class _SpeciesQtyRow extends StatelessWidget {
                   'R ${unitPrice.toStringAsFixed(0)} / animal'
                   '${qty > 0 ? '  ·  line R ${lineTotal.toStringAsFixed(0)}' : ''}',
                   style: TextStyle(
-                      color: isSelected ? theme.accentColor : theme.subtitleColor,
+                      color: isSelected ? theme.accentColor : HunterUi.subtitleColor(theme),
                       fontSize: 12,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
                 ),
@@ -1051,7 +1057,7 @@ class _SpeciesQtyRow extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+        style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 10),
       ),
     );
   }
@@ -1068,7 +1074,7 @@ class _SpeciesQtyRow extends StatelessWidget {
           child: Text(
             '$qty',
             style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontSize: 16,
                 fontWeight: FontWeight.bold),
           ),
@@ -1092,7 +1098,7 @@ class _SpeciesQtyRow extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(icon,
-            color: onTap != null ? theme.accentColor : theme.subtitleColor,
+            color: onTap != null ? theme.accentColor : HunterUi.subtitleColor(theme),
             size: 18),
       ),
     );
@@ -1124,12 +1130,12 @@ class _FeeQtyRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isSelected
               ? theme.accentColor
-              : theme.textColor.withValues(alpha: 0.1),
+              : HunterUi.titleColor(theme).withValues(alpha: 0.1),
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -1142,7 +1148,7 @@ class _FeeQtyRow extends StatelessWidget {
                 Text(
                   rate.label,
                   style: TextStyle(
-                    color: theme.textColor,
+                    color: HunterUi.titleColor(theme),
                     fontSize: 15,
                     fontWeight:
                         isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -1152,14 +1158,14 @@ class _FeeQtyRow extends StatelessWidget {
                 Text(
                   '${rate.unitLabel} · ${rate.quantityNoun}',
                   style: TextStyle(
-                      color: theme.subtitleColor, fontSize: 11),
+                      color: HunterUi.subtitleColor(theme), fontSize: 11),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'R ${unitPrice.toStringAsFixed(0)} / unit'
                   '${qty > 0 ? '  ·  line R ${lineTotal.toStringAsFixed(0)}' : ''}',
                   style: TextStyle(
-                      color: isSelected ? theme.accentColor : theme.subtitleColor,
+                      color: isSelected ? theme.accentColor : HunterUi.subtitleColor(theme),
                       fontSize: 12,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
                 ),
@@ -1176,7 +1182,7 @@ class _FeeQtyRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text('$qty',
                     style: TextStyle(
-                        color: theme.textColor,
+                        color: HunterUi.titleColor(theme),
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
               ),
@@ -1201,7 +1207,7 @@ class _FeeQtyRow extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(icon,
-            color: onTap != null ? theme.accentColor : theme.subtitleColor,
+            color: onTap != null ? theme.accentColor : HunterUi.subtitleColor(theme),
             size: 18),
       ),
     );
@@ -1240,13 +1246,13 @@ class _StateBanner extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: theme.subtitleColor),
+            Icon(icon, size: 56, color: HunterUi.subtitleColor(theme)),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -1255,7 +1261,7 @@ class _StateBanner extends StatelessWidget {
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
             ),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 24),
@@ -1274,7 +1280,7 @@ class _StateBanner extends StatelessWidget {
                 onPressed: onSecondaryAction,
                 child: Text(
                   secondaryActionLabel!,
-                  style: TextStyle(color: theme.subtitleColor),
+                  style: TextStyle(color: HunterUi.subtitleColor(theme)),
                 ),
               ),
           ],
@@ -1305,7 +1311,7 @@ class _LoadingView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Loading farm price list...',
-              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
             ),
           ],
         ),
