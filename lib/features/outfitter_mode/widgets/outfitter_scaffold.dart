@@ -79,6 +79,97 @@ class OutfitterBushveldBackground {
   }
 }
 
+/// Light-mode contrast helpers shared by every outfitter screen.
+///
+/// The bushveld background photo has a bright sunrise exposure in its upper
+/// portion, so the default Day-theme text / card colors (dark-charcoal text on
+/// translucent white) wash out. These helpers resolve a richer, high-contrast
+/// outfitter surface palette in light mode while delegating to the standard
+/// [ThemeController] palette in dark mode (where the scrim keeps the standard
+/// colors readable).
+class OutfitterUi {
+  OutfitterUi._();
+
+  /// High-contrast dark espresso for screen titles / primary header text in
+  /// light mode. Dark mode keeps white.
+  static const Color lightTitle = Color(0xFF2C221E);
+
+  /// Rich warm cream card surface (98% opacity) for light mode.
+  static const Color lightCard = Color(0xFAF7F2EC);
+
+  /// Subtle defined card/input border for light mode.
+  static const Color lightCardBorder = Color(0xFFD6C8BC);
+
+  /// High-contrast warm brown for subtitles / descriptions / hint text in
+  /// light mode.
+  static const Color lightBody = Color(0xFF4A3B32);
+
+  /// Screen title / primary header color: dark espresso in light mode, white
+  /// (readable on the dark scrim) in dark mode.
+  static Color titleColor(ThemeController theme) =>
+      theme.isDarkMode ? Colors.white : lightTitle;
+
+  /// Card surface color: rich cream in light mode, theme card in dark mode.
+  static Color cardColor(ThemeController theme) =>
+      theme.isDarkMode ? theme.cardColor : lightCard;
+
+  /// Card border color: defined warm border in light mode, faint white rim
+  /// in dark mode.
+  static Color cardBorderColor(ThemeController theme) =>
+      theme.isDarkMode ? Colors.white.withAlpha(20) : lightCardBorder;
+
+  /// Subtitle / description / placeholder color: high-contrast warm brown in
+  /// light mode, theme subtitle in dark mode.
+  static Color subtitleColor(ThemeController theme) =>
+      theme.isDarkMode ? theme.subtitleColor : lightBody;
+
+  /// Standard outfitter card decoration: solid cream surface + defined border
+  /// in light mode; theme card surface + faint rim in dark mode.
+  static BoxDecoration cardDecoration(
+    ThemeController theme, {
+    double radius = 12,
+  }) {
+    return BoxDecoration(
+      color: cardColor(theme),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: cardBorderColor(theme)),
+    );
+  }
+
+  /// Standard outfitter form-field decoration: filled cream surface, defined
+  /// border, and dark high-contrast label/hint/typed text in light mode.
+  static InputDecoration inputDecoration(
+    ThemeController theme, {
+    String? labelText,
+    String? hintText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+    String? suffixText,
+  }) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: cardBorderColor(theme)),
+    );
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      suffixText: suffixText,
+      filled: true,
+      fillColor: cardColor(theme),
+      labelStyle: TextStyle(color: subtitleColor(theme)),
+      hintStyle: TextStyle(color: subtitleColor(theme)),
+      suffixStyle: TextStyle(color: subtitleColor(theme)),
+      enabledBorder: border,
+      border: border,
+      focusedBorder: border.copyWith(
+        borderSide: BorderSide(color: theme.accentColor, width: 1.6),
+      ),
+    );
+  }
+}
+
 /// A Scaffold pre-configured with the immersive bushveld background:
 /// the photo + scrim are layered behind [body], the (transparent) AppBar is
 /// full-bleed, and the body's scroll content clears the AppBar via the top

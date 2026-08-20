@@ -89,15 +89,20 @@ class _OutfitterBookingDashboardScreenState
           UserRoleResolver.instance.isManager
               ? '💳 Farm Booking Requests'
               : '💳 Booking Requests',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(widget.theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: widget.theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(widget.theme),
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          labelColor: widget.theme.accentColor,
-          unselectedLabelColor: widget.theme.subtitleColor,
+          labelColor: widget.theme.isDarkMode
+              ? widget.theme.accentColor
+              : OutfitterUi.lightTitle,
+          unselectedLabelColor: OutfitterUi.subtitleColor(widget.theme),
           indicatorColor: widget.theme.accentColor,
           tabs: const [
             Tab(
@@ -183,6 +188,10 @@ class _OutfitterBookingDashboardScreenState
 
           return Column(
             children: [
+              // Clear the transparent full-bleed AppBar + TabBar (the
+              // SafeArea above only accounts for the status bar) so the
+              // category filter chips render cleanly below them.
+              const SizedBox(height: kToolbarHeight + kTextTabBarHeight),
               _buildCategoryFilterBar(),
               Expanded(
                 child: TabBarView(
@@ -209,7 +218,12 @@ class _OutfitterBookingDashboardScreenState
     final theme = widget.theme;
     return Container(
       width: double.infinity,
-      color: theme.backgroundColor,
+      decoration: BoxDecoration(
+        color: OutfitterUi.cardColor(theme),
+        border: Border(
+          bottom: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
+        ),
+      ),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -272,18 +286,18 @@ class _OutfitterBookingDashboardScreenState
       ),
       label: Text(label),
       labelStyle: TextStyle(
-        color: selected ? Colors.white : theme.textColor,
+        color: selected ? Colors.white : OutfitterUi.subtitleColor(theme),
         fontWeight: FontWeight.w600,
         fontSize: 12,
       ),
       selected: selected,
       onSelected: (_) => onSelected(),
-      backgroundColor: theme.cardColor,
+      backgroundColor: OutfitterUi.cardColor(theme),
       selectedColor: theme.accentColor,
       side: BorderSide(
         color: selected
             ? theme.accentColor
-            : theme.accentColor.withValues(alpha: 0.35),
+            : OutfitterUi.cardBorderColor(theme),
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -331,7 +345,7 @@ class _OutfitterBookingDashboardScreenState
               isArchived
                   ? 'Confirmed and completed bookings will appear here'
                   : 'New booking requests will appear here',
-              style: TextStyle(color: widget.theme.subtitleColor),
+              style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
               textAlign: TextAlign.center,
             ),
           ],
@@ -700,7 +714,7 @@ class _BookingCardState extends State<_BookingCard> {
                         Text(
                           '${selectedItems.length} item${selectedItems.length != 1 ? 's' : ''} selected',
                           style: TextStyle(
-                            color: widget.theme.subtitleColor,
+                            color: OutfitterUi.subtitleColor(widget.theme),
                             fontSize: 12,
                           ),
                         ),
@@ -827,10 +841,12 @@ class _BookingCardState extends State<_BookingCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: widget.theme.cardColor,
+        color: OutfitterUi.cardColor(widget.theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _getStatusColor(status).withValues(alpha: 0.3),
+          color: widget.theme.isDarkMode
+              ? _getStatusColor(status).withValues(alpha: 0.3)
+              : OutfitterUi.cardBorderColor(widget.theme),
         ),
       ),
       child: Column(
@@ -904,14 +920,14 @@ class _BookingCardState extends State<_BookingCard> {
                   children: [
                     Icon(
                       Icons.inventory_2_rounded,
-                      color: widget.theme.subtitleColor,
+                      color: OutfitterUi.subtitleColor(widget.theme),
                       size: 16,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Package: ',
                       style: TextStyle(
-                        color: widget.theme.subtitleColor,
+                        color: OutfitterUi.subtitleColor(widget.theme),
                         fontSize: 13,
                       ),
                     ),
@@ -934,14 +950,14 @@ class _BookingCardState extends State<_BookingCard> {
                   children: [
                     Icon(
                       Icons.person_rounded,
-                      color: widget.theme.subtitleColor,
+                      color: OutfitterUi.subtitleColor(widget.theme),
                       size: 16,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Hunter: ',
                       style: TextStyle(
-                        color: widget.theme.subtitleColor,
+                        color: OutfitterUi.subtitleColor(widget.theme),
                         fontSize: 13,
                       ),
                     ),
@@ -1325,7 +1341,7 @@ class _BookingCardState extends State<_BookingCard> {
         Text(
           '$label:  ',
           style: TextStyle(
-            color: widget.theme.subtitleColor,
+            color: OutfitterUi.subtitleColor(widget.theme),
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -1365,7 +1381,7 @@ class _FinancialRow extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: isTotal ? theme.textColor : theme.subtitleColor,
+            color: isTotal ? theme.textColor : OutfitterUi.subtitleColor(theme),
             fontSize: isTotal ? 14 : 13,
             fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
           ),

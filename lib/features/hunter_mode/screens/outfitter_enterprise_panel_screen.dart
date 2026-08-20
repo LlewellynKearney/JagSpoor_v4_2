@@ -413,7 +413,7 @@ class _OutfitterEnterprisePanelScreenState
                           ),
                           IconButton(
                             icon: Icon(Icons.close,
-                                color: theme.subtitleColor),
+                                color: OutfitterUi.subtitleColor(theme)),
                             onPressed: () =>
                                 Navigator.of(sheetContext).pop(),
                           ),
@@ -790,15 +790,15 @@ class _OutfitterEnterprisePanelScreenState
                 height: 160,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: theme.cardColor,
+                  color: OutfitterUi.cardColor(theme),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: theme.accentColor.withValues(alpha: 0.3),
+                    color: OutfitterUi.cardBorderColor(theme),
                   ),
                 ),
                 child: Icon(
                   Icons.broken_image_rounded,
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                   size: 40,
                 ),
               ),
@@ -911,10 +911,10 @@ class _OutfitterEnterprisePanelScreenState
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 18),
           decoration: BoxDecoration(
-            color: theme.cardColor,
+            color: OutfitterUi.cardColor(theme),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: theme.accentColor.withValues(alpha: 0.35),
+              color: OutfitterUi.cardBorderColor(theme),
             ),
           ),
           child: Column(
@@ -944,12 +944,15 @@ class _OutfitterEnterprisePanelScreenState
       backgroundColor: theme.backgroundColor,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           '🏡 Farm Control Panel',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
       ),
       body: OutfitterBushveldBackground.stack(
@@ -1372,7 +1375,7 @@ class _OutfitterEnterprisePanelScreenState
                             'Unable to load farms.\n'
                             'If this persists, deploy the Firestore indexes.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: theme.subtitleColor),
+                            style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
                           ),
                         ],
                       ),
@@ -1396,7 +1399,7 @@ class _OutfitterEnterprisePanelScreenState
                           const SizedBox(height: 12),
                           Text(
                             'No farms registered yet',
-                            style: TextStyle(color: theme.subtitleColor),
+                            style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
                           ),
                         ],
                       ),
@@ -1454,7 +1457,7 @@ class _OutfitterEnterprisePanelScreenState
                                         Text(
                                           '${data['district'] ?? ""}, ${data['province'] ?? ""}',
                                           style: TextStyle(
-                                            color: theme.subtitleColor,
+                                            color: OutfitterUi.subtitleColor(theme),
                                             fontSize: 12,
                                           ),
                                         ),
@@ -1499,7 +1502,7 @@ class _OutfitterEnterprisePanelScreenState
                                 const SizedBox(height: 8),
                                 Divider(
                                   height: 1,
-                                  color: theme.subtitleColor
+                                  color: OutfitterUi.subtitleColor(theme)
                                       .withValues(alpha: 0.15),
                                 ),
                                 const SizedBox(height: 8),
@@ -1583,11 +1586,11 @@ class _OutfitterEnterprisePanelScreenState
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: theme.subtitleColor),
+        Icon(icon, size: 14, color: OutfitterUi.subtitleColor(theme)),
         const SizedBox(width: 4),
         Text(
           label,
-          style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+          style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
         ),
       ],
     );
@@ -1601,9 +1604,9 @@ class _OutfitterEnterprisePanelScreenState
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.2)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1617,7 +1620,7 @@ class _OutfitterEnterprisePanelScreenState
                 Text(
                   title,
                   style: TextStyle(
-                    color: theme.textColor,
+                    color: OutfitterUi.titleColor(theme),
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -1640,17 +1643,17 @@ class _OutfitterEnterprisePanelScreenState
     return InputDecoration(
       hintText: hint,
       labelText: label,
-      hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+      hintStyle: TextStyle(color: OutfitterUi.subtitleColor(theme)),
       labelStyle: TextStyle(color: theme.accentColor),
       filled: true,
-      fillColor: theme.backgroundColor,
+      fillColor: OutfitterUi.cardColor(theme),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),

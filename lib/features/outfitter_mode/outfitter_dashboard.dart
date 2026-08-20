@@ -139,10 +139,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              // White over the photo scrim — readable in both
-                              // Day and Night mode (the theme text color sits
-                              // only on opaque cards over this background).
-                              color: Colors.white.withAlpha(210),
+                              // Dark espresso in Day mode (high-contrast on
+                              // the bright photo), white in Night mode over
+                              // the dark scrim.
+                              color: widget.theme.isDarkMode
+                                  ? Colors.white.withAlpha(210)
+                                  : OutfitterUi.lightTitle,
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 1.2,
@@ -368,10 +370,9 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              // White over the photo scrim — readable in both Day and Night
-              // mode (raw on-purpose; the scrim makes this a camera-overlay
-              // style surface).
-              color: Colors.white,
+              // Dark espresso in Day mode (readable on the bright sunrise
+              // region), white in Night mode over the dark scrim.
+              color: OutfitterUi.titleColor(theme),
               fontWeight: FontWeight.w700,
               fontSize: 18,
               letterSpacing: 1.0,
@@ -381,10 +382,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              // Gold reads on the dark scrim in both modes (the light-mode
-              // accent brown would wash out).
-              color: Color(0xFFD4AF37),
+            style: TextStyle(
+              // Dark espresso in Day mode (high-contrast on the bright
+              // sunrise region), brushed gold in Night mode.
+              color: theme.isDarkMode
+                  ? const Color(0xFFD4AF37)
+                  : OutfitterUi.lightTitle,
               fontWeight: FontWeight.w500,
               fontSize: 12,
               letterSpacing: 1.0,
@@ -428,9 +431,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.accentColor.withAlpha(40), width: 1.5),
+        border: Border.all(
+            color: OutfitterUi.cardBorderColor(theme), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -463,7 +467,9 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: theme.textColor.withAlpha(160),
+              color: theme.isDarkMode
+                  ? theme.textColor.withAlpha(160)
+                  : OutfitterUi.lightBody,
               fontSize: 13,
               height: 1.4,
             ),
@@ -481,12 +487,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     required VoidCallback onTap,
   }) {
     return Card(
-      color: theme.cardColor,
+      color: OutfitterUi.cardColor(theme),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: theme.textColor.withAlpha(15), width: 1),
+        side: BorderSide(color: OutfitterUi.cardBorderColor(theme), width: 1),
       ),
       child: InkWell(
         onTap: onTap,
@@ -527,7 +533,9 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: theme.textColor.withAlpha(180),
+                        color: theme.isDarkMode
+                            ? theme.textColor.withAlpha(180)
+                            : OutfitterUi.lightBody,
                         fontSize: 13,
                         height: 1.3,
                       ),

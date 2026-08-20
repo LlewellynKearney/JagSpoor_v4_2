@@ -222,7 +222,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         title: Text(
           'Farm Game Price List',
           style: TextStyle(
-            color: theme.textColor,
+            color: OutfitterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -313,9 +313,9 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.4)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Row(
         children: [
@@ -331,7 +331,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
-                    color: theme.subtitleColor,
+                    color: OutfitterUi.subtitleColor(theme),
                   ),
                 ),
                 DropdownButtonHideUnderline(
@@ -383,7 +383,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.5,
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                 ),
               ),
             ),
@@ -391,7 +391,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
               _selectedFarmName ?? '',
               style: TextStyle(
                 fontSize: 12,
-                color: theme.subtitleColor,
+                color: OutfitterUi.subtitleColor(theme),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -443,13 +443,13 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Center(
         child: Text(
           'Select a farm above to manage its price list.',
-          style: TextStyle(color: theme.subtitleColor),
+          style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
           textAlign: TextAlign.center,
         ),
       ),
@@ -593,7 +593,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
               'Tap any service to set its quantity & rate. Only services with '
               'a non-zero quantity AND rate are included in the PDF export.',
               style: TextStyle(
-                color: theme.subtitleColor,
+                color: OutfitterUi.subtitleColor(theme),
                 fontSize: 11,
                 fontStyle: FontStyle.italic,
               ),
@@ -613,12 +613,16 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: configured
-              ? theme.accentColor.withValues(alpha: 0.4)
-              : theme.accentColor.withValues(alpha: 0.15),
+          color: theme.isDarkMode
+              ? (configured
+                  ? theme.accentColor.withValues(alpha: 0.4)
+                  : theme.accentColor.withValues(alpha: 0.15))
+              : (configured
+                  ? theme.accentColor
+                  : OutfitterUi.cardBorderColor(theme)),
         ),
       ),
       child: ListTile(
@@ -649,7 +653,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                   Text(
                     category.unitLabel,
                     style: TextStyle(
-                      color: theme.subtitleColor,
+                      color: OutfitterUi.subtitleColor(theme),
                       fontSize: 10,
                       fontStyle: FontStyle.italic,
                     ),
@@ -659,14 +663,14 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
             : Text(
                 '${category.unitLabel} · tap to add ${category.quantityNoun} & rate',
                 style: TextStyle(
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
                 ),
               ),
         trailing: Icon(
           configured ? Icons.edit_rounded : Icons.add_circle_outline_rounded,
-          color: configured ? theme.accentColor : theme.subtitleColor,
+          color: configured ? theme.accentColor : OutfitterUi.subtitleColor(theme),
           size: 22,
         ),
       ),
@@ -757,7 +761,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                           labelText:
                               'Quantity (${category.quantityNoun})',
                           labelStyle:
-                              TextStyle(color: widget.theme.subtitleColor),
+                              TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
                           prefixIcon: const Icon(
                               Icons.confirmation_number_outlined),
                           border: OutlineInputBorder(
@@ -785,7 +789,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
                           labelText:
                               'Rate — ${category.unitLabel} (ZAR)',
                           labelStyle:
-                              TextStyle(color: widget.theme.subtitleColor),
+                              TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
                           prefixIcon: const Icon(Icons.payments_outlined),
                           prefixText: 'R ',
                           border: OutlineInputBorder(
@@ -929,7 +933,7 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
-        color: theme.subtitleColor,
+        color: OutfitterUi.subtitleColor(theme),
       ),
     );
   }
@@ -958,9 +962,9 @@ class _PriceEntryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.25)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Row(
         children: [
@@ -1033,17 +1037,17 @@ class _PriceEntryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.subtitleColor.withValues(alpha: 0.1),
+        color: OutfitterUi.cardBorderColor(theme).withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(iconOverride ?? icon, size: 13, color: theme.subtitleColor),
+          Icon(iconOverride ?? icon, size: 13, color: OutfitterUi.subtitleColor(theme)),
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: theme.subtitleColor),
+            style: TextStyle(fontSize: 12, color: OutfitterUi.subtitleColor(theme)),
           ),
         ],
       ),
@@ -1310,11 +1314,11 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
               _gender = FarmGamePriceValidator.genderOptions[index];
             });
           },
-          borderColor: theme.accentColor.withValues(alpha: 0.4),
+          borderColor: OutfitterUi.cardBorderColor(theme),
           selectedBorderColor: theme.accentColor,
           selectedColor: Colors.white,
           fillColor: theme.accentColor,
-          color: theme.subtitleColor,
+          color: OutfitterUi.subtitleColor(theme),
           borderRadius: BorderRadius.circular(8),
           constraints: const BoxConstraints(minHeight: 38, minWidth: 64),
           children: FarmGamePriceValidator.genderOptions
@@ -1359,7 +1363,7 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
             Text(
               'Unit',
               style: TextStyle(
-                color: theme.subtitleColor,
+                color: OutfitterUi.subtitleColor(theme),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -1377,11 +1381,11 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
                       _hornTuskUnit = HornTuskUnit.options[index];
                     });
                   },
-                  borderColor: theme.accentColor.withValues(alpha: 0.4),
+                  borderColor: OutfitterUi.cardBorderColor(theme),
                   selectedBorderColor: theme.accentColor,
                   selectedColor: Colors.white,
                   fillColor: theme.accentColor,
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                   borderRadius: BorderRadius.circular(8),
                   constraints: const BoxConstraints(minHeight: 32, minWidth: 56),
                   children: HornTuskUnit.options
@@ -1413,17 +1417,17 @@ class _PriceEntrySheetState extends State<_PriceEntrySheet> {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: TextStyle(color: theme.subtitleColor),
-      hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+      labelStyle: TextStyle(color: OutfitterUi.subtitleColor(theme)),
+      hintStyle: TextStyle(color: OutfitterUi.subtitleColor(theme)),
       filled: true,
-      fillColor: theme.backgroundColor.withValues(alpha: 0.5),
+      fillColor: OutfitterUi.cardColor(theme),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.4)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.4)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -1447,7 +1451,7 @@ class _EmptyFarmsState extends StatelessWidget {
       padding: SafeBottomInset.paddingFor(context, horizontal: 24, top: 48),
       child: Column(
         children: [
-          Icon(Icons.agriculture, size: 64, color: theme.subtitleColor),
+          Icon(Icons.agriculture, size: 64, color: OutfitterUi.subtitleColor(theme)),
           const SizedBox(height: 16),
           Text(
             'No farms registered yet',
@@ -1461,7 +1465,7 @@ class _EmptyFarmsState extends StatelessWidget {
           Text(
             'Register a farm in the Farm Control Panel before managing its '
             'price list.',
-            style: TextStyle(color: theme.subtitleColor),
+            style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
@@ -1481,16 +1485,16 @@ class _EmptyPriceListState extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: theme.accentColor.withValues(alpha: 0.2),
+          color: OutfitterUi.cardBorderColor(theme),
           style: BorderStyle.solid,
         ),
       ),
       child: Column(
         children: [
-          Icon(Icons.list_alt, size: 48, color: theme.subtitleColor),
+          Icon(Icons.list_alt, size: 48, color: OutfitterUi.subtitleColor(theme)),
           const SizedBox(height: 12),
           Text(
             'No price-list entries yet',
@@ -1502,7 +1506,7 @@ class _EmptyPriceListState extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'Tap the + button to add your first game species for this farm.',
-            style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+            style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 13),
             textAlign: TextAlign.center,
           ),
         ],
@@ -1532,7 +1536,7 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.cloud_off, size: 48, color: theme.subtitleColor),
+            Icon(Icons.cloud_off, size: 48, color: OutfitterUi.subtitleColor(theme)),
             const SizedBox(height: 12),
             Text(
               message,
@@ -1544,7 +1548,7 @@ class _ErrorState extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               detail,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+              style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 12),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),

@@ -224,10 +224,12 @@ class _OutfitterPackageManagerScreenState
       backgroundColor: theme.backgroundColor,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('📦 My Packages',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('📦 My Packages',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: OutfitterUi.titleColor(theme))),
         backgroundColor: Colors.transparent,
-        foregroundColor: theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton(
@@ -245,9 +247,18 @@ class _OutfitterPackageManagerScreenState
         fallbackColor: theme.backgroundColor,
         child: Column(
         children: [
+          // Clear the transparent full-bleed AppBar so the filter tabs render
+          // cleanly below the back button and screen title.
+          SizedBox(
+              height: MediaQuery.of(context).padding.top + kToolbarHeight),
           // Status filter chips.
           Container(
-            color: theme.cardColor,
+            decoration: BoxDecoration(
+              color: OutfitterUi.cardColor(theme),
+              border: Border(
+                bottom: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
+              ),
+            ),
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: SingleChildScrollView(
@@ -261,7 +272,7 @@ class _OutfitterPackageManagerScreenState
                         style: TextStyle(
                             color: _showDeleted
                                 ? Colors.white
-                                : theme.subtitleColor)),
+                                : OutfitterUi.subtitleColor(theme))),
                     selected: _showDeleted,
                     onSelected: (v) =>
                         setState(() => _showDeleted = v),
@@ -333,7 +344,9 @@ class _OutfitterPackageManagerScreenState
       child: FilterChip(
         label: Text(chip.label,
             style: TextStyle(
-                color: selected ? Colors.black : theme.subtitleColor)),
+                color: selected
+                    ? Colors.black
+                    : OutfitterUi.subtitleColor(theme))),
         selected: selected,
         onSelected: (_) => setState(() {
           _showDeleted = false;
@@ -369,12 +382,11 @@ class _OutfitterPackageManagerScreenState
         species is List ? species.length : 0;
 
     return Card(
-      color: theme.cardColor,
+      color: OutfitterUi.cardColor(theme),
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-            color: theme.accentColor.withValues(alpha: 0.2)),
+        side: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -406,13 +418,13 @@ class _OutfitterPackageManagerScreenState
                             errorWidget: (_, __, ___) => Container(
                               color: theme.backgroundColor,
                               child: Icon(Icons.image_rounded,
-                                  color: theme.subtitleColor),
+                                  color: OutfitterUi.subtitleColor(theme)),
                             ),
                           )
                         : Container(
                             color: theme.backgroundColor,
                             child: Icon(Icons.terrain_rounded,
-                                color: theme.subtitleColor),
+                                color: OutfitterUi.subtitleColor(theme)),
                           ),
                   ),
                 ),
@@ -444,7 +456,7 @@ class _OutfitterPackageManagerScreenState
                         '$speciesCount species\n'
                         '${PackageQuantity.remainingLabel(quantityAvailable)}',
                         style: TextStyle(
-                            color: theme.subtitleColor, fontSize: 12),
+                            color: OutfitterUi.subtitleColor(theme), fontSize: 12),
                       ),
                     ],
                   ),
@@ -553,9 +565,10 @@ class _OutfitterPackageManagerScreenState
       avatar: Icon(icon, size: 16, color: theme.accentColor),
       label: Text(label,
           style: TextStyle(color: theme.textColor, fontSize: 12)),
-      backgroundColor: theme.backgroundColor,
-      side: BorderSide(
-          color: theme.accentColor.withValues(alpha: 0.3)),
+      backgroundColor: theme.isDarkMode
+          ? theme.backgroundColor
+          : const Color(0xFFF7F2EC),
+      side: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
     );
   }
 
@@ -609,7 +622,7 @@ class _OutfitterPackageManagerScreenState
             const SizedBox(height: 8),
             Text(detail,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: theme.subtitleColor, fontSize: 13)),
+                style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 13)),
           ],
         ),
       ),

@@ -450,7 +450,7 @@ class _OutfitterPackageCreatorScreenState
                           width: 40,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: widget.theme.subtitleColor
+                            color: OutfitterUi.subtitleColor(widget.theme)
                                 .withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(2),
                           ),
@@ -478,7 +478,7 @@ class _OutfitterPackageCreatorScreenState
                         ).copyWith(
                           labelText: 'Quantity',
                           labelStyle:
-                              TextStyle(color: widget.theme.subtitleColor),
+                              TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
                           prefixIcon:
                               const Icon(Icons.confirmation_number_outlined),
                         ),
@@ -506,7 +506,7 @@ class _OutfitterPackageCreatorScreenState
                         ).copyWith(
                           labelText: 'Price per unit (ZAR)',
                           labelStyle:
-                              TextStyle(color: widget.theme.subtitleColor),
+                              TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
                           prefixIcon: const Icon(Icons.payments_outlined),
                         ),
                         inputFormatters: [
@@ -544,7 +544,7 @@ class _OutfitterPackageCreatorScreenState
                             onPressed: () => Navigator.pop(ctx),
                             child: Text('Cancel',
                                 style: TextStyle(
-                                    color: widget.theme.subtitleColor)),
+                                    color: OutfitterUi.subtitleColor(widget.theme))),
                           ),
                           const SizedBox(width: 8),
                           FilledButton.icon(
@@ -697,7 +697,7 @@ class _OutfitterPackageCreatorScreenState
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
                   child: Text('Cancel',
-                      style: TextStyle(color: widget.theme.subtitleColor)),
+                      style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme))),
                 ),
                 ElevatedButton(
                   onPressed: () {
@@ -923,10 +923,13 @@ class _OutfitterPackageCreatorScreenState
       appBar: AppBar(
         title: Text(
           _editingPackageId != null ? '🏕️ Edit Package' : '🏕️ Publish Package',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
       ),
       body: OutfitterBushveldBackground.stack(
@@ -966,7 +969,7 @@ class _OutfitterPackageCreatorScreenState
                   return Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: theme.cardColor,
+                      color: OutfitterUi.cardColor(theme),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Center(
@@ -1146,16 +1149,16 @@ class _OutfitterPackageCreatorScreenState
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: theme.cardColor,
+                  color: OutfitterUi.cardColor(theme),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: theme.accentColor.withValues(alpha: 0.3),
+                    color: OutfitterUi.cardBorderColor(theme),
                   ),
                 ),
                 child: Text(
                   'No inclusions added yet',
                   style: TextStyle(
-                    color: theme.subtitleColor,
+                    color: OutfitterUi.subtitleColor(theme),
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -1278,7 +1281,7 @@ class _OutfitterPackageCreatorScreenState
                     Text(
                       'Uploading images... ${(_uploadProgress * 100).toInt()}%',
                       style: TextStyle(
-                          color: theme.subtitleColor, fontSize: 12),
+                          color: OutfitterUi.subtitleColor(theme), fontSize: 12),
                     ),
                   ],
                 ),
@@ -1367,10 +1370,10 @@ class _OutfitterPackageCreatorScreenState
         width: 110,
         margin: const EdgeInsets.only(right: 10),
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          color: OutfitterUi.cardColor(theme),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: theme.accentColor.withValues(alpha: 0.3),
+            color: OutfitterUi.cardBorderColor(theme),
           ),
         ),
         child: Column(
@@ -1380,12 +1383,12 @@ class _OutfitterPackageCreatorScreenState
             const SizedBox(height: 6),
             Text(
               label,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+              style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
             ),
             if (showCount)
               Text(
                 '$_totalImageCount/$_maxImages',
-                style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+                style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 10),
               ),
           ],
         ),
@@ -1401,8 +1404,7 @@ class _OutfitterPackageCreatorScreenState
       margin: const EdgeInsets.only(right: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        border:
-            Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -1435,9 +1437,9 @@ class _OutfitterPackageCreatorScreenState
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Row(
         children: [
@@ -1486,12 +1488,12 @@ class _OutfitterPackageCreatorScreenState
           children: [
             Icon(icon,
                 size: 18,
-                color: selected ? theme.accentColor : theme.subtitleColor),
+                color: selected ? theme.accentColor : OutfitterUi.subtitleColor(theme)),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: selected ? theme.textColor : theme.subtitleColor,
+                color: selected ? theme.textColor : OutfitterUi.subtitleColor(theme),
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 13,
               ),
@@ -1507,9 +1509,9 @@ class _OutfitterPackageCreatorScreenState
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Row(
         children: [
@@ -1567,13 +1569,13 @@ class _OutfitterPackageCreatorScreenState
             Icon(
               icon,
               size: 18,
-              color: selected ? theme.accentColor : theme.subtitleColor,
+              color: selected ? theme.accentColor : OutfitterUi.subtitleColor(theme),
             ),
             const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                color: selected ? theme.accentColor : theme.subtitleColor,
+                color: selected ? theme.accentColor : OutfitterUi.subtitleColor(theme),
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 13,
               ),
@@ -1654,12 +1656,16 @@ class _OutfitterPackageCreatorScreenState
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: item != null
-              ? theme.accentColor.withValues(alpha: 0.4)
-              : theme.accentColor.withValues(alpha: 0.15),
+          color: theme.isDarkMode
+              ? (item != null
+                  ? theme.accentColor.withValues(alpha: 0.4)
+                  : theme.accentColor.withValues(alpha: 0.15))
+              : (item != null
+                  ? theme.accentColor
+                  : OutfitterUi.cardBorderColor(theme)),
         ),
       ),
       child: ListTile(
@@ -1685,14 +1691,14 @@ class _OutfitterPackageCreatorScreenState
             : Text(
                 'Tap to add quantity & price',
                 style: TextStyle(
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
                 ),
               ),
         trailing: Icon(
           item != null ? Icons.edit_rounded : Icons.add_circle_outline_rounded,
-          color: item != null ? theme.accentColor : theme.subtitleColor,
+          color: item != null ? theme.accentColor : OutfitterUi.subtitleColor(theme),
           size: 22,
         ),
       ),
@@ -1704,10 +1710,10 @@ class _OutfitterPackageCreatorScreenState
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          color: OutfitterUi.cardColor(theme),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: theme.accentColor.withValues(alpha: 0.3),
+            color: OutfitterUi.cardBorderColor(theme),
           ),
         ),
         child: Column(
@@ -1717,7 +1723,7 @@ class _OutfitterPackageCreatorScreenState
                   ? 'No species added yet'
                   : 'No advertised species added yet',
               style: TextStyle(
-                color: theme.subtitleColor,
+                color: OutfitterUi.subtitleColor(theme),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -1745,10 +1751,10 @@ class _OutfitterPackageCreatorScreenState
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: theme.cardColor,
+              color: OutfitterUi.cardColor(theme),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: theme.accentColor.withValues(alpha: 0.2),
+                color: OutfitterUi.cardBorderColor(theme),
               ),
             ),
             child: Row(
@@ -1771,7 +1777,7 @@ class _OutfitterPackageCreatorScreenState
                       Text(
                         'Qty ${species.quantity} × R ${species.pricePerAnimal.toStringAsFixed(2)}',
                         style: TextStyle(
-                          color: theme.subtitleColor,
+                          color: OutfitterUi.subtitleColor(theme),
                           fontSize: 12,
                         ),
                       ),
@@ -1846,10 +1852,10 @@ class _OutfitterPackageCreatorScreenState
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: theme.cardColor,
+          color: OutfitterUi.cardColor(theme),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: theme.accentColor.withValues(alpha: 0.3),
+            color: OutfitterUi.cardBorderColor(theme),
           ),
         ),
         child: Row(
@@ -1864,7 +1870,7 @@ class _OutfitterPackageCreatorScreenState
                   Text(
                     label,
                     style: TextStyle(
-                      color: theme.subtitleColor,
+                      color: OutfitterUi.subtitleColor(theme),
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -1877,7 +1883,7 @@ class _OutfitterPackageCreatorScreenState
                     style: TextStyle(
                       color: value != null
                           ? theme.textColor
-                          : theme.subtitleColor,
+                          : OutfitterUi.subtitleColor(theme),
                       fontSize: 14,
                       fontWeight:
                           value != null ? FontWeight.w600 : FontWeight.normal,
@@ -1901,9 +1907,9 @@ class _OutfitterPackageCreatorScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
+        border: Border.all(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1916,7 +1922,7 @@ class _OutfitterPackageCreatorScreenState
               Text(
                 'PACKAGE VALUE',
                 style: TextStyle(
-                  color: theme.subtitleColor,
+                  color: OutfitterUi.subtitleColor(theme),
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.0,
@@ -1950,7 +1956,7 @@ class _OutfitterPackageCreatorScreenState
         Text(
           label,
           style: TextStyle(
-            color: isTotal ? theme.textColor : theme.subtitleColor,
+            color: isTotal ? theme.textColor : OutfitterUi.subtitleColor(theme),
             fontSize: isTotal ? 14 : 13,
             fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
           ),
@@ -1971,7 +1977,7 @@ class _OutfitterPackageCreatorScreenState
     return Text(
       label,
       style: TextStyle(
-        color: theme.subtitleColor,
+        color: OutfitterUi.subtitleColor(theme),
         fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.2,
@@ -1987,20 +1993,20 @@ class _OutfitterPackageCreatorScreenState
   }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+      hintStyle: TextStyle(color: OutfitterUi.subtitleColor(theme).withValues(alpha: 0.5)),
       prefixText: prefix,
       prefixStyle: TextStyle(color: theme.textColor),
       suffixText: suffix,
       suffixStyle: TextStyle(color: theme.textColor),
       filled: true,
-      fillColor: theme.cardColor,
+      fillColor: OutfitterUi.cardColor(theme),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),

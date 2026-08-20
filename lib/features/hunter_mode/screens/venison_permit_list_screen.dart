@@ -58,10 +58,13 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
       appBar: AppBar(
         title: Text(
           widget.isOutfitterMode ? 'Issued Permits' : 'My Transport Permits',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -133,8 +136,8 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
         style: TextStyle(color: theme.textColor),
         decoration: InputDecoration(
           hintText: 'Search by hunter, farm, species, or permit no.',
-          hintStyle: TextStyle(color: theme.subtitleColor),
-          prefixIcon: Icon(Icons.search_rounded, color: theme.subtitleColor),
+          hintStyle: TextStyle(color: OutfitterUi.subtitleColor(theme)),
+          prefixIcon: Icon(Icons.search_rounded, color: OutfitterUi.subtitleColor(theme)),
           suffixIcon: _query.isNotEmpty
               ? IconButton(
                   icon: const Icon(Icons.clear_rounded),
@@ -145,7 +148,7 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
                 )
               : null,
           filled: true,
-          fillColor: theme.cardColor,
+          fillColor: OutfitterUi.cardColor(theme),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -180,7 +183,7 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
           children: [
             Icon(Icons.receipt_long_outlined,
                 size: 64,
-                color: theme.subtitleColor.withValues(alpha: 0.5)),
+                color: OutfitterUi.subtitleColor(theme).withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text('No Permits Yet',
                 style: TextStyle(
@@ -192,7 +195,7 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
               'Issued SA venison transport & hunt permits will appear here. '
               'Tap "New Permit" to create one.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 13),
             ),
           ],
         ),
@@ -221,7 +224,7 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
               '(venison_permits: outfitterId/hunterId ASC + createdAt DESC) '
               'may still be building.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 13),
             ),
             const SizedBox(height: 12),
             Text(error,
@@ -372,12 +375,12 @@ class _PermitCard extends StatelessWidget {
     final statusColor = _statusColor(permit.status);
 
     return Card(
-      color: theme.cardColor,
+      color: OutfitterUi.cardColor(theme),
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
+        side: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
       ),
       child: InkWell(
         onTap: onTap,
@@ -421,7 +424,7 @@ class _PermitCard extends StatelessWidget {
                               ? 'Unknown farm'
                               : permit.farmName,
                           style: TextStyle(
-                            color: theme.subtitleColor,
+                            color: OutfitterUi.subtitleColor(theme),
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -476,13 +479,13 @@ class _PermitCard extends StatelessWidget {
               Row(
                 children: [
                   Icon(Icons.event_rounded,
-                      color: theme.subtitleColor, size: 14),
+                      color: OutfitterUi.subtitleColor(theme), size: 14),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       _huntWindow,
                       style:
-                          TextStyle(color: theme.subtitleColor, fontSize: 11),
+                          TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
                     ),
                   ),
                   Icon(Icons.draw_rounded,

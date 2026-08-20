@@ -210,7 +210,7 @@ class _OutfitterTrophyStockScreenState
                           ),
                           IconButton(
                             icon: Icon(Icons.close,
-                                color: theme.subtitleColor),
+                                color: OutfitterUi.subtitleColor(theme)),
                             onPressed: () =>
                                 Navigator.of(sheetContext).pop(),
                           ),
@@ -321,13 +321,20 @@ class _OutfitterTrophyStockScreenState
       labelText: label,
       hintText: hint,
       labelStyle: TextStyle(color: theme.accentColor),
-      hintStyle:
-          TextStyle(color: theme.subtitleColor.withValues(alpha: 0.5)),
+      hintStyle: TextStyle(color: OutfitterUi.subtitleColor(theme)),
       filled: true,
-      fillColor: theme.backgroundColor,
+      fillColor: OutfitterUi.cardColor(theme),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: theme.accentColor, width: 2),
       ),
     );
   }
@@ -608,7 +615,7 @@ class _OutfitterTrophyStockScreenState
         ),
         child: Icon(
           Icons.pets_rounded,
-          color: theme.subtitleColor,
+          color: OutfitterUi.subtitleColor(theme),
           size: 18,
         ),
       );
@@ -629,7 +636,7 @@ class _OutfitterTrophyStockScreenState
             color: theme.accentColor.withValues(alpha: 0.15),
             child: Icon(
               Icons.pets_rounded,
-              color: theme.subtitleColor,
+              color: OutfitterUi.subtitleColor(theme),
               size: 18,
             ),
           ),
@@ -720,12 +727,15 @@ class _OutfitterTrophyStockScreenState
       backgroundColor: theme.backgroundColor,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           '🥩 Trophy Inventory Stock',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
         actions: [
           OutfitterActionChip(
@@ -748,10 +758,10 @@ class _OutfitterTrophyStockScreenState
           // Trophy Stock Sync Form
           Container(
             decoration: BoxDecoration(
-              color: theme.cardColor,
+              color: OutfitterUi.cardColor(theme),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: theme.accentColor.withValues(alpha: 0.2),
+                color: OutfitterUi.cardBorderColor(theme),
               ),
             ),
             child: Column(
@@ -790,7 +800,7 @@ class _OutfitterTrophyStockScreenState
                         Text(
                           'SELECT FARM',
                           style: TextStyle(
-                            color: theme.subtitleColor,
+                            color: OutfitterUi.subtitleColor(theme),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.2,
@@ -819,9 +829,7 @@ class _OutfitterTrophyStockScreenState
                                         ? 'Locked to assigned farm'
                                         : 'Choose a farm...',
                                 hintStyle: TextStyle(
-                                  color: theme.subtitleColor.withValues(
-                                    alpha: 0.5,
-                                  ),
+                                  color: OutfitterUi.subtitleColor(theme),
                                 ),
                                 filled: true,
                                 fillColor:
@@ -829,21 +837,17 @@ class _OutfitterTrophyStockScreenState
                                         ? theme.accentColor.withValues(
                                           alpha: 0.1,
                                         )
-                                        : theme.backgroundColor,
+                                        : OutfitterUi.cardColor(theme),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(
-                                    color: theme.accentColor.withValues(
-                                      alpha: 0.3,
-                                    ),
+                                    color: OutfitterUi.cardBorderColor(theme),
                                   ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(
-                                    color: theme.accentColor.withValues(
-                                      alpha: 0.3,
-                                    ),
+                                    color: OutfitterUi.cardBorderColor(theme),
                                   ),
                                 ),
                                 prefixIcon:
@@ -898,7 +902,7 @@ class _OutfitterTrophyStockScreenState
                         Text(
                           'GAME SPECIES',
                           style: TextStyle(
-                            color: theme.subtitleColor,
+                            color: OutfitterUi.subtitleColor(theme),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.2,
@@ -911,10 +915,10 @@ class _OutfitterTrophyStockScreenState
                           decoration: InputDecoration(
                             hintText: 'e.g., Kudu, Gemsbok, Impala',
                             hintStyle: TextStyle(
-                              color: theme.subtitleColor.withValues(alpha: 0.5),
+                              color: OutfitterUi.subtitleColor(theme),
                             ),
                             filled: true,
-                            fillColor: theme.backgroundColor,
+                            fillColor: OutfitterUi.cardColor(theme),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 Icons.list_rounded,
@@ -925,13 +929,13 @@ class _OutfitterTrophyStockScreenState
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(
-                                color: theme.accentColor.withValues(alpha: 0.3),
+                                color: OutfitterUi.cardBorderColor(theme),
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(
-                                color: theme.accentColor.withValues(alpha: 0.3),
+                                color: OutfitterUi.cardBorderColor(theme),
                               ),
                             ),
                           ),
@@ -954,7 +958,7 @@ class _OutfitterTrophyStockScreenState
                                   Text(
                                     'AVAILABLE COUNT',
                                     style: TextStyle(
-                                      color: theme.subtitleColor,
+                                      color: OutfitterUi.subtitleColor(theme),
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 1.2,
@@ -971,26 +975,20 @@ class _OutfitterTrophyStockScreenState
                                     decoration: InputDecoration(
                                       hintText: '0',
                                       hintStyle: TextStyle(
-                                        color: theme.subtitleColor.withValues(
-                                          alpha: 0.5,
-                                        ),
+                                        color: OutfitterUi.subtitleColor(theme),
                                       ),
                                       filled: true,
-                                      fillColor: theme.backgroundColor,
+                                      fillColor: OutfitterUi.cardColor(theme),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
-                                          color: theme.accentColor.withValues(
-                                            alpha: 0.3,
-                                          ),
+                                          color: OutfitterUi.cardBorderColor(theme),
                                         ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
-                                          color: theme.accentColor.withValues(
-                                            alpha: 0.3,
-                                          ),
+                                          color: OutfitterUi.cardBorderColor(theme),
                                         ),
                                       ),
                                     ),
@@ -1014,7 +1012,7 @@ class _OutfitterTrophyStockScreenState
                                   Text(
                                     'PRICE PER TROPHY (ZAR)',
                                     style: TextStyle(
-                                      color: theme.subtitleColor,
+                                      color: OutfitterUi.subtitleColor(theme),
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 1.2,
@@ -1036,30 +1034,24 @@ class _OutfitterTrophyStockScreenState
                                     decoration: InputDecoration(
                                       hintText: '25000',
                                       hintStyle: TextStyle(
-                                        color: theme.subtitleColor.withValues(
-                                          alpha: 0.5,
-                                        ),
+                                        color: OutfitterUi.subtitleColor(theme),
                                       ),
                                       prefixText: 'R ',
                                       prefixStyle: TextStyle(
                                         color: theme.textColor,
                                       ),
                                       filled: true,
-                                      fillColor: theme.backgroundColor,
+                                      fillColor: OutfitterUi.cardColor(theme),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
-                                          color: theme.accentColor.withValues(
-                                            alpha: 0.3,
-                                          ),
+                                          color: OutfitterUi.cardBorderColor(theme),
                                         ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
                                         borderSide: BorderSide(
-                                          color: theme.accentColor.withValues(
-                                            alpha: 0.3,
-                                          ),
+                                          color: OutfitterUi.cardBorderColor(theme),
                                         ),
                                       ),
                                     ),
@@ -1085,7 +1077,7 @@ class _OutfitterTrophyStockScreenState
                             Text(
                               'TROPHY LENGTH / SIZE (INCHES)',
                               style: TextStyle(
-                                color: theme.subtitleColor,
+                                color: OutfitterUi.subtitleColor(theme),
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.2,
@@ -1108,12 +1100,10 @@ class _OutfitterTrophyStockScreenState
                                 hintText: 'e.g. 42.5',
                                 suffixText: 'in',
                                 hintStyle: TextStyle(
-                                  color: theme.subtitleColor.withValues(
-                                    alpha: 0.5,
-                                  ),
+                                  color: OutfitterUi.subtitleColor(theme),
                                 ),
                                 filled: true,
-                                fillColor: theme.backgroundColor,
+                                fillColor: OutfitterUi.cardColor(theme),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   borderSide: BorderSide(
@@ -1146,7 +1136,7 @@ class _OutfitterTrophyStockScreenState
                                 Text(
                                   'TROPHY PHOTOS (${_pickedPhotos.length}/$_maxTrophyPhotos)',
                                   style: TextStyle(
-                                    color: theme.subtitleColor,
+                                    color: OutfitterUi.subtitleColor(theme),
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 1.2,
@@ -1190,7 +1180,7 @@ class _OutfitterTrophyStockScreenState
                                   'Attach up to 3 photos of the trophy animal '
                                   '(horn, tusk, or full animal).',
                                   style: TextStyle(
-                                    color: theme.subtitleColor.withValues(
+                                    color: OutfitterUi.subtitleColor(theme).withValues(
                                       alpha: 0.7,
                                     ),
                                     fontSize: 12,
@@ -1223,7 +1213,7 @@ class _OutfitterTrophyStockScreenState
                                               color: theme.backgroundColor,
                                               child: Icon(
                                                 Icons.broken_image_rounded,
-                                                color: theme.subtitleColor,
+                                                color: OutfitterUi.subtitleColor(theme),
                                               ),
                                             ),
                                           ),
@@ -1300,10 +1290,10 @@ class _OutfitterTrophyStockScreenState
           // Current Stock List
           Container(
             decoration: BoxDecoration(
-              color: theme.cardColor,
+              color: OutfitterUi.cardColor(theme),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: theme.accentColor.withValues(alpha: 0.2),
+                color: OutfitterUi.cardBorderColor(theme),
               ),
             ),
             child: Column(
@@ -1371,7 +1361,7 @@ class _OutfitterTrophyStockScreenState
                                 'Unable to load stock.\n'
                                 'If this persists, deploy the Firestore indexes.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: theme.subtitleColor),
+                                style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
                               ),
                             ],
                           ),
@@ -1395,7 +1385,7 @@ class _OutfitterTrophyStockScreenState
                               const SizedBox(height: 12),
                               Text(
                                 'No trophy stock synced yet',
-                                style: TextStyle(color: theme.subtitleColor),
+                                style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
                               ),
                             ],
                           ),

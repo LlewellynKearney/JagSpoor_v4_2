@@ -57,12 +57,15 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
       backgroundColor: widget.theme.backgroundColor,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           '📊 Enterprise Business Intelligence',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: OutfitterUi.titleColor(widget.theme),
+          ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: widget.theme.textColor,
+        foregroundColor: OutfitterUi.titleColor(widget.theme),
         elevation: 0,
         actions: [
           OutfitterActionChip(
@@ -348,12 +351,10 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                       // Species Revenue Breakdown
                       Container(
                         decoration: BoxDecoration(
-                          color: widget.theme.cardColor,
+                          color: OutfitterUi.cardColor(widget.theme),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: widget.theme.accentColor.withValues(
-                              alpha: 0.2,
-                            ),
+                            color: OutfitterUi.cardBorderColor(widget.theme),
                           ),
                         ),
                         child: Column(
@@ -389,7 +390,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                     children: [
                                       Icon(
                                         Icons.pets_rounded,
-                                        color: widget.theme.subtitleColor
+                                        color: OutfitterUi.subtitleColor(widget.theme)
                                             .withValues(alpha: 0.5),
                                         size: 32,
                                       ),
@@ -397,7 +398,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                       Text(
                                         'No species revenue data yet',
                                         style: TextStyle(
-                                          color: widget.theme.subtitleColor,
+                                          color: OutfitterUi.subtitleColor(widget.theme),
                                         ),
                                       ),
                                     ],
@@ -424,12 +425,10 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                       // Income per Farm Breakdown
                       Container(
                         decoration: BoxDecoration(
-                          color: widget.theme.cardColor,
+                          color: OutfitterUi.cardColor(widget.theme),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: widget.theme.accentColor.withValues(
-                              alpha: 0.2,
-                            ),
+                            color: OutfitterUi.cardBorderColor(widget.theme),
                           ),
                         ),
                         child: Column(
@@ -485,7 +484,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                     children: [
                                       Icon(
                                         Icons.landscape_rounded,
-                                        color: widget.theme.subtitleColor
+                                        color: OutfitterUi.subtitleColor(widget.theme)
                                             .withValues(alpha: 0.5),
                                         size: 32,
                                       ),
@@ -493,7 +492,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                       Text(
                                         'No farm revenue data yet',
                                         style: TextStyle(
-                                          color: widget.theme.subtitleColor,
+                                          color: OutfitterUi.subtitleColor(widget.theme),
                                         ),
                                       ),
                                     ],
@@ -521,12 +520,10 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                       // Monthly Booking Trends
                       Container(
                         decoration: BoxDecoration(
-                          color: widget.theme.cardColor,
+                          color: OutfitterUi.cardColor(widget.theme),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: widget.theme.accentColor.withValues(
-                              alpha: 0.2,
-                            ),
+                            color: OutfitterUi.cardBorderColor(widget.theme),
                           ),
                         ),
                         child: Column(
@@ -562,7 +559,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                     children: [
                                       Icon(
                                         Icons.calendar_today_rounded,
-                                        color: widget.theme.subtitleColor
+                                        color: OutfitterUi.subtitleColor(widget.theme)
                                             .withValues(alpha: 0.5),
                                         size: 32,
                                       ),
@@ -570,7 +567,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                                       Text(
                                         'No monthly data yet',
                                         style: TextStyle(
-                                          color: widget.theme.subtitleColor,
+                                          color: OutfitterUi.subtitleColor(widget.theme),
                                         ),
                                       ),
                                     ],
@@ -598,7 +595,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: widget.theme.cardColor,
+                          color: OutfitterUi.cardColor(widget.theme),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: Colors.green.withValues(alpha: 0.3),
@@ -629,7 +626,7 @@ class _OutfitterRevenueScreenState extends State<OutfitterRevenueScreen> {
                             Text(
                               'Net earnings of R ${netEarnings.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} represent total revenue from approved bookings paid by hunters (the full booking amount; no platform commission is deducted).',
                               style: TextStyle(
-                                color: widget.theme.subtitleColor,
+                                color: OutfitterUi.subtitleColor(widget.theme),
                                 fontSize: 13,
                                 height: 1.5,
                               ),
@@ -910,7 +907,7 @@ class _RevenueMetricCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
@@ -933,14 +930,14 @@ class _RevenueMetricCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             title,
-            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+            style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 12),
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 2),
             Text(
               subtitle!,
               style: TextStyle(
-                color: theme.subtitleColor.withValues(alpha: 0.7),
+                color: OutfitterUi.subtitleColor(theme).withValues(alpha: 0.7),
                 fontSize: 10,
               ),
             ),
@@ -1069,7 +1066,7 @@ class _EnterpriseMetricCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: OutfitterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
@@ -1098,7 +1095,7 @@ class _EnterpriseMetricCard extends StatelessWidget {
                 ),
                 Text(
                   title,
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+                  style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
                 ),
               ],
             ),
@@ -1155,7 +1152,7 @@ class _SpeciesRevenueRow extends StatelessWidget {
                 ),
                 Text(
                   '$count booking${count != 1 ? 's' : ''}',
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+                  style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
                 ),
               ],
             ),
@@ -1220,7 +1217,7 @@ class _FarmRevenueRow extends StatelessWidget {
                 ),
                 Text(
                   '$bookings earned booking${bookings != 1 ? 's' : ''}',
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+                  style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
                 ),
               ],
             ),
@@ -1285,7 +1282,7 @@ class _MonthlyTrendRow extends StatelessWidget {
                 ),
                 Text(
                   '$bookings booking${bookings != 1 ? 's' : ''}',
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 11),
+                  style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 11),
                 ),
               ],
             ),
