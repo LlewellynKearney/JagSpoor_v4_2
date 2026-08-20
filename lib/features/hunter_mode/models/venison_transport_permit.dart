@@ -126,11 +126,17 @@ class VenisonTransportPermit {
     return {
       'permitNumber': permitNumber,
       'outfitterId': outfitterId,
-      // Dual-stamp BOTH aliases so hunter-side list queries (and the Firestore
-      // rules read allowance) match whether they filter on `hunterId` or
-      // `userId`.
-      if (hunterId != null) 'hunterId': hunterId,
-      if (userId != null) 'userId': userId,
+      // Automatic dual-stamp: whenever the designated hunter's uid is known
+      // under EITHER alias, BOTH `hunterId` and `userId` are written with the
+      // same value (falling back correctly: `hunterId` preferred, `userId`
+      // fallback). This guarantees hunter-side list queries (and the Firestore
+      // rules read allowance) match the permit regardless of which alias a
+      // consumer filters on, even when the model was constructed with only
+      // one alias set.
+      if (effectiveHunterId != null) ...{
+        'hunterId': effectiveHunterId!,
+        'userId': effectiveHunterId!,
+      },
       if (bookingId != null) 'bookingId': bookingId,
       'hunterName': hunterName,
       'hunterIdNumber': hunterIdNumber,

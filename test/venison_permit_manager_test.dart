@@ -233,6 +233,33 @@ void main() {
       expect(doc.data()!['userId'], 'hunter-1');
     });
 
+    test('a permit carrying only the userId alias still stamps BOTH aliases',
+        () async {
+      final fake = FakeFirebaseFirestore();
+      final permit = VenisonTransportPermit(
+        permitNumber: 'JSV-2026-2b',
+        outfitterId: 'outfitter-1',
+        // Target hunter uid carried under the legacy alias only.
+        userId: 'hunter-7',
+        hunterName: 'Jan Hunter',
+        hunterIdNumber: '9001010000000',
+        hunterCell: '0820000000',
+        hunterAddress: '1 Bush Rd',
+        authorizedPersonName: 'Koos Outfitter',
+        farmName: 'Bosveld Ranch',
+        farmAddress: 'Farm 12',
+        farmCell: '0830000000',
+        speciesHuntedAndTransported: const [
+          {'species': 'Nyala', 'quantity': 1},
+        ],
+      );
+      final id = await manager(fake, 'outfitter-1')
+          .issueVenisonPermit(permit: permit);
+      final doc = await fake.collection('venison_permits').doc(id).get();
+      expect(doc.data()!['hunterId'], 'hunter-7');
+      expect(doc.data()!['userId'], 'hunter-7');
+    });
+
     test('an outfitter-issued permit without a booking stamps no hunter uid',
         () async {
       final fake = FakeFirebaseFirestore();

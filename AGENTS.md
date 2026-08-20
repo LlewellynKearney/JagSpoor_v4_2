@@ -9202,3 +9202,49 @@ dashboard).
   `test/outfitter_dashboard_background_test.dart` (NEW), `AGENTS.md`.
 - No Firestore / Storage / rules / index / pubspec / manifest changes
   (pure presentation-layer).
+
+
+## Phase -- Automatic UID stamping on venison permit creation (added 2026-08-20)
+
+Strengthened the venison-permit stamping contract so `userId` + `hunterId`
+are ALWAYS auto-populated with the target hunter's UID at write time, with
+correct fallback when only one alias is known.
+
+### Changes
+- `VenisonTransportPermit.toMap()` now stamps BOTH `hunterId` and `userId`
+  from the single `effectiveHunterId` getter whenever the designated
+  hunter's uid is known under EITHER alias (previously `toMap` wrote only
+  the alias that was set on the model, so a `hunterId`-only model wrote no
+  `userId`). `hunterId` is preferred; `userId` is the fallback. A
+  single-alias legacy doc read via `fromMap` and written back now migrates
+  forward to the dual-stamped shape automatically.
+- `VenisonPermitManager.issueVenisonPermit` now resolves the hunter uid via
+  `permit.effectiveHunterId` (was `permit.hunterId`), so a model carrying
+  ONLY the legacy `userId` alias also stamps BOTH aliases correctly at
+  issue time. The `resolveHunterUid` priority chain is unchanged (explicit
+  permit hunter uid wins; hunter self-issue stamps the issuer uid when the
+  issuer != outfitter; outfitter issue without a booking stamps nothing).
+- Removed the redundant `dart:typed_data` import in the manager
+  (`flutter/foundation.dart` re-exports `Uint8List`).
+
+### Tests (32 in the two permit suites, all pass)
+- `test/venison_permit_model_test.dart`: `toMap` auto-stamps BOTH aliases
+  from a `hunterId`-only model; from a `userId`-only model; `hunterId`
+  wins when both set; omission contract preserved when neither set;
+  `fromMap` single-alias legacy doc -> `toMap` re-stamps both.
+- `test/venison_permit_manager_test.dart` (+1): issuing a permit whose
+  model carries ONLY the `userId` alias stamps BOTH `hunterId` and
+  `userId` on the Firestore doc.
+
+### Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (277 infos -- the manager's redundant-import info was cleaned up).
+- `flutter test` (full suite): **All 899 tests passed** (was 897; +2 net:
+  +1 new manager test, +1 new model test, two model tests replaced by the
+  strengthened auto-stamping contract).
+- Files: `lib/features/hunter_mode/models/venison_transport_permit.dart`,
+  `lib/features/hunter_mode/services/venison_permit_manager.dart`,
+  `test/venison_permit_model_test.dart`,
+  `test/venison_permit_manager_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side model + manager stamping logic).

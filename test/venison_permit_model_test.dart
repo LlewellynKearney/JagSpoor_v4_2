@@ -94,25 +94,29 @@ void main() {
     });
   });
 
-  group('toMap dual-stamping', () {
-    test('writes BOTH hunterId and userId aliases when hunterId is set', () {
+  group('toMap automatic dual-stamping', () {
+    test('auto-populates BOTH aliases when only hunterId is set', () {
+      // The target hunter's uid is known under `hunterId` only, so `userId`
+      // falls back to the same uid automatically.
       final map = buildPermit(hunterId: 'hunter-1').toMap();
-      expect(map['hunterId'], 'hunter-1');
-      expect(map['userId'], isNull); // no userId field -> not dual-stamped yet
-      expect(map.containsKey('userId'), isFalse);
-    });
-
-    test('writes both aliases when both are set on the model', () {
-      final map =
-          buildPermit(hunterId: 'hunter-1', userId: 'hunter-1').toMap();
       expect(map['hunterId'], 'hunter-1');
       expect(map['userId'], 'hunter-1');
     });
 
-    test('writes userId alias when only userId is set (legacy model)', () {
+    test('auto-populates BOTH aliases when only userId is set (legacy model)',
+        () {
+      // The target hunter's uid is known under the legacy `userId` only, so
+      // `hunterId` falls back to the same uid automatically.
       final map = buildPermit(userId: 'hunter-9').toMap();
-      expect(map.containsKey('hunterId'), isFalse);
+      expect(map['hunterId'], 'hunter-9');
       expect(map['userId'], 'hunter-9');
+    });
+
+    test('hunterId wins when both aliases are set on the model', () {
+      final map =
+          buildPermit(hunterId: 'hunter-1', userId: 'hunter-alias').toMap();
+      expect(map['hunterId'], 'hunter-1');
+      expect(map['userId'], 'hunter-1');
     });
 
     test('omits both aliases when neither is set (unsigned/unlinked permit)',
@@ -132,6 +136,19 @@ void main() {
       expect(roundTripped.hunterId, 'hunter-1');
       expect(roundTripped.userId, 'hunter-1');
       expect(roundTripped.outfitterId, 'outfitter-1');
+    });
+
+    test('fromMap on a single-alias legacy doc -> toMap re-stamps both', () {
+      // A legacy doc carrying only `userId` resolves either spelling, and
+      // writing it back stamps BOTH aliases so the doc migrates forward.
+      final fromLegacy = VenisonTransportPermit.fromMap({
+        'id': 'p7',
+        'outfitterId': 'o1',
+        'userId': 'hunter-legacy',
+      });
+      final map = fromLegacy.toMap();
+      expect(map['hunterId'], 'hunter-legacy');
+      expect(map['userId'], 'hunter-legacy');
     });
   });
 }

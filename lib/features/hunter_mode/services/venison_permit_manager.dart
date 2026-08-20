@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+// `foundation` also re-exports `Uint8List` (dart:typed_data).
 import 'package:flutter/foundation.dart';
 import '../../../core/services/offline_stream_guard.dart';
 import '../models/venison_transport_permit.dart';
@@ -107,11 +107,13 @@ class VenisonPermitManager {
 
     // Resolve + dual-stamp the hunter's uid under BOTH `hunterId` and
     // `userId` so the hunter's permit list (and the Firestore read rules)
-    // match the permit regardless of which alias a consumer queries. Without
-    // this, permits issued without a booking context carried no hunter uid at
-    // all and were invisible to the hunter.
+    // match the permit regardless of which alias a consumer queries. The
+    // resolution uses `effectiveHunterId` so a model carrying ONLY the
+    // `userId` alias also stamps correctly. Without this, permits issued
+    // without a booking context carried no hunter uid at all and were
+    // invisible to the hunter.
     final effectiveHunterUid = resolveHunterUid(
-      permitHunterId: permit.hunterId,
+      permitHunterId: permit.effectiveHunterId,
       issuerUid: issuerUid,
       outfitterId: permit.outfitterId,
     );
