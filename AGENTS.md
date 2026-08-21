@@ -9593,3 +9593,32 @@ failed contrast.
   `lib/features/outfitter_mode/outfitter_dashboard.dart`.
 - No Firestore / Storage / rules / index / pubspec / manifest changes
   (pure presentation-layer contrast sweep).
+
+
+## Phase -- Cloud Sync Telemetry banner mode-aware contrast refinement (added 2026-08-21)
+
+The Hunter Dashboard `NetworkDiagnosticHud` "CLOUD SYNC TELEMETRY ONLINE"
+status banner previously hardcoded a dark-olive surface + washed-out light
+green text (`Colors.green.shade200`) + a translucent-green SYNCED pill that
+blended into the Solitary Acacia background/scrim. Restyled to a mode-aware
+solid palette resolved from `Theme.of(context).brightness`:
+- **Light Mode**: warm cream/off-white card surface (`HunterUi.lightCard`
+  EFE7DC) + defined deep-green border (0xFF4F6E33) + deep espresso title
+  (`HunterUi.lightTitle` 0xFF2C221E) + solid dark-green SYNCED pill
+  (0xFF2E4A1C) with white text/icon.
+- **Dark Mode**: solid very-dark olive surface (0xFF1E3011) + bright-green
+  border (0xFF7CB342) + bright light-green title (0xFFCDEBA8) + solid
+  bright-green SYNCED pill (0xFF7CB342) with near-black text/icon.
+The offline "CELL DISCONNECTED" counterpart received the same mode-aware
+solid wrapper treatment (cream gradient + deep crimson border in light;
+deeper dark-red gradient + bright amber border in dark), and the title
+Text widgets gained `Flexible` + ellipsis for narrow-width safety.
+- **Tests**: `test/network_diagnostic_hud_test.dart` (3 tests) renders the
+  widget under `ThemeData.light()` / `ThemeData.dark()` and asserts the
+  exact surface/border/title/pill/icon colors + a structural check that
+  mode resolution stays ambient-theme-driven. Mocked the connectivity
+  method channel to avoid unhandled async plugin errors.
+- **Verification**: `flutter analyze` 0 errors, 0 warnings (277 pre-existing
+  infos baseline). `flutter test` 967/967 pass.
+- Files: `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
+  `test/network_diagnostic_hud_test.dart` (NEW), `AGENTS.md`.

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/advanced_tactical_service.dart';
+import 'hunter_scaffold.dart';
 
 class NetworkDiagnosticHud extends StatefulWidget {
   const NetworkDiagnosticHud({super.key});
@@ -172,11 +173,18 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
 
   @override
   Widget build(BuildContext context) {
+    // Resolve the effective mode from the ambient theme (the MaterialApp
+    // light/dark theme pair driven by ThemeController), so the banner picks
+    // high-contrast colors in both Day and Night without a hardcoded palette.
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Connection Status Bar
-        if (_isOnline) _buildOnlineBar() else _buildOfflineBar(),
+        if (_isOnline)
+          _buildOnlineBar(isDarkMode)
+        else
+          _buildOfflineBar(isDarkMode),
 
         // AI Game Movement Activity Forecaster Row
         _buildGameMovementForecaster(),
@@ -184,16 +192,37 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     );
   }
 
-  Widget _buildOnlineBar() {
+  /// The online "CLOUD SYNC TELEMETRY ONLINE" banner.
+  ///
+  /// Mode-aware solid wrapper so the banner never blends into the Solitary
+  /// Acacia background photo/scrim: in Light Mode a warm cream/off-white
+  /// card surface with a defined deep-green border + deep espresso text; in
+  /// Dark Mode a solid very-dark olive surface with a bright-green border.
+  /// The SYNCED pill is likewise solid high-contrast in both modes.
+  Widget _buildOnlineBar(bool isDarkMode) {
+    final surfaceColor =
+        isDarkMode ? const Color(0xFF1E3011) : HunterUi.lightCard;
+    final borderColor =
+        isDarkMode ? const Color(0xFF7CB342) : const Color(0xFF4F6E33);
+    final titleColor =
+        isDarkMode ? const Color(0xFFCDEBA8) : HunterUi.lightTitle;
+    final iconColor =
+        isDarkMode ? const Color(0xFF7CB342) : const Color(0xFF2E4A1C);
+    final pillSurface =
+        isDarkMode ? const Color(0xFF7CB342) : const Color(0xFF2E4A1C);
+    final pillContent =
+        isDarkMode ? const Color(0xFF18250A) : Colors.white;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF2E4A1C), // Dark Olive Green
+        color: surfaceColor,
+        border: Border.all(color: borderColor, width: 1.6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 4,
+            color: Colors.black.withValues(alpha: isDarkMode ? 0.5 : 0.25),
+            blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
@@ -201,37 +230,40 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.satellite_alt,
-            color: Color(0xFF7CB342), // Light green
+            color: iconColor,
             size: 18,
           ),
           const SizedBox(width: 10),
-          Text(
-            'CLOUD SYNC TELEMETRY ONLINE',
-            style: TextStyle(
-              color: Colors.green.shade200,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
+          Flexible(
+            child: Text(
+              'CLOUD SYNC TELEMETRY ONLINE',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: titleColor,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
           const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.2),
+              color: pillSurface,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.cloud_done, color: Colors.green.shade300, size: 14),
+                Icon(Icons.cloud_done, color: pillContent, size: 14),
                 const SizedBox(width: 4),
                 Text(
                   'SYNCED',
                   style: TextStyle(
-                    color: Colors.green.shade300,
+                    color: pillContent,
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
                   ),
@@ -244,7 +276,33 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     );
   }
 
-  Widget _buildOfflineBar() {
+
+  /// The offline "CELL DISCONNECTED" banner — the same status component in
+  /// its disconnected state. It gets the same mode-aware solid wrapper
+  /// treatment as the online bar so it stays high-contrast in both modes.
+  Widget _buildOfflineBar(bool isDarkMode) {
+    final gradientColors = isDarkMode
+        ? [const Color(0xFF8B0000), Colors.amber.shade800]
+        : [const Color(0xFFF7E3D7), const Color(0xFFEFD3C2)];
+    final borderColor =
+        isDarkMode ? const Color(0xFFFFB74D) : const Color(0xFF8B1A1A);
+    final titleColor = isDarkMode ? Colors.white : const Color(0xFF7A1410);
+    final iconColor = isDarkMode ? Colors.white : const Color(0xFF8B1A1A);
+    final dotColor = isDarkMode ? Colors.white : const Color(0xFFB71C1C);
+    final queueSurface = isDarkMode
+        ? Colors.black.withValues(alpha: 0.3)
+        : const Color(0xFF3E2118);
+    final queueIconColor =
+        isDarkMode ? Colors.amber.shade200 : Colors.amber.shade300;
+    final queueTextColor =
+        isDarkMode ? Colors.amber.shade100 : Colors.amber.shade200;
+    final waitSurface =
+        isDarkMode ? Colors.red.shade700 : const Color(0xFF8B1A1A);
+    final waitTextColor = Colors.white;
+    final shadowColor = isDarkMode
+        ? Colors.amber.withValues(alpha: 0.4)
+        : Colors.red.withValues(alpha: 0.25);
+
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
@@ -255,16 +313,14 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF8B0000), // Dark Crimson
-                  Colors.amber.shade800,
-                ],
+                colors: gradientColors,
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
               ),
+              border: Border.all(color: borderColor, width: 1.6),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.amber.withValues(alpha: 0.4),
+                  color: shadowColor,
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -276,19 +332,22 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.blur_on, color: Colors.white, size: 18),
+                    Icon(Icons.blur_on, color: iconColor, size: 18),
                     const SizedBox(width: 10),
-                    const Text(
-                      'CELL DISCONNECTED - P2P BLUETOOTH MESH ACTIVE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
+                    Flexible(
+                      child: Text(
+                        'CELL DISCONNECTED - P2P BLUETOOTH MESH ACTIVE',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _buildPulsingDot(),
+                    _buildPulsingDot(dotColor),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -298,7 +357,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.3),
+                    color: queueSurface,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -306,14 +365,14 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                     children: [
                       Icon(
                         Icons.sync_disabled,
-                        color: Colors.amber.shade200,
+                        color: queueIconColor,
                         size: 14,
                       ),
                       const SizedBox(width: 6),
                       Text(
                         'Offline Sync Queue: $_pendingQueueCount pending',
                         style: TextStyle(
-                          color: Colors.amber.shade100,
+                          color: queueTextColor,
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
                         ),
@@ -326,13 +385,13 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.red.shade700,
+                            color: waitSurface,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             'WAIT',
                             style: TextStyle(
-                              color: Colors.red.shade100,
+                              color: waitTextColor,
                               fontSize: 8,
                               fontWeight: FontWeight.bold,
                             ),
@@ -350,7 +409,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     );
   }
 
-  Widget _buildPulsingDot() {
+  Widget _buildPulsingDot(Color color) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 800),
@@ -360,10 +419,10 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           height: 8,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: (value * 0.8) + 0.2),
+            color: color.withValues(alpha: (value * 0.8) + 0.2),
             boxShadow: [
               BoxShadow(
-                color: Colors.white.withValues(alpha: value * 0.5),
+                color: color.withValues(alpha: value * 0.5),
                 blurRadius: 4 * value,
                 spreadRadius: 2 * value,
               ),
