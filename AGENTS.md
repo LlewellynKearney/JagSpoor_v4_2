@@ -1,5 +1,48 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Outfitter title bar refinement + 100% HunterScaffold coverage (added 2026-08-21, commit 34ec052)
+
+- **Outfitter dashboard title bar**: the two-line AppBar title
+  ('Jagspoor Outfitter' + a theme-dependent concept subtitle 'WALNUT
+  OUTFIT' / 'THERMAL OUTFIT' / 'NEON OUTFIT' via `_getConceptLabel()`)
+  was replaced with a single prominent 'JagSpoor Outfitter' `Text`
+  (correct casing, 24px, w800, espresso `HunterUi.titleColor`-equivalent
+  in Day / white in Night). The `conceptLabel` param + `_getConceptLabel()`
+  method were removed.
+- **HunterScaffold rollout -- final 8 screens** converted from plain
+  `Scaffold` to `HunterScaffold(theme: ..., padBodyForAppBar: true)`:
+  shot_group_analyzer, optic_history, ammunition,
+  ammunition_type_selection, field_estimate, animal_list, animal_detail.
+  `venison_permit_list_screen.dart` is now **mode-aware**: `HunterScaffold`
+  in hunter mode / `OutfitterScaffold` in outfitter mode (branches on
+  `widget.isOutfitterMode`). Every hunter screen now carries the Solitary
+  Acacia background stack.
+- **Intentionally NOT wrapped** (full-bleed dark camera / map / HUD by
+  design, guarded by tests): scope_calibration, ballistic_calc,
+  license_scanner, offline_navigation, spoor_detection_hud (track module),
+  photo_gallery_strip viewer.
+- **Tests**: `hunter_scaffold_rollout_test.dart` extended to 26 hunter
+  screens + explicit full-bleed exemption guards (assert those 6 screens
+  contain NO HunterScaffold and keep a dark background);
+  `outfitter_dashboard_background_test.dart` gained a title-bar branding
+  widget test ('JagSpoor Outfitter', >=22px, w800, no concept subtitle,
+  AppBar title is a single Text);
+  `outfitter_scaffold_rollout_test.dart` relaxed to accept
+  `OutfitterScaffold` in place of the direct stack.
+- **Sandbox env gotcha (fixed)**: a python-based `unzip` shim used to
+  bootstrap the Flutter SDK stripped exec bits from `bin/cache/artifacts`
+  binaries (impellerc, flutter_tester, font-subset, gen_snapshot, dart).
+  Symptom: widget tests tapping M3 buttons fail with
+  `Exception: Asset 'shaders/ink_sparkle.frag' not found` (the impellerc
+  subprocess fails silently so the test asset bundle has an empty
+  shaders/ dir). Fix: `chmod +x` the engine artifacts + `rm -rf
+  build/unit_test_assets`, then re-run. Also create
+  `~/libs/libsqlite3.so -> /usr/lib/.../libsqlite3.so.0` and run tests
+  with `LD_LIBRARY_PATH="$HOME/libs"`.
+- **Verification**: `flutter analyze`: 0 errors, 0 warnings (277
+  pre-existing infos, unchanged baseline). `flutter test`: **all 964
+  tests passed**. Pushed `f776225..34ec052 main -> main`.
+
 ## Phase -- Light-mode contrast/brightness audit + full-portal HunterScaffold rollout (added 2026-08-21)
 
 Comprehensive UI/UX contrast + brightness audit across both portals. Two
