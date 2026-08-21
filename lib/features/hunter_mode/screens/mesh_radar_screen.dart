@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/contextual_info_icon.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/bluetooth_mesh_sync.dart';
+import '../widgets/hunter_scaffold.dart';
 
 class MeshRadarScreen extends StatefulWidget {
   const MeshRadarScreen({super.key});
@@ -57,9 +59,21 @@ class _MeshRadarScreenState extends State<MeshRadarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final theme = ThemeController.instance;
+    return HunterScaffold(
+      theme: theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
-        title: const Text('Off-Grid Team Radar'),
+        title: Text(
+          'Off-Grid Team Radar',
+          style: TextStyle(
+            color: HunterUi.titleColor(theme),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
+        elevation: 0,
         actions: [
           ContextualInfoIcon(
             title: 'Off-Grid Mesh Sync',

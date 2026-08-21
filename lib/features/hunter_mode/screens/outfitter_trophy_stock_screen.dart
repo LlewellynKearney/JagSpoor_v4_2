@@ -396,7 +396,7 @@ class _OutfitterTrophyStockScreenState
             style: TextStyle(color: widget.theme.textColor)),
         content: Text(
             'This permanently removes the trophy stock entry. This cannot be undone.',
-            style: TextStyle(color: widget.theme.subtitleColor)),
+            style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),

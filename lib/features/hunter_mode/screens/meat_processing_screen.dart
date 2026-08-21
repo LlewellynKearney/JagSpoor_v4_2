@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/meat_processing_exporter.dart';
 import '../services/meat_processing_order_manager.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class MeatProcessingScreen extends StatefulWidget {
   final ThemeController theme;
@@ -235,19 +236,20 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           '🥩 MEAT PROCESSING ORDER',
           style: TextStyle(
-            color: theme.textColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
             fontSize: 15,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
       ),
       body: SafeArea(
@@ -278,7 +280,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
 
   Widget _buildCarcassInfoCard(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -352,7 +354,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                       ? _selectedSpecies
                       : _speciesOptions.first,
               style: TextStyle(color: theme.textColor),
-              dropdownColor: theme.cardColor,
+              dropdownColor: HunterUi.cardColor(theme),
               decoration: InputDecoration(
                 labelText: 'Species',
                 labelStyle: TextStyle(color: theme.subtitleColor),
@@ -406,7 +408,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
 
   Widget _buildPortionsSelector(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -455,7 +457,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                       selected: isSelected,
                       selectedColor: theme.accentColor,
                       checkmarkColor: Colors.black,
-                      backgroundColor: theme.backgroundColor,
+                      backgroundColor: Colors.transparent,
                       side: BorderSide(
                         color:
                             isSelected
@@ -536,7 +538,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                 suffixStyle:
                     TextStyle(color: theme.subtitleColor, fontSize: 12),
                 filled: true,
-                fillColor: theme.cardColor,
+                fillColor: HunterUi.cardColor(theme),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 border: OutlineInputBorder(
@@ -551,13 +553,13 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                   ? spice
                   : _spiceProfiles.first,
               style: TextStyle(color: theme.textColor, fontSize: 13),
-              dropdownColor: theme.cardColor,
+              dropdownColor: HunterUi.cardColor(theme),
               decoration: InputDecoration(
                 isDense: true,
                 labelText: 'Spice / Flavour',
                 labelStyle: TextStyle(color: theme.subtitleColor, fontSize: 12),
                 filled: true,
-                fillColor: theme.cardColor,
+                fillColor: HunterUi.cardColor(theme),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 border: OutlineInputBorder(
@@ -592,7 +594,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                     fontSize: 12,
                   ),
                   filled: true,
-                  fillColor: theme.cardColor,
+                  fillColor: HunterUi.cardColor(theme),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   border: OutlineInputBorder(
@@ -609,7 +611,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
 
   Widget _buildSpiceConfigurationCard(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -646,7 +648,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
                       ? _selectedSpiceProfile
                       : _spiceProfiles.first,
               style: TextStyle(color: theme.textColor),
-              dropdownColor: theme.cardColor,
+              dropdownColor: HunterUi.cardColor(theme),
               decoration: InputDecoration(
                 labelText: 'Default Spice Profile',
                 labelStyle: TextStyle(color: theme.subtitleColor),
@@ -709,7 +711,7 @@ class _MeatProcessingScreenState extends State<MeatProcessingScreen> {
 
   Widget _buildSpecialInstructionsCard(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),

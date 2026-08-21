@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../widgets/trophy_booking_confirmation_sheet.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
   final ThemeController theme;
@@ -261,15 +262,16 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: const Text(
           '🦌 Trophy Registry & Booking',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
       body: Column(
@@ -278,7 +280,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: theme.cardColor,
+              color: HunterUi.cardColor(theme),
               border: Border(
                 bottom: BorderSide(
                   color: theme.accentColor.withValues(alpha: 0.2),
@@ -327,7 +329,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                           child: DropdownButton<String>(
                             value: _selectedProvince ?? 'All Provinces',
                             isExpanded: true,
-                            dropdownColor: theme.cardColor,
+                            dropdownColor: HunterUi.cardColor(theme),
                             style: TextStyle(color: theme.textColor),
                             icon: Icon(
                               Icons.arrow_drop_down,
@@ -409,7 +411,7 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
-                          color: theme.cardColor,
+                          color: HunterUi.cardColor(theme),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(

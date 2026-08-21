@@ -5,6 +5,7 @@ import 'package:signature/signature.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 /// Legal South African Venison / Game Transport & Hunt Permit form.
 ///
@@ -271,7 +272,7 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: widget.theme.cardColor,
+        backgroundColor: HunterUi.cardColor(widget.theme),
         title: Row(
           children: [
             const Icon(Icons.verified_rounded, color: Colors.green),
@@ -304,13 +305,14 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: const Text('Venison Transport Permit',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
       ),
       body: _isPrefilling
@@ -651,7 +653,7 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: theme.accentColor.withValues(alpha: 0.3),
@@ -675,7 +677,7 @@ class _VenisonPermitFormScreenState extends State<VenisonPermitFormScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: theme.cardColor,
+                  color: HunterUi.cardColor(theme),
                   borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(11),
                   ),
@@ -757,7 +759,7 @@ class _Card extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.accentColor.withValues(alpha: 0.15)),
       ),

@@ -86,7 +86,7 @@ class _OutfitterPackageManagerScreenState
             Text(
               'Set the new number of bookable slots. The package will be '
               're-activated if it was sold out.',
-              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 13),
+              style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme), fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -96,9 +96,9 @@ class _OutfitterPackageManagerScreenState
               style: TextStyle(color: widget.theme.textColor),
               decoration: InputDecoration(
                 labelText: 'Available slots',
-                labelStyle: TextStyle(color: widget.theme.subtitleColor),
+                labelStyle: TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
                 suffixText: 'slots',
-                suffixStyle: TextStyle(color: widget.theme.subtitleColor),
+                suffixStyle: TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
               ),
             ),
           ],
@@ -166,13 +166,13 @@ class _OutfitterPackageManagerScreenState
           '"$title" will be removed from the marketplace and your package list. '
           'Existing bookings are retained. This can be reversed by restoring '
           'the package from the Deleted filter.',
-          style: TextStyle(color: widget.theme.subtitleColor),
+          style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text('Cancel',
-                style: TextStyle(color: widget.theme.subtitleColor)),
+                style: TextStyle(color: OutfitterUi.subtitleColor(widget.theme))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),

@@ -444,7 +444,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
               ),
             ),
             backgroundColor: Colors.transparent,
-            iconTheme: const IconThemeData(color: Colors.white),
+            iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
             elevation: 0,
             actions: [
               if (_isAdmin)

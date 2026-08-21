@@ -9,6 +9,7 @@ import '../services/map_path_tracer.dart';
 import 'meat_processing_screen.dart';
 import 'meat_processing_order_history_screen.dart';
 import '../../../core/utils/measurement_formatter.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class CarcassMatrixScreen extends StatefulWidget {
   final ThemeController theme;
@@ -322,19 +323,20 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           '🥩 SLAUGHTERHOUSE CARCASS MATRIX',
           style: TextStyle(
-            color: theme.textColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
             fontSize: 15,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
         actions: [
           IconButton(
@@ -383,7 +385,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
 
   Widget _buildLogFormCard(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -436,7 +438,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                dropdownColor: theme.cardColor,
+                dropdownColor: HunterUi.cardColor(theme),
                 style: TextStyle(color: theme.textColor),
                 items:
                     _speciesOptions
@@ -598,7 +600,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                dropdownColor: theme.cardColor,
+                dropdownColor: HunterUi.cardColor(theme),
                 style: TextStyle(color: theme.textColor),
                 items:
                     _chillerPositions
@@ -671,7 +673,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
       labelStyle: TextStyle(color: theme.subtitleColor),
       prefixIcon: Icon(icon, color: theme.accentColor),
       filled: true,
-      fillColor: theme.cardColor,
+      fillColor: HunterUi.cardColor(theme),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -705,7 +707,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
 
         if (snapshot.hasError) {
           return Card(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
@@ -720,7 +722,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
 
         if (docs.isEmpty) {
           return Card(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -785,7 +787,7 @@ class _CarcassMatrixScreenState extends State<CarcassMatrixScreen> {
     final hangingWeight = data['hangingWeightKg'] ?? 0.0;
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),

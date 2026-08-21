@@ -9,6 +9,7 @@ import 'firearm_maintenance_screen.dart';
 import 'maintenance.dart';
 import '../firearm_safe/data/services/firearm_pdf_generator.dart';
 import 'screens/firearm_renewal_screen.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class FirearmSafeScreen extends StatefulWidget {
   final ThemeController theme;
@@ -69,8 +70,9 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'DIGITAL FIREARM SAFE',
@@ -80,8 +82,8 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
             letterSpacing: 1.2,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
         actions: [
           IconButton(
@@ -347,7 +349,7 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
     final isExpiringSoon = daysToExpiry != null && daysToExpiry <= 180;
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
@@ -556,7 +558,7 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
 
   Widget _buildVaultStatusCard(ThemeController theme) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.15)),

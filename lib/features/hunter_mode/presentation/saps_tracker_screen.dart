@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../ballistics/data/models/saps_application_model.dart';
+import '../../../core/theme/app_theme.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 /// SAPS License & Competency Application Tracker Screen.
 /// Provides a dashboard for registering and monitoring firearm license
@@ -90,19 +92,21 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hunterTheme = ThemeController.instance;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+    return HunterScaffold(
+      theme: hunterTheme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           '💳 SAPS Tracker',
           style: TextStyle(
-            color: theme.colorScheme.onSurface,
+            color: HunterUi.titleColor(hunterTheme),
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: theme.scaffoldBackgroundColor,
-        iconTheme: IconThemeData(color: theme.colorScheme.primary),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(hunterTheme)),
         elevation: 0,
       ),
       body: SafeArea(
@@ -112,7 +116,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
-                color: theme.cardColor,
+                color: HunterUi.cardColor(hunterTheme),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
@@ -349,7 +353,7 @@ class _ApplicationCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(ThemeController.instance),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(

@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/measurement_formatter.dart';
 import '../services/meat_processing_exporter.dart';
 import '../services/meat_processing_order_manager.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 /// Lists a hunter's persisted meat-processing / slaughterhouse orders with
 /// their status, and offers quick re-share of the generated manifest PDF.
@@ -27,13 +28,14 @@ class _MeatProcessingOrderHistoryScreenState
     return AnimatedBuilder(
       animation: theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'ORDER LOGS',
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.5,
                 fontSize: 16,
@@ -41,7 +43,7 @@ class _MeatProcessingOrderHistoryScreenState
             ),
             backgroundColor: Colors.transparent,
             elevation: 0,
-            iconTheme: IconThemeData(color: theme.accentColor),
+            iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
           ),
           body: SafeArea(
             child: StreamBuilder<List<MeatProcessingOrder>>(
@@ -193,7 +195,7 @@ class _OrderCard extends StatelessWidget {
     final statusColor = _statusColor(order.status);
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: theme.textColor.withAlpha(20), width: 1.2),
@@ -284,7 +286,7 @@ class _OrderCard extends StatelessWidget {
                         fontSize: 11,
                       ),
                     ),
-                    backgroundColor: theme.backgroundColor,
+                    backgroundColor: Colors.transparent,
                     side: BorderSide(
                       color: theme.accentColor.withValues(alpha: 0.3),
                     ),

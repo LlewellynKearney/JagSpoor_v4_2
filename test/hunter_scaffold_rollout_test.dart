@@ -30,6 +30,36 @@ void main() {
         'lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart',
     'farm_selection':
         'lib/features/hunter_mode/screens/custom_package_farm_selection_screen.dart',
+    'trophy_room': 'lib/features/hunter_mode/trophy_room_screen.dart',
+    'trophy_detail': 'lib/features/hunter_mode/trophy_detail_screen.dart',
+    'firearm_safe': 'lib/features/hunter_mode/firearm_safe_screen.dart',
+    'firearm_detail': 'lib/features/hunter_mode/firearm_detail_screen.dart',
+    'add_firearm_manual':
+        'lib/features/hunter_mode/add_firearm_manual_form.dart',
+    'add_trophy': 'lib/features/hunter_mode/add_trophy_screen.dart',
+    'edit_trophy': 'lib/features/hunter_mode/edit_trophy_screen.dart',
+    'firearm_maintenance':
+        'lib/features/hunter_mode/firearm_maintenance_screen.dart',
+    'spoor_identifier':
+        'lib/features/hunter_mode/spoor_identifier_screen.dart',
+    'firearm_renewal':
+        'lib/features/hunter_mode/screens/firearm_renewal_screen.dart',
+    'custom_handloads':
+        'lib/features/hunter_mode/screens/custom_handloads_form_screen.dart',
+    'venison_permit_form':
+        'lib/features/hunter_mode/screens/venison_permit_form_screen.dart',
+    'trophy_browser':
+        'lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart',
+    'saps_tracker':
+        'lib/features/hunter_mode/presentation/saps_tracker_screen.dart',
+    'meat_processing':
+        'lib/features/hunter_mode/screens/meat_processing_screen.dart',
+    'meat_processing_history':
+        'lib/features/hunter_mode/screens/meat_processing_order_history_screen.dart',
+    'carcass_matrix':
+        'lib/features/hunter_mode/screens/carcass_matrix_screen.dart',
+    'mesh_radar': 'lib/features/hunter_mode/screens/mesh_radar_screen.dart',
+    'weather': 'lib/features/hunter_mode/weather/weather_tracker_screen.dart',
   };
 
   String readSource(String relPath) => File(relPath).readAsStringSync();
@@ -83,19 +113,45 @@ void main() {
       });
     }
 
-    test('HunterUi light-mode palette uses cream cards + espresso text', () {
+    test('HunterUi light-mode palette uses rich warm cards + espresso text',
+        () {
       final src =
           readSource('lib/features/hunter_mode/widgets/hunter_scaffold.dart');
       expect(src.contains('class HunterUi'), isTrue);
       expect(
-        src.contains('Color(0xF5FCF9F5)'),
+        src.contains('Color(0xFFEFE7DC)'),
         isTrue,
-        reason: 'The cream card surface must be FCF9F5 at 96% opacity.',
+        reason: 'The light card surface must be the toned-down warm EFE7DC.',
       );
       expect(
         src.contains('Color(0xFF2C221E)'),
         isTrue,
-        reason: 'The espresso text must be 0xFF2C221E for titles/descriptions.',
+        reason: 'The espresso title text must be 0xFF2C221E.',
+      );
+      expect(
+        src.contains('Color(0xFF4A3B32)'),
+        isTrue,
+        reason:
+            'The warm-brown secondary text must be 0xFF4A3B32.',
+      );
+    });
+
+    test('the scrim is mode-aware (light cream veil in Day, dense black in '
+        'Night)', () {
+      final src =
+          readSource('lib/features/hunter_mode/widgets/hunter_scaffold.dart');
+      // Light-mode warm cream veil colours.
+      expect(src.contains('Color(0xE6F7F1E6)'), isTrue,
+          reason: 'Light-mode scrim must be a warm cream veil.');
+      expect(src.contains('Color(0xF2EFE5D4)'), isTrue,
+          reason: 'Light-mode bottom scrim must be a warm cream.');
+      // Dark-mode dense black gradient colours.
+      expect(src.contains('Color(0xA6000000)'), isTrue,
+          reason: 'Dark-mode scrim must be a dense black gradient.');
+      expect(
+        src.contains('scrim({bool isDarkMode = true})'),
+        isTrue,
+        reason: 'The scrim must accept a mode flag.',
       );
     });
   });
@@ -143,11 +199,12 @@ void main() {
         ),
       );
       await tester.pump();
-      final scaffold =
-          tester.widget<Scaffold>(find.byType(Scaffold));
-      expect(scaffold.body, isA<Stack>());
-      final stack = scaffold.body! as Stack;
-      expect(stack.children.length, greaterThanOrEqualTo(3));
+      final stackFinder = find.byType(Stack);
+      expect(stackFinder, findsWidgets);
+      final stacks = tester.widgetList<Stack>(stackFinder);
+      final stack = stacks.firstWhere(
+        (s) => s.children.length >= 3 && s.children.first is Image,
+      );
       expect(stack.children.first, isA<Image>(),
           reason: 'The first Stack child must be the background photo.');
       final image = stack.children.first as Image;
@@ -155,6 +212,26 @@ void main() {
       expect((image.image as NetworkImage).url,
           HunterAcaciaBackground.kBackgroundImageUrl);
       expect(find.text('CONTENT'), findsOneWidget);
+    });
+
+    testWidgets('the scrim adapts: warm cream veil in Day, dense black in '
+        'Night', (tester) async {
+      Container scrimOf(bool isDarkMode) {
+        return HunterAcaciaBackground.scrim(isDarkMode: isDarkMode)
+            as Container;
+      }
+
+      final lightScrim = scrimOf(false);
+      final lightGradient =
+          (lightScrim.decoration as BoxDecoration).gradient as LinearGradient;
+      expect(lightGradient.colors.first, const Color(0xE6F7F1E6));
+      expect(lightGradient.colors.last, const Color(0xF2EFE5D4));
+
+      final darkScrim = scrimOf(true);
+      final darkGradient =
+          (darkScrim.decoration as BoxDecoration).gradient as LinearGradient;
+      expect(darkGradient.colors.first, const Color(0xA6000000));
+      expect(darkGradient.colors.last, const Color(0xBF000000));
     });
 
     testWidgets('HunterActionChip renders as a dark circular chip',

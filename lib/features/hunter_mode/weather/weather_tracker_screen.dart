@@ -11,6 +11,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../../../services/location_resolver_service.dart';
 import 'weather_model.dart';
 import 'weather_repository.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class WeatherTrackerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -319,13 +320,14 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
     return AnimatedBuilder(
       animation: theme,
       builder: (context, child) {
-        return Scaffold(
-          backgroundColor: theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'TACTICAL WEATHER TRACKER',
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2,
                 fontSize: 18,
@@ -334,7 +336,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
             leading: IconButton(
               icon: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                color: theme.accentColor,
+                color: HunterUi.titleColor(theme),
               ),
               onPressed: () => Navigator.of(context).pop(),
             ),
@@ -454,7 +456,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.textColor.withAlpha(20), width: 1.5),
       ),
@@ -574,7 +576,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.textColor.withAlpha(20), width: 1.5),
       ),
@@ -717,7 +719,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: theme.textColor.withAlpha(15), width: 1.5),
       ),
@@ -775,7 +777,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.textColor.withAlpha(20), width: 1.5),
       ),
@@ -858,7 +860,7 @@ class _WeatherTrackerScreenState extends State<WeatherTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.cardColor,
+        color: HunterUi.cardColor(theme),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.textColor.withAlpha(20), width: 1.5),
       ),

@@ -1,5 +1,93 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Light-mode contrast/brightness audit + full-portal HunterScaffold rollout (added 2026-08-21)
+
+Comprehensive UI/UX contrast + brightness audit across both portals. Two
+root-cause themes: (1) Light Mode over-brightness + washed-out text over
+the photographic backgrounds, and (2) hunter sub-views that never carried
+the shared acacia background stack.
+
+### Mode-aware adaptive scrim (the core fix for the "too bright" Day mode)
+
+- `HunterAcaciaBackground.scrim({bool isDarkMode = true})` and
+  `OutfitterBushveldBackground.scrim({bool isDarkMode = true})` are now
+  **mode-aware** (previously always dark 60%/40%/70% black):
+  - **Day mode** -> a dense warm **cream veil** `LinearGradient`
+    (`Color(0xE6F7F1E6)` top 90% -> `Color(0xDFF5EFE3)` mid ->
+    `Color(0xF2EFE5D4)` bottom 95%). The photo shows through subtly
+    (immersive) but the screen reads as a soft warm surface instead of a
+    blinding washed-out photo; dark espresso text is now readable.
+  - **Night mode** -> a DENSER black gradient
+    (`Color(0xA6000000)` top 65% -> `Color(0x8C000000)` mid 55% ->
+    `Color(0xBF000000)` bottom 75%) so the dark theme stays balanced
+    against the photo.
+- `stack(child, fallbackColor)` gained an optional `isDarkMode` override;
+  both `HunterScaffold` / `OutfitterScaffold` now compute the mode via a
+  `Builder` from the *effective* `MediaQuery.platformBrightnessOf` (NOT
+  just the `ThemeController.isDarkMode` flag), so a `ThemeMode.system`
+  device that flips to dark adapts correctly.
+
+### Toned-down light-mode card surfaces (Task 2)
+
+- `HunterUi.lightCard` / `OutfitterUi.lightCard`:
+  `Color(0xF5FCF9F5)` (near-white 96% opacity) -> **`Color(0xFFEFE7DC)`**
+  (opaque rich warm tint) — soft on the eyes, zero glare, perfectly
+  balanced against the cream veil. Dark-mode branch still delegates to
+  `theme.cardColor` (unchanged).
+- `lightBody`: `Color(0xFF4A3B32)` for warm-brown secondary text in Day
+  mode (subtitleColor resolver).
+
+### Full hunter-portal `HunterScaffold` rollout (Task 3)
+
+- 19 additional hunter sub-views converted to `HunterScaffold` (previously
+  plain `Scaffold(backgroundColor: theme.backgroundColor)`):
+  trophy room/detail, firearm safe/detail/maintenance, manual firearm form,
+  add/edit trophy, spoor identifier, firearm renewal, custom handloads,
+  venison permit form, trophy registry browser, SAPS tracker, meat
+  processing (+order history), carcass matrix, off-grid team radar, weather
+  tracker. All got transparent AppBars + `HunterUi.titleColor` (espresso
+  0xFF2C221E Day / white Night) title+icon themes, and their card surfaces
+  were swapped `theme.cardColor` -> `HunterUi.cardColor(theme)` (~70 sites)
+  so Day-mode cards are the toned-down warm tint.
+- New `HunterScaffold.padBodyForAppBar: true` (default false for
+  compatibility) — wraps the body in a `SafeArea(top: true)` AND top-pads
+  scrollables by `MediaQuery.padding.top + kToolbarHeight`, so the
+  previously-flat content never renders under the transparent full-bleed
+  AppBar. The 6 already-rolled-out screens keep their explicit insets.
+- `saps_tracker_screen` (ThemeData-based) + `mesh_radar_screen`
+  (no theme field) resolve `ThemeController.instance` for the scaffold.
+- **Intentionally not wrapped** (full-bleed dark camera/HUD surfaces by
+  documented design): spoor HUD, scope calibration, license scanner,
+  offline navigation, ballistic calc, optic history, shot group analyzer.
+
+### Contrast sweep (Task 1)
+
+- Fixed white-on-now-light-veil AppBar icon themes: hunter dashboard,
+  hunter profile, hunter venison permit log.
+- Fixed washed-out `widget.theme.subtitleColor` -> `OutfitterUi.subtitleColor`
+  in the trophy stock + package manager outfitter screens.
+- Fixed `add_firearm_manual_form` + `weather_tracker` AppBar titles to bold
+  espresso. Audited all hunter/outfitter AppBar titles for bold +
+  `HunterUi/OutfitterUi.titleColor` — the marketplace TabBar, builder,
+  farm selection, permit list were already correct.
+- Verified every remaining `Colors.white` / white-with-alpha text is on a
+  colored/dark surface (accent buttons, red/green/blue gradient hero cards,
+  snackbars, dark HUD containers, badges) — none left on the light veil.
+
+### Tests
+
+- `test/hunter_scaffold_rollout_test.dart` — expanded from 6 to 26 hunter
+  screens in the structural rollout map; new palette test (EFE7DC card +
+  2C221E/4A3B32 text); new mode-aware scrim tests (cream veil day /
+  dense black night); widget test updated for the Builder-wrapped Stack.
+- `test/outfitter_scaffold_rollout_test.dart` — mode-aware scrim + palette
+  tests added.
+- `flutter analyze` (lib/ + test/): **0 errors, 0 warnings** (277
+  pre-existing infos, unchanged baseline).
+- `flutter test`: **All 949 tests passed** (was 927).
+- Files: the 2 scaffold widgets, 19 hunter screen conversions, 6 core
+  screen contrast fixes, 2 rollout test files, AGENTS.md.
+
 ## Phase -- HunterScaffold: Solitary Acacia background + global hunter portal rollout (added 2026-08-21)
 
 Mirrors the `OutfitterScaffold` architecture for the hunter portal. New

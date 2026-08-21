@@ -8,6 +8,7 @@ import '../../utils/image_helper.dart';
 import 'trophy_detail_screen.dart';
 import 'add_trophy_screen.dart';
 import 'services/trophy_share_composer.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class TrophyRoomScreen extends StatefulWidget {
   final ThemeController theme;
@@ -161,18 +162,19 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'Digital Trophy Room',
               style: TextStyle(
-                color: widget.theme.textColor,
+                color: HunterUi.titleColor(widget.theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: widget.theme.backgroundColor,
-            iconTheme: IconThemeData(color: widget.theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
             elevation: 0,
           ),
           body: SafeArea(
@@ -311,7 +313,7 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
     final firstPhoto = photos?.isNotEmpty == true ? photos!.first : null;
 
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 2,
       child: InkWell(

@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../track/data/track_taxonomy.dart';
 import '../track/data/services/spoor_ai_service.dart';
 import 'services/spoor_identifier_service.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class SpoorIdentifierScreen extends StatefulWidget {
   final ThemeController theme;
@@ -228,18 +229,19 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'Track (Spoor) Identifier',
               style: TextStyle(
-                color: widget.theme.textColor,
+                color: HunterUi.titleColor(widget.theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: widget.theme.backgroundColor,
-            iconTheme: IconThemeData(color: widget.theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
             elevation: 0,
             actions: [
               IconButton(
@@ -356,7 +358,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.theme.cardColor.withValues(alpha: 0.92),
+        color: HunterUi.cardColor(widget.theme).withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: accent.withValues(alpha: 0.4)),
       ),
@@ -543,7 +545,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         decoration: BoxDecoration(
           color: selected
               ? accent.withValues(alpha: 0.3)
-              : widget.theme.cardColor.withValues(alpha: 0.6),
+              : HunterUi.cardColor(widget.theme).withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected ? accent : accent.withValues(alpha: 0.3),
@@ -931,18 +933,19 @@ class ScanHistoryScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: theme.backgroundColor,
+        return HunterScaffold(
+          theme: theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'Scan Log History',
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: theme.backgroundColor,
-            iconTheme: IconThemeData(color: theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
             elevation: 0,
           ),
           body: StreamBuilder<QuerySnapshot>(
@@ -1001,7 +1004,7 @@ class ScanHistoryScreen extends StatelessWidget {
                   final longitude = (data['longitude'] as num?)?.toDouble();
 
                   return Card(
-                    color: theme.cardColor,
+                    color: HunterUi.cardColor(theme),
                     margin: const EdgeInsets.only(bottom: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

@@ -62,7 +62,7 @@ class _HunterVenisonPermitLogScreenState
           ),
         ),
         backgroundColor: Colors.transparent,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton.extended(

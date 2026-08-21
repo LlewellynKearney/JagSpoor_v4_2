@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../utils/fca_firearm_options.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class AddFirearmManualForm extends StatefulWidget {
   final ThemeController theme;
@@ -192,15 +193,19 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           widget.initial != null ? 'EDIT FIREARM' : 'FIREARM REGISTRY',
-          style: TextStyle(color: theme.textColor),
+          style: TextStyle(
+            color: HunterUi.titleColor(theme),
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
@@ -361,7 +366,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(color: theme.subtitleColor),
-          fillColor: theme.cardColor,
+          fillColor: HunterUi.cardColor(theme),
           filled: true,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
         ),
@@ -385,7 +390,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(color: theme.subtitleColor),
-          fillColor: theme.cardColor,
+          fillColor: HunterUi.cardColor(theme),
           filled: true,
           suffixIcon: Icon(Icons.calendar_today, color: theme.accentColor),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
@@ -441,7 +446,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(color: theme.subtitleColor),
-          fillColor: theme.cardColor,
+          fillColor: HunterUi.cardColor(theme),
           filled: true,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
         ),
@@ -452,7 +457,7 @@ class _AddFirearmManualFormState extends State<AddFirearmManualForm> {
             hint: Text('Select $label'),
             isExpanded: true,
             style: TextStyle(color: theme.textColor),
-            dropdownColor: theme.cardColor,
+            dropdownColor: HunterUi.cardColor(theme),
             iconEnabledColor: theme.accentColor,
             onChanged: (selected) async {
               if (selected == null) return;

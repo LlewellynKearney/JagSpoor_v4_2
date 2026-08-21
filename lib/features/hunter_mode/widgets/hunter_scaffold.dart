@@ -41,20 +41,33 @@ class HunterAcaciaBackground {
     );
   }
 
-  /// Semi-transparent adaptive dark gradient scrim (strongest at the top /
-  /// AppBar and at the bottom text run) so overlay text + cards stay readable
-  /// over any photo exposure.
-  static Widget scrim() {
+  /// Adaptive gradient scrim layered over the photo so overlay text + cards
+  /// stay readable over any exposure.
+  ///
+  /// * **Dark mode** ([isDarkMode] = true): a dense black gradient (strongest
+  ///   at the top / AppBar and at the bottom text run) so bright white / gold
+  ///   text pops.
+  /// * **Light mode** ([isDarkMode] = false): a soft warm cream veil that
+  ///   tones down the photo's bright exposure (softer, less blinding) while
+  ///   giving the deep-espresso light-mode typography a light surface to
+  ///   stand out sharply against.
+  static Widget scrim({bool isDarkMode = true}) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Color(0x99000000), // ~60% black (strongest at the top / AppBar)
-            Color(0x66000000), // ~40% black (mid frame)
-            Color(0xB3000000), // ~70% black (darkest at the bottom text run)
-          ],
+          colors: isDarkMode
+              ? const [
+                  Color(0xA6000000), // ~65% black (top / AppBar)
+                  Color(0x73000000), // ~45% black (mid frame)
+                  Color(0xBF000000), // ~75% black (bottom text run)
+                ]
+              : const [
+                  Color(0xE6F7F1E6), // ~90% warm cream (top / AppBar)
+                  Color(0xCCF3EDE0), // ~80% warm cream (mid frame)
+                  Color(0xF2EFE5D4), // ~95% warm cream (bottom text run)
+                ],
         ),
       ),
     );
@@ -64,17 +77,28 @@ class HunterAcaciaBackground {
   ///
   /// Use inside a Scaffold body to make a non-Scaffold screen (or a body that
   /// already manages its own Scaffold/AppBar) immersive.
+  ///
+  /// [isDarkMode] selects the scrim palette; when null it is derived from the
+  /// ambient [Theme] brightness so existing call sites become mode-aware with
+  /// no changes.
   static Widget stack({
     required Widget child,
     Color? fallbackColor,
+    bool? isDarkMode,
   }) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        backgroundImage(fallbackColor: fallbackColor),
-        scrim(),
-        child,
-      ],
+    return Builder(
+      builder: (context) {
+        final dark = isDarkMode ??
+            Theme.of(context).brightness == Brightness.dark;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            backgroundImage(fallbackColor: fallbackColor),
+            scrim(isDarkMode: dark),
+            child,
+          ],
+        );
+      },
     );
   }
 }
@@ -93,16 +117,18 @@ class HunterUi {
   /// light mode. Dark mode keeps white.
   static const Color lightTitle = Color(0xFF2C221E);
 
-  /// Solid warm off-white/cream card surface in light mode (FCF9F5 at 96%
-  /// opacity — computed alpha 0xF5) so cards are never washed out.
-  static const Color lightCard = Color(0xF5FCF9F5);
+  /// Rich warm-tinted card surface in light mode (opaque EFE7DC) — tones
+  /// down the overly bright near-white fills so the interface feels softer
+  /// and less blinding against the photographic background.
+  static const Color lightCard = Color(0xFFEFE7DC);
 
-  /// Subtle defined card/input border for light mode.
-  static const Color lightCardBorder = Color(0xFFD6C8BC);
+  /// Defined warm card/input border for light mode (deep enough to read
+  /// against the richer [lightCard] tint).
+  static const Color lightCardBorder = Color(0xFFC4B29E);
 
-  /// High-contrast dark espresso for subtitles / descriptions / hint text in
-  /// light mode (matches the title color per the hunter contrast spec).
-  static const Color lightBody = Color(0xFF2C221E);
+  /// High-contrast dark warm brown for subtitles / descriptions / hint text
+  /// in light mode (a shade softer than [lightTitle] for visual hierarchy).
+  static const Color lightBody = Color(0xFF4A3B32);
 
   /// Screen title / primary header color: dark espresso in light mode, white
   /// (readable on the dark scrim) in dark mode.
@@ -186,6 +212,13 @@ class HunterScaffold extends StatelessWidget {
   final bool resizeToAvoidBottomInset;
   final Color? backgroundColor;
 
+  /// When true (and an [appBar] is present), the body is offset below the
+  /// transparent full-bleed AppBar (status-bar inset + toolbar height) and
+  /// the top MediaQuery padding is removed so an inner `SafeArea` does not
+  /// double-count the status bar. Use for screens whose body does not
+  /// already manage its own top inset.
+  final bool padBodyForAppBar;
+
   const HunterScaffold({
     super.key,
     this.theme,
@@ -195,6 +228,7 @@ class HunterScaffold extends StatelessWidget {
     this.bottomNavigationBar,
     this.resizeToAvoidBottomInset = true,
     this.backgroundColor,
+    this.padBodyForAppBar = false,
   });
 
   @override
@@ -202,6 +236,20 @@ class HunterScaffold extends StatelessWidget {
     final bg = backgroundColor ??
         theme?.backgroundColor ??
         Theme.of(context).scaffoldBackgroundColor;
+    final dark =
+        theme?.isDarkMode ?? Theme.of(context).brightness == Brightness.dark;
+    Widget effectiveBody = body;
+    if (padBodyForAppBar && appBar != null) {
+      final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
+      effectiveBody = Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: body,
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: bg,
       extendBodyBehindAppBar: appBar != null,
@@ -211,7 +259,8 @@ class HunterScaffold extends StatelessWidget {
       bottomNavigationBar: bottomNavigationBar,
       body: HunterAcaciaBackground.stack(
         fallbackColor: bg,
-        child: body,
+        isDarkMode: dark,
+        child: effectiveBody,
       ),
     );
   }

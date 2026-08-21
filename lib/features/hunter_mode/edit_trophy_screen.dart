@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/image_service.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class EditTrophyScreen extends StatefulWidget {
   final ThemeController theme;
@@ -356,18 +357,19 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               'EDIT TROPHY',
               style: TextStyle(
-                color: widget.theme.textColor,
+                color: HunterUi.titleColor(widget.theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: widget.theme.backgroundColor,
-            iconTheme: IconThemeData(color: widget.theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
             elevation: 0,
           ),
           body: SafeArea(
@@ -834,7 +836,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                 color: widget.theme.accentColor.withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(8),
-              color: widget.theme.cardColor,
+              color: HunterUi.cardColor(widget.theme),
             ),
             child: Center(
               child: Text(
@@ -853,7 +855,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                 color: widget.theme.accentColor.withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(8),
-              color: widget.theme.cardColor,
+              color: HunterUi.cardColor(widget.theme),
             ),
             child: Center(
               child: CircularProgressIndicator(
@@ -885,7 +887,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                 color: widget.theme.accentColor.withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(8),
-              color: widget.theme.cardColor,
+              color: HunterUi.cardColor(widget.theme),
             ),
             child: Center(
               child: Text(
@@ -930,7 +932,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
                 );
               }).toList(),
           decoration: _buildInputDecoration('Select a firearm'),
-          dropdownColor: widget.theme.cardColor,
+          dropdownColor: HunterUi.cardColor(widget.theme),
           style: TextStyle(color: widget.theme.textColor),
           icon: Icon(Icons.arrow_drop_down, color: widget.theme.accentColor),
         );
@@ -943,7 +945,7 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
       hintText: hint,
       hintStyle: TextStyle(color: widget.theme.subtitleColor),
       filled: true,
-      fillColor: widget.theme.cardColor,
+      fillColor: HunterUi.cardColor(widget.theme),
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),

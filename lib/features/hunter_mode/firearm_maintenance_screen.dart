@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
 import 'maintenance.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class FirearmMaintenanceScreen extends StatefulWidget {
   final ThemeController theme;
@@ -63,15 +64,16 @@ class _FirearmMaintenanceScreenState extends State<FirearmMaintenanceScreen> {
     final theme = widget.theme;
     final schedule = scheduleFor(_firearm);
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'MAINTENANCE',
           style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
         actions: [
           IconButton(
@@ -151,7 +153,7 @@ class _FirearmMaintenanceScreenState extends State<FirearmMaintenanceScreen> {
         due ? 'DUE NOW (overdue ${-until} rds)' : 'OK • due in $until rds';
 
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -225,15 +227,19 @@ class MaintenanceLogScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final records = parseLog(firearm).reversed.toList();
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'MAINTENANCE LOG',
-          style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: HunterUi.titleColor(theme),
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
         elevation: 0,
       ),
       body:
@@ -264,7 +270,7 @@ class MaintenanceLogScreen extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final r = records[i];
                   return Card(
-                    color: theme.cardColor,
+                    color: HunterUi.cardColor(theme),
                     margin: const EdgeInsets.only(bottom: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

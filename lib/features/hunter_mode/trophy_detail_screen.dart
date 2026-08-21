@@ -8,6 +8,7 @@ import '../../utils/image_helper.dart';
 import '../../widgets/photo_unavailable_placeholder.dart';
 import 'edit_trophy_screen.dart';
 import 'services/trophy_share_composer.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class TrophyDetailScreen extends StatefulWidget {
   final ThemeController theme;
@@ -69,18 +70,19 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
+        return HunterScaffold(
+          theme: widget.theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               widget.trophy['species'] ?? 'Trophy Details',
               style: TextStyle(
-                color: widget.theme.textColor,
+                color: HunterUi.titleColor(widget.theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: widget.theme.backgroundColor,
-            iconTheme: IconThemeData(color: widget.theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
             elevation: 0,
             actions: [
               IconButton(
@@ -182,7 +184,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
         width: double.infinity,
         height: 250,
         decoration: BoxDecoration(
-          color: widget.theme.cardColor,
+          color: HunterUi.cardColor(widget.theme),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: widget.theme.accentColor.withValues(alpha: 0.3),
@@ -211,7 +213,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
       height: 250,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: widget.theme.cardColor,
+        color: HunterUi.cardColor(widget.theme),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
@@ -233,7 +235,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
                 ),
               ),
               errorWidget: PhotoUnavailablePlaceholder(
-                backgroundColor: widget.theme.cardColor,
+                backgroundColor: HunterUi.cardColor(widget.theme),
               ),
             ),
             // Re-upload affordance: when the first photo is a local file path
@@ -298,7 +300,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
 
   Widget _buildDetailsCard() {
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -343,7 +345,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
     }
 
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -393,7 +395,7 @@ class _TrophyDetailScreenState extends State<TrophyDetailScreen> {
     final displayLocation = _resolvedTownName ?? coordinates;
 
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),

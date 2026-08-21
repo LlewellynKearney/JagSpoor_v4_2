@@ -35,15 +35,40 @@ void main() {
 
   group('shared bushveld background rollout', () {
     test('the shared background stack helper exists and exposes the photo + '
-        'asset fallback + scrim', () {
+        'asset fallback + mode-aware scrim', () {
       final src =
           readSource('lib/features/outfitter_mode/widgets/outfitter_scaffold.dart');
       expect(src.contains('class OutfitterBushveldBackground'), isTrue);
       expect(src.contains('kBackgroundImageUrl'), isTrue);
       expect(src.contains('kBackgroundFallbackAsset'), isTrue);
       expect(src.contains('Greater Kudu.jpg'), isTrue);
-      expect(src.contains('LinearGradient'), isTrue,
-          reason: 'The scrim must be a dark gradient.');
+      expect(
+        src.contains('scrim({bool isDarkMode = true})'),
+        isTrue,
+        reason: 'The scrim must accept a mode flag.',
+      );
+      // Light-mode warm cream veil colours.
+      expect(src.contains('Color(0xE6F7F1E6)'), isTrue,
+          reason: 'Light-mode scrim must be a warm cream veil.');
+      // Dark-mode dense black gradient colours.
+      expect(src.contains('Color(0xA6000000)'), isTrue,
+          reason: 'Dark-mode scrim must be a dense black gradient.');
+    });
+
+    test('OutfitterUi light-mode palette uses rich warm cards + espresso text',
+        () {
+      final src =
+          readSource('lib/features/outfitter_mode/widgets/outfitter_scaffold.dart');
+      expect(src.contains('class OutfitterUi'), isTrue);
+      expect(
+        src.contains('Color(0xFFEFE7DC)'),
+        isTrue,
+        reason: 'The light card surface must be the toned-down warm EFE7DC.',
+      );
+      expect(src.contains('Color(0xFF2C221E)'), isTrue,
+          reason: 'The espresso title text must be 0xFF2C221E.');
+      expect(src.contains('Color(0xFF4A3B32)'), isTrue,
+          reason: 'The warm-brown secondary text must be 0xFF4A3B32.');
     });
 
     for (final entry in outfitterScreens.entries) {

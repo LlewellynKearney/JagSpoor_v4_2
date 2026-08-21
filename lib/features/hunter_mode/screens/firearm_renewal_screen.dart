@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../services/saps_pdf_generator.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 class FirearmRenewalScreen extends StatefulWidget {
   final ThemeController theme;
@@ -172,19 +173,20 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
     final theme = widget.theme;
     final firearm = widget.firearm;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'SAPS 518(a) RENEWAL COMPILATION',
           style: TextStyle(
-            color: theme.textColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
             fontSize: 16,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
       ),
       body:
@@ -376,7 +378,7 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
 
   Widget _buildHeaderCard(ThemeController theme, Map<String, String> firearm) {
     return Card(
-      color: theme.cardColor,
+      color: HunterUi.cardColor(theme),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.3)),
@@ -446,7 +448,7 @@ class _FirearmRenewalScreenState extends State<FirearmRenewalScreen> {
         labelStyle: TextStyle(color: theme.subtitleColor),
         prefixIcon: Icon(icon, color: theme.accentColor),
         filled: true,
-        fillColor: theme.cardColor,
+        fillColor: HunterUi.cardColor(theme),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(

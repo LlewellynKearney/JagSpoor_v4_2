@@ -10,6 +10,7 @@ import '../../utils/image_helper.dart';
 import 'add_firearm_manual_form.dart';
 import 'firearm_maintenance_screen.dart';
 import 'maintenance.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
 // ---- Shared firearm calculations (used by the safe card and the detail view) ----
 
@@ -67,7 +68,7 @@ Future<int?> showAddRoundsDialog(BuildContext context, ThemeController theme) {
     context: context,
     builder:
         (context) => AlertDialog(
-          backgroundColor: theme.cardColor,
+          backgroundColor: HunterUi.cardColor(theme),
           title: Text(
             'Add Rounds Fired',
             style: TextStyle(color: theme.textColor),
@@ -225,7 +226,7 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
       context: context,
       builder:
           (context) => AlertDialog(
-            backgroundColor: theme.cardColor,
+            backgroundColor: HunterUi.cardColor(theme),
             title: Text(
               'Remove Firearm',
               style: TextStyle(color: theme.textColor),
@@ -286,15 +287,16 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     final maintenanceDue = isMaintenanceDue(f);
     final dueCount = dueTaskCount(f);
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           '${f['make']}',
           style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
         actions: [
           IconButton(
@@ -332,7 +334,7 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
             onUpdated: widget.onUpdated,
           ),
           Card(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -536,7 +538,7 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
             ),
           ),
           Card(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -574,21 +576,25 @@ class RoundsLogScreen extends StatelessWidget {
     final loggedTotal = entries.fold<int>(0, (s, e) => s + e.qty);
     final grandTotal = roundCountOf(firearm);
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'ROUNDS LOG',
-          style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: HunterUi.titleColor(theme),
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
         elevation: 0,
       ),
       body: Column(
         children: [
           Card(
-            color: theme.cardColor,
+            color: HunterUi.cardColor(theme),
             margin: const EdgeInsets.all(16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -855,7 +861,7 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
       context: context,
       builder:
           (context) => AlertDialog(
-            backgroundColor: widget.theme.cardColor,
+            backgroundColor: HunterUi.cardColor(widget.theme),
             title: Text(
               'Add Photo',
               style: TextStyle(color: widget.theme.textColor),
@@ -937,7 +943,7 @@ class _FirearmPhotoCardState extends State<_FirearmPhotoCard> {
     );
 
     return Card(
-      color: widget.theme.cardColor,
+      color: HunterUi.cardColor(widget.theme),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
