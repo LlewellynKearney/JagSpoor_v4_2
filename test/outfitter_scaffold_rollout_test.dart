@@ -75,11 +75,13 @@ void main() {
       test('${entry.key} renders the shared bushveld background stack', () {
         final src = readSource(entry.value);
         expect(
-          src.contains('OutfitterBushveldBackground'),
+          src.contains('OutfitterScaffold') ||
+              src.contains('OutfitterBushveldBackground'),
           isTrue,
           reason:
               '${entry.key} must render the shared OutfitterBushveldBackground '
-              'stack so the portal carries the immersive bushveld aesthetic.',
+              'stack (directly or via OutfitterScaffold) so the portal carries '
+              'the immersive bushveld aesthetic.',
         );
         expect(
           src.contains('backgroundColor: Colors.transparent') ||

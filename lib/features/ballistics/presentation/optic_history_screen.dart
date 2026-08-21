@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
+import '../../hunter_mode/widgets/hunter_scaffold.dart';
 import '../data/services/optic_log_service.dart';
 
 /// "View Optic History" surface for the Optical Suite. Renders a reactive,
@@ -16,20 +17,21 @@ class OpticHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
-        backgroundColor: theme.backgroundColor,
+        backgroundColor: Colors.transparent,
         title: Text(
           'OPTIC HISTORY',
           style: TextStyle(
-            color: theme.accentColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
             letterSpacing: 1.2,
             fontSize: 15,
           ),
         ),
-        iconTheme: IconThemeData(color: theme.textColor),
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
       ),
       body: StreamBuilder<List<OpticLogEntry>>(
         stream: OpticLogService.instance.getMyOpticLogsStream(),

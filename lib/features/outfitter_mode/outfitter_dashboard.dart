@@ -79,14 +79,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     return AnimatedBuilder(
       animation: widget.theme,
       builder: (context, child) {
-        String conceptLabel = _getConceptLabel(widget.theme.currentConcept);
-
         return Scaffold(
           backgroundColor: widget.theme.backgroundColor,
           // Full-bleed the bushveld background + scrim behind the (transparent)
           // AppBar; the content's top inset is added to the ListView padding.
           extendBodyBehindAppBar: true,
-          appBar: _buildAppBar(context, widget.theme, conceptLabel),
+          appBar: _buildAppBar(context, widget.theme),
           body: Stack(
             fit: StackFit.expand,
             children: [
@@ -345,55 +343,23 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     );
   }
 
-  String _getConceptLabel(HuntingConcept concept) {
-    switch (concept) {
-      case HuntingConcept.thermalGlow:
-        return 'THERMAL OUTFIT';
-      case HuntingConcept.walnutLuxury:
-        return 'WALNUT OUTFIT';
-      case HuntingConcept.neonShock:
-        return 'NEON OUTFIT';
-    }
-  }
-
   PreferredSizeWidget _buildAppBar(
     BuildContext context,
     ThemeController theme,
-    String label,
   ) {
     return AppBar(
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _isManager ? 'Farm Manager' : 'Jagspoor Outfitter',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              // Dark espresso in Day mode (readable on the bright sunrise
-              // region), white in Night mode over the dark scrim.
-              color: OutfitterUi.titleColor(theme),
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-              letterSpacing: 1.0,
-            ),
-          ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              // Dark espresso in Day mode (high-contrast on the bright
-              // sunrise region), brushed gold in Night mode.
-              color: theme.isDarkMode
-                  ? const Color(0xFFD4AF37)
-                  : OutfitterUi.lightTitle,
-              fontWeight: FontWeight.w500,
-              fontSize: 12,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
+      title: Text(
+        _isManager ? 'Farm Manager' : 'JagSpoor Outfitter',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          // Dark espresso in Day mode (readable on the bright sunrise
+          // region), white in Night mode over the dark scrim.
+          color: OutfitterUi.titleColor(theme),
+          fontWeight: FontWeight.w800,
+          fontSize: 24,
+          letterSpacing: 1.2,
+        ),
       ),
       backgroundColor: Colors.transparent,
       elevation: 0,

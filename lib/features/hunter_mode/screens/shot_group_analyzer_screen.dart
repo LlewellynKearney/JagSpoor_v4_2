@@ -10,6 +10,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../../widgets/firearm_dropdown_selector.dart';
 import '../services/shot_group_analyzer_service.dart';
 import '../services/target_session_log_manager.dart';
+import '../widgets/hunter_scaffold.dart';
 import '../widgets/shot_group_target_overlay.dart';
 
 /// Dedicated Shot Group Target Analyzer screen.
@@ -214,13 +215,17 @@ class _ShotGroupAnalyzerScreenState extends State<ShotGroupAnalyzerScreen> {
   @override
   Widget build(BuildContext context) {
     final t = widget.theme;
-    return Scaffold(
-      backgroundColor: t.backgroundColor,
+    return HunterScaffold(
+      theme: t,
+      padBodyForAppBar: true,
       appBar: AppBar(
-        title: const Text('🎯 Shot Group Target Analyzer',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: t.backgroundColor,
-        foregroundColor: t.textColor,
+        title: Text('🎯 Shot Group Target Analyzer',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: HunterUi.titleColor(t))),
+        backgroundColor: Colors.transparent,
+        foregroundColor: HunterUi.titleColor(t),
         elevation: 0,
         actions: [
           IconButton(

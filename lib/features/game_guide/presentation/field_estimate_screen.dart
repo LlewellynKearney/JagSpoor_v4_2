@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 import 'package:jagspoor/utils/animal_seeder.dart';
 
 class FieldEstimateScreen extends StatefulWidget {
@@ -42,18 +43,19 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
       meetsMinimum = comparableHornLength >= comparableMinimumValue;
     }
 
-    return Scaffold(
-      backgroundColor: widget.theme.backgroundColor,
+    return HunterScaffold(
+      theme: widget.theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'Field Estimate Verification',
           style: TextStyle(
-            color: widget.theme.textColor,
+            color: HunterUi.titleColor(widget.theme),
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: widget.theme.backgroundColor,
-        iconTheme: IconThemeData(color: widget.theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
       ),
       body: SafeArea(

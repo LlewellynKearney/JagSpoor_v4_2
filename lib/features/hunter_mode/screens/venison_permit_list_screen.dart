@@ -4,6 +4,7 @@ import '../../../core/widgets/copyright_footer.dart';
 import '../models/venison_transport_permit.dart';
 import '../services/venison_permit_manager.dart';
 import '../services/venison_permit_pdf_exporter.dart';
+import '../widgets/hunter_scaffold.dart';
 import '../widgets/venison_permit_details_sheet.dart';
 import 'venison_permit_form_screen.dart';
 import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
@@ -51,79 +52,96 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    final bool outfitter = widget.isOutfitterMode;
+    // Mode-aware: hunters get the acacia background stack; outfitters get the
+    // bushveld stack. Title/icon colors resolve per portal as well.
+    final titleColor = outfitter
+        ? OutfitterUi.titleColor(theme)
+        : HunterUi.titleColor(theme);
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          widget.isOutfitterMode ? 'Issued Permits' : 'My Transport Permits',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: OutfitterUi.titleColor(theme),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        foregroundColor: OutfitterUi.titleColor(theme),
-        elevation: 0,
+    final appBar = AppBar(
+      title: Text(
+        outfitter ? 'Issued Permits' : 'My Transport Permits',
+        style: TextStyle(fontWeight: FontWeight.bold, color: titleColor),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openForm,
-        backgroundColor: theme.accentColor,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New Permit'),
-      ),
-      body: OutfitterBushveldBackground.stack(
-        fallbackColor: theme.backgroundColor,
-        child: SafeArea(
-          child: Column(
+      backgroundColor: Colors.transparent,
+      foregroundColor: titleColor,
+      elevation: 0,
+    );
+
+    final fab = FloatingActionButton.extended(
+      onPressed: _openForm,
+      backgroundColor: theme.accentColor,
+      foregroundColor: Colors.white,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('New Permit'),
+    );
+
+    final body = SafeArea(
+      child: Column(
         children: [
           _buildSearchBar(theme),
           Expanded(
-            child: StreamBuilder<List<VenisonTransportPermit>>(
-              stream: _permitManager.getMyPermitsStream(
-                isOutfitter: widget.isOutfitterMode,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(
-                    child: CircularProgressIndicator(color: theme.accentColor),
-                  );
-                }
-                if (snapshot.hasError) {
-                  return _buildErrorState(theme, snapshot.error.toString());
-                }
-
-                final permits = snapshot.data ?? [];
-                final filtered = _filterPermits(permits);
-
-                if (filtered.isEmpty) {
-                  return _buildEmptyState(theme);
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                  itemCount: filtered.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == filtered.length) {
-                      return const CopyrightFooter();
-                    }
-                    return _PermitCard(
-                      permit: filtered[index],
-                      theme: theme,
-                      onTap: () => _showDetails(filtered[index]),
-                      onVoid: () => _voidPermit(filtered[index]),
-                      onDelete: () => _confirmDelete(filtered[index]),
-                    );
-                  },
-                );
-              },
-            ),
+            child: _buildPermitList(theme),
           ),
         ],
-          ),
-        ),
       ),
+    );
+
+    if (outfitter) {
+      return OutfitterScaffold(
+        theme: theme,
+        appBar: appBar,
+        floatingActionButton: fab,
+        body: body,
+      );
+    }
+    return HunterScaffold(
+      theme: theme,
+      appBar: appBar,
+      floatingActionButton: fab,
+      body: body,
+    );
+  }
+
+  Widget _buildPermitList(ThemeController theme) {
+    return StreamBuilder<List<VenisonTransportPermit>>(
+      stream: _permitManager.getMyPermitsStream(
+        isOutfitter: widget.isOutfitterMode,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(color: theme.accentColor),
+          );
+        }
+        if (snapshot.hasError) {
+          return _buildErrorState(theme, snapshot.error.toString());
+        }
+
+        final permits = snapshot.data ?? [];
+        final filtered = _filterPermits(permits);
+
+        if (filtered.isEmpty) {
+          return _buildEmptyState(theme);
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+          itemCount: filtered.length + 1,
+          itemBuilder: (context, index) {
+            if (index == filtered.length) {
+              return const CopyrightFooter();
+            }
+            return _PermitCard(
+              permit: filtered[index],
+              theme: theme,
+              onTap: () => _showDetails(filtered[index]),
+              onVoid: () => _voidPermit(filtered[index]),
+              onDelete: () => _confirmDelete(filtered[index]),
+            );
+          },
+        );
+      },
     );
   }
 

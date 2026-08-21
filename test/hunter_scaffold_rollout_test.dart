@@ -25,6 +25,8 @@ void main() {
         'lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart',
     'venison_permits':
         'lib/features/hunter_mode/screens/hunter_venison_permit_log_screen.dart',
+    'venison_permit_list':
+        'lib/features/hunter_mode/screens/venison_permit_list_screen.dart',
     'profile': 'lib/features/hunter_mode/hunter_profile_screen.dart',
     'custom_builder':
         'lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart',
@@ -60,6 +62,35 @@ void main() {
         'lib/features/hunter_mode/screens/carcass_matrix_screen.dart',
     'mesh_radar': 'lib/features/hunter_mode/screens/mesh_radar_screen.dart',
     'weather': 'lib/features/hunter_mode/weather/weather_tracker_screen.dart',
+    'shot_group_analyzer':
+        'lib/features/hunter_mode/screens/shot_group_analyzer_screen.dart',
+    'optic_history':
+        'lib/features/ballistics/presentation/optic_history_screen.dart',
+    'ammunition':
+        'lib/features/ballistics/presentation/ammunition_screen.dart',
+    'ammunition_type_selection':
+        'lib/features/ballistics/presentation/ammunition_type_selection_screen.dart',
+    'field_estimate':
+        'lib/features/game_guide/presentation/field_estimate_screen.dart',
+    'animal_list': 'lib/screens/animal_list_screen.dart',
+    'animal_detail': 'lib/screens/animal_detail_screen.dart',
+  };
+
+  /// Hunter-side surfaces intentionally NOT wrapped in HunterScaffold —
+  /// full-bleed dark camera / map / HUD surfaces by documented design:
+  const intentionalFullBleedScreens = {
+    'scope_calibration':
+        'lib/features/hunter_mode/screens/scope_calibration_screen.dart',
+    'ballistic_calc':
+        'lib/features/ballistics/presentation/ballistic_calc_screen.dart',
+    'license_scanner':
+        'lib/features/hunter_mode/license_scanner_screen.dart',
+    'offline_navigation':
+        'lib/features/hunter_mode/screens/offline_navigation_screen.dart',
+    'spoor_detection_hud':
+        'lib/features/track/presentation/spoor_detection_hud_screen.dart',
+    'photo_gallery_viewer':
+        'lib/features/hunter_mode/widgets/photo_gallery_strip.dart',
   };
 
   String readSource(String relPath) => File(relPath).readAsStringSync();
@@ -109,6 +140,28 @@ void main() {
           isTrue,
           reason: '${entry.key} must full-bleed the background under a '
               'transparent AppBar (extendBodyBehindAppBar).',
+        );
+      });
+    }
+
+    for (final entry in intentionalFullBleedScreens.entries) {
+      test('${entry.key} intentionally keeps its dark full-bleed surface', () {
+        final src = readSource(entry.value);
+        // The full-bleed camera / map / HUD surfaces keep their own dark
+        // background by design (camera preview / live map / tactical HUD /
+        // photo viewer). They must NOT silently regress to a light theme
+        // background, and they must NOT be wrapped in HunterScaffold.
+        expect(src.contains('HunterScaffold'), isFalse,
+            reason: '${entry.key} is a full-bleed dark surface by design and '
+                'must not carry the acacia stack behind a camera/map/HUD.');
+        expect(
+          src.contains('Colors.black') ||
+              src.contains('tacticalDark') ||
+              src.contains('0xFF141915') ||
+              src.contains('JagspoorTheme.tacticalDark'),
+          isTrue,
+          reason: '${entry.key} must keep its deliberate dark full-bleed '
+              'surface (not a solid white/grey background).',
         );
       });
     }

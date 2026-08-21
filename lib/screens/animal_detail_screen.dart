@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../core/theme/app_theme.dart';
+import '../features/hunter_mode/widgets/hunter_scaffold.dart';
 import '../models/animal.dart';
 
 class AnimalDetailScreen extends StatefulWidget {
@@ -66,18 +67,19 @@ class _AnimalDetailScreenState extends State<AnimalDetailScreen> {
         final animal = widget.animal;
         final images = _galleryImages(animal);
 
-        return Scaffold(
-          backgroundColor: theme.backgroundColor,
+        return HunterScaffold(
+          theme: theme,
+          padBodyForAppBar: true,
           appBar: AppBar(
             title: Text(
               animal.name,
               style: TextStyle(
-                color: theme.textColor,
+                color: HunterUi.titleColor(theme),
                 fontWeight: FontWeight.bold,
               ),
             ),
-            backgroundColor: theme.backgroundColor,
-            iconTheme: IconThemeData(color: theme.accentColor),
+            backgroundColor: Colors.transparent,
+            iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
             elevation: 0,
           ),
           body: SafeArea(

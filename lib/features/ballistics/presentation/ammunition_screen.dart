@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../hunter_mode/widgets/hunter_scaffold.dart';
 import 'ammunition_type_selection_screen.dart';
 
 class AmmunitionScreen extends StatefulWidget {
@@ -19,19 +20,20 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return Scaffold(
-      backgroundColor: theme.backgroundColor,
+    return HunterScaffold(
+      theme: theme,
+      padBodyForAppBar: true,
       appBar: AppBar(
         title: Text(
           'AMMUNITION MANAGER',
           style: TextStyle(
-            color: theme.textColor,
+            color: HunterUi.titleColor(theme),
             fontWeight: FontWeight.bold,
             letterSpacing: 1.2,
           ),
         ),
-        backgroundColor: theme.backgroundColor,
-        iconTheme: IconThemeData(color: theme.accentColor),
+        backgroundColor: Colors.transparent,
+        iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
         elevation: 0,
       ),
       body: SafeArea(

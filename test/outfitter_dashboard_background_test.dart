@@ -90,4 +90,24 @@ void main() {
             'on the loading spinner.');
     expect(find.text('OUTFITTER OPERATIONS'), findsOneWidget);
   });
+
+  testWidgets('title bar shows a prominent "JagSpoor Outfitter" with no '
+      'secondary subtitle', (tester) async {
+    await buildDashboard(tester);
+    expect(find.text('JagSpoor Outfitter'), findsOneWidget);
+    final title =
+        tester.widget<Text>(find.text('JagSpoor Outfitter'));
+    expect(title.style?.fontWeight, FontWeight.w800);
+    expect(title.style?.fontSize, greaterThanOrEqualTo(22),
+        reason: 'The main branding title must be noticeably larger.');
+    // The secondary concept subtitle ("WALNUT OUTFIT" / "THERMAL OUTFIT" /
+    // "NEON OUTFIT") must be entirely removed from the title bar.
+    expect(find.text('WALNUT OUTFIT'), findsNothing);
+    expect(find.text('THERMAL OUTFIT'), findsNothing);
+    expect(find.text('NEON OUTFIT'), findsNothing);
+    // The AppBar title must be a single Text, not the old two-line Column.
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.title, isA<Text>());
+    expect((appBar.title as Text).data, 'JagSpoor Outfitter');
+  });
 }
