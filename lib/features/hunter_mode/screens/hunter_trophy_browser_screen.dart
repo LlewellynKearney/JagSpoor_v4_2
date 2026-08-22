@@ -5,6 +5,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../widgets/trophy_booking_confirmation_sheet.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
   final ThemeController theme;
@@ -273,6 +274,12 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
+        actions: [
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterTrophyRegistry,
+            iconColor: theme.accentColor,
+          ),
+        ],
       ),
       body: Column(
         children: [

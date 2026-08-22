@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../models/venison_transport_permit.dart';
@@ -67,6 +68,23 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
       backgroundColor: Colors.transparent,
       foregroundColor: titleColor,
       elevation: 0,
+      actions: [
+        if (outfitter)
+          OutfitterActionChip(
+            icon: Icons.info_outline_rounded,
+            tooltip: 'Screen info',
+            iconColor: theme.accentColor,
+            onPressed: () => showAppInfoModal(
+              context,
+              AppScreenHelpScripts.outfitterVenisonPermits,
+            ),
+          )
+        else
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterVenisonPermits,
+            iconColor: theme.accentColor,
+          ),
+      ],
     );
 
     final fab = FloatingActionButton.extended(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../ballistics/data/ballistics_engine.dart';
 
 /// JagspoorTheme provides dynamic theme colors that can be overridden
@@ -304,6 +305,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
             letterSpacing: 1.5,
           ),
         ),
+        actions: [
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterBallisticsCalculator,
+            iconColor: JagspoorTheme.thermalGlow,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: JagspoorTheme.thermalGlow,

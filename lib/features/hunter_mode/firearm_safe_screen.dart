@@ -10,6 +10,7 @@ import 'maintenance.dart';
 import '../firearm_safe/data/services/firearm_pdf_generator.dart';
 import 'screens/firearm_renewal_screen.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 class FirearmSafeScreen extends StatefulWidget {
   final ThemeController theme;
@@ -86,6 +87,10 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
         iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
         elevation: 0,
         actions: [
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterFirearmSafe,
+            iconColor: theme.accentColor,
+          ),
           IconButton(
             icon: Icon(Icons.picture_as_pdf, color: theme.accentColor),
             tooltip: 'Export PDF',

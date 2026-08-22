@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -231,6 +232,17 @@ class _OutfitterPackageManagerScreenState
         backgroundColor: Colors.transparent,
         foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
+        actions: [
+          OutfitterActionChip(
+            icon: Icons.info_outline_rounded,
+            tooltip: 'Screen info',
+            iconColor: theme.accentColor,
+            onPressed: () => showAppInfoModal(
+              context,
+              AppScreenHelpScripts.outfitterPackageManager,
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.push(

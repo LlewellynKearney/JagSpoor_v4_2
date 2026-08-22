@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/image_service.dart';
 import '../../../core/widgets/copyright_footer.dart';
@@ -738,6 +739,15 @@ class _OutfitterTrophyStockScreenState
         foregroundColor: OutfitterUi.titleColor(theme),
         elevation: 0,
         actions: [
+          OutfitterActionChip(
+            icon: Icons.info_outline_rounded,
+            tooltip: 'Screen info',
+            iconColor: theme.accentColor,
+            onPressed: () => showAppInfoModal(
+              context,
+              AppScreenHelpScripts.outfitterTrophyStock,
+            ),
+          ),
           OutfitterActionChip(
             icon: Icons.picture_as_pdf_rounded,
             tooltip: 'Export Trophy Inventory Report',

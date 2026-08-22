@@ -9,6 +9,7 @@ import '../track/data/track_taxonomy.dart';
 import '../track/data/services/spoor_ai_service.dart';
 import 'services/spoor_identifier_service.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 class SpoorIdentifierScreen extends StatefulWidget {
   final ThemeController theme;
@@ -244,6 +245,10 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
             iconTheme: IconThemeData(color: HunterUi.titleColor(widget.theme)),
             elevation: 0,
             actions: [
+              AppInfoIconButton(
+                screenKey: AppScreenHelpScripts.hunterSpoorIdentification,
+                iconColor: widget.theme.accentColor,
+              ),
               IconButton(
                 icon: Icon(
                   Icons.history_rounded,

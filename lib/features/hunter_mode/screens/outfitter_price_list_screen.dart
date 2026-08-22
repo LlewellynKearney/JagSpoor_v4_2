@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
@@ -232,6 +233,15 @@ class _OutfitterPriceListScreenState extends State<OutfitterPriceListScreen> {
         actions: [
           // High-contrast chips keep the action icons readable against the
           // bright sunrise region of the bushveld background.
+          OutfitterActionChip(
+            icon: Icons.info_outline_rounded,
+            tooltip: 'Screen info',
+            iconColor: theme.accentColor,
+            onPressed: () => showAppInfoModal(
+              context,
+              AppScreenHelpScripts.outfitterPriceLists,
+            ),
+          ),
           OutfitterActionChip(
             icon: Icons.picture_as_pdf_rounded,
             tooltip: 'Export to PDF',

@@ -1,6 +1,51 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Universal theme-aware Info Modal + help scripts across both portals (added 2026-08-22)
+
+- NEW `lib/shared/constants/app_screen_help_scripts.dart`
+  (`AppScreenHelpScripts`): the central help-content repository. 13 stable
+  screen keys (6 hunter: marketplace, custom package builder, trophy
+  registry, firearm safe, ballistics calculator, spoor identifier; 6
+  outfitter: dashboard, farm control panel, package manager, trophy stock,
+  price lists, venison permits; + `hunter_venison_permits` for the
+  hunter-mode branch of the shared permit screen), each mapping to an
+  `AppScreenHelpScript` (title + description + `AppHelpConcept` key-concept
+  rows). `forKey` falls back to a generic script for unknown keys.
+- NEW `lib/shared/widgets/app_info_modal.dart`: `showAppInfoModal(context,
+  screenKey)` (modal bottom sheet) + `AppInfoModal` (theme-aware via
+  `Theme.of(context).brightness`: warm cream surface 0xFFEFE7DC + espresso
+  0xFF2C221E title in Day mode; dark card 0xFF262626 + gold 0xFFD4AF37
+  accent in Night mode; scrollable, SafeArea'd, drag handle, KEY CONCEPTS
+  section, GOT IT dismiss) + `AppInfoIconButton` (hunter-portal plain
+  IconButton action). Re-exports the constants so call sites need a single
+  import.
+- Integrated an info action into the AppBar of all 12 core screens: hunter
+  screens use `AppInfoIconButton` (accent-tinted); outfitter screens use
+  the high-contrast `OutfitterActionChip` (matching each portal's existing
+  AppBar visual language); the mode-aware venison permit list passes the
+  hunter or outfitter script key per mode; the ballistic calculator's dark
+  HUD AppBar uses `JagspoorTheme.thermalGlow`.
+- Tests: `test/app_info_modal_test.dart` (12 tests): script-repository
+  coverage + fallback contract; light/dark surface palette widget renders;
+  icon-tap opens the modal with the exact screen script + GOT IT dismissal
+  (ensureVisible before tap -- the modal content is scrollable and the
+  button can sit below the fold on the 800x600 test surface); structural
+  per-screen wiring contract for all 12 screens + the mode-aware permit
+  screen.
+- Verification: `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0
+  warnings** (278 pre-existing infos, unchanged baseline). `flutter test`:
+  **All 1118 tests passed** (+12 new). No Firestore / Storage / rules /
+  index / pubspec / manifest changes (pure client-side UI + content).
+- Env note: re-installed Flutter 3.29.1 stable at `/home/openhands/flutter`
+  + `~/libs/libsqlite3.so -> /usr/lib/.../libsqlite3.so.0` symlink for the
+  sqflite-FFI integration tests (run tests with
+  `LD_LIBRARY_PATH="$HOME/libs"`).
+- Files: `lib/shared/constants/app_screen_help_scripts.dart` (NEW),
+  `lib/shared/widgets/app_info_modal.dart` (NEW),
+  `test/app_info_modal_test.dart` (NEW), the 12 screen files listed in the
+  test's wiring maps, `AGENTS.md`.
+
 ## Phase -- Android CI build fix: minSdk 23 + NDK 27 pin (added 2026-08-22)
 
 The "Build Android APK" CI job (`flutter build apk --debug`) failed at

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
@@ -430,6 +431,12 @@ class _HunterCustomPackageBuilderScreenState
         backgroundColor: Colors.transparent,
         foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
+        actions: [
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterCustomPackageBuilder,
+            iconColor: theme.accentColor,
+          ),
+        ],
       ),
       body: SafeArea(
         top: true,
@@ -458,6 +465,12 @@ class _HunterCustomPackageBuilderScreenState
         backgroundColor: Colors.transparent,
         foregroundColor: HunterUi.titleColor(theme),
         elevation: 0,
+        actions: [
+          AppInfoIconButton(
+            screenKey: AppScreenHelpScripts.hunterCustomPackageBuilder,
+            iconColor: theme.accentColor,
+          ),
+        ],
       ),
       body: SafeArea(
         top: true,
