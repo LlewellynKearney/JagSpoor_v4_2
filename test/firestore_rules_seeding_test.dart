@@ -404,6 +404,81 @@ void main() {
       );
     });
   });
+
+  group('role-partitioned venison permits collections', () {
+    for (final collection in const [
+      'outfitter_venison_permits',
+      'hunter_venison_permits',
+    ]) {
+      group(collection, () {
+        test('match block exists', () {
+          final block = _blockFor(_loadRules(), collection);
+          expect(block, isNotEmpty);
+        });
+
+        test('read is party-scoped (outfitter + hunter + userId alias + admin)',
+            () {
+          final block = _blockFor(_loadRules(), collection);
+          expect(
+            block.contains('resource.data.outfitterId == request.auth.uid'),
+            isTrue,
+          );
+          expect(
+            block.contains('resource.data.hunterId == request.auth.uid'),
+            isTrue,
+          );
+          expect(
+            block.contains('resource.data.userId == request.auth.uid'),
+            isTrue,
+          );
+          expect(block.contains('isAdmin()'), isTrue);
+        });
+
+        test('read requires authentication (not public)', () {
+          final block = _blockFor(_loadRules(), collection);
+          expect(block.contains('allow read: if isSignedIn()'), isTrue);
+        });
+
+        test('create + update are allowed for signed-in parties', () {
+          final block = _blockFor(_loadRules(), collection);
+          expect(
+            block.contains('allow create, update: if isSignedIn()'),
+            isTrue,
+          );
+        });
+
+        test('delete stays least-privilege (outfitter owner or admin)', () {
+          final block = _blockFor(_loadRules(), collection);
+          expect(
+            block.contains(
+              "allow delete: if isOwnerOf('outfitterId') || isAdmin()",
+            ),
+            isTrue,
+          );
+        });
+      });
+    }
+
+    test('the outfitter partition is queryable by outfitterId', () {
+      final block = _blockFor(_loadRules(), 'outfitter_venison_permits');
+      // The outfitter's list query (.where('outfitterId', isEqualTo: uid))
+      // succeeds because the rule constrains outfitterId to the caller uid.
+      expect(
+        block.contains('resource.data.outfitterId == request.auth.uid'),
+        isTrue,
+      );
+    });
+
+    test('the hunter partition is queryable by hunterId', () {
+      final block = _blockFor(_loadRules(), 'hunter_venison_permits');
+      // The hunter's list query (Filter.or(hunterId == uid, userId == uid))
+      // succeeds because the rule constrains both aliases to the caller uid.
+      expect(
+        block.contains('resource.data.hunterId == request.auth.uid'),
+        isTrue,
+      );
+    });
+  });
 }
 
 /// Loads `firestore.rules` from the project root.

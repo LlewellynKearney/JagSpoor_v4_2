@@ -204,7 +204,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// Ensures the signed-in outfitter's `users/{uid}` document carries an
   /// `outfitterId` field equal to their own uid. Outfitter-mode Firestore
-  /// collections (trophies, venison_permits, scanned_pricelists) are all
+  /// collections (trophies, outfitter_venison_permits, scanned_pricelists) are all
   /// owner-scoped on
   /// `outfitterId == auth.uid`; a missing field would make every list query
   /// silently empty and every create get rejected server-side. This is a

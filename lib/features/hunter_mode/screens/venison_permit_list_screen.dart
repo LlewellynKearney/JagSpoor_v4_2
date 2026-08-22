@@ -238,9 +238,8 @@ class _VenisonPermitListScreenState extends State<VenisonPermitListScreen> {
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(
-              'If this persists, the required Firestore composite index '
-              '(venison_permits: outfitterId/hunterId ASC + createdAt DESC) '
-              'may still be building.',
+              'If this persists, please check your connection or sign-in '
+              'state and try again.',
               textAlign: TextAlign.center,
               style: TextStyle(color: OutfitterUi.subtitleColor(theme), fontSize: 13),
             ),

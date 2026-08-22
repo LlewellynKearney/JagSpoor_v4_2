@@ -5,8 +5,11 @@
 /// dual signatures from both the Hunter and the Authorized Person (Outfitter /
 /// farm representative) and a full audit trail.
 ///
-/// Persisted to the `venison_permits` Firestore collection. Captured signature
-/// PNGs live in Firebase Storage under `permit_signatures/{permitId}/`.
+/// Persisted to the role-partitioned Firestore collections
+/// `outfitter_venison_permits` (filterable by `outfitterId`) and
+/// `hunter_venison_permits` (filterable by `hunterId`) under the SAME document
+/// id (dual-write at issue time). Captured signature PNGs live in Firebase
+/// Storage under `permit_signatures/{permitId}/`.
 class VenisonTransportPermit {
   final String? id;
   final String permitNumber;

@@ -8,8 +8,10 @@ import '../../../core/services/image_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../services/external_booking_adapter.dart';
 import '../../../utils/image_helper.dart';
 import '../models/farm_config.dart';
+import '../services/booking_availability_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
 
@@ -80,13 +82,28 @@ class _OutfitterEnterprisePanelScreenState
   bool _isAssigningManager = false;
   bool _isUpdatingFarm = false;
 
+  // Booking & ERP Sync settings (external availability integration).
+  final _bookingSyncUrlController = TextEditingController();
+  ExternalBookingSystemType _bookingSyncType = ExternalBookingSystemType.manual;
+  bool _isSavingBookingSync = false;
+  bool _isTestingBookingSync = false;
+  String? _bookingSyncTestResult;
+  bool _bookingSyncTestOk = false;
+
   /// Compressed farm photo picked for the Register New Farm form (camera or
   /// gallery). Uploaded to Firebase Storage on submit and persisted on the
   /// `farms/{farmId}` doc as `photoUrl`.
   File? _farmPhotoFile;
 
   @override
+  void initState() {
+    super.initState();
+    _loadBookingSyncConfig();
+  }
+
+  @override
   void dispose() {
+    _bookingSyncUrlController.dispose();
     _farmNameController.dispose();
     _districtController.dispose();
     _provinceController.dispose();
@@ -115,6 +132,119 @@ class _OutfitterEnterprisePanelScreenState
     _vehicleFeeController.dispose();
     _guideFeeController.dispose();
     super.dispose();
+  }
+
+  /// Loads the outfitter's persisted Booking & ERP Sync configuration so the
+  /// card reflects the saved system type + feed URL on open.
+  Future<void> _loadBookingSyncConfig() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final config =
+          await BookingAvailabilityService.instance.loadConfig(uid);
+      if (!mounted) return;
+      setState(() {
+        _bookingSyncType = config.systemType;
+        _bookingSyncUrlController.text = config.feedUrl;
+      });
+    } catch (_) {
+      // Non-fatal — the card simply starts from the Manual default.
+    }
+  }
+
+  ExternalBookingConfig _currentBookingSyncConfig() {
+    return ExternalBookingConfig(
+      systemType: _bookingSyncType,
+      feedUrl: _bookingSyncUrlController.text.trim(),
+    );
+  }
+
+  /// Tests live connectivity to the configured external system (or the mock
+  /// simulator) and surfaces the result inline in the card.
+  Future<void> _testBookingSyncConnection() async {
+    final config = _currentBookingSyncConfig();
+    if (config.systemType == ExternalBookingSystemType.manual) {
+      setState(() {
+        _bookingSyncTestOk = true;
+        _bookingSyncTestResult =
+            'Manual mode — JagSpoor bookings are the only availability source. '
+            'No external connection to test.';
+      });
+      return;
+    }
+    if (config.systemType == ExternalBookingSystemType.ical &&
+        config.feedUrl.isEmpty) {
+      setState(() {
+        _bookingSyncTestOk = false;
+        _bookingSyncTestResult = 'Enter the iCal feed URL before testing.';
+      });
+      return;
+    }
+    setState(() {
+      _isTestingBookingSync = true;
+      _bookingSyncTestResult = null;
+    });
+    try {
+      final adapter = ExternalBookingAdapters.fromConfig(config);
+      final ok = await adapter?.testConnection() ?? false;
+      if (!mounted) return;
+      setState(() {
+        _bookingSyncTestOk = ok;
+        _bookingSyncTestResult = ok
+            ? (config.systemType == ExternalBookingSystemType.mock
+                ? 'Mock test adapter online — deterministic simulated '
+                    'availability active. No live API contacted.'
+                : 'Connection successful — the iCal feed is reachable and '
+                    'returned a valid calendar.')
+            : 'Connection failed — the endpoint is unreachable or did not '
+                'return a valid iCalendar feed.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _bookingSyncTestOk = false;
+        _bookingSyncTestResult = 'Connection failed: $e';
+      });
+    } finally {
+      if (mounted) setState(() => _isTestingBookingSync = false);
+    }
+  }
+
+  /// Saves the Booking & ERP Sync configuration to the outfitter's profile.
+  Future<void> _saveBookingSyncConfig() async {
+    final config = _currentBookingSyncConfig();
+    if (config.systemType == ExternalBookingSystemType.ical &&
+        config.feedUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter the iCal feed URL before saving.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSavingBookingSync = true);
+    try {
+      await BookingAvailabilityService.instance.saveConfig(config);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Booking & ERP sync settings saved.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to save booking sync settings: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingBookingSync = false);
+    }
   }
 
   /// Lets the outfitter capture a farm photo with the camera or select one
@@ -1571,10 +1701,173 @@ class _OutfitterEnterprisePanelScreenState
             ),
           ),
           const SizedBox(height: 16),
+
+          // External Booking / ERP availability integration.
+          _buildSectionCard(
+            title: '🗓️ Booking & ERP Sync',
+            icon: Icons.sync_rounded,
+            theme: theme,
+            child: _buildBookingSyncCard(theme),
+          ),
+          const SizedBox(height: 16),
           const CopyrightFooter(),
         ],
         ),
       ),
+    );
+  }
+
+  /// The "Booking & ERP Sync" settings card: lets the outfitter pick their
+  /// external availability system (Manual / iCal URL / Mock Test), input the
+  /// endpoint / feed URL, test live connectivity, and save the config.
+  Widget _buildBookingSyncCard(ThemeController theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Connect your external booking / ERP calendar so hunters see '
+          'real-time date availability when booking your packages.',
+          style: TextStyle(
+            color: OutfitterUi.subtitleColor(theme),
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<ExternalBookingSystemType>(
+          value: _bookingSyncType,
+          decoration: _inputDecoration(
+            hint: 'Select system type',
+            label: 'Availability System',
+            theme: theme,
+          ),
+          dropdownColor: theme.cardColor,
+          style: TextStyle(color: theme.textColor),
+          items: ExternalBookingSystemType.values
+              .map(
+                (t) => DropdownMenuItem(
+                  value: t,
+                  child: Text(t.label),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bookingSyncType = value;
+              _bookingSyncTestResult = null;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+        if (_bookingSyncType != ExternalBookingSystemType.manual) ...[
+          TextFormField(
+            controller: _bookingSyncUrlController,
+            style: TextStyle(color: theme.textColor),
+            keyboardType: TextInputType.url,
+            decoration: _inputDecoration(
+              hint: _bookingSyncType == ExternalBookingSystemType.ical
+                  ? 'https://example.com/calendar.ics'
+                  : 'Optional seed key (blank = default mock calendar)',
+              label: _bookingSyncType == ExternalBookingSystemType.ical
+                  ? 'iCal Feed URL'
+                  : 'Mock Seed Key',
+              theme: theme,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_bookingSyncTestResult != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (_bookingSyncTestOk ? Colors.green : Colors.red)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (_bookingSyncTestOk ? Colors.green : Colors.red)
+                    .withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  _bookingSyncTestOk
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline_rounded,
+                  color: _bookingSyncTestOk ? Colors.green : Colors.red,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _bookingSyncTestResult!,
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isTestingBookingSync
+                    ? null
+                    : _testBookingSyncConnection,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.accentColor,
+                  side: BorderSide(color: theme.accentColor),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: _isTestingBookingSync
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.wifi_tethering_rounded, size: 18),
+                label: const Text(
+                  'TEST CONNECTION',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed:
+                    _isSavingBookingSync ? null : _saveBookingSyncConfig,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.accentColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: _isSavingBookingSync
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: const Text(
+                  'SAVE',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

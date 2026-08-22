@@ -9,17 +9,34 @@ import '../models/venison_transport_permit.dart';
 /// VenisonPermitManager — central engine for the legal South African Venison /
 /// Game Transport & Hunt Permit.
 ///
-/// Owns the full issue lifecycle:
-/// 1. Write the permit document to `venison_permits` (with placeholder sig URLs)
-///    so we obtain a stable `{permitId}`.
+/// Owns the full issue lifecycle across the TWO role-partitioned Firestore
+/// collections (the shared `venison_permits` collection was split so each
+/// role queries its own partition without permission conflicts):
+/// 1. Write the permit document to `outfitter_venison_permits` (partitioned
+///    by `outfitterId`) AND — when the hunter's uid is known — to
+///    `hunter_venison_permits` (partitioned by `hunterId`), under the SAME
+///    document id so both partitions stay in lock-step.
 /// 2. Upload both signature PNGs to Firebase Storage under
 ///    `permit_signatures/{permitId}/hunter_signature.png` and
 ///    `permit_signatures/{permitId}/outfitter_signature.png`.
-/// 3. Patch the document with the real download URLs + signed timestamps.
+/// 3. Patch both partition documents with the real download URLs + signed
+///    timestamps.
 ///
-/// Both Hunters and Outfitters may issue permits; read access is governed by the
-/// Firestore rules (`hunterId` OR `outfitterId` party).
+/// Both Hunters and Outfitters may issue permits; read access is governed by
+/// the Firestore rules (the outfitter partition by `outfitterId`, the hunter
+/// partition by `hunterId` / its `userId` alias).
 class VenisonPermitManager {
+  /// Outfitter-partitioned venison permits (filtered by `outfitterId`).
+  static const String outfitterCollection = 'outfitter_venison_permits';
+
+  /// Hunter-partitioned venison permits (filtered by `hunterId`).
+  static const String hunterCollection = 'hunter_venison_permits';
+
+  /// Legacy pre-partition shared collection. No longer written; read as a
+  /// fallback by [getPermitById] so permits issued by older app versions
+  /// remain exportable.
+  static const String legacyCollection = 'venison_permits';
+
   VenisonPermitManager._({this.firestoreForTesting, this.currentUserIdResolverForTesting});
 
   static final VenisonPermitManager _instance = VenisonPermitManager._();
@@ -118,7 +135,12 @@ class VenisonPermitManager {
       outfitterId: permit.outfitterId,
     );
 
-    // 1. Create the document first to obtain a stable permitId.
+    // 1. Reserve a stable permitId, then write the SAME permit document id
+    //    into the outfitter partition (always) and the hunter partition (when
+    //    the designated hunter's uid is known). Both partitions carry the
+    //    full field set + both party ids, so each role's own stream (and the
+    //    role-partitioned Firestore rules) match without permission
+    //    conflicts.
     final baseData = {
       ...permit.toMap(),
       'outfitterId': permit.outfitterId,
@@ -129,8 +151,17 @@ class VenisonPermitManager {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    final docRef = await _firestore.collection('venison_permits').add(baseData);
-    final permitId = docRef.id;
+    final permitId =
+        _firestore.collection(outfitterCollection).doc().id;
+    final outfitterRef =
+        _firestore.collection(outfitterCollection).doc(permitId);
+    await outfitterRef.set(baseData);
+    if (effectiveHunterUid != null) {
+      await _firestore
+          .collection(hunterCollection)
+          .doc(permitId)
+          .set(baseData);
+    }
 
     String? hunterSignatureUrl;
     String? outfitterSignatureUrl;
@@ -151,8 +182,8 @@ class VenisonPermitManager {
       );
     }
 
-    // 3. Patch the document with signature URLs + signed timestamps.
-    await docRef.update({
+    // 3. Patch every partition copy with signature URLs + signed timestamps.
+    final patch = {
       if (hunterSignatureUrl != null) 'hunterSignatureUrl': hunterSignatureUrl,
       if (outfitterSignatureUrl != null)
         'outfitterSignatureUrl': outfitterSignatureUrl,
@@ -161,7 +192,16 @@ class VenisonPermitManager {
       if (outfitterSignatureBytes != null)
         'outfitterSignedDate': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    final batch = _firestore.batch();
+    batch.update(outfitterRef, patch);
+    if (effectiveHunterUid != null) {
+      batch.update(
+        _firestore.collection(hunterCollection).doc(permitId),
+        patch,
+      );
+    }
+    await batch.commit();
 
     return permitId;
   }
@@ -190,13 +230,13 @@ class VenisonPermitManager {
     return 'JSV-$year-$random';
   }
 
-  /// Reactive stream of permits for the authenticated user.
-  ///
-  /// Outfitters see permits they issued (`outfitterId`); hunters see permits
-  /// issued to them under EITHER the canonical `hunterId` OR the `userId`
-  /// alias, so permits written by any app version (some paths historically
-  /// stamped only `userId`, or stamped no hunter uid at all) still render for
-  /// the designated hunter.
+  /// Reactive stream of permits for the authenticated user, served from the
+  /// caller's role-partitioned collection:
+  /// - Outfitters read `outfitter_venison_permits` filtered by `outfitterId`;
+  /// - Hunters read `hunter_venison_permits` filtered by the canonical
+  ///   `hunterId` OR its `userId` alias (both are dual-stamped at issue
+  ///   time), so permits written by any app version still render for the
+  ///   designated hunter.
   ///
   /// The query intentionally does NOT use `.orderBy('createdAt')` server-side:
   /// an equality/OR + orderBy combo requires a composite index; sorting
@@ -212,9 +252,9 @@ class VenisonPermitManager {
 
     final query = isOutfitter
         ? _firestore
-            .collection('venison_permits')
+            .collection(outfitterCollection)
             .where('outfitterId', isEqualTo: uid)
-        : _firestore.collection('venison_permits').where(
+        : _firestore.collection(hunterCollection).where(
               Filter.or(
                 Filter('hunterId', isEqualTo: uid),
                 Filter('userId', isEqualTo: uid),
@@ -224,7 +264,7 @@ class VenisonPermitManager {
     return OfflineStreamGuard.offlineResilient(
       query.snapshots().map(_snapshotToPermits),
       fallback: const <VenisonTransportPermit>[],
-      debugLabel: 'venison_permits',
+      debugLabel: isOutfitter ? outfitterCollection : hunterCollection,
     );
   }
 
@@ -250,32 +290,59 @@ class VenisonPermitManager {
 
   /// Fetch a single permit by ID. Reads cache-first so an offline lookup
   /// still resolves a recently-viewed permit, falling back to the server.
+  /// Searches the outfitter partition first, then the hunter partition, then
+  /// the legacy shared collection (permits issued by older app versions).
   Future<VenisonTransportPermit?> getPermitById(String permitId) async {
-    final docRef = _firestore.collection('venison_permits').doc(permitId);
-    DocumentSnapshot<Map<String, dynamic>> doc;
-    try {
-      doc = await docRef.get(const GetOptions(source: Source.cache));
-    } catch (_) {
-      doc = await docRef.get();
+    for (final collection in const [
+      outfitterCollection,
+      hunterCollection,
+      legacyCollection,
+    ]) {
+      final docRef = _firestore.collection(collection).doc(permitId);
+      DocumentSnapshot<Map<String, dynamic>> doc;
+      try {
+        doc = await docRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        doc = await docRef.get();
+      }
+      if (!doc.exists) continue;
+      final data = Map<String, dynamic>.from(doc.data()!);
+      data['id'] = doc.id;
+      return VenisonTransportPermit.fromMap(data);
     }
-    if (!doc.exists) return null;
-    final data = Map<String, dynamic>.from(doc.data()!);
-    data['id'] = doc.id;
-    return VenisonTransportPermit.fromMap(data);
+    return null;
   }
 
-  /// Update permit status (e.g. 'Issued' → 'Voided' / 'Completed').
+  /// Update permit status (e.g. 'Issued' → 'Voided' / 'Completed') in EVERY
+  /// partition that carries the document, so both roles' views stay in sync.
   Future<void> updatePermitStatus({
     required String permitId,
     required String newStatus,
   }) async {
-    await _firestore.collection('venison_permits').doc(permitId).update({
+    final patch = {
       'status': newStatus,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    final batch = _firestore.batch();
+    var matched = 0;
+    for (final collection in const [
+      outfitterCollection,
+      hunterCollection,
+      legacyCollection,
+    ]) {
+      final ref = _firestore.collection(collection).doc(permitId);
+      final doc = await ref.get();
+      if (!doc.exists) continue;
+      batch.update(ref, patch);
+      matched++;
+    }
+    if (matched == 0) {
+      throw Exception('Permit $permitId not found');
+    }
+    await batch.commit();
   }
 
-  /// Delete a permit and its stored signatures.
+  /// Delete a permit from EVERY partition (and its stored signatures).
   Future<void> deletePermit(String permitId) async {
     // Best-effort cleanup of signature storage.
     try {
@@ -287,7 +354,20 @@ class VenisonPermitManager {
     } catch (_) {
       // Non-fatal — the Firestore doc is the source of truth.
     }
-    await _firestore.collection('venison_permits').doc(permitId).delete();
+    final batch = _firestore.batch();
+    var matched = 0;
+    for (final collection in const [
+      outfitterCollection,
+      hunterCollection,
+      legacyCollection,
+    ]) {
+      final ref = _firestore.collection(collection).doc(permitId);
+      final doc = await ref.get();
+      if (!doc.exists) continue;
+      batch.delete(ref);
+      matched++;
+    }
+    if (matched > 0) await batch.commit();
   }
 
   /// Pre-fills permit fields from a booking + the linked user/outfitter docs.

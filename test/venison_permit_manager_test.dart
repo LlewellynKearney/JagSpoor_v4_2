@@ -35,8 +35,9 @@ void main() {
     String? hunterId,
     String? userId,
     DateTime? createdAt,
+    String collection = VenisonPermitManager.hunterCollection,
   }) async {
-    await fake.collection('venison_permits').add({
+    await fake.collection(collection).add({
       'permitNumber': 'JSV-2026-x',
       'outfitterId': outfitterId ?? 'outfitter-1',
       if (hunterId != null) 'hunterId': hunterId,
@@ -120,8 +121,13 @@ void main() {
   group('getMyPermitsStream (outfitter)', () {
     test('outfitter sees permits they issued (outfitterId == uid)', () async {
       final fake = FakeFirebaseFirestore();
-      await seedPermit(fake, outfitterId: 'outfitter-9', hunterId: 'hunter-1');
-      await seedPermit(fake, outfitterId: 'outfitter-other');
+      await seedPermit(fake,
+          outfitterId: 'outfitter-9',
+          hunterId: 'hunter-1',
+          collection: VenisonPermitManager.outfitterCollection);
+      await seedPermit(fake,
+          outfitterId: 'outfitter-other',
+          collection: VenisonPermitManager.outfitterCollection);
       final results = await manager(fake, 'outfitter-9')
           .getMyPermitsStream(isOutfitter: true)
           .first;
@@ -199,12 +205,21 @@ void main() {
       );
       final id = await manager(fake, 'outfitter-1')
           .issueVenisonPermit(permit: permit);
-      final doc =
-          await fake.collection('venison_permits').doc(id).get();
+      final doc = await fake
+          .collection(VenisonPermitManager.outfitterCollection)
+          .doc(id)
+          .get();
       expect(doc.exists, isTrue);
       expect(doc.data()!['hunterId'], 'hunter-1');
       expect(doc.data()!['userId'], 'hunter-1');
       expect(doc.data()!['outfitterId'], 'outfitter-1');
+      // The hunter partition carries the SAME document id.
+      final hunterDoc = await fake
+          .collection(VenisonPermitManager.hunterCollection)
+          .doc(id)
+          .get();
+      expect(hunterDoc.exists, isTrue);
+      expect(hunterDoc.data()!['hunterId'], 'hunter-1');
     });
 
     test('a hunter self-issued permit stamps the hunter uid under both aliases',
@@ -228,7 +243,10 @@ void main() {
       // The hunter (hunter-1) issues their own permit -- no prefill hunterId.
       final id =
           await manager(fake, 'hunter-1').issueVenisonPermit(permit: permit);
-      final doc = await fake.collection('venison_permits').doc(id).get();
+      final doc = await fake
+          .collection(VenisonPermitManager.hunterCollection)
+          .doc(id)
+          .get();
       expect(doc.data()!['hunterId'], 'hunter-1');
       expect(doc.data()!['userId'], 'hunter-1');
     });
@@ -255,7 +273,10 @@ void main() {
       );
       final id = await manager(fake, 'outfitter-1')
           .issueVenisonPermit(permit: permit);
-      final doc = await fake.collection('venison_permits').doc(id).get();
+      final doc = await fake
+          .collection(VenisonPermitManager.hunterCollection)
+          .doc(id)
+          .get();
       expect(doc.data()!['hunterId'], 'hunter-7');
       expect(doc.data()!['userId'], 'hunter-7');
     });
@@ -280,9 +301,18 @@ void main() {
       );
       final id = await manager(fake, 'outfitter-1')
           .issueVenisonPermit(permit: permit);
-      final doc = await fake.collection('venison_permits').doc(id).get();
+      final doc = await fake
+          .collection(VenisonPermitManager.outfitterCollection)
+          .doc(id)
+          .get();
       expect(doc.data()!.containsKey('hunterId'), isFalse);
       expect(doc.data()!.containsKey('userId'), isFalse);
+      // No hunter uid known -> no hunter-partition copy is written.
+      final hunterDoc = await fake
+          .collection(VenisonPermitManager.hunterCollection)
+          .doc(id)
+          .get();
+      expect(hunterDoc.exists, isFalse);
     });
 
     test('unauthenticated caller is rejected', () async {

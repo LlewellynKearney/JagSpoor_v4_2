@@ -7,11 +7,13 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../models/booking_status.dart';
 import '../models/package_pricing.dart';
 import '../services/booking_activity_classifier.dart';
+import '../services/booking_availability_service.dart';
 import '../services/booking_date_formatter.dart';
 import '../services/package_booking_manager.dart';
 import '../services/outfitter_analytics_service.dart';
 import '../services/photo_gallery_resolver.dart';
 import '../services/pricing_math.dart';
+import '../widgets/booking_availability_strip.dart';
 import '../widgets/outfitter_contact_card.dart';
 import '../widgets/photo_gallery_strip.dart';
 import '../widgets/hunter_scaffold.dart';
@@ -918,6 +920,18 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             ),
             const SizedBox(height: 16),
 
+            // Live date slots: local JagSpoor booking state machine + the
+            // outfitter's configured external booking / ERP availability
+            // service (iCal feed / mock test simulator).
+            if ((widget.data['outfitterId'] as String?)?.isNotEmpty ??
+                false) ...[
+              BookingAvailabilityStrip(
+                outfitterId: widget.data['outfitterId'] as String,
+                theme: widget.theme,
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // Itemized / all-inclusive breakdown.
             _breakdownSection(pricing, inclusions, basePrice),
             const SizedBox(height: 16),
@@ -1318,6 +1332,51 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
 
       if (outfitterId == null) {
         throw Exception('Invalid package: missing outfitter ID');
+      }
+
+      // Verify the advertised availability window against BOTH the local
+      // booking state machine and the outfitter's external availability
+      // service. A conflict does not hard-block (the outfitter's approval is
+      // the real gate), but the hunter is warned before submitting.
+      final window = PackagePricing.fromMap(widget.data);
+      if (window.availabilityStart != null && mounted) {
+        final slotFree = await BookingAvailabilityService.instance.verifySlot(
+          outfitterId: outfitterId,
+          start: window.availabilityStart!,
+          end: window.availabilityEnd ?? window.availabilityStart!,
+        );
+        if (!slotFree && mounted) {
+          final proceed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: widget.theme.cardColor,
+              title: Text(
+                'Date Conflict Detected',
+                style: TextStyle(color: widget.theme.textColor),
+              ),
+              content: Text(
+                'Some dates in this package\'s advertised window are already '
+                'unavailable (local bookings or the outfitter\'s external '
+                'calendar). Submit the booking request anyway?',
+                style: TextStyle(color: widget.theme.subtitleColor),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('CANCEL'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('SUBMIT ANYWAY'),
+                ),
+              ],
+            ),
+          );
+          if (proceed != true) {
+            if (mounted) setState(() => _isLoading = false);
+            return;
+          }
+        }
       }
 
       await PackageBookingManager.instance.bookPackage(

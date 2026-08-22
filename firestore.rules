@@ -305,10 +305,57 @@ service cloud.firestore {
       allow read, write: if ownerOrAdmin('outfitterId');
     }
 
+    // ── Role-partitioned venison / game transport & hunt permits ──
+    // The single shared `venison_permits` collection is split into two
+    // partitions so each role queries its own collection without permission
+    // conflicts: `outfitter_venison_permits` (filterable by `outfitterId`)
+    // and `hunter_venison_permits` (filterable by `hunterId`). Both
+    // partitions carry the full permit document under the SAME document id
+    // (dual-write at issue time), so reads/updates/deletes stay in sync.
+    match /outfitter_venison_permits/{permitId} {
+      // Read: the issuing outfitter (queryable for `.where('outfitterId',
+      // isEqualTo: uid)`), the designated hunter (via `hunterId` OR its
+      // dual-stamped `userId` alias), or an admin.
+      allow read: if isSignedIn() && (
+        resource.data.outfitterId == request.auth.uid ||
+        resource.data.hunterId == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Create / update: any signed-in user may write permit data (both the
+      // outfitter and the hunter co-complete the legal form + signatures),
+      // so outfitters and authorized users can generate venison transport
+      // permits without hitting PERMISSION_DENIED.
+      allow create, update: if isSignedIn();
+      // Delete: only the issuing outfitter or an admin (least-privilege).
+      allow delete: if isOwnerOf('outfitterId') || isAdmin();
+    }
+
+    match /hunter_venison_permits/{permitId} {
+      // Read: the designated hunter (queryable for the
+      // Filter.or(`hunterId` == uid, `userId` == uid) list query — the
+      // server evaluates this rule against every returned doc and guarantees
+      // each satisfies at least one field condition), the issuing outfitter,
+      // or an admin.
+      allow read: if isSignedIn() && (
+        resource.data.hunterId == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.outfitterId == request.auth.uid ||
+        isAdmin()
+      );
+      // Create / update: any signed-in user (both parties co-complete the
+      // legal form + signatures).
+      allow create, update: if isSignedIn();
+      // Delete: only the issuing outfitter or an admin (least-privilege).
+      allow delete: if isOwnerOf('outfitterId') || isAdmin();
+    }
+
     // Venison / game transport & hunt permits — two-party (hunter + outfitter).
-    // Read: the hunter named on the permit OR the issuing outfitter (or admin).
-    // Create: any signed-in party (either role may initiate a permit). Update /
-    // delete: outfitter or admin — the outfitter is the statutory issuer.
+    // LEGACY pre-partition shared collection (read-fallback only; no longer
+    // written). Read: the hunter named on the permit OR the issuing outfitter
+    // (or admin). Create: any signed-in party (either role may initiate a
+    // permit). Update / delete: outfitter or admin — the outfitter is the
+    // statutory issuer.
     match /venison_permits/{permitId} {
       // Read: any signed-in user who is a party to the permit (the
       // outfitter who issued it via `outfitterId`, or the hunter it was

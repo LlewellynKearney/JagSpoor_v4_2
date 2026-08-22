@@ -9622,3 +9622,147 @@ Text widgets gained `Flexible` + ellipsis for narrow-width safety.
   infos baseline). `flutter test` 967/967 pass.
 - Files: `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
   `test/network_diagnostic_hud_test.dart` (NEW), `AGENTS.md`.
+
+## Phase -- External ERP/Calendar Availability Integration + Venison Permits collection split (added 2026-08-22)
+
+Two coordinated features delivered as one unit.
+
+### Task 1 -- External Booking / ERP Availability Integration
+- New abstract **`ExternalBookingAdapter`** (`lib/services/external_booking_adapter.dart`)
+  with `testConnection()`, `fetchUnavailableDates(rangeStart, rangeEnd)`,
+  `verifySlot(start, end)`, and `holdSlot(start, end, reference)`. Dates are
+  normalized to local midnight (`normalizeBookingDate`); `bookingDaysInRange`
+  enumerates inclusive day ranges. Also carries:
+  - `ExternalBookingSystemType` enum (`manual` / `ical` / `mock`) with label +
+    alias-tolerant `fromString`.
+  - `ExternalBookingConfig` model persisted on the outfitter's `users/{uid}`
+    doc under `bookingSync` (the `users` rules already allow owner writes +
+    signed-in reads, so an outfitter manages their own config and a signed-in
+    hunter can read it when resolving availability -- no rules change).
+  - `ExternalBookingAdapters.fromConfig` factory (manual -> null; ical without
+    a feed URL -> null).
+- **`ICalBookingAdapter`** (`lib/services/ical_booking_adapter.dart`): fetches a
+  standard `.ics` feed over HTTPS (injectable `ICalFetch` for tests) with a
+  2-minute in-memory cache, and parses it via the pure `ICalParser` (RFC 5545
+  line unfolding, `DTSTART`/`DTEND` with date + date-time + `VALUE=DATE` +
+  `TZID` forms, all-day DTEND-exclusive blocking, timed events block every
+  spanned day, malformed input yields an empty set). Read-only: `holdSlot`
+  returns false (holds must go through the source calendar).
+- **`MockTestBookingAdapter`** (`lib/services/mock_test_booking_adapter.dart`):
+  fully deterministic offline simulator. Optional explicit `blockedDates` set,
+  or a deterministic pattern (`stableHash` = FNV-1a of `seed|yyyy-MM-dd`,
+  1-in-N days blocked -- Dart's `String.hashCode` is NOT run-stable so a local
+  hash is used). `holdSlot` records in-memory holds that then block subsequent
+  verifies; `testConnection` reflects a `connectionHealthy` flag.
+- **`BookingAvailabilityService`** (`lib/features/hunter_mode/services/`):
+  persists + loads the config (`saveConfig` owner-write to `users/{uid}`;
+  `loadConfig`), and `getAvailability` merges (a) the external adapter's
+  blocked dates with (b) the LOCAL JagSpoor booking state machine: active
+  bookings (Pending Approval / Awaiting Payment / Confirmed -- terminal
+  Declined/Cancelled/Completed free their dates) with the outfitter that the
+  caller may read under the party-scoped `bookings` rules (a hunter sees their
+  OWN bookings with the outfitter; the outfitter sees ALL their bookings).
+  External fetch failures degrade gracefully (`externalReachable=false`,
+  local data still served). `verifySlot` checks the merged set. `forTesting`
+  seam + injectable adapter factory.
+- **"Booking & ERP Sync" settings card** in the Farm Control Panel
+  (`outfitter_enterprise_panel_screen.dart`, below Registered Farms): system
+  type dropdown (Manual / iCal Feed URL / Mock Test), endpoint/feed URL field
+  (or mock seed key), inline TEST CONNECTION (runs the adapter's
+  `testConnection` and renders a green/red result banner) + SAVE buttons,
+  existing config loaded in `initState`.
+- **Hunter booking flow** (`hunter_package_marketplace_screen.dart`): the
+  Package Details confirmation sheet renders a new reusable
+  **`BookingAvailabilityStrip`** (`widgets/booking_availability_strip.dart`)
+  -- a horizontal strip of the next 14 real-time date slots (green available /
+  red unavailable) backed by `BookingAvailabilityService` (local state machine
+  + the outfitter's external service), with a blocked-count summary and a
+  cloud-off indicator when the external feed is unreachable. `_confirmBooking`
+  additionally verifies the package's advertised window via
+  `BookingAvailabilityService.verifySlot` and warns with a
+  "Date Conflict Detected" dialog before submitting (non-blocking: the
+  outfitter's approval remains the real gate).
+- Security note: the local-state contribution intentionally covers only
+  caller-visible bookings (the `bookings` read rule is party-scoped); true
+  cross-hunter blocking is the job of the outfitter's external calendar feed
+  (documented in the service).
+
+### Task 2 -- Venison Permits Firestore collection split
+- The shared `venison_permits` collection is split into
+  **`outfitter_venison_permits`** (filterable by `outfitterId`) and
+  **`hunter_venison_permits`** (filterable by `hunterId` / its `userId`
+  alias). `VenisonPermitManager` exposes the three collection-name constants
+  (`outfitterCollection` / `hunterCollection` / `legacyCollection`).
+- `issueVenisonPermit` dual-writes the SAME document id into both partitions
+  (the hunter partition only when the designated hunter's uid is known);
+  signature URLs + signed timestamps are then patched into every partition
+  copy via a batched write.
+- `getMyPermitsStream(isOutfitter:)` reads the caller's partition
+  (outfitter: `.where('outfitterId' == uid)` on `outfitter_venison_permits`;
+  hunter: `Filter.or(hunterId == uid, userId == uid)` on
+  `hunter_venison_permits`). Both the outfitter permit log
+  (`venison_permit_list_screen.dart`, mode-aware) and the hunter permit log
+  (`hunter_venison_permit_log_screen.dart`) consume this stream, so each role
+  independently views its issued permits without permission conflicts.
+- `getPermitById` resolves across outfitter -> hunter -> legacy partitions
+  (legacy read-fallback keeps permits issued by older app versions
+  exportable); `updatePermitStatus` / `deletePermit` apply to every
+  partition carrying the doc (batch; status update throws when no partition
+  has it).
+- `firestore.rules`: new `match /outfitter_venison_permits/{permitId}` +
+  `match /hunter_venison_permits/{permitId}` blocks (party-scoped read via
+  `outfitterId` / `hunterId` / `userId` / admin; `create, update` for signed-in
+  parties; least-privilege `delete` = outfitter owner or admin). The legacy
+  `venison_permits` block is retained unchanged for old docs.
+  **Deploy reminder**: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env. No new composite indexes required (streams sort
+  client-side).
+- Data migration note: existing permits in the legacy `venison_permits`
+  collection stay readable via `getPermitById` fallback; a one-time admin
+  migration copying legacy docs into the two partitions is a follow-up if
+  legacy list visibility is required.
+
+### Task 3 -- Tests + verification
+- NEW `test/external_booking_adapter_test.dart` (33 tests): config model
+  round-trips + alias parsing, the adapter factory, `ICalParser` (all-day
+  DTEND-exclusive semantics, timed events, folded lines, TZ/UTC forms, range
+  filtering, malformed input), `ICalBookingAdapter` (fetch/verify/hold/
+  connectivity/cache), `MockTestBookingAdapter` (determinism across instances,
+  stable hash, explicit blocks, hold-then-block lifecycle), and the
+  `BookingAvailability` union model.
+- NEW `test/booking_availability_service_test.dart` (12 tests): config
+  persistence (load default / save / unauth rejection), merged availability
+  (hunter own-booking blocking, terminal-status freeing, outfitter sees all,
+  party scope isolation, external merge, graceful external failure), and
+  `verifySlot` against both sources.
+- NEW `test/booking_availability_strip_test.dart` (4 widget tests): header +
+  slot rendering + loading state, blocked-count summary, cloud-off indicator,
+  graceful failure fallback.
+- NEW `test/venison_permit_partitioned_test.dart` (11 tests): collection-name
+  contract, dual-write same-id, outfitter-only write when the hunter uid is
+  unknown, partition-scoped reads, partition isolation (no cross-leak),
+  status propagation, delete across partitions, `getPermitById` resolution +
+  legacy fallback.
+- `test/venison_permit_manager_test.dart` updated to seed/read the
+  partitioned collections; `test/firestore_rules_seeding_test.dart` gained a
+  12-test group asserting the two new rules blocks.
+- **`flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings**
+  (pre-existing infos baseline). **`flutter test`: All 1041 tests passed**
+  (was 967; +74 net). No regressions.
+- Files: `lib/services/external_booking_adapter.dart` (NEW),
+  `lib/services/ical_booking_adapter.dart` (NEW),
+  `lib/services/mock_test_booking_adapter.dart` (NEW),
+  `lib/features/hunter_mode/services/booking_availability_service.dart` (NEW),
+  `lib/features/hunter_mode/widgets/booking_availability_strip.dart` (NEW),
+  `lib/features/hunter_mode/services/venison_permit_manager.dart`,
+  `lib/features/hunter_mode/models/venison_transport_permit.dart`,
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/venison_permit_list_screen.dart`,
+  `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`,
+  `firestore.rules`, `test/external_booking_adapter_test.dart` (NEW),
+  `test/booking_availability_service_test.dart` (NEW),
+  `test/booking_availability_strip_test.dart` (NEW),
+  `test/venison_permit_partitioned_test.dart` (NEW),
+  `test/venison_permit_manager_test.dart`,
+  `test/firestore_rules_seeding_test.dart`, `AGENTS.md`.
