@@ -24,7 +24,6 @@ import 'screens/shot_group_analyzer_screen.dart';
 import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/custom_package_farm_selection_screen.dart';
-import 'screens/hunter_venison_permit_log_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
@@ -403,22 +402,6 @@ class _HunterDashboardState extends State<HunterDashboard> {
               MaterialPageRoute(
                 builder:
                     (context) => CustomPackageFarmSelectionScreen(theme: theme),
-              ),
-            ),
-      ),
-      DashboardFeature(
-        id: 'venison_permit_log',
-        icon: Icons.list_alt_rounded,
-        title: '🦌 My Venison Permits',
-        description:
-            'View and manage your issued venison transport permits, or create a new one.',
-        onTap:
-            (context, theme) => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => HunterVenisonPermitLogScreen(
-                  theme: theme,
-                ),
               ),
             ),
       ),

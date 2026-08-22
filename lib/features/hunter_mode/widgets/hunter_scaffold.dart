@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Shared immersive Solitary Acacia background used across the entire hunter
-/// portal (dashboard, marketplace, bookings, venison permits, profile, custom
-/// package builder).
+/// portal (dashboard, marketplace, bookings, profile, custom package
+/// builder).
 ///
 /// Mirrors the `OutfitterBushveldBackground` architecture: a full-screen
 /// network photo with a two-step fallback chain (bundled `Greater Kudu.jpg`

@@ -23,8 +23,6 @@ void main() {
     'dashboard': 'lib/features/hunter_mode/hunter_dashboard.dart',
     'marketplace':
         'lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart',
-    'venison_permits':
-        'lib/features/hunter_mode/screens/hunter_venison_permit_log_screen.dart',
     'venison_permit_list':
         'lib/features/hunter_mode/screens/venison_permit_list_screen.dart',
     'profile': 'lib/features/hunter_mode/hunter_profile_screen.dart',

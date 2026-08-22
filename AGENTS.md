@@ -1,5 +1,45 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Remove "My Venison Permits" from the Hunter portal (added 2026-08-22)
+
+- Removed the hunter-side venison permit feature entirely while leaving the
+  Outfitter side + backend completely intact:
+  - `hunter_dashboard.dart`: removed the `venison_permit_log`
+    `DashboardFeature` card ("🦌 My Venison Permits") + the
+    `hunter_venison_permit_log_screen.dart` import.
+  - DELETED `lib/features/hunter_mode/screens/hunter_venison_permit_log_screen.dart`
+    (the hunter-only log screen; its only caller was the dashboard card).
+  - `hunter_scaffold.dart` docstring no longer lists venison permits as a
+    hunter portal surface.
+- PRESERVED (outfitter side + backend, all intact):
+  `venison_permit_list_screen.dart` (mode-aware; outfitter dashboard entry),
+  `venison_permit_form_screen.dart`, `venison_permit_details_sheet.dart`,
+  `venison_permit_manager.dart`, `venison_permit_pdf_exporter.dart`,
+  `venison_transport_permit.dart`, and the `outfitter_venison_permits` /
+  `hunter_venison_permits` / legacy `venison_permits` Firestore collections
+  + their rules. `venison_permit_list_screen.dart`'s `isOutfitterMode: false`
+  hunter branch is now unreachable but retained (shared mode-aware widget).
+- No named route existed for the hunter permit log (navigation was via
+  direct `Navigator.push`), so no router change was needed.
+- Tests: `test/hunter_scaffold_rollout_test.dart` rollout map dropped the
+  deleted `venison_permits -> hunter_venison_permit_log_screen.dart` entry;
+  `venison_permit_list` + `venison_permit_form` entries retained (files
+  still exist and carry `HunterScaffold` for their hunter-mode branch).
+  The backend suites (`venison_permit_manager_test`,
+  `venison_permit_model_test`, `venison_permit_partitioned_test`) are
+  unchanged and still pass.
+- Verification: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`:
+  All 1071 tests passed (was 1072; -1 = the removed rollout-map entry).
+- Env note: re-installed Flutter 3.29.1 stable at `/home/openhands/flutter`,
+  `apt-get install unzip xz-utils libsqlite3-dev`, and the
+  `/usr/lib/x86_64-linux-gnu/libsqlite3.so -> libsqlite3.so.0` symlink for
+  the sqflite-FFI integration tests.
+- Files: `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/hunter_mode/screens/hunter_venison_permit_log_screen.dart`
+  (DELETED), `lib/features/hunter_mode/widgets/hunter_scaffold.dart`,
+  `test/hunter_scaffold_rollout_test.dart`, `AGENTS.md`.
+
 ## Phase -- AI Forecaster banner contrast fix + interactive booking date selection w/ Manual-vs-External sync modes (added 2026-08-22)
 
 Three coordinated changes on top of the ERP-availability integration.
