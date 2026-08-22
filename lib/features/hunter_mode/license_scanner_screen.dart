@@ -3,6 +3,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/theme/app_theme.dart';
+import 'services/license_scan_processor.dart';
 
 class LicenseScannerScreen extends StatefulWidget {
   final ThemeController theme;
@@ -29,52 +30,66 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
     _checkCameraPermissions();
   }
 
-  /// Runtime camera permission check using permission_handler
+  /// Runtime camera permission check using permission_handler. Degrades
+  /// gracefully to the permission-denied state when the platform plugin is
+  /// unavailable (unsupported platform / test harness) instead of throwing.
   Future<void> _checkCameraPermissions() async {
-    var status = await Permission.camera.status;
-    
-    if (!status.isGranted) {
-      status = await Permission.camera.request();
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.status;
+      if (!status.isGranted) {
+        status = await Permission.camera.request();
+      }
+    } catch (_) {
+      status = PermissionStatus.permanentlyDenied;
     }
-    
+
     if (!mounted) return;
-    
+
     setState(() {
       if (status.isGranted) {
         _hasPermission = true;
         _permissionDenied = false;
         _initializeScannerController();
-      } else if (status.isPermanentlyDenied) {
+      } else {
+        // Any non-granted status (denied OR permanentlyDenied) must surface
+        // the actionable permission UI; previously a plain denial left the
+        // screen stuck on the loading spinner forever.
         _hasPermission = false;
         _permissionDenied = true;
-      } else {
-        _hasPermission = false;
-        _permissionDenied = false;
       }
     });
   }
 
-  /// Initialize the scanner controller after permission is granted
+  /// Initialize the scanner controller after permission is granted.
+  ///
+  /// Uses [LicenseScannerConfig.buildLiveController], which requests a
+  /// 1920x1080 analysis frame -- the plugin otherwise defaults CameraX to a
+  /// 640x480 analysis frame, too coarse to resolve the dense licence PDF417
+  /// (which is why only the full-resolution gallery path decoded).
   void _initializeScannerController() {
-    _controller = MobileScannerController(
-      formats: const [BarcodeFormat.pdf417],
-      detectionSpeed: DetectionSpeed.noDuplicates,
-    );
+    _controller?.dispose();
+    _controller = LicenseScannerConfig.buildLiveController();
   }
 
   /// Request camera permission again
   Future<void> _requestCameraPermission() async {
-    final status = await Permission.camera.request();
-    
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.request();
+    } catch (_) {
+      status = PermissionStatus.permanentlyDenied;
+    }
+
     if (!mounted) return;
-    
+
     if (status.isGranted) {
       setState(() {
         _hasPermission = true;
         _permissionDenied = false;
       });
       _initializeScannerController();
-    } else if (status.isPermanentlyDenied) {
+    } else {
       setState(() {
         _permissionDenied = true;
       });
@@ -87,17 +102,19 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (_handled || capture.barcodes.isEmpty) return;
-    final barcode = capture.barcodes.first;
+    if (_handled) return;
+    final barcode = LicenseScanProcessor.firstReadable(capture);
+    if (barcode == null) return;
     _finish(barcode);
   }
 
   void _finish(Barcode barcode) {
     if (_handled) return;
-    final List<int>? bytes = barcode.rawBytes;
-    if (bytes == null) return; // Guard against null scan readings safely
-    final raw = barcode.rawValue ?? String.fromCharCodes(bytes);
-    if (raw.isEmpty) {
+    // Tolerate a null rawBytes payload: the live ML Kit stream frequently
+    // returns PDF417 results with only rawValue populated, and discarding
+    // those decodes is what made live scanning appear dead.
+    final raw = LicenseScanProcessor.extractRawValue(barcode);
+    if (raw == null) {
       setState(
         () => _status = 'Barcode found but could not be read. Try again.',
       );
@@ -105,7 +122,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
     }
     _handled = true;
     if (!mounted) return;
-    Navigator.pop(context, _parseLicense(raw));
+    Navigator.pop(context, LicenseScanProcessor.parseLicense(raw));
   }
 
   Future<void> _scanFromGallery() async {
@@ -114,8 +131,13 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
     try {
       final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
       if (file == null) return;
-      final BarcodeCapture? capture = await _controller!.analyzeImage(file.path);
-      if (capture == null || capture.barcodes.isEmpty) {
+      // The fallback decodes the picked photo at its full capture resolution
+      // with the same PDF417 format restriction as the live stream.
+      final BarcodeCapture? capture = await _controller!.analyzeImage(
+        file.path,
+        formats: LicenseScannerConfig.formats,
+      );
+      if (capture == null) {
         setState(
           () =>
               _status =
@@ -123,40 +145,19 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen> {
         );
         return;
       }
-      _finish(capture.barcodes.first);
+      final barcode = LicenseScanProcessor.firstReadable(capture);
+      if (barcode == null) {
+        setState(
+          () =>
+              _status =
+                  'No PDF417 barcode found in that image. Use a sharp, straight, fully-visible shot.',
+        );
+        return;
+      }
+      _finish(barcode);
     } catch (e) {
       setState(() => _status = 'Could not read image: $e');
     }
-  }
-
-  // SA firearm-licence PDF417 is pipe-delimited with fixed positions. Map the
-  // known fields; "NONE" placeholders become empty. Positions confirmed against
-  // a real EMC scan; #2 is intentionally ignored and #7/#18 are serial/licence.
-  Map<String, dynamic> _parseLicense(String raw) {
-    final parts = raw.split('|').map((p) => p.trim()).toList();
-    String at(int i) {
-      if (i < 0 || i >= parts.length) return '';
-      final v = parts[i];
-      return v.toUpperCase() == 'NONE' ? '' : v;
-    }
-
-    return {
-      'isScanned': true,
-      'licenceType': at(0),
-      'idNumber': at(1),
-      'holderName': at(3),
-      'licenceSection': at(4),
-      'issueDate': at(5),
-      'expiryDate': at(6),
-      'serial': at(7),
-      'firearmType': at(8),
-      'make': at(9),
-      'model': at(10),
-      'caliber': at(11),
-      'manufacturer': at(17),
-      'licenseNumber': at(18),
-      'raw': raw,
-    };
   }
 
   @override

@@ -1,5 +1,86 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Digital Firearm Safe barcode scanner real-time recognition fix (added 2026-08-22)
+
+Audited + fixed the Digital Firearm Safe licence scanner
+(`lib/features/hunter_mode/license_scanner_screen.dart`, mobile_scanner
+6.0.11 / CameraX / ML Kit barhopper): the live camera stream never decoded
+the dense SA-licence PDF417 while the static gallery-photo fallback
+(`analyzeImage`) decoded instantly.
+
+### Root causes found
+1. **640x480 default analysis frame** -- `MobileScannerController` with a
+   null `cameraResolution` makes the plugin's CameraX `ImageAnalysis`
+   default to a 640x480 analysis frame (confirmed in the 6.0.11 source
+   docstring). A dense, high-module-count PDF417 is not resolvable at that
+   size; the gallery path decodes the picked photo at its full capture
+   resolution, which is why only the fallback worked.
+2. **`rawBytes == null` guard discarded live decodes** -- `_finish` bailed
+   whenever `barcode.rawBytes` was null, but the live ML Kit stream
+   frequently returns PDF417 results with a populated `rawValue` and null
+   `rawBytes`, so valid live decodes were silently dropped.
+3. **`DetectionSpeed.noDuplicates`** -- forces `detectionTimeoutMs = 0` and
+   routes through the native duplicate filter; the screen already dedupes
+   with its own `_handled` guard, so `DetectionSpeed.normal` (analyze +
+   emit every frame, 250 ms throttle) gives the lowest first-decode
+   latency.
+4. **Infinite spinner on plain permission denial** -- a non-permanent
+   camera-permission denial hit the `else` branch
+   (`_hasPermission=false, _permissionDenied=false`) and left the screen on
+   the loading spinner forever with no way forward.
+
+### Fix
+- NEW `lib/features/hunter_mode/services/license_scan_processor.dart`:
+  - `LicenseScannerConfig` -- shared decoding config:
+    `formats = [BarcodeFormat.pdf417]`,
+    `liveCameraResolution = Size(1920, 1080)` (matches the effective
+    resolution of the full-res gallery decode),
+    `detectionSpeed = DetectionSpeed.normal`,
+    `detectionTimeoutMs = 250`, plus `buildLiveController()` /
+    `buildImageAnalysisController()` factories so the live stream and the
+    fallback upload path share the same symbology restriction.
+  - `LicenseScanProcessor` -- pure, unit-testable processing:
+    `extractRawValue(barcode)` (prefers `rawValue`, falls back to decoding
+    `rawBytes`; rejects only when NEITHER is usable),
+    `firstReadable(capture)` (first barcode with a usable value, skips
+    junk), and `parseLicense(raw)` (the pipe-delimited fixed-position SA
+    licence field map, moved verbatim from the screen).
+- `license_scanner_screen.dart` refactored: live controller built via
+  `LicenseScannerConfig.buildLiveController()`; `_onDetect`/`_finish` route
+  through `LicenseScanProcessor` (null-rawBytes-tolerant); the gallery
+  fallback passes `formats: LicenseScannerConfig.formats` to `analyzeImage`
+  and gates on `firstReadable`; permission checks wrapped in try/catch
+  (degrades to the permission UI when the plugin is unavailable); any
+  non-granted status now shows the actionable permission UI (no more
+  infinite spinner); the retry path disposes the old controller before
+  recreating it (leak fix); the dead `_parseLicense` method was removed.
+
+### Tests + verification
+- NEW `test/license_scanner_processor_test.dart` (22 tests, all pass):
+  config contract (PDF417-only, 1920x1080 >> 640x480 default, normal
+  detection speed, live/gallery format parity); `extractRawValue`
+  (rawValue-only REGRESSION GUARD for the null-rawBytes live-stream bug,
+  rawBytes fallback, both-null/blank rejection); `firstReadable` (empty
+  capture, junk-skipping, all-unreadable); `parseLicense` (full 19-position
+  map, NONE placeholders, short/empty payloads, trimming); 3 widget tests
+  mocking the `flutter.baseflow.com/permissions/methods` channel (plain
+  denial + permanent denial render the actionable permission UI -- the
+  infinite-spinner regression guard; granted renders the scanner surface or
+  the errorBuilder fallback, never the pre-resolution spinner).
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+  (278 pre-existing infos, unchanged baseline -- verified identical on the
+  stashed clean baseline).
+- `flutter test` (full suite): **All 1106 tests passed**, zero failures.
+- Env note: re-installed Flutter 3.29.1 stable at `/home/openhands/flutter`,
+  `apt-get install unzip xz-utils libsqlite3-dev`, and the
+  `/usr/lib/x86_64-linux-gnu/libsqlite3.so -> libsqlite3.so.0` symlink for
+  the sqflite-FFI integration tests.
+- Files: `lib/features/hunter_mode/services/license_scan_processor.dart`
+  (NEW), `lib/features/hunter_mode/license_scanner_screen.dart`,
+  `test/license_scanner_processor_test.dart` (NEW), `AGENTS.md`. No
+  Firestore / Storage / rules / index / pubspec / manifest changes (pure
+  client-side scanner config + processing + tests).
+
 ## Phase -- Interactive availability strip in Custom Package Builder + Trophy Registry booking (added 2026-08-22)
 
 Integrated the `BookingAvailabilityStrip` + `BookingAvailabilityService`
