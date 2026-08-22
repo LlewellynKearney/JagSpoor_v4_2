@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/farm_details.dart';
 import '../models/package_pricing.dart';
+import '../services/booking_availability_service.dart';
 import '../services/farm_details_resolver.dart';
 import '../services/package_booking_manager.dart';
 import '../services/photo_gallery_resolver.dart';
+import 'booking_availability_strip.dart';
 import 'outfitter_contact_card.dart';
 import 'photo_gallery_strip.dart';
 
@@ -32,11 +34,16 @@ class TrophyBookingConfirmationSheet extends StatefulWidget {
   /// asynchronously from the trophy's `farmId` and updates reactively.
   final FarmDetails? farmDetails;
 
+  /// Test seam: override the availability lookup of the embedded
+  /// [BookingAvailabilityStrip] (avoids Firestore + network in widget tests).
+  final Future<BookingAvailability> Function()? availabilityLoader;
+
   const TrophyBookingConfirmationSheet({
     super.key,
     required this.trophy,
     required this.theme,
     this.farmDetails,
+    this.availabilityLoader,
   });
 
   @override
@@ -47,6 +54,10 @@ class TrophyBookingConfirmationSheet extends StatefulWidget {
 class _TrophyBookingConfirmationSheetState
     extends State<TrophyBookingConfirmationSheet> {
   bool _isLoading = false;
+
+  /// The hunt window the hunter picked on the interactive availability
+  /// strip. The booking CANNOT be submitted without a selection.
+  BookingDateSelection? _selectedWindow;
 
   /// The farm snapshot rendered by the header panel. Seeded from
   /// [TrophyBookingConfirmationSheet.farmDetails]; a missing or partial
@@ -99,6 +110,10 @@ class _TrophyBookingConfirmationSheetState
     final price = (trophy['pricePerTrophy'] as num?)?.toDouble() ?? 0.0;
     final measurement = (trophy['trophyMeasurement'] as num?)?.toDouble();
     final soldOut = available <= 0;
+    final outfitterId = (trophy['outfitterId'] as String?) ?? '';
+    // A hunt window MUST be selected on the interactive availability strip
+    // before the trophy booking can be submitted.
+    final selectionRequired = _selectedWindow == null;
 
     return Container(
       decoration: BoxDecoration(
@@ -192,6 +207,24 @@ class _TrophyBookingConfirmationSheetState
             // farm join was incomplete.
             _buildFarmPanel(theme),
             const SizedBox(height: 16),
+
+            // Live, interactive date slots: local JagSpoor booking state
+            // machine + the outfitter's configured availability source
+            // (manual outfitter-managed dates, an iCal feed, or the mock
+            // test simulator). The hunter MUST tap an available (green)
+            // start + end date to select the hunt window before the booking
+            // can be submitted (the BOOK button stays disabled until then).
+            if (outfitterId.isNotEmpty) ...[
+              BookingAvailabilityStrip(
+                outfitterId: outfitterId,
+                theme: theme,
+                availabilityLoader: widget.availabilityLoader,
+                onSelectionChanged: (selection) {
+                  setState(() => _selectedWindow = selection);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Item breakdown (the single trophy line).
             Container(
@@ -369,8 +402,13 @@ class _TrophyBookingConfirmationSheetState
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
+                    // Disabled until the hunter picks a hunt window on the
+                    // availability strip (or while a booking is in flight /
+                    // the trophy is sold out).
                     onPressed:
-                        (_isLoading || soldOut) ? null : _confirmBooking,
+                        (_isLoading || soldOut || selectionRequired)
+                            ? null
+                            : _confirmBooking,
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
                           soldOut ? Colors.grey : const Color(0xFF1565C0),
@@ -404,6 +442,30 @@ class _TrophyBookingConfirmationSheetState
                 ),
               ],
             ),
+
+            // Hint shown while the hunt-window selection is still required.
+            if (selectionRequired && !soldOut)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.touch_app_rounded,
+                        size: 14, color: Colors.amber.shade700),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Select your hunt dates on the availability strip '
+                        'above to enable booking.',
+                        style: TextStyle(
+                          color: Colors.amber.shade700,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -584,6 +646,21 @@ class _TrophyBookingConfirmationSheetState
       'R ${value.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
 
   Future<void> _confirmBooking() async {
+    // Gate: the hunter MUST have picked a hunt window on the interactive
+    // availability strip (the button is disabled without one; this guard is
+    // defense-in-depth).
+    final selection = _selectedWindow;
+    if (selection == null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('Please select your hunt dates on the availability '
+              'strip before booking.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -599,6 +676,49 @@ class _TrophyBookingConfirmationSheetState
         throw Exception('Invalid trophy: missing outfitter ID');
       }
 
+      // Verify the SELECTED hunt window against BOTH the local booking state
+      // machine and the outfitter's availability source (manual
+      // outfitter-managed dates or the external integration). A conflict does
+      // not hard-block (the outfitter's approval is the real gate), but the
+      // hunter is warned before submitting.
+      final slotFree = await BookingAvailabilityService.instance.verifySlot(
+        outfitterId: outfitterId,
+        start: selection.start,
+        end: selection.end,
+      );
+      if (!slotFree && mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: widget.theme.cardColor,
+            title: Text(
+              'Date Conflict Detected',
+              style: TextStyle(color: widget.theme.textColor),
+            ),
+            content: Text(
+              'Some dates in the selected hunt window are already '
+              'unavailable (local bookings or the outfitter\'s availability '
+              'calendar). Submit the booking request anyway?',
+              style: TextStyle(color: widget.theme.subtitleColor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('CANCEL'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('SUBMIT ANYWAY'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+      }
+
       await PackageBookingManager.instance.bookTrophyStock(
         trophyId: (trophy['id'] as String?) ?? '',
         outfitterId: outfitterId,
@@ -612,6 +732,10 @@ class _TrophyBookingConfirmationSheetState
         farmName: trophy['farmName'] as String?,
         district: trophy['town'] as String?,
         province: trophy['province'] as String?,
+        // The hunter's interactive availability-strip hunt window (written
+        // onto the booking under both date-key families).
+        selectedStart: selection.start,
+        selectedEnd: selection.end,
       );
 
       if (mounted) {

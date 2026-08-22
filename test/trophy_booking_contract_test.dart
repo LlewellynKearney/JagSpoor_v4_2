@@ -54,6 +54,77 @@ void main() {
           reason: 'Confirming must execute the standard booking process via '
               'PackageBookingManager.bookTrophyStock.');
     });
+
+    test('the sheet embeds the interactive availability strip and REQUIRES '
+        'a hunt-window selection before booking', () {
+      expect(sheetSrc.contains('BookingAvailabilityStrip('), isTrue,
+          reason: 'The trophy booking sheet must render the live interactive '
+              'date-availability strip (manual blackout dates / external '
+              'ERP integration).');
+      expect(sheetSrc.contains('onSelectionChanged'), isTrue);
+      expect(sheetSrc.contains('_selectedWindow'), isTrue);
+      expect(sheetSrc.contains('selectionRequired'), isTrue,
+          reason: 'The BOOK button must stay disabled until the hunter picks '
+              'a hunt window on the strip.');
+      expect(
+          sheetSrc.contains(
+              'Please select your hunt dates on the availability'),
+          isTrue,
+          reason: 'The confirm handler must validate that a hunt window was '
+              'selected (defense-in-depth guard).');
+    });
+
+    test('the sheet verifies the selected window against the availability '
+        'service and passes it to the booking', () {
+      expect(sheetSrc.contains('BookingAvailabilityService.instance.verifySlot'),
+          isTrue,
+          reason: 'Confirming must conflict-check the selected hunt window '
+              'against local bookings + the outfitter availability source.');
+      expect(sheetSrc.contains('Date Conflict Detected'), isTrue);
+      expect(sheetSrc.contains('selectedStart: selection.start'), isTrue);
+      expect(sheetSrc.contains('selectedEnd: selection.end'), isTrue,
+          reason: 'The hunter-selected window must be written onto the '
+              'trophy booking document.');
+    });
+  });
+
+  group('Custom Package Builder -- interactive availability strip wiring', () {
+    final builderSrc = File(
+      'lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart',
+    ).readAsStringSync();
+
+    test('the builder embeds the interactive availability strip', () {
+      expect(builderSrc.contains('BookingAvailabilityStrip('), isTrue);
+      expect(builderSrc.contains('onSelectionChanged: _onWindowSelected'),
+          isTrue);
+      expect(builderSrc.contains('_selectedWindow'), isTrue);
+    });
+
+    test('submission is gated on a strip date selection', () {
+      expect(
+          builderSrc.contains(
+              'Please select your hunt dates on the availability strip.'),
+          isTrue,
+          reason: '_submitBooking must reject when no hunt window is '
+              'selected on the strip.');
+      expect(builderSrc.contains('_selectedWindow == null'), isTrue,
+          reason: 'The submit button must stay disabled until a hunt window '
+              'is selected.');
+    });
+
+    test('the submit path conflict-checks the selected window', () {
+      expect(
+          builderSrc
+              .contains('BookingAvailabilityService.instance.verifySlot'),
+          isTrue);
+      expect(builderSrc.contains('Date Conflict Detected'), isTrue);
+    });
+
+    test('the strip selection drives the booking check-in/check-out dates',
+        () {
+      expect(builderSrc.contains('_checkIn = selection?.start'), isTrue);
+      expect(builderSrc.contains('_checkOut = selection?.end'), isTrue);
+    });
   });
 
   group('PackageBookingManager.bookTrophyStock -- booking transaction '
@@ -109,6 +180,22 @@ void main() {
           isTrue,
           reason: 'The last animal must flip the stock entry to sold_out in '
               'the same transaction (no race window).');
+    });
+
+    test('accepts the hunter-selected hunt window + writes it under both '
+        'date-key families', () {
+      final method = _methodBody(managerSrc, 'bookTrophyStock');
+      expect(managerSrc.contains('DateTime? selectedStart'), isTrue);
+      expect(managerSrc.contains('DateTime? selectedEnd'), isTrue);
+      expect(method.contains("'startDate': Timestamp.fromDate(selStart)"),
+          isTrue,
+          reason: 'The hunter-selected strip window must be written onto the '
+              'booking doc under the startDate/endDate keys.');
+      expect(
+          method.contains("'availabilityStart': Timestamp.fromDate(selStart)"),
+          isTrue,
+          reason: 'The window must ALSO be written under '
+              'availabilityStart/availabilityEnd (dual-key guarantee).');
     });
 
     test('guard logic: a stock doc with 0 available cannot be booked', () {

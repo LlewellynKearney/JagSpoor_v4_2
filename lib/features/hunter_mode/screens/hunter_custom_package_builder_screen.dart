@@ -10,7 +10,9 @@ import '../models/booking_status.dart';
 import '../models/farm_details.dart';
 import '../models/farm_game_price_entry.dart';
 import '../models/farm_service_rate.dart';
+import '../services/booking_availability_service.dart';
 import '../services/farm_game_price_list_manager.dart';
+import '../widgets/booking_availability_strip.dart';
 import '../widgets/photo_gallery_strip.dart';
 import '../widgets/hunter_scaffold.dart';
 
@@ -53,12 +55,17 @@ class HunterCustomPackageBuilderScreen extends StatefulWidget {
   /// `farmName`).
   String get farmName => farmDetails.displayName;
 
+  /// Test seam: override the availability lookup of the embedded
+  /// [BookingAvailabilityStrip] (avoids Firestore + network in widget tests).
+  final Future<BookingAvailability> Function()? availabilityLoader;
+
   const HunterCustomPackageBuilderScreen({
     super.key,
     required this.theme,
     required this.farmId,
     required this.farmDetails,
     required this.outfitterId,
+    this.availabilityLoader,
   });
 
   @override
@@ -76,6 +83,12 @@ class _HunterCustomPackageBuilderScreenState
   DateTime? _checkOut;
   int _hunterCount = 1;
   int _observerCount = 0;
+
+  /// The hunt window the hunter picked on the interactive availability
+  /// strip. A submission CANNOT proceed without a selection — this is the
+  /// required date-selection mechanism (the strip respects the outfitter's
+  /// manual blackout dates / external ERP integration in real time).
+  BookingDateSelection? _selectedWindow;
 
   // Item rows (species) + fee rows (itemized services), each with qty.
   final Map<String, int> _quantities = {}; // keyed by stable row id
@@ -255,6 +268,14 @@ class _HunterCustomPackageBuilderScreenState
       _showError('Please add at least one species or service line.');
       return;
     }
+    // Gate: the hunter MUST pick the hunt window on the interactive
+    // availability strip (the submit button is disabled without one; this
+    // guard is defense-in-depth).
+    final selection = _selectedWindow;
+    if (selection == null) {
+      _showError('Please select your hunt dates on the availability strip.');
+      return;
+    }
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       _showError('Please log in to continue');
@@ -269,6 +290,49 @@ class _HunterCustomPackageBuilderScreenState
 
     setState(() => _isSubmitting = true);
     try {
+      // Verify the SELECTED hunt window against BOTH the local booking state
+      // machine and the outfitter's availability source (manual
+      // outfitter-managed dates or the external integration). A conflict does
+      // not hard-block (the outfitter's approval is the real gate), but the
+      // hunter is warned before submitting.
+      final slotFree = await BookingAvailabilityService.instance.verifySlot(
+        outfitterId: outfitterId,
+        start: selection.start,
+        end: selection.end,
+      );
+      if (!slotFree && mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: HunterUi.cardColor(widget.theme),
+            title: Text(
+              'Date Conflict Detected',
+              style: TextStyle(color: HunterUi.titleColor(widget.theme)),
+            ),
+            content: Text(
+              'Some dates in the selected hunt window are already '
+              'unavailable (local bookings or the outfitter\'s availability '
+              'calendar). Submit the booking request anyway?',
+              style: TextStyle(color: HunterUi.subtitleColor(widget.theme)),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('CANCEL'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('SUBMIT ANYWAY'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) {
+          if (mounted) setState(() => _isSubmitting = false);
+          return;
+        }
+      }
+
       final selectedItems = _collectSelectedSpecies();
       final lodgingCatering = _collectSelectedFees();
       final total = _grandTotal;
@@ -321,25 +385,14 @@ class _HunterCustomPackageBuilderScreenState
   String _toIsoDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  Future<void> _pickDate({required bool isCheckIn}) async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: (isCheckIn ? _checkIn : _checkOut) ??
-          (isCheckIn ? now : (_checkIn ?? now)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 730)),
-    );
-    if (picked == null) return;
+  /// Handles the hunter's tap-selection on the interactive availability
+  /// strip: stores the [BookingDateSelection] and mirrors it onto the
+  /// check-in / check-out dates written onto the booking document.
+  void _onWindowSelected(BookingDateSelection? selection) {
     setState(() {
-      if (isCheckIn) {
-        _checkIn = picked;
-        if (_checkOut != null && _checkOut!.isBefore(picked)) {
-          _checkOut = picked;
-        }
-      } else {
-        _checkOut = picked;
-      }
+      _selectedWindow = selection;
+      _checkIn = selection?.start;
+      _checkOut = selection?.end;
     });
   }
 
@@ -612,7 +665,21 @@ class _HunterCustomPackageBuilderScreenState
     );
   }
 
+  /// The hunt-window card: the interactive live availability strip is the
+  /// REQUIRED date-selection mechanism. It renders real-time available date
+  /// slots respecting the outfitter's manual blackout dates (manual mode) or
+  /// the connected external ERP / iCal / mock integration, merged with the
+  /// local JagSpoor booking state machine. The hunter taps an available
+  /// (green) start date + an end date; blocked (red) days are not
+  /// selectable. The custom package request cannot be submitted until a
+  /// window is selected.
   Widget _buildDatesCard(ThemeController theme) {
+    // The strip resolves availability against the outfitter's booking-sync
+    // config; prefer the route arg, fall back to the price-list-stamped id
+    // (the same resolution the submit path uses).
+    final outfitterId = widget.outfitterId.isNotEmpty
+        ? widget.outfitterId
+        : _resolvedOutfitterId();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -624,72 +691,46 @@ class _HunterCustomPackageBuilderScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader(theme, 'Hunt Window', Icons.event_rounded),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _dateButton(
-                  theme,
-                  label: 'Check-in',
-                  value: _checkIn,
-                  onTap: () => _pickDate(isCheckIn: true),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _dateButton(
-                  theme,
-                  label: 'Check-out',
-                  value: _checkOut,
-                  onTap: () => _pickDate(isCheckIn: false),
-                ),
-              ),
-            ],
+          const SizedBox(height: 4),
+          Text(
+            'Required — pick your hunting dates below.',
+            style: TextStyle(
+              color: HunterUi.subtitleColor(theme),
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+            ),
           ),
+          const SizedBox(height: 10),
+          if (outfitterId.isEmpty)
+            Text(
+              'Live availability is unavailable until this farm\'s outfitter '
+              'can be identified.',
+              style: TextStyle(
+                color: HunterUi.subtitleColor(theme),
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            BookingAvailabilityStrip(
+              outfitterId: outfitterId,
+              theme: theme,
+              // 28 days so multi-week hunts fit in the strip.
+              dayCount: 28,
+              availabilityLoader: widget.availabilityLoader,
+              onSelectionChanged: _onWindowSelected,
+            ),
           if (_huntingDays > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '$_huntingDays hunting day${_huntingDays != 1 ? 's' : ''}',
+                '$_huntingDays hunting day${_huntingDays != 1 ? 's' : ''} '
+                'selected (${_toIsoDate(_checkIn!)} → ${_toIsoDate(_checkOut!)})',
                 style: TextStyle(
                     color: HunterUi.subtitleColor(theme), fontSize: 12),
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _dateButton(ThemeController theme,
-      {required String label, DateTime? value, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-        decoration: BoxDecoration(
-          color: theme.accentColor.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: theme.accentColor.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: HunterUi.subtitleColor(theme), fontSize: 11)),
-            const SizedBox(height: 2),
-            Text(
-              value == null
-                  ? 'Select date'
-                  : _toIsoDate(value),
-              style: TextStyle(
-                  color: HunterUi.titleColor(theme),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -833,11 +874,37 @@ class _HunterCustomPackageBuilderScreenState
             ],
           ),
           const SizedBox(height: 16),
+          // The hunt-window selection is REQUIRED: the submit button stays
+          // disabled until the hunter picks dates on the availability strip.
+          if (_totalLineCount > 0 && _selectedWindow == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.touch_app_rounded,
+                      size: 14, color: Colors.amber.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Select your hunt dates on the availability strip above '
+                      'to enable submission.',
+                      style: TextStyle(
+                        color: Colors.amber.shade700,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: (_totalLineCount == 0 || _isSubmitting)
+              onPressed: (_totalLineCount == 0 ||
+                      _isSubmitting ||
+                      _selectedWindow == null)
                   ? null
                   : _submitBooking,
               style: ElevatedButton.styleFrom(

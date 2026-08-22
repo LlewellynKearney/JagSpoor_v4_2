@@ -1,5 +1,70 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Interactive availability strip in Custom Package Builder + Trophy Registry booking (added 2026-08-22)
+
+Integrated the `BookingAvailabilityStrip` + `BookingAvailabilityService`
+(the real-time date-slot picker that respects the outfitter's manual
+blackout dates / external ERP-iCal-Mock adapter, merged with the local
+JagSpoor booking state machine) into the two remaining hunter booking
+flows, completing the rollout that started with the package marketplace
+confirmation sheet.
+
+### Custom Package Builder (`hunter_custom_package_builder_screen.dart`)
+- The "Hunt Window" card's two plain `showDatePicker` buttons were replaced
+  with the interactive `BookingAvailabilityStrip` (`dayCount: 28` so
+  multi-week hunts fit; tap an available green start date, then an end
+  date; blocked red days are not selectable). `_onWindowSelected` stores
+  the `BookingDateSelection` and mirrors it onto `_checkIn`/`_checkOut`
+  (so the booking doc's `checkInDate`/`checkOutDate`/`huntingDays` writes
+  are unchanged). The dead `_pickDate`/`_dateButton` methods were removed.
+- Submission is now GATED on a strip selection: the submit button stays
+  disabled (`_selectedWindow == null`) with an explanatory amber hint, and
+  `_submitBooking` validates the selection first (red snackbar
+  defense-in-depth). Before writing the booking it conflict-checks the
+  selected window via `BookingAvailabilityService.verifySlot` and shows the
+  same non-blocking "Date Conflict Detected" (SUBMIT ANYWAY / CANCEL)
+  dialog the marketplace uses (the outfitter's approval remains the real
+  gate). New optional `availabilityLoader` ctor seam for widget tests.
+
+### Trophy Registry & Booking (`trophy_booking_confirmation_sheet.dart`)
+- The sheet now renders the interactive `BookingAvailabilityStrip` (14-day
+  default) between the farm panel and the item breakdown, gated on a
+  non-empty `outfitterId`. "BOOK THIS TROPHY" stays DISABLED until a hunt
+  window is selected (amber hint explains why); `_confirmBooking` guards
+  the selection (red snackbar), conflict-checks via `verifySlot` with the
+  standard "Date Conflict Detected" dialog, and passes
+  `selectedStart`/`selectedEnd` through.
+- `PackageBookingManager.bookTrophyStock` gained `DateTime? selectedStart`/
+  `selectedEnd` params (same partial-selection normalization as
+  `bookPackage`: end-only collapses to a single day, end-before-start
+  clamps). The booking doc now writes the hunter-selected window under BOTH
+  date-key families (`startDate`/`endDate` + `availabilityStart`/
+  `availabilityEnd`, Firestore Timestamps) so the booking cards, the
+  calendar resolver, and the availability service's local-state blocker all
+  resolve it.
+
+### Tests + verification
+- `test/trophy_booking_contract_test.dart` +8 structural tests (sheet strip
+  wiring + required-selection gate + verifySlot conflict check + selected
+  window pass-through; builder strip wiring + submit gate + checkIn/Out
+  mirroring; `bookTrophyStock` dual-key date-write contract).
+- `test/hunter_booking_availability_integration_test.dart` (NEW, 6 widget
+  tests): trophy sheet renders the strip + BOOK disabled until selection +
+  blocked days unselectable; builder renders the strip + submit disabled
+  until a window is picked (even with line items) + enabled after selecting
+  a start/end + blocked days keep submission disabled. The builder tests
+  seed `farm_pricelists` in `FakeFirebaseFirestore` + a uid resolver so the
+  full form renders (the strip's `availabilityLoader` seam keeps the tests
+  offline).
+- `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings (277
+  pre-existing infos, unchanged baseline). `flutter test`: all pass.
+- Files: `lib/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart`,
+  `lib/features/hunter_mode/widgets/trophy_booking_confirmation_sheet.dart`,
+  `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `test/trophy_booking_contract_test.dart`,
+  `test/hunter_booking_availability_integration_test.dart` (NEW),
+  `AGENTS.md`. No Firestore rules / index / Storage / pubspec changes.
+
 ## Phase -- Remove "My Venison Permits" from the Hunter portal (added 2026-08-22)
 
 - Removed the hunter-side venison permit feature entirely while leaving the

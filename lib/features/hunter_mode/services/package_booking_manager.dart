@@ -447,6 +447,17 @@ class PackageBookingManager {
     String? farmName,
     String? district,
     String? province,
+
+    /// The hunt window the hunter selected on the interactive booking
+    /// availability strip (REQUIRED by the trophy booking confirmation
+    /// sheet). Written onto the booking document under BOTH the
+    /// `startDate`/`endDate` AND `availabilityStart`/`availabilityEnd` key
+    /// families (as Firestore Timestamps) so every downstream consumer --
+    /// the booking cards, the calendar resolver, the availability service's
+    /// local-state blocker -- resolves the hunter-chosen window under
+    /// whichever alias it reads.
+    DateTime? selectedStart,
+    DateTime? selectedEnd,
   }) async {
     // Validate authentication
     if (_currentUserId == null) {
@@ -465,6 +476,12 @@ class PackageBookingManager {
     if (pricePerTrophyRands <= 0) {
       throw Exception('Price per trophy must be greater than zero');
     }
+
+    // Normalize a partial hunter selection (same contract as bookPackage):
+    // an end-only selection collapses to a single-day window; a null start
+    // with a null end leaves the booking without date keys.
+    final DateTime? selStart = selectedStart ?? selectedEnd;
+    final DateTime? selEnd = selectedStart != null ? selectedEnd : null;
 
     final trophyRef = _firestore
         .collection(OutfitterEnterpriseManager.trophyStockCollection)
@@ -542,6 +559,26 @@ class PackageBookingManager {
         // commission.
         'basePriceRands': pricePerTrophyRands,
         'totalHunterPriceRands': pricePerTrophyRands,
+        // The hunter's interactive availability-strip hunt window, written
+        // under BOTH date-key families (mirrors bookPackage's dual-key
+        // guarantee) so the booking cards, the calendar resolver, and the
+        // availability service's local-state blocker all resolve it. The
+        // trophy sheet gates booking on a strip selection, so this is always
+        // populated for new bookings.
+        if (selStart != null) ...{
+          'startDate': Timestamp.fromDate(selStart),
+          'endDate': Timestamp.fromDate(
+            (selEnd != null && !selEnd.isBefore(selStart))
+                ? selEnd
+                : selStart,
+          ),
+          'availabilityStart': Timestamp.fromDate(selStart),
+          'availabilityEnd': Timestamp.fromDate(
+            (selEnd != null && !selEnd.isBefore(selStart))
+                ? selEnd
+                : selStart,
+          ),
+        },
         'status': BookingStatus.pendingApproval,
         'bookingTimestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
