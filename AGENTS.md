@@ -1,6 +1,33 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Android CI build fix: minSdk 23 + NDK 27 pin (added 2026-08-22)
+
+The "Build Android APK" CI job (`flutter build apk --debug`) failed at
+`:app:processDebugMainManifest`: the manifest merger rejected
+`uses-sdk:minSdkVersion 21` (from `minSdk = flutter.minSdkVersion`, which is
+21 on the Flutter 3.29.1 pin) because the resolved Firebase plugins
+(`firebase_analytics` 12.4.6 et al.) now declare `minSdk 23` in their
+library manifests. Fix in `android/app/build.gradle.kts`:
+
+- `defaultConfig.minSdk = 23` (explicit; was `flutter.minSdkVersion`).
+- `ndkVersion = "27.0.12077973"` (was `flutter.ndkVersion` = 26.3.11579264).
+  All ~35 resolved plugins declare NDK 27.0.12077973; the pin silences the
+  per-build plugin-NDK-mismatch warning. NDKs are backward compatible.
+
+Notes:
+- The release signing config was already CI-safe (the `key.properties`
+  existence check wraps it, and CI builds the debug variant with the debug
+  signing config).
+- The `Error detected in pubspec.yaml: Unexpected child "config" found
+  under "flutter"` line in the build log is the documented pre-existing
+  spurious warning (also emitted by `flutter test`); it is non-fatal and
+  did NOT cause the failure -- the build continued 4m42s past it to the
+  manifest merger.
+- Verification: CI run 32589118835 -- Build Android APK green (8m40s),
+  Deploy + Notify green; iOS unchanged (pre-existing green).
+- Files: `android/app/build.gradle.kts`, `AGENTS.md`.
+
 ## Phase -- Test suite hardening: Windows path portability + fake-Firestore farm resolver binding (added 2026-08-22)
 
 Test-only hardening pass; no production code changed. The named suites all
