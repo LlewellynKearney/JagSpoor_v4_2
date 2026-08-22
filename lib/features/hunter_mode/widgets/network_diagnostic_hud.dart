@@ -187,7 +187,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           _buildOfflineBar(isDarkMode),
 
         // AI Game Movement Activity Forecaster Row
-        _buildGameMovementForecaster(),
+        _buildGameMovementForecaster(isDarkMode),
       ],
     );
   }
@@ -440,7 +440,13 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
 
   /// Builds the AI Game Movement Activity Forecaster row.
   /// Displays real-time movement probability based on barometric pressure and solunar data.
-  Widget _buildGameMovementForecaster() {
+  ///
+  /// Mode-aware solid wrapper (mirrors the Cloud Sync Telemetry banner) so the
+  /// banner never blends into the Solitary Acacia background photo/scrim: in
+  /// Light Mode a warm cream/off-white card surface with a defined deep-green
+  /// border + deep espresso text; in Dark Mode a solid very-dark olive surface
+  /// with a bright-green border + bright light-green text.
+  Widget _buildGameMovementForecaster(bool isDarkMode) {
     // Determine activity level label and color based on probability
     String activityLabel;
     Color activityColor;
@@ -456,7 +462,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
       activityIcon = '🦌';
     } else if (_movementProbability >= 50) {
       activityLabel = 'MODERATE';
-      activityColor = Colors.amber;
+      activityColor = Colors.amber.shade700;
       activityIcon = '🦌';
     } else if (_movementProbability >= 35) {
       activityLabel = 'LOW ACTIVITY';
@@ -467,6 +473,25 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
       activityColor = Colors.red;
       activityIcon = '❄️';
     }
+
+    // Mode-aware palette: solid surface + defined border + high-contrast text.
+    final surfaceColor =
+        isDarkMode ? const Color(0xFF1E3011) : HunterUi.lightCard;
+    final borderColor =
+        isDarkMode ? const Color(0xFF7CB342) : const Color(0xFF4F6E33);
+    final titleColor =
+        isDarkMode ? const Color(0xFFCDEBA8) : HunterUi.lightTitle;
+    final bodyColor =
+        isDarkMode ? const Color(0xFFA8CF9B) : HunterUi.lightBody;
+    final iconColor =
+        isDarkMode ? const Color(0xFF7CB342) : const Color(0xFF2E4A1C);
+
+    // Solid activity chip: the chip surface takes the activity colour and the
+    // text colour is picked for contrast against it (white on dark colours,
+    // deep espresso on light ones), so it stays readable in BOTH modes.
+    final chipTextColor = activityColor.computeLuminance() > 0.45
+        ? HunterUi.lightTitle
+        : Colors.white;
 
     // Add weather condition indicator
     String weatherCondition = '';
@@ -484,20 +509,15 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            activityColor.withValues(alpha: 0.15),
-            activityColor.withValues(alpha: 0.05),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          top: BorderSide(
-            color: activityColor.withValues(alpha: 0.3),
-            width: 1,
+        color: surfaceColor,
+        border: Border.all(color: borderColor, width: 1.6),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDarkMode ? 0.5 : 0.25),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -514,7 +534,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                 child: Text(
                   'AI GAME MOVEMENT ACTIVITY FORECASTER: ',
                   style: TextStyle(
-                    color: Color(0xFF2E3D2F),
+                    color: titleColor,
                     fontWeight: FontWeight.bold,
                     fontSize: 11,
                     letterSpacing: 0.5,
@@ -524,31 +544,35 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: activityColor.withValues(alpha: 0.3),
+                  color: activityColor,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   '${_movementProbability.toStringAsFixed(0)}%',
                   style: TextStyle(
-                    color: Color(0xFF2E3D2F),
+                    color: chipTextColor,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: activityColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  '($activityLabel)',
-                  style: TextStyle(
-                    color: Color(0xFF2E3D2F),
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: activityColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '($activityLabel)',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: chipTextColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -561,11 +585,11 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
             child: Row(
               children: [
                 // Pressure info
-                Icon(Icons.speed, color: Color(0xFF2E3D2F), size: 12),
+                Icon(Icons.speed, color: iconColor, size: 12),
                 const SizedBox(width: 4),
                 Text(
                   '${_barometricPressureHpa.toStringAsFixed(1)} hPa',
-                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
+                  style: TextStyle(color: bodyColor, fontSize: 11),
                 ),
                 const SizedBox(width: 8),
                 // Weather condition
@@ -573,25 +597,25 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                   _pressureDeltaLast3Hours < 0
                       ? Icons.arrow_downward
                       : Icons.arrow_upward,
-                  color: Color(0xFF2E3D2F),
+                  color: iconColor,
                   size: 12,
                 ),
                 const SizedBox(width: 2),
                 Text(
                   weatherCondition,
-                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
+                  style: TextStyle(color: bodyColor, fontSize: 11),
                 ),
                 const SizedBox(width: 8),
                 // Moon phase indicator
                 Icon(
                   Icons.nightlight_round,
-                  color: Color(0xFF2E3D2F),
+                  color: iconColor,
                   size: 12,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   'Moon $_moonPhasePercent%',
-                  style: TextStyle(color: Color(0xFF2E3D2F), fontSize: 11),
+                  style: TextStyle(color: bodyColor, fontSize: 11),
                 ),
                 // Solunar indicator
                 if (_isMajorSolunarWindow) ...[
@@ -602,7 +626,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                       vertical: 1,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.3),
+                      color: Colors.amber,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -610,14 +634,14 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
                       children: [
                         Icon(
                           Icons.auto_awesome,
-                          color: Color(0xFF2E3D2F),
+                          color: HunterUi.lightTitle,
                           size: 10,
                         ),
                         const SizedBox(width: 2),
                         Text(
                           'SOLUNAR',
                           style: TextStyle(
-                            color: Color(0xFF2E3D2F),
+                            color: HunterUi.lightTitle,
                             fontSize: 8,
                             fontWeight: FontWeight.bold,
                           ),

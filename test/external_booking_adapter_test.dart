@@ -51,6 +51,137 @@ void main() {
     });
   });
 
+  group('ExternalBookingConfig manual blocked dates', () {
+    test('defaults to an empty manual blocked set', () {
+      const config = ExternalBookingConfig();
+      expect(config.manualBlockedDates, isEmpty);
+      expect(
+        config.toMap()['manualBlockedDates'],
+        isA<List>().having((l) => l.length, 'length', 0),
+      );
+    });
+
+    test('manual blocked dates round-trip via toMap/fromMap', () {
+      final config = ExternalBookingConfig(
+        systemType: ExternalBookingSystemType.manual,
+        manualBlockedDates: {
+          DateTime(2026, 9, 3),
+          DateTime(2026, 9, 5),
+        },
+      );
+      final restored = ExternalBookingConfig.fromMap(config.toMap());
+      expect(
+        restored.manualBlockedDates,
+        {DateTime(2026, 9, 3), DateTime(2026, 9, 5)},
+      );
+    });
+
+    test('toMap serializes manual dates as sorted ISO yyyy-MM-dd keys', () {
+      final config = ExternalBookingConfig(
+        manualBlockedDates: {
+          DateTime(2026, 9, 5),
+          DateTime(2026, 9, 3),
+        },
+      );
+      expect(
+        config.toMap()['manualBlockedDates'],
+        ['2026-09-03', '2026-09-05'],
+      );
+    });
+
+    test('fromMap tolerates malformed / non-string entries', () {
+      final config = ExternalBookingConfig.fromMap({
+        'type': 'manual',
+        'manualBlockedDates': ['2026-09-03', 'garbage', 42, null],
+      });
+      expect(config.manualBlockedDates, {DateTime(2026, 9, 3)});
+    });
+
+    test('fromMap tolerates a missing manualBlockedDates key', () {
+      final config = ExternalBookingConfig.fromMap({'type': 'manual'});
+      expect(config.manualBlockedDates, isEmpty);
+    });
+
+    test('copyWith carries the manual blocked dates', () {
+      final config = ExternalBookingConfig(
+        manualBlockedDates: {DateTime(2026, 9, 3)},
+      ).copyWith(feedUrl: 'x');
+      expect(config.feedUrl, 'x');
+      expect(config.manualBlockedDates, {DateTime(2026, 9, 3)});
+      // Overriding the set replaces it.
+      final replaced = config.copyWith(manualBlockedDates: {DateTime(2026, 1, 1)});
+      expect(replaced.manualBlockedDates, {DateTime(2026, 1, 1)});
+    });
+  });
+
+  group('booking date key helpers', () {
+    test('bookingDateKey emits ISO yyyy-MM-dd with zero padding', () {
+      expect(bookingDateKey(DateTime(2026, 9, 3)), '2026-09-03');
+      expect(bookingDateKey(DateTime(2026, 12, 25)), '2026-12-25');
+      // Time-of-day is normalized away.
+      expect(bookingDateKey(DateTime(2026, 9, 3, 14, 30)), '2026-09-03');
+    });
+
+    test('parseBookingDateKey parses ISO keys to midnight', () {
+      expect(parseBookingDateKey('2026-09-03'), DateTime(2026, 9, 3));
+      expect(parseBookingDateKey(' 2026-09-03 '), DateTime(2026, 9, 3));
+    });
+
+    test('parseBookingDateKey returns null for null / malformed input', () {
+      expect(parseBookingDateKey(null), isNull);
+      expect(parseBookingDateKey('not-a-date'), isNull);
+      expect(parseBookingDateKey(''), isNull);
+    });
+  });
+
+  group('BookingDateSelection', () {
+    test('single-day selection (no end) has dayCount 1', () {
+      final sel = BookingDateSelection(start: DateTime(2026, 9, 3));
+      expect(sel.start, DateTime(2026, 9, 3));
+      expect(sel.end, DateTime(2026, 9, 3));
+      expect(sel.dayCount, 1);
+    });
+
+    test('range factory orders the endpoints (end >= start)', () {
+      final sel = BookingDateSelection.range(
+        DateTime(2026, 9, 10),
+        DateTime(2026, 9, 5),
+      );
+      expect(sel.start, DateTime(2026, 9, 5));
+      expect(sel.end, DateTime(2026, 9, 10));
+      expect(sel.dayCount, 6);
+    });
+
+    test('endpoints are normalized to local midnight', () {
+      final sel = BookingDateSelection.range(
+        DateTime(2026, 9, 5, 14, 30),
+        DateTime(2026, 9, 7, 9, 15),
+      );
+      expect(sel.start, DateTime(2026, 9, 5));
+      expect(sel.end, DateTime(2026, 9, 7));
+    });
+
+    test('days enumerates the inclusive window', () {
+      final sel = BookingDateSelection.range(
+        DateTime(2026, 9, 5),
+        DateTime(2026, 9, 7),
+      );
+      expect(sel.days.toList(), [
+        DateTime(2026, 9, 5),
+        DateTime(2026, 9, 6),
+        DateTime(2026, 9, 7),
+      ]);
+    });
+
+    test('toString renders the ISO window', () {
+      final sel = BookingDateSelection.range(
+        DateTime(2026, 9, 5),
+        DateTime(2026, 9, 7),
+      );
+      expect(sel.toString(), 'BookingDateSelection(2026-09-05 -> 2026-09-07)');
+    });
+  });
+
   group('ExternalBookingAdapters.fromConfig', () {
     test('manual config resolves to no adapter', () {
       expect(

@@ -14,6 +14,7 @@
 // shared PackageQuantity helpers the transaction relies on, since the Firestore
 // emulator / credentials are unavailable in this sandbox (see AGENTS.md).
 // ============================================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/features/hunter_mode/models/package_pricing.dart';
 
@@ -296,6 +297,95 @@ void main() {
       // No date keys land on the booking doc (the calendar resolver then
       // falls back to the package doc via buildEventWithPackageFallback).
       expect(bookingDateFields(start, end), isEmpty);
+    });
+  });
+
+  group('bookPackage hunter-selected window contract (structural)', () {
+    // Encodes the hunter-interactive-date-selection contract added to
+    // `PackageBookingManager.bookPackage` (the `selectedStart`/`selectedEnd`
+    // params): the hunter's strip selection OVERRIDES the package's
+    // advertised window on the booking document, written under BOTH key
+    // families. Structural (no Firestore emulator) — mirrors the group above.
+
+    /// Mirrors the normalization + override resolution in `bookPackage`.
+    Map<String, dynamic> resolveBookingWindow({
+      required Map<String, dynamic> pkg,
+      DateTime? selectedStart,
+      DateTime? selectedEnd,
+    }) {
+      // Normalization: an end-only selection collapses to a single-day
+      // window; a null start with null end leaves the package's window
+      // untouched.
+      final selStart = selectedStart ?? selectedEnd;
+      final selEnd = selectedStart != null ? selectedEnd : null;
+      final start = selStart != null
+          ? Timestamp.fromDate(selStart)
+          : (pkg['availabilityStart'] ?? pkg['startDate']);
+      final end = selStart != null
+          ? Timestamp.fromDate(
+              (selEnd != null && !selEnd.isBefore(selStart))
+                  ? selEnd
+                  : selStart,
+            )
+          : (pkg['availabilityEnd'] ?? pkg['endDate']);
+      return {
+        if (start != null) 'startDate': start,
+        if (end != null) 'endDate': end,
+        if (start != null) 'availabilityStart': start,
+        if (end != null) 'availabilityEnd': end,
+      };
+    }
+
+    test('the hunter selection overrides the package advertised window', () {
+      final pkg = <String, dynamic>{
+        'availabilityStart': 'pkg-window', // overridden by the selection
+        'availabilityEnd': 'pkg-window-end',
+      };
+      final start = DateTime(2026, 10, 5);
+      final end = DateTime(2026, 10, 8);
+      final booking = resolveBookingWindow(
+        pkg: pkg,
+        selectedStart: start,
+        selectedEnd: end,
+      );
+      // The booking carries the HUNTER-SELECTED window as Firestore
+      // Timestamps under BOTH key families (not the package's window).
+      expect((booking['startDate'] as Timestamp).toDate(), start);
+      expect((booking['endDate'] as Timestamp).toDate(), end);
+      expect((booking['availabilityStart'] as Timestamp).toDate(), start);
+      expect((booking['availabilityEnd'] as Timestamp).toDate(), end);
+    });
+
+    test('no selection falls back to the package advertised window', () {
+      final pkg = <String, dynamic>{
+        'availabilityStart': 'pkg-window',
+        'availabilityEnd': 'pkg-window-end',
+      };
+      final booking = resolveBookingWindow(pkg: pkg);
+      expect(booking['startDate'], 'pkg-window');
+      expect(booking['endDate'], 'pkg-window-end');
+    });
+
+    test('a start-only selection collapses to a single-day window', () {
+      final start = DateTime(2026, 10, 5);
+      final booking = resolveBookingWindow(
+        pkg: <String, dynamic>{},
+        selectedStart: start,
+      );
+      expect((booking['startDate'] as Timestamp).toDate(), start);
+      expect((booking['endDate'] as Timestamp).toDate(), start);
+    });
+
+    test('an end before the start is clamped to the start', () {
+      final start = DateTime(2026, 10, 8);
+      final end = DateTime(2026, 10, 5);
+      final booking = resolveBookingWindow(
+        pkg: <String, dynamic>{},
+        selectedStart: start,
+        selectedEnd: end,
+      );
+      expect((booking['startDate'] as Timestamp).toDate(), start);
+      expect((booking['endDate'] as Timestamp).toDate(), start);
     });
   });
 }

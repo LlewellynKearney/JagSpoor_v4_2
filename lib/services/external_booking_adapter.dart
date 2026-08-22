@@ -69,12 +69,19 @@ class ExternalBookingConfig {
   final ExternalBookingSystemType systemType;
 
   /// The iCal feed URL (only meaningful when [systemType] is
-  /// [ExternalBookingSystemType.ical]).
+  /// [ExternalBookingSystemType.ical]) or the mock simulator's seed key.
   final String feedUrl;
+
+  /// The unavailable (blocked) calendar dates the outfitter manages by hand
+  /// (only meaningful when [systemType] is
+  /// [ExternalBookingSystemType.manual]). Dates are normalized to local
+  /// midnight. Every non-listed date is bookable.
+  final Set<DateTime> manualBlockedDates;
 
   const ExternalBookingConfig({
     this.systemType = ExternalBookingSystemType.manual,
     this.feedUrl = '',
+    this.manualBlockedDates = const {},
   });
 
   static const ExternalBookingConfig manualDefault = ExternalBookingConfig();
@@ -86,7 +93,22 @@ class ExternalBookingConfig {
         (map['type'] ?? map['systemType']) as String?,
       ),
       feedUrl: (map['feedUrl'] as String? ?? '').trim(),
+      manualBlockedDates: _parseManualBlockedDates(
+        map['manualBlockedDates'],
+      ),
     );
+  }
+
+  /// Parses the persisted `manualBlockedDates` list (ISO `yyyy-MM-dd`
+  /// strings) into midnight-normalized [DateTime]s. Tolerates null / empty /
+  /// malformed entries (they are skipped rather than throwing).
+  static Set<DateTime> _parseManualBlockedDates(dynamic raw) {
+    if (raw is! List) return const {};
+    return raw
+        .whereType<String>()
+        .map(parseBookingDateKey)
+        .whereType<DateTime>()
+        .toSet();
   }
 
   /// Reads the `bookingSync` nested map off a raw `users/{uid}` document.
@@ -101,15 +123,21 @@ class ExternalBookingConfig {
   Map<String, dynamic> toMap() => {
         'type': systemType.id,
         'feedUrl': feedUrl,
+        'manualBlockedDates': manualBlockedDates
+            .map(bookingDateKey)
+            .toList()
+          ..sort(),
       };
 
   ExternalBookingConfig copyWith({
     ExternalBookingSystemType? systemType,
     String? feedUrl,
+    Set<DateTime>? manualBlockedDates,
   }) {
     return ExternalBookingConfig(
       systemType: systemType ?? this.systemType,
       feedUrl: feedUrl ?? this.feedUrl,
+      manualBlockedDates: manualBlockedDates ?? this.manualBlockedDates,
     );
   }
 }
@@ -117,6 +145,24 @@ class ExternalBookingConfig {
 /// Normalizes a [DateTime] to local midnight (year/month/day) so date-level
 /// availability comparisons are time-of-day independent.
 DateTime normalizeBookingDate(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Formats a [DateTime] as an ISO `yyyy-MM-dd` date key (the persistence
+/// shape for manually blocked dates).
+String bookingDateKey(DateTime d) {
+  final day = normalizeBookingDate(d);
+  final month = day.month.toString().padLeft(2, '0');
+  final date = day.day.toString().padLeft(2, '0');
+  return '${day.year}-$month-$date';
+}
+
+/// Parses an ISO `yyyy-MM-dd` date key back to a midnight-normalized
+/// [DateTime]. Returns `null` for null / malformed input.
+DateTime? parseBookingDateKey(String? raw) {
+  if (raw == null) return null;
+  final parsed = DateTime.tryParse(raw.trim());
+  if (parsed == null) return null;
+  return normalizeBookingDate(parsed);
+}
 
 /// Enumerates every calendar day in the inclusive range [start]..[end],
 /// normalized to local midnight. Returns an empty iterable when

@@ -222,6 +222,15 @@ class PackageBookingManager {
     required String outfitterId,
     required double basePriceRands,
     String? packageName,
+
+    /// The hunt window the hunter selected on the interactive booking
+    /// availability strip. When supplied, it OVERRIDES the package's
+    /// advertised availability window on the booking document (written under
+    /// both the `startDate`/`endDate` AND `availabilityStart`/
+    /// `availabilityEnd` key families so every downstream consumer resolves
+    /// it). When omitted the package's own window is copied as before.
+    DateTime? selectedStart,
+    DateTime? selectedEnd,
   }) async {
     // Validate authentication
     if (_currentUserId == null) {
@@ -240,6 +249,12 @@ class PackageBookingManager {
     if (basePriceRands <= 0) {
       throw Exception('Base price must be greater than zero');
     }
+
+    // Normalize a partial hunter selection: an end-only selection collapses
+    // to a single-day window; a null start with a null end leaves the
+    // package's advertised window untouched.
+    final DateTime? selStart = selectedStart ?? selectedEnd;
+    final DateTime? selEnd = selectedStart != null ? selectedEnd : null;
 
     // The hunter pays the base package cost; there is no platform commission.
     final double totalHunterPrice = basePriceRands;
@@ -288,10 +303,22 @@ class PackageBookingManager {
       // the booking document carries it. This guarantees the booking is
       // self-contained for the calendar resolver (which scans both alias
       // families) and for any UI card that reads either key directly.
-      final availabilityStart =
-          pkgData['availabilityStart'] ?? pkgData['startDate'];
-      final availabilityEnd =
-          pkgData['availabilityEnd'] ?? pkgData['endDate'];
+      // HUNTER-SELECTED WINDOW OVERRIDE: when the hunter picked dates on the
+      // interactive availability strip, that selection takes precedence over
+      // the package's advertised window (written as Firestore Timestamps so
+      // the shape matches the package-copied path exactly). A missing end
+      // collapses to a single-day window; an end before the start is clamped
+      // to the start.
+      final dynamic availabilityStart = selStart != null
+          ? Timestamp.fromDate(selStart)
+          : (pkgData['availabilityStart'] ?? pkgData['startDate']);
+      final dynamic availabilityEnd = selStart != null
+          ? Timestamp.fromDate(
+              (selEnd != null && !selEnd.isBefore(selStart))
+                  ? selEnd
+                  : selStart,
+            )
+          : (pkgData['availabilityEnd'] ?? pkgData['endDate']);
       final farmId = pkgData['farmId'] as String?;
       // Resolve the farm's display name + region from `farms/{farmId}` so the
       // booking is self-contained for the calendar event (title "@ Farm"

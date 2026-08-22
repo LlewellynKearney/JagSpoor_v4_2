@@ -11,7 +11,9 @@ class BookingAvailability {
   /// The outfitter this availability belongs to.
   final String outfitterId;
 
-  /// Unavailable dates contributed by the external ERP / calendar adapter.
+  /// Unavailable dates contributed by the outfitter-managed source: the
+  /// manual blocked-date list in `manual` mode, or the external ERP /
+  /// calendar adapter in `ical` / `mock` mode.
   final Set<DateTime> externalBlockedDates;
 
   /// Unavailable dates contributed by the local JagSpoor booking state
@@ -22,8 +24,8 @@ class BookingAvailability {
   final ExternalBookingSystemType systemType;
 
   /// Whether the external source was reachable this fetch. Always `true`
-  /// for `manual` (no external source) and for the mock simulator's healthy
-  /// default.
+  /// for `manual` (the manual blocked-date list is local) and for the mock
+  /// simulator's healthy default.
   final bool externalReachable;
 
   const BookingAvailability({
@@ -40,6 +42,55 @@ class BookingAvailability {
 
   bool isAvailable(DateTime day) =>
       !blockedDates.contains(normalizeBookingDate(day));
+
+  /// Human-readable description of the active sync mode, surfaced in the
+  /// hunter booking flow so the hunter knows where the availability comes
+  /// from.
+  String get modeDescription {
+    switch (systemType) {
+      case ExternalBookingSystemType.manual:
+        return 'Manually managed by the outfitter';
+      case ExternalBookingSystemType.ical:
+        return 'Live external calendar (iCal) sync';
+      case ExternalBookingSystemType.mock:
+        return 'Mock availability simulator';
+    }
+  }
+
+  /// Whether the availability source is the outfitter's manual date list
+  /// (`true`) or a live external integration (`false`).
+  bool get isManualMode => systemType == ExternalBookingSystemType.manual;
+}
+
+/// An inclusive hunt-window selection made by the hunter on the interactive
+/// booking availability strip. Both endpoints are midnight-normalized and
+/// [end] is never before [start].
+class BookingDateSelection {
+  final DateTime start;
+  final DateTime end;
+
+  BookingDateSelection({required DateTime start, DateTime? end})
+      : start = normalizeBookingDate(start),
+        end = normalizeBookingDate(end ?? start);
+
+  /// Creates a selection with the endpoints ordered (end >= start).
+  factory BookingDateSelection.range(DateTime a, DateTime b) {
+    final first = normalizeBookingDate(a);
+    final second = normalizeBookingDate(b);
+    return second.isBefore(first)
+        ? BookingDateSelection(start: second, end: first)
+        : BookingDateSelection(start: first, end: second);
+  }
+
+  /// Every calendar day covered by the selection (inclusive).
+  Iterable<DateTime> get days => bookingDaysInRange(start, end);
+
+  /// The number of calendar days covered (inclusive).
+  int get dayCount => end.difference(start).inDays + 1;
+
+  @override
+  String toString() =>
+      'BookingDateSelection(${bookingDateKey(start)} -> ${bookingDateKey(end)})';
 }
 
 /// Resolves an outfitter's real-time date availability by merging the local
@@ -137,27 +188,47 @@ class BookingAvailabilityService {
     }, SetOptions(merge: true));
   }
 
-  /// Merges the local booking state machine with the outfitter's external
+  /// Merges the local booking state machine with the outfitter-managed
   /// availability source over the inclusive range [rangeStart]..[rangeEnd].
+  ///
+  /// Mode-specific behaviour:
+  /// - `manual`: the outfitter's hand-managed blocked-date list
+  ///   ([ExternalBookingConfig.manualBlockedDates]) IS the outfitter source —
+  ///   hunters may pick any date the outfitter has NOT explicitly blocked.
+  /// - `ical` / `mock`: the connected external integration (or the mock
+  ///   simulator) is queried live for blocked dates.
+  ///
+  /// In BOTH modes the local JagSpoor booking state machine is merged on
+  /// top so already-booked dates are always unavailable; switching the
+  /// outfitter between Manual and an external integration therefore
+  /// restrictively re-enables or re-restricts the hunter's selectable
+  /// dates accordingly.
   Future<BookingAvailability> getAvailability({
     required String outfitterId,
     required DateTime rangeStart,
     required DateTime rangeEnd,
   }) async {
     final config = await _safeLoadConfig(outfitterId);
-    final adapter = _adapterFor(config);
 
     var externalBlocked = <DateTime>{};
     var externalReachable = true;
-    if (adapter != null) {
-      try {
-        externalBlocked = await adapter.fetchUnavailableDates(
-          rangeStart: rangeStart,
-          rangeEnd: rangeEnd,
-        );
-      } catch (e) {
-        debugPrint('[BookingAvailability] external fetch failed: $e');
-        externalReachable = false;
+    if (config.systemType == ExternalBookingSystemType.manual) {
+      // Manual mode: the outfitter's own blocked-date list IS the source.
+      // Dates already in the past or outside the range are still flagged
+      // (harmless for the strip, keeps the model honest).
+      externalBlocked = config.manualBlockedDates;
+    } else {
+      final adapter = _adapterFor(config);
+      if (adapter != null) {
+        try {
+          externalBlocked = await adapter.fetchUnavailableDates(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          );
+        } catch (e) {
+          debugPrint('[BookingAvailability] external fetch failed: $e');
+          externalReachable = false;
+        }
       }
     }
 

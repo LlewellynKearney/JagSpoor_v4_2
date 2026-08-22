@@ -175,4 +175,109 @@ void main() {
           reason: 'Light mode must use the deep espresso title color.');
     });
   });
+
+  group('AI Game Movement Activity Forecaster banner', () {
+    testWidgets(
+      'Light Mode: solid cream wrapper + deep-green border + espresso title',
+      (tester) async {
+        mockConnectivity(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.light(),
+            home: const Scaffold(body: NetworkDiagnosticHud()),
+          ),
+        );
+        await tester.pump();
+
+        final titleFinder =
+            find.textContaining('AI GAME MOVEMENT ACTIVITY FORECASTER');
+        expect(titleFinder, findsOneWidget);
+
+        // Deep espresso title text (HunterUi.lightTitle = 0xFF2C221E).
+        final title = tester.widget<Text>(titleFinder);
+        expect(title.style!.color, HunterUi.lightTitle);
+
+        // Solid warm cream wrapper (HunterUi.lightCard = 0xFFEFE7DC) with a
+        // defined deep-green border — the forecaster must sit on a solid
+        // surface, never on a translucent photo-blend gradient.
+        final banner = ancestorContainerWithColor(
+          tester,
+          titleFinder,
+          HunterUi.lightCard,
+        );
+        expect(banner, isNotNull,
+            reason: 'The forecaster banner must be a solid cream surface.');
+        final decoration = banner!.decoration as BoxDecoration;
+        expect(decoration.border, isA<Border>());
+        expect((decoration.border! as Border).top.color,
+            const Color(0xFF4F6E33));
+      },
+    );
+
+    testWidgets(
+      'Dark Mode: solid very-dark olive wrapper + bright-green border + '
+      'bright title',
+      (tester) async {
+        mockConnectivity(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(),
+            home: const Scaffold(body: NetworkDiagnosticHud()),
+          ),
+        );
+        await tester.pump();
+
+        final titleFinder =
+            find.textContaining('AI GAME MOVEMENT ACTIVITY FORECASTER');
+        expect(titleFinder, findsOneWidget);
+
+        // Bright light-green title for sharp contrast on the dark surface.
+        final title = tester.widget<Text>(titleFinder);
+        expect(title.style!.color, const Color(0xFFCDEBA8));
+
+        // Solid very-dark olive wrapper + bright-green defined border.
+        final banner = ancestorContainerWithColor(
+          tester,
+          titleFinder,
+          const Color(0xFF1E3011),
+        );
+        expect(banner, isNotNull,
+            reason:
+                'The forecaster banner must be a solid very-dark olive surface.');
+        final decoration = banner!.decoration as BoxDecoration;
+        expect((decoration.border! as Border).top.color,
+            const Color(0xFF7CB342));
+      },
+    );
+
+    testWidgets('the forecaster wrapper uses a solid color (no translucent '
+        'photo-blend gradient)', (tester) async {
+      mockConnectivity(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light(),
+          home: const Scaffold(body: NetworkDiagnosticHud()),
+        ),
+      );
+      await tester.pump();
+
+      final titleFinder =
+          find.textContaining('AI GAME MOVEMENT ACTIVITY FORECASTER');
+      // The forecaster wrapper is the ancestor Container whose decoration
+      // carries the solid cream surface color.
+      final wrapper = ancestorContainerWithColor(
+        tester,
+        titleFinder,
+        HunterUi.lightCard,
+      );
+      expect(wrapper, isNotNull);
+      final decoration = wrapper!.decoration as BoxDecoration;
+      expect(decoration.gradient, isNull,
+          reason: 'A translucent gradient washes out over the background '
+              'photo; the banner must use a solid surface color.');
+      expect(decoration.color, isNotNull);
+      expect(decoration.color!.a, greaterThan(0.9),
+          reason: 'The banner surface must be (near-)opaque.');
+    });
+  });
 }

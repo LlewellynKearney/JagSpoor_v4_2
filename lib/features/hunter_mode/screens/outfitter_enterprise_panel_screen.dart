@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import '../../../core/services/image_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/copyright_footer.dart';
@@ -90,6 +91,11 @@ class _OutfitterEnterprisePanelScreenState
   String? _bookingSyncTestResult;
   bool _bookingSyncTestOk = false;
 
+  /// The outfitter-managed unavailable dates for MANUAL sync mode. Toggle
+  /// via the date picker below; persisted under
+  /// `users/{uid}.bookingSync.manualBlockedDates`.
+  Set<DateTime> _manualBlockedDates = {};
+
   /// Compressed farm photo picked for the Register New Farm form (camera or
   /// gallery). Uploaded to Firebase Storage on submit and persisted on the
   /// `farms/{farmId}` doc as `photoUrl`.
@@ -146,6 +152,7 @@ class _OutfitterEnterprisePanelScreenState
       setState(() {
         _bookingSyncType = config.systemType;
         _bookingSyncUrlController.text = config.feedUrl;
+        _manualBlockedDates = {...config.manualBlockedDates};
       });
     } catch (_) {
       // Non-fatal — the card simply starts from the Manual default.
@@ -156,6 +163,101 @@ class _OutfitterEnterprisePanelScreenState
     return ExternalBookingConfig(
       systemType: _bookingSyncType,
       feedUrl: _bookingSyncUrlController.text.trim(),
+      manualBlockedDates: {..._manualBlockedDates},
+    );
+  }
+
+  /// Opens a date picker to mark a day as UNAVAILABLE for hunters (Manual
+  /// sync mode). Dates already blocked are ignored on re-pick.
+  Future<void> _addManualBlockedDate() async {
+    final now = normalizeBookingDate(DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 2)),
+      helpText: 'MARK DATE UNAVAILABLE',
+    );
+    if (picked == null) return;
+    setState(() {
+      _manualBlockedDates.add(normalizeBookingDate(picked));
+    });
+  }
+
+  /// Removes a date from the manually-blocked list (Manual sync mode).
+  void _removeManualBlockedDate(DateTime day) {
+    setState(() {
+      _manualBlockedDates.remove(normalizeBookingDate(day));
+    });
+  }
+
+  /// The manual blocked-dates editor rendered when the outfitter manages
+  /// availability by hand (Manual sync mode).
+  Widget _buildManualAvailabilityEditor(ThemeController theme) {
+    final sorted = _manualBlockedDates.toList()
+      ..sort((a, b) => a.compareTo(b));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'MANUALLY MANAGED DATES',
+          style: TextStyle(
+            color: OutfitterUi.subtitleColor(theme),
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.0,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Mark the dates hunters CANNOT book. Every date not listed stays '
+          'available for hunter selection.',
+          style: TextStyle(
+            color: OutfitterUi.subtitleColor(theme),
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (sorted.isEmpty)
+          Text(
+            'No blocked dates — every date is currently bookable.',
+            style: TextStyle(
+              color: OutfitterUi.subtitleColor(theme),
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: sorted
+                .map(
+                  (day) => InputChip(
+                    avatar: const Icon(Icons.event_busy_rounded, size: 14),
+                    label: Text(
+                      DateFormat('d MMM yyyy').format(day),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onDeleted: () => _removeManualBlockedDate(day),
+                  ),
+                )
+                .toList(),
+          ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _addManualBlockedDate,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.accentColor,
+            side: BorderSide(color: theme.accentColor),
+          ),
+          icon: const Icon(Icons.event_busy_rounded, size: 18),
+          label: const Text(
+            'MARK A DATE UNAVAILABLE',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
     );
   }
 
@@ -167,8 +269,9 @@ class _OutfitterEnterprisePanelScreenState
       setState(() {
         _bookingSyncTestOk = true;
         _bookingSyncTestResult =
-            'Manual mode — JagSpoor bookings are the only availability source. '
-            'No external connection to test.';
+            'Manual mode — hunters can select every date you have NOT marked '
+            'unavailable (${_manualBlockedDates.length} date(s) currently '
+            'blocked). No external connection to test.';
       });
       return;
     }
@@ -1759,6 +1862,23 @@ class _OutfitterEnterprisePanelScreenState
           },
         ),
         const SizedBox(height: 12),
+        if (_bookingSyncType == ExternalBookingSystemType.manual) ...[
+          // Manual mode: the outfitter hand-manages unavailable dates;
+          // hunters pick from every non-blocked date.
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: OutfitterUi.cardColor(theme),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: OutfitterUi.cardBorderColor(theme),
+              ),
+            ),
+            child: _buildManualAvailabilityEditor(theme),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (_bookingSyncType != ExternalBookingSystemType.manual) ...[
           TextFormField(
             controller: _bookingSyncUrlController,

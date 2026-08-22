@@ -827,6 +827,11 @@ class _BookingConfirmationSheet extends StatefulWidget {
 class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
   bool _isLoading = false;
 
+  /// The hunt window the hunter picked on the interactive availability
+  /// strip. Seed from the package's advertised availability window so an
+  /// untouched sheet submits exactly the dates the outfitter advertised.
+  BookingDateSelection? _selectedWindow;
+
   @override
   Widget build(BuildContext context) {
     final title = widget.data['title'] as String? ?? 'Untitled Package';
@@ -920,14 +925,22 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Live date slots: local JagSpoor booking state machine + the
-            // outfitter's configured external booking / ERP availability
-            // service (iCal feed / mock test simulator).
+            // Live, interactive date slots: local JagSpoor booking state
+            // machine + the outfitter's configured availability source
+            // (manual outfitter-managed dates, an iCal feed, or the mock
+            // test simulator). The hunter taps available dates to select
+            // the hunt window for this booking; the selection is seeded
+            // with the package's advertised availability window.
             if ((widget.data['outfitterId'] as String?)?.isNotEmpty ??
                 false) ...[
               BookingAvailabilityStrip(
                 outfitterId: widget.data['outfitterId'] as String,
                 theme: widget.theme,
+                initialStart: pricing.availabilityStart,
+                initialEnd: pricing.availabilityEnd,
+                onSelectionChanged: (selection) {
+                  setState(() => _selectedWindow = selection);
+                },
               ),
               const SizedBox(height: 16),
             ],
@@ -1334,16 +1347,23 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         throw Exception('Invalid package: missing outfitter ID');
       }
 
-      // Verify the advertised availability window against BOTH the local
-      // booking state machine and the outfitter's external availability
-      // service. A conflict does not hard-block (the outfitter's approval is
+      // Verify the SELECTED availability window (the hunter's interactive
+      // strip selection; falls back to the package's advertised window) against
+      // BOTH the local booking state machine and the outfitter's availability
+      // source (manual outfitter-managed dates or the external integration).
+      // A conflict does not hard-block (the outfitter's approval is
       // the real gate), but the hunter is warned before submitting.
       final window = PackagePricing.fromMap(widget.data);
-      if (window.availabilityStart != null && mounted) {
+      final windowStart =
+          _selectedWindow?.start ?? window.availabilityStart;
+      final windowEnd = _selectedWindow != null
+          ? _selectedWindow!.end
+          : (window.availabilityEnd ?? window.availabilityStart);
+      if (windowStart != null && mounted) {
         final slotFree = await BookingAvailabilityService.instance.verifySlot(
           outfitterId: outfitterId,
-          start: window.availabilityStart!,
-          end: window.availabilityEnd ?? window.availabilityStart!,
+          start: windowStart,
+          end: windowEnd ?? windowStart,
         );
         if (!slotFree && mounted) {
           final proceed = await showDialog<bool>(
@@ -1355,8 +1375,8 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
                 style: TextStyle(color: widget.theme.textColor),
               ),
               content: Text(
-                'Some dates in this package\'s advertised window are already '
-                'unavailable (local bookings or the outfitter\'s external '
+                'Some dates in the selected hunt window are already '
+                'unavailable (local bookings or the outfitter\'s availability '
                 'calendar). Submit the booking request anyway?',
                 style: TextStyle(color: widget.theme.subtitleColor),
               ),
@@ -1384,6 +1404,10 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
         outfitterId: outfitterId,
         basePriceRands: basePrice,
         packageName: packageName,
+        // The hunter's interactive date selection takes precedence over the
+        // package's advertised window on the booking document.
+        selectedStart: _selectedWindow?.start,
+        selectedEnd: _selectedWindow?.end,
       );
 
       if (mounted) {

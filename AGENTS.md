@@ -1,5 +1,87 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- AI Forecaster banner contrast fix + interactive booking date selection w/ Manual-vs-External sync modes (added 2026-08-22)
+
+Three coordinated changes on top of the ERP-availability integration.
+
+### Task 1 -- AI Game Movement Activity Forecaster banner visibility
+- `network_diagnostic_hud.dart` `_buildGameMovementForecaster` previously used
+  a translucent activity-color gradient (alpha 0.15/0.05) with no defined
+  border + hardcoded `Color(0xFF2E3D2F)` text, so it blended into / was washed
+  out by the Solitary Acacia background. It now takes the `isDarkMode` param
+  from `build()` and wraps in the SAME mode-aware solid card as the Cloud
+  Sync Telemetry banner: Light Mode -> `HunterUi.lightCard` (0xFFEFE7DC) +
+  1.6px deep-green border (0xFF4F6E33) + espresso title
+  (`HunterUi.lightTitle`) + warm-brown body (`HunterUi.lightBody`); Dark Mode
+  -> solid very-dark olive (0xFF1E3011) + bright-green border (0xFF7CB342) +
+  bright title (0xFFCDEBA8) / body (0xFFA8CF9B). The probability + activity
+  chips became SOLID `activityColor` surfaces with a luminance-driven
+  contrasting text color; the SOLUNAR pill is solid amber with espresso text.
+
+### Task 2 -- Interactive date selection + Manual/External outfitter sync modes
+- `ExternalBookingConfig` gained `manualBlockedDates` (a `Set<DateTime>` the
+  outfitter hand-manages in MANUAL mode), persisted as sorted ISO `yyyy-MM-dd`
+  strings on `users/{uid}.bookingSync.manualBlockedDates` (owner-write +
+  signed-in read rules already cover it). New pure helpers `bookingDateKey` /
+  `parseBookingDateKey`.
+- `BookingAvailabilityService.getAvailability` is now mode-specific: MANUAL
+  mode uses `config.manualBlockedDates` as the outfitter source and NEVER
+  consults an adapter; `ical`/`mock` modes query the external adapter as
+  before. Local JagSpoor bookings merge on top in both modes. Switching modes
+  therefore restricts/enables hunter-selectable dates accordingly. New
+  `BookingAvailability.modeDescription` + `isManualMode`.
+- New `BookingDateSelection` model (inclusive hunt window, midnight
+  normalized, ordered endpoints, `days`/`dayCount`).
+- `BookingAvailabilityStrip` is now interactive when `onSelectionChanged` is
+  supplied: tap an available (green) day to start a window, tap a later day
+  to set the end, tap again to restart; blocked (red) days are not
+  selectable; `initialStart`/`initialEnd` seed the selection; a selection
+  summary chip shows the chosen window with a clear (X) action; a mode label
+  ("Manually managed by the outfitter" / "Live external calendar (iCal)
+  sync" / "Mock availability simulator") is rendered. Render-only behavior
+  (no callback) is unchanged.
+- The marketplace `_BookingConfirmationSheet` wires the strip
+  interactively (seeded from the package's advertised availability window);
+  `_confirmBooking` verifies the SELECTED window (not just the advertised
+  one) and passes it to `PackageBookingManager.bookPackage` via new
+  `selectedStart`/`selectedEnd` params, which override the package window on
+  the booking doc as Firestore Timestamps under BOTH key families (end-only
+  selections collapse to a single day; end-before-start clamps).
+- The outfitter Farm Control Panel "Booking & ERP Sync" card gained a
+  MANUAL-mode date editor (date picker marks days unavailable; InputChips
+  list + delete blocked dates; saved via `saveConfig`). The manual TEST
+  CONNECTION result now reports the blocked-date count.
+
+### Task 3 -- Tests + verification
+- `test/external_booking_adapter_test.dart` +14 (manualBlockedDates
+  round-trip/sorted-serialization/malformed tolerance/copyWith; date-key
+  helpers; `BookingDateSelection` ordering/normalization/days/toString).
+- `test/booking_availability_service_test.dart` +3 (manual mode never
+  consults an adapter + blocks hand-managed dates; switching to external
+  replaces the manual list; modeDescription per mode). Three pre-existing
+  tests now seed a non-manual `bookingSync` config so the injected
+  `adapterFactory` is consulted (the new mode gate).
+- `test/booking_availability_strip_test.dart` +7 widget tests (tappable
+  selection start/end/restart, blocked days not selectable, seeded window
+  summary, per-mode labels, render-only regression guard).
+- `test/network_diagnostic_hud_test.dart` +3 widget tests (forecaster
+  banner light/dark mode-aware palette + solid-opaque-surface contract).
+- `test/package_quantity_test.dart` +4 structural tests (hunter-selected
+  window override / fallback / single-day collapse / end-clamp contract of
+  `bookPackage`).
+- `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings, 277
+  pre-existing infos (unchanged baseline). `flutter test`: **All 1072 tests
+  passed** (was 1041; +31). No Firestore rules / index / Storage / pubspec
+  changes.
+- Files: `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
+  `lib/services/external_booking_adapter.dart`,
+  `lib/features/hunter_mode/services/booking_availability_service.dart`,
+  `lib/features/hunter_mode/widgets/booking_availability_strip.dart`,
+  `lib/features/hunter_mode/services/package_booking_manager.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart`,
+  5 test files, `AGENTS.md`.
+
 ## Phase -- Outfitter title bar refinement + 100% HunterScaffold coverage (added 2026-08-21, commit 34ec052)
 
 - **Outfitter dashboard title bar**: the two-line AppBar title

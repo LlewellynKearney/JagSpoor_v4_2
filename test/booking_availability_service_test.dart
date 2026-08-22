@@ -213,6 +213,10 @@ void main() {
         start: DateTime(2026, 8, 21),
         end: DateTime(2026, 8, 21),
       );
+      // External (non-manual) sync mode: the adapter IS consulted.
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {'type': 'mock', 'feedUrl': ''},
+      });
       final adapter = MockTestBookingAdapter(
         blockedDates: {DateTime(2026, 8, 25)},
       );
@@ -243,6 +247,10 @@ void main() {
         start: DateTime(2026, 8, 21),
         end: DateTime(2026, 8, 21),
       );
+      // External (non-manual) sync mode: the adapter IS consulted.
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {'type': 'mock', 'feedUrl': ''},
+      });
       final availability = await service(
         fake,
         uid: 'hunter-1',
@@ -255,6 +263,101 @@ void main() {
       expect(availability.externalReachable, isFalse);
       expect(availability.localBlockedDates, {DateTime(2026, 8, 21)});
       expect(availability.blockedDates, {DateTime(2026, 8, 21)});
+    });
+  });
+
+  group('Manual vs External ERP sync mode', () {
+    test('manual mode uses the outfitter-managed blocked-date list (no '
+        'adapter is consulted)', () async {
+      final fake = FakeFirebaseFirestore();
+      // Outfitter saved a manual config with two hand-blocked dates.
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {
+          'type': 'manual',
+          'feedUrl': '',
+          'manualBlockedDates': ['2026-09-03', '2026-09-05'],
+        },
+      });
+      var adapterConsulted = false;
+      final availability = await service(
+        fake,
+        uid: 'hunter-1',
+        adapterFactory: (_) {
+          adapterConsulted = true;
+          return MockTestBookingAdapter(
+            blockedDates: {DateTime(2026, 9, 10)},
+          );
+        },
+      ).getAvailability(
+        outfitterId: 'outfitter-1',
+        rangeStart: DateTime(2026, 9, 1),
+        rangeEnd: DateTime(2026, 9, 30),
+      );
+      // Manual mode never consults an adapter.
+      expect(adapterConsulted, isFalse);
+      expect(availability.systemType, ExternalBookingSystemType.manual);
+      expect(availability.isManualMode, isTrue);
+      // The outfitter-blocked dates are unavailable to the hunter.
+      expect(availability.isAvailable(DateTime(2026, 9, 3)), isFalse);
+      expect(availability.isAvailable(DateTime(2026, 9, 5)), isFalse);
+      // Every non-blocked date stays selectable.
+      expect(availability.isAvailable(DateTime(2026, 9, 4)), isTrue);
+      expect(availability.isAvailable(DateTime(2026, 9, 10)), isTrue);
+    });
+
+    test('switching to an external source replaces the manual blocked list '
+        'with the adapter dates', () async {
+      final fake = FakeFirebaseFirestore();
+      // Same outfitter, but now configured for external (mock) sync — the
+      // manual blocked list must NOT apply anymore.
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {
+          'type': 'mock',
+          'feedUrl': 'seed-x',
+          // A stale manual list is retained on the doc but must be ignored.
+          'manualBlockedDates': ['2026-09-03', '2026-09-05'],
+        },
+      });
+      final availability = await service(
+        fake,
+        uid: 'hunter-1',
+        adapterFactory: (_) => MockTestBookingAdapter(
+          blockedDates: {DateTime(2026, 9, 12)},
+        ),
+      ).getAvailability(
+        outfitterId: 'outfitter-1',
+        rangeStart: DateTime(2026, 9, 1),
+        rangeEnd: DateTime(2026, 9, 30),
+      );
+      expect(availability.isManualMode, isFalse);
+      // The external adapter's date blocks...
+      expect(availability.isAvailable(DateTime(2026, 9, 12)), isFalse);
+      // ...while the previously manual-blocked dates are enabled again.
+      expect(availability.isAvailable(DateTime(2026, 9, 3)), isTrue);
+      expect(availability.isAvailable(DateTime(2026, 9, 5)), isTrue);
+    });
+
+    test('modeDescription reflects the active sync mode', () async {
+      final fake = FakeFirebaseFirestore();
+      final manualAvailability = await service(fake, uid: 'hunter-1')
+          .getAvailability(
+        outfitterId: 'outfitter-1',
+        rangeStart: DateTime(2026, 9, 1),
+        rangeEnd: DateTime(2026, 9, 30),
+      );
+      expect(manualAvailability.modeDescription,
+          'Manually managed by the outfitter');
+
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {'type': 'mock', 'feedUrl': ''},
+      });
+      final mockAvailability = await service(fake, uid: 'hunter-1')
+          .getAvailability(
+        outfitterId: 'outfitter-1',
+        rangeStart: DateTime(2026, 9, 1),
+        rangeEnd: DateTime(2026, 9, 30),
+      );
+      expect(mockAvailability.modeDescription, 'Mock availability simulator');
     });
   });
 
@@ -289,6 +392,10 @@ void main() {
 
     test('false when the external adapter blocks the slot', () async {
       final fake = FakeFirebaseFirestore();
+      // External (non-manual) sync mode: the adapter IS consulted.
+      await fake.collection('users').doc('outfitter-1').set({
+        'bookingSync': {'type': 'mock', 'feedUrl': ''},
+      });
       final s = service(
         fake,
         uid: 'hunter-1',
