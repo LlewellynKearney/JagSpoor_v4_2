@@ -1,6 +1,45 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SA Game Guide asset audit: 100% local photo coverage (added 2026-08-22)
+
+- **Audit**: parsed `assets/data/animals_seed.csv` (150 species = the
+  Firestore `animals` seed source) and the in-app resolver
+  (`assets/images/<name sans '()>.jpg` in `animal_list_screen.dart` /
+  `animal_detail_screen.dart`). Found 51 species without a local photo; 6
+  of those also lacked a fallback URL in `animal_images.json`.
+- **16 naming-mismatch fixes**: the resolver strips `'()` but NOT hyphens,
+  so files like `Blackbacked Jackal.jpg` missed the CSV name
+  `Black-backed Jackal`. Renamed those 16 variant-spelling files to their
+  sanitized CSV names.
+- **35 sourced photos**: downloaded CC-licensed images from Wikimedia
+  Commons (the same source as the existing `animal_images.json` manifest)
+  with rate-limit-safe client + JPEG/PNG magic validation. 27 from the
+  manifest URLs; 8 curated via the Commons API for entries whose manifest
+  URL was stale/404 (Springbok, Suni, African Savanna Hare) or a GIF
+  (Eland) or missing from the manifest entirely (Hartmann's Mountain
+  Zebra, Damara Ground Squirrel, Yellow-spotted Rock Hyrax, Blue-spotted
+  Wood Dove). Manifest extended to 146 entries so the network fallback
+  also covers the 4 previously-missing species.
+- **Naming convention**: files keep the in-app resolver convention
+  (`<Common Name>.jpg`, spaces kept, `'()` stripped) -- literal snake_case
+  would not resolve in `animal_list_screen.dart` /
+  `animal_detail_screen.dart`. pubspec declares the whole `assets/images/`
+  directory, so no pubspec change was required.
+- **Regression guard** `test/game_guide_asset_audit_test.dart` (4 tests):
+  the CSV parse (with `eol: '\n'` -- the package default of `\r\n`
+  collapses the file to one row), every species has a local photo, all
+  photo assets carry decodable JPEG/PNG magic, and the manifest JSON is a
+  valid URL map.
+- Verification: `flutter analyze` 0 errors / 0 warnings (278 baseline
+  infos). `flutter test`: **All 1122 tests passed** (+4 new).
+- Env note: Flutter 3.29.1 (CI pin) at `/home/openhands/flutter`; tests
+  run with `LD_LIBRARY_PATH="$HOME/libs"` (user-space
+  `libsqlite3.so -> .../libsqlite3.so.0` symlink for sqflite FFI).
+- Files: 16 renamed + 35 new `assets/images/*.jpg`,
+  `assets/images/animal_images.json`, `test/game_guide_asset_audit_test.dart`,
+  `AGENTS.md`.
+
 ## Phase -- Universal theme-aware Info Modal + help scripts across both portals (added 2026-08-22)
 
 - NEW `lib/shared/constants/app_screen_help_scripts.dart`
