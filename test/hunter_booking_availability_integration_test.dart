@@ -6,6 +6,7 @@ import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/hunter_mode/models/farm_details.dart';
 import 'package:jagspoor/features/hunter_mode/screens/hunter_custom_package_builder_screen.dart';
 import 'package:jagspoor/features/hunter_mode/services/booking_availability_service.dart';
+import 'package:jagspoor/features/hunter_mode/services/farm_details_resolver.dart';
 import 'package:jagspoor/features/hunter_mode/services/farm_game_price_list_manager.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/booking_availability_strip.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/trophy_booking_confirmation_sheet.dart';
@@ -57,7 +58,21 @@ void main() {
       'sex': 'Male',
     };
 
-    setUp(() => theme = ThemeController());
+    setUp(() async {
+      theme = ThemeController();
+      // Bind the farm-details resolver to a fake Firestore so the sheet's
+      // farm panel resolves against a real (in-memory) store instead of
+      // failing with `[core/no-app]` (no Firebase app exists in tests).
+      final fakeFirestore = FakeFirebaseFirestore();
+      await fakeFirestore.collection('farms').doc('farm-1').set({
+        'name': 'Test Farm',
+        'district': 'Waterberg',
+        'province': 'Limpopo',
+      });
+      FarmDetailsResolver.firestoreForTesting = fakeFirestore;
+    });
+
+    tearDown(() => FarmDetailsResolver.firestoreForTesting = null);
 
     Widget buildSheet({Set<DateTime> blocked = const {}}) {
       return MaterialApp(

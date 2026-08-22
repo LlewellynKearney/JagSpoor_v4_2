@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -169,9 +171,18 @@ void main() {
     test('file:// scheme is local', () {
       expect(isLocalImagePath('file:///data/local/tmp/z.png'), isTrue);
     });
-    test('POSIX absolute path is local (Path.isAbsolute)', () {
-      expect(isLocalImagePath('/tmp/trophy.png'), isTrue);
-      expect(isLocalImagePath('/definitely/not/a/real/path.jpg'), isTrue);
+    test('absolute filesystem path is local (Path.isAbsolute)', () {
+      // `p.isAbsolute` follows the HOST platform's path context, so assert
+      // against a platform-appropriate absolute path: a POSIX root path on
+      // Unix-like hosts, a Windows drive-letter path (backslashes) on
+      // Windows hosts.
+      if (Platform.isWindows) {
+        expect(isLocalImagePath(r'C:\Users\hunter\Pictures\trophy.png'),
+            isTrue);
+      } else {
+        expect(isLocalImagePath('/tmp/trophy.png'), isTrue);
+        expect(isLocalImagePath('/definitely/not/a/real/path.jpg'), isTrue);
+      }
     });
     test('http(s) URL is NOT local', () {
       expect(isLocalImagePath('https://firebasestorage.googleapis.com/x.png'),
@@ -192,15 +203,18 @@ void main() {
   });
 
   group('normalizeLocalImagePath (instruction 2 — file:// normalization)', () {
+    // `Uri.toFilePath()` emits the HOST platform's separators: forward
+    // slashes on Unix-like hosts, backslashes on Windows. Compare with
+    // separators normalized so the assertions hold on both.
     test('strips file:// scheme via Uri.toFilePath()', () {
       final result = normalizeLocalImagePath('file:///data/local/tmp/x.png');
-      expect(result, '/data/local/tmp/x.png');
+      expect(result.replaceAll(r'\', '/'), '/data/local/tmp/x.png');
     });
     test('strips file:// for an existing on-disk file path', () {
       // A file:// wrapping a real path must normalize to the bare path that
       // File.existsSync() can read.
       final result = normalizeLocalImagePath('file:///tmp/a/b/c.jpg');
-      expect(result, '/tmp/a/b/c.jpg');
+      expect(result.replaceAll(r'\', '/'), '/tmp/a/b/c.jpg');
     });
     test('plain filesystem path is returned unchanged', () {
       const plain = '/data/user/0/com.example.jagspoor/files/photo.png';

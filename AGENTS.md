@@ -1,6 +1,39 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Test suite hardening: Windows path portability + fake-Firestore farm resolver binding (added 2026-08-22)
+
+Test-only hardening pass; no production code changed. The named suites all
+passed on the Linux host before this change -- the fixes eliminate the
+latent cross-platform / uninitialized-app failure modes the audit flagged.
+
+- `test/adaptive_image_pipeline_test.dart`: (1) the `Uri.toFilePath()`
+  file://-normalization assertions now compare with separators normalized
+  (`result.replaceAll(r'\', '/')`) because `toFilePath()` emits backslashes
+  on Windows hosts and forward slashes on Unix hosts; (2) the
+  `Path.isAbsolute` detection test is now host-aware (`Platform.isWindows`
+  -> asserts a `C:\...` drive-letter path; otherwise POSIX root paths),
+  since `p.isAbsolute` follows the host path context (root-relative POSIX
+  paths are not absolute on Windows). Added `dart:io show Platform` import.
+- `test/hunter_booking_availability_integration_test.dart`: the Trophy
+  Registry sheet group setUp now binds
+  `FarmDetailsResolver.firestoreForTesting = FakeFirebaseFirestore()`
+  (seeded with `farms/farm-1`) and tearDown resets it, so the sheet's farm
+  panel resolves against an in-memory store instead of logging
+  `[core/no-app]` uninitialized-app errors (the resolver's best-effort catch
+  had masked them; tests passed but the farm resolution genuinely failed).
+- `test/firestore_rules_seeding_test.dart`,
+  `test/outfitter_dashboard_counts_test.dart`,
+  `test/outfitter_scaffold_rollout_test.dart`: verified individually (86
+  tests) -- all pass; the structural matchers already align with the current
+  `firestore.rules` and the `OutfitterActionChip` wrappers, so no changes
+  were needed.
+- Verification: `flutter test` (full suite): **All 1106 tests passed**, zero
+  failures. `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0
+  warnings**, 278 pre-existing infos (unchanged baseline).
+- Files: `test/adaptive_image_pipeline_test.dart`,
+  `test/hunter_booking_availability_integration_test.dart`, `AGENTS.md`.
+
 ## Phase -- Full codebase + test suite audit pass (added 2026-08-22)
 
 Comprehensive zero-error/zero-warning audit + full test-suite execution
