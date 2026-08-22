@@ -11,7 +11,12 @@ import java.util.Properties
 android {
     namespace = "com.example.jagspoor"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    // Pin the NDK to the version the resolved Flutter plugins depend on
+    // (camera_android, cloud_firestore, firebase_*, mobile_scanner, ... all
+    // declare NDK 27.0.12077973). flutter.ndkVersion (26.3.11579264 on the
+    // 3.29.1 pin) triggers a plugin-NDK-mismatch warning on every build.
+    // NDK releases are backward compatible, so the highest version wins.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -24,8 +29,12 @@ android {
 
     defaultConfig {
         applicationId = "com.example.jagspoor"
-        // firebase_app_check (and other Firebase plugins) require minSdk 23.
-        minSdk = flutter.minSdkVersion
+        // The resolved Firebase plugins (firebase_analytics 12.x,
+        // firebase_app_check, firebase_auth, ...) declare minSdk 23 in their
+        // library manifests, so flutter.minSdkVersion (21 on the 3.29.1 pin)
+        // fails the manifest merger ("minSdkVersion 21 cannot be smaller
+        // than version 23 declared in library [:firebase_analytics]").
+        minSdk = 23
         targetSdk = 36
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName
