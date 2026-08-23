@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/date_picker_theme.dart';
 import '../../core/services/image_service.dart';
 import '../../repositories/animal_repository.dart';
 import '../../models/animal.dart';
@@ -105,11 +106,9 @@ class _AddTrophyScreenState extends State<AddTrophyScreen> {
       lastDate: DateTime.now(),
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: widget.theme.accentColor,
-              surface: widget.theme.backgroundColor,
-            ),
+          data: JagSpoorDatePickerTheme.resolve(
+            Theme.of(context),
+            widget.theme,
           ),
           child: child!,
         );

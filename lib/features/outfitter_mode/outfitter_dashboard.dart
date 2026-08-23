@@ -16,6 +16,7 @@ import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
 import '../admin/services/admin_auth_guard.dart';
+import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/outfitter_scaffold.dart';
 
@@ -49,6 +50,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   void initState() {
     super.initState();
     _resolveUserRole();
+    UsageAnalyticsService.instance
+        .trackScreenView('Outfitter Dashboard');
   }
 
   Future<void> _resolveUserRole() async {
@@ -470,7 +473,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         side: BorderSide(color: OutfitterUi.cardBorderColor(theme), width: 1),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: () {
+          UsageAnalyticsService.instance.trackFeatureUsage(title);
+          onTap();
+        },
         splashColor: theme.accentColor.withAlpha(30),
         highlightColor: theme.accentColor.withAlpha(10),
         child: Padding(

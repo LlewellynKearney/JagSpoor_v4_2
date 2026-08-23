@@ -418,6 +418,44 @@ String? getRolandWardMinimumForSpecies(String speciesName) {
   return _rolandWardMetrics[normalizedName]?.rwMinimum;
 }
 
+/// Parses a Rowland Ward minimum trophy benchmark into a numeric value in
+/// inches. Handles mixed fractions ('22 7/8 inches' -> 22.875), bare
+/// fractions ('7/8' -> 0.875), plain decimals ('35 inches' -> 35.0), and
+/// compact whole numbers. The legacy screen-level parser stripped
+/// non-numeric characters, so '22 7/8 inches' collapsed to 2278 (and
+/// '30.00' vs 2278 read as below-minimum) — this fraction-aware parser is
+/// the fix that makes the Field Estimate Verification comparison correct
+/// (estimate >= minimum qualifies).
+double? parseRolandWardMinimumValue(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  final input = value.trim();
+
+  // Pull the integer part when a mixed-fraction string is present
+  // ('22 7/8 inches'), so the fraction below adds to it rather than the
+  // fraction replacing it.
+  final fractionMatch = RegExp(r'(\d+)?\s*(\d+)\s*/\s*(\d+)').firstMatch(input);
+  if (fractionMatch != null) {
+    final numeratorWhole = fractionMatch.group(1);
+    final numerator = double.tryParse(fractionMatch.group(2)!);
+    final denominator = double.tryParse(fractionMatch.group(3)!);
+    if (numerator != null && denominator != null && denominator > 0) {
+      final whole =
+          (numeratorWhole != null ? double.tryParse(numeratorWhole) : 0) ?? 0.0;
+      return whole + (numerator / denominator);
+    }
+  }
+
+  // Otherwise take the first plain decimal number in the string.
+  final decimalMatch = RegExp(r'\d+(?:\.\d+)?').firstMatch(input);
+  if (decimalMatch != null) {
+    return double.tryParse(decimalMatch.group(0)!);
+  }
+
+  return null;
+}
+
 List<String> getRolandWardSpeciesNames() {
   final speciesNames = _rolandWardMetrics.keys.toList();
   speciesNames.sort();

@@ -410,15 +410,9 @@ class _FieldEstimateScreenState extends State<FieldEstimateScreen> {
   }
 
   double? _parseRolandWardMinimum(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return null;
-    }
-
-    final numericValue = value.replaceAll(RegExp(r'[^0-9.]'), '');
-    if (numericValue.isEmpty) {
-      return null;
-    }
-
-    return double.tryParse(numericValue);
+    // Fraction-aware parsing lives in the shared game-guide helper so the
+    // '22 7/8 inches' style minimums resolve to 22.875 (not 2278) and the
+    // `estimate >= minimum` comparison below is numerically correct.
+    return parseRolandWardMinimumValue(value);
   }
 }

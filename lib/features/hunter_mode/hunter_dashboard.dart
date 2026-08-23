@@ -25,6 +25,7 @@ import 'screens/hunter_package_marketplace_screen.dart';
 import 'screens/hunter_trophy_browser_screen.dart';
 import 'screens/custom_package_farm_selection_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
+import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
@@ -48,6 +49,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
     _loadFavoriteIds();
     _resolveAdmin();
     _enforceProfileOnboarding();
+    UsageAnalyticsService.instance.trackScreenView('Hunter Dashboard');
   }
 
   /// Defense-in-depth onboarding gate: if a hunter somehow reaches the
@@ -539,7 +541,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
       child: Stack(
         children: [
           InkWell(
-            onTap: () => feature.onTap(context, widget.theme),
+            onTap: () {
+              UsageAnalyticsService.instance
+                  .trackFeatureUsage(feature.title);
+              feature.onTap(context, widget.theme);
+            },
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.all(20.0),

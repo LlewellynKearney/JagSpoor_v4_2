@@ -539,6 +539,23 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // ── Admin analytics: app config + usage telemetry ────────────────────
+    // `app_config` stores admin-only platform configuration (e.g. the
+    // manual subscription amounts used by the Admin portal revenue
+    // section). Read/write is admin-only so the configuration surface is
+    // not exposed to regular users.
+    match /app_config/{docId} {
+      allow read, write: if isAdmin();
+    }
+    // Screen-view / feature-usage telemetry used by the Admin portal. Any
+    // signed-in user may append events (client-side fire-and-forget);
+    // reads/updates/deletes are admin-only, matching the bug_reports
+    // privacy posture.
+    match /feature_usage_events/{eventId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
     // ── Default deny ────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

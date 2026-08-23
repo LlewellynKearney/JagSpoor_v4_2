@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/date_picker_theme.dart';
 import '../../core/services/image_service.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 
@@ -106,11 +107,9 @@ class _EditTrophyScreenState extends State<EditTrophyScreen> {
       lastDate: DateTime.now(),
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: widget.theme.accentColor,
-              surface: widget.theme.backgroundColor,
-            ),
+          data: JagSpoorDatePickerTheme.resolve(
+            Theme.of(context),
+            widget.theme,
           ),
           child: child!,
         );

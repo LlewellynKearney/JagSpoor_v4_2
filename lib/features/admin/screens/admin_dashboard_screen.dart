@@ -3,18 +3,24 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
+import '../services/subscription_config_service.dart';
+import '../services/usage_analytics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
 import 'create_user_screen.dart';
 import 'bulk_csv_import_screen.dart';
 
 /// Master Admin Analytics Dashboard.
 ///
-/// Accessible only to users who pass [AdminAuthGuard]. Presents three reporting
+/// Accessible only to users who pass [AdminAuthGuard]. Presents five reporting
 /// sections:
 ///   - Entity Overview (counts of outfitters, hunters, packages, bookings,
 ///     trophies).
 ///   - Financial Analytics (daily/weekly/monthly/yearly gross booking revenue,
 ///     in ZAR).
+///   - Subscription Revenue (admin-configured hunter/outfitter rates × the
+///     current subscriber counts; manual input fields).
+///   - Feature Usage (screen-view / feature-usage telemetry partitioned by
+///     role — Hunter vs. Outfitter).
 ///   - User Engagement (registered users and active sessions).
 ///
 /// Also provides entry points to manual account creation and bulk CSV import.
@@ -30,10 +36,22 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   AdminMetrics? _metrics;
   FinancialAnalytics? _financials;
+  UsageAnalytics _usage = const UsageAnalytics(byRole: {});
+  SubscriptionRevenue? _subscriptionRevenue;
+  final TextEditingController _hunterSubController = TextEditingController();
+  final TextEditingController _outfitterSubController = TextEditingController();
+  bool _savingConfig = false;
   bool _loading = true;
   String? _error;
   final AdminAuthGuard _guard = AdminAuthGuard.instance;
   bool _authorized = false;
+
+  @override
+  void dispose() {
+    _hunterSubController.dispose();
+    _outfitterSubController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -58,10 +76,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final results = await Future.wait([
         AdminAnalyticsService.instance.fetchEntityMetrics(),
         AdminAnalyticsService.instance.fetchFinancialAnalytics(),
+        UsageAnalyticsService.instance.fetchUsageAnalytics(),
+        SubscriptionConfigService.instance.loadConfig(),
       ]);
+      final metrics = results[0] as AdminMetrics;
+      final config = results[3] as SubscriptionConfig;
+      _hunterSubController.text = _formatAmount(config.hunterSubscriptionZAR);
+      _outfitterSubController.text =
+          _formatAmount(config.outfitterSubscriptionZAR);
       setState(() {
-        _metrics = results[0] as AdminMetrics;
+        _metrics = metrics;
         _financials = results[1] as FinancialAnalytics;
+        _usage = results[2] as UsageAnalytics;
+        _subscriptionRevenue = SubscriptionConfigService.computeRevenue(
+          config,
+          hunterCount: metrics.activeHunters,
+          outfitterCount: metrics.totalOutfitters,
+        );
         _loading = false;
       });
     } catch (e) {
@@ -69,6 +100,45 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _loading = false;
         _error = 'Failed to load analytics: $e';
       });
+    }
+  }
+
+  String _formatAmount(double v) => v <= 0
+      ? ''
+      : (v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2));
+
+  Future<void> _saveSubscriptionConfig() async {
+    setState(() => _savingConfig = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final config = SubscriptionConfig(
+        hunterSubscriptionZAR:
+            double.tryParse(_hunterSubController.text.trim()) ?? 0.0,
+        outfitterSubscriptionZAR:
+            double.tryParse(_outfitterSubController.text.trim()) ?? 0.0,
+      );
+      await SubscriptionConfigService.instance.saveConfig(config);
+      if (!mounted) return;
+      final metrics = _metrics;
+      setState(() {
+        _savingConfig = false;
+        if (metrics != null) {
+          _subscriptionRevenue = SubscriptionConfigService.computeRevenue(
+            config,
+            hunterCount: metrics.activeHunters,
+            outfitterCount: metrics.totalOutfitters,
+          );
+        }
+      });
+      messenger?.showSnackBar(const SnackBar(
+          content: Text('Subscription amounts saved.'),
+          backgroundColor: Colors.green));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingConfig = false);
+      messenger?.showSnackBar(SnackBar(
+          content: Text('Could not save subscription config: $e'),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -121,6 +191,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           const SizedBox(height: 24),
                           _buildSectionHeader('Financial Analytics (ZAR)'),
                           _buildFinancialSection(),
+                          const SizedBox(height: 24),
+                          _buildSectionHeader('Subscription Revenue (ZAR)'),
+                          _buildSubscriptionConfigCard(),
+                          _buildSubscriptionRevenueCard(),
+                          const SizedBox(height: 24),
+                          _buildSectionHeader('Feature Usage by Role'),
+                          _buildFeatureUsageSection(),
                           const SizedBox(height: 24),
                           _buildSectionHeader('User Engagement'),
                           _buildEngagementRow(),
@@ -298,6 +375,232 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── Subscription Revenue ────────────────────────────────────────────────
+  Widget _subscriptionInput({
+    required String label,
+    required TextEditingController controller,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: TextStyle(color: widget.theme.textColor, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle:
+            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
+        prefixText: 'R ',
+        prefixStyle:
+            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
+        filled: true,
+        fillColor: widget.theme.cardColor,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionConfigCard() {
+    return Card(
+      color: widget.theme.cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Subscription amounts (per user / month)',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _subscriptionInput(
+                label: 'Hunter subscription (ZAR)',
+                controller: _hunterSubController),
+            const SizedBox(height: 10),
+            _subscriptionInput(
+                label: 'Outfitter subscription (ZAR)',
+                controller: _outfitterSubController),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _savingConfig ? null : _saveSubscriptionConfig,
+                icon: _savingConfig
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text(_savingConfig ? 'SAVING…' : 'SAVE'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionRevenueCard() {
+    final revenue = _subscriptionRevenue;
+    if (revenue == null) return const SizedBox.shrink();
+    return Card(
+      color: widget.theme.cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _subscriptionRow('MRR', revenue.monthlyRecurringRevenue),
+            _subscriptionRow(
+                'Daily estimate', revenue.dailyEstimate),
+            _subscriptionRow(
+                'Weekly estimate', revenue.weeklyEstimate),
+            _subscriptionRow('ARR', revenue.annualProjection),
+            const SizedBox(height: 4),
+            Text(
+              '${revenue.hunterCount} hunters × '
+              'R ${revenue.config.hunterSubscriptionZAR.toStringAsFixed(2)} + '
+              '${revenue.outfitterCount} outfitters × '
+              'R ${revenue.config.outfitterSubscriptionZAR.toStringAsFixed(2)}',
+              style: TextStyle(
+                color: widget.theme.subtitleColor,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _subscriptionRow(String label, double value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+              width: 110,
+              child: Text(label,
+                  style: TextStyle(
+                      color: widget.theme.subtitleColor, fontSize: 10))),
+          Text(
+            'R ${value.toStringAsFixed(2)}',
+            style: TextStyle(
+              color: Colors.green,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Feature usage by role ───────────────────────────────────────────────
+  Widget _buildFeatureUsageSection() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+            child: _usageCard(
+                icon: Icons.person_outline,
+                title: 'Hunters',
+                summary: _usage.hunters)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _usageCard(
+                icon: Icons.business_outlined,
+                title: 'Outfitters',
+                summary: _usage.outfitters)),
+      ],
+    );
+  }
+
+  Widget _usageCard({
+    required IconData icon,
+    required String title,
+    required RoleUsageSummary summary,
+  }) {
+    final names = summary.orderedFeatures;
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: widget.theme.accentColor, size: 18),
+              const SizedBox(width: 6),
+              Text(title,
+                  style: TextStyle(
+                      color: widget.theme.textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12)),
+              const Spacer(),
+              Text(
+                summary.total.toString(),
+                style: TextStyle(
+                  color: widget.theme.accentColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (names.isEmpty)
+            Text(
+              'No usage recorded yet.',
+              style: TextStyle(
+                  color: widget.theme.subtitleColor, fontSize: 11),
+            )
+          else
+            ...names.take(6).map((name) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: widget.theme.subtitleColor, fontSize: 11),
+                        ),
+                      ),
+                      Text(
+                        summary.featureCounts[name].toString(),
+                        style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11),
+                      ),
+                    ],
+                  ),
+                )),
+        ],
+      ),
     );
   }
 

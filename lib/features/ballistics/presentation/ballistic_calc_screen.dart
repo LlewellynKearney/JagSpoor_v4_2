@@ -208,6 +208,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   double _relativeHumidity = 50.0; // %
   double _powderTempCelsius = 20.0;
   DragModel _dragModel = DragModel.g1;
+
+  // Zero-distance configuration: the supported zero range is 5m up to 1000m,
+  // snapped in 5m increments (199 divisions) so the slider + value indicator
+  // stay clean across the full extended range.
+  static const double zeroDistanceMinMeters = 5.0;
+  static const double zeroDistanceMaxMeters = 1000.0;
+  static const int zeroDistanceDivisions = 199;
   double _zeroDistanceMeters = 100.0;
 
   // Muzzle velocity and bullet weight controls (v19.0)
@@ -536,9 +543,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                     _buildParameterRow(
                       'Zero Distance (m)',
                       _zeroDistanceMeters,
-                      25,
-                      1000,
+                      zeroDistanceMinMeters,
+                      zeroDistanceMaxMeters,
                       (v) => setState(() => _zeroDistanceMeters = v),
+                      divisions: zeroDistanceDivisions,
                     ),
                     const SizedBox(height: 8),
                     _buildParameterRow(
@@ -818,13 +826,20 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
   }
 
   Widget _buildSummaryRow(String label, String value) {
+    // Mode-aware contrast: the light palette below assumes a light surface, so
+    // in dark mode we switch labels to the high-contrast warm cream
+    // (0xFFEFE7DC) and values to gold (0xFFD4AF37) so they stay legible
+    // against the dark HUD card.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFEFE7DC) : const Color(0xFF1A2421);
+    final valueColor = isDark ? const Color(0xFFD4AF37) : const Color(0xFF2E3D2F);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '• ',
           style: TextStyle(
-            color: Color(0xFF1A2421),
+            color: valueColor,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -832,8 +847,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         Expanded(
           child: Text(
             '$label ',
-            style: const TextStyle(
-              color: Color(0xFF1A2421),
+            style: TextStyle(
+              color: labelColor,
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
@@ -841,8 +856,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         ),
         Text(
           value,
-          style: const TextStyle(
-            color: Color(0xFF2E3D2F),
+          style: TextStyle(
+            color: valueColor,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -886,8 +901,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     double value,
     double min,
     double max,
-    ValueChanged<double> onChanged,
-  ) {
+    ValueChanged<double> onChanged, {
+    int? divisions,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -923,7 +939,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               value: value.clamp(min, max),
               min: min,
               max: max,
-              divisions: ((max - min) / 10).round(),
+              // An explicit division count wins; otherwise snap at ~10 units
+              // per division so large ranges (e.g. 5m-1000m zero distance)
+              // still behave cleanly instead of producing fractional steps.
+              divisions: divisions ?? ((max - min) / 10).round(),
               onChanged: onChanged,
             ),
           ),
