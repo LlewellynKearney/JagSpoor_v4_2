@@ -13,6 +13,7 @@ import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
 import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
+import 'services/autofill_credential_prompter.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -28,7 +29,11 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
-  final _authGateService = AuthGateService();
+
+  // Lazy: `AuthGateService` eagerly resolves `FirebaseAuth.instance`, which
+  // throws `[core/no-app]` before Firebase initializes (cold-launch race /
+  // widget tests). Defer construction to first use (Google sign-in / 2FA).
+  AuthGateService get _authGateService => AuthGateService();
 
   bool _isLoginMode = true;
   bool _obscurePassword = true;
@@ -278,10 +283,18 @@ class _AuthScreenState extends State<AuthScreen> {
           email: email,
           password: password,
         );
+        // Successful login — commit the AutofillGroup context so the native
+        // credential manager (Android Credential Manager / iOS Keychain)
+        // prompts to save the email + password.
+        AutofillCredentialPrompter.promptSaveCredentials();
       } else {
         // Create Firebase Auth user
         final userCredential = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(email: email, password: password);
+
+        // Successful registration — commit the AutofillGroup context so the
+        // native credential manager prompts to save the new credentials.
+        AutofillCredentialPrompter.promptSaveCredentials();
 
         // Create Firestore user document
         final user = userCredential.user;
@@ -429,7 +442,14 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.all(24.0),
             child: Form(
               key: _formKey,
-              child: Container(
+              // Grouping the email + password fields in a single
+              // `AutofillGroup` lets the platform treat them as one
+              // credential set: autofill fills both together, and
+              // `TextInput.finishAutofillContext()` (called on successful
+              // auth) commits the group so the native credential manager
+              // offers to save them.
+              child: AutofillGroup(
+                child: Container(
                 padding: const EdgeInsets.all(24.0),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface.withValues(alpha: 0.15),
@@ -466,8 +486,16 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 24.0),
                     TextFormField(
+                      key: const ValueKey('loginEmailField'),
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      // Both hints: Android Credential Manager keys on
+                      // `username`, iOS Keychain on `email`.
+                      autofillHints: const [
+                        AutofillHints.email,
+                        AutofillHints.username,
+                      ],
                       decoration: const InputDecoration(
                         labelText: 'EMAIL ADDRESS',
                         border: OutlineInputBorder(),
@@ -476,8 +504,15 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 16.0),
                     TextFormField(
+                      key: const ValueKey('loginPasswordField'),
                       controller: _passwordController,
                       obscureText: _obscurePassword,
+                      // `password` for sign-in, `newPassword` for sign-up so
+                      // the platform stores the credential in the right flow.
+                      autofillHints:
+                          _isLoginMode
+                              ? const [AutofillHints.password]
+                              : const [AutofillHints.newPassword],
                       decoration: InputDecoration(
                         labelText: 'SECURE PIN / PASSWORD',
                         border: const OutlineInputBorder(),
@@ -683,6 +718,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     const CopyrightFooter(),
                   ],
                 ),
+              ),
               ),
             ),
           ),

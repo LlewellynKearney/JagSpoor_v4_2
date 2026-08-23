@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../admin/services/admin_auth_guard.dart';
 import '../../auth/services/user_role_provider.dart';
+import '../../../core/services/push_notification_service.dart';
 
 /// AuthGateService - Advanced Authentication Shield
 /// Combines Google OAuth federated logins with SMS OTP 2FA authorization
@@ -153,6 +154,14 @@ class AuthGateService {
 
   /// Sign out from all providers
   Future<void> signOut() async {
+    // Remove this device's FCM token from the user document BEFORE the auth
+    // session ends (the uid must still be resolvable), so the account stops
+    // receiving pushes on this device. Best-effort: never blocks sign-out.
+    try {
+      await PushNotificationService.instance.unregisterCurrentDevice();
+    } catch (_) {
+      // Push cleanup is a convenience — never block the sign-out.
+    }
     await _firebaseAuth.signOut();
     await _googleSignIn.signOut();
     // Clear cached role state so the next sign-in re-resolves from scratch.

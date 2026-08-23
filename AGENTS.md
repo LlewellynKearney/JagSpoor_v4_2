@@ -1,6 +1,78 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Credential autofill prompting + real-time booking/package FCM push notifications (added 2026-08-23)
+
+- **Task 1 -- Credential Save Prompt on Login** (`auth_screen.dart`):
+  the login/registration Form is now wrapped in an `AutofillGroup`; the
+  email `TextFormField` (key `loginEmailField`) carries
+  `autofillHints: [AutofillHints.email, AutofillHints.username]` (Android
+  keys on `username`, iOS on `email`) and the password field
+  (key `loginPasswordField`) carries `[AutofillHints.password]` in login
+  mode / `[AutofillHints.newPassword]` in registration mode. On successful
+  sign-in AND registration, the new
+  `lib/features/auth/services/autofill_credential_prompter.dart`
+  (`AutofillCredentialPrompter.promptSaveCredentials()`) calls
+  `TextInput.finishAutofillContext()` so the native credential manager
+  (Android Credential Manager / iOS Keychain) prompts to save the
+  credentials. NOTE: on the Flutter 3.29.1 CI pin
+  `TextInput.finishAutofillContext()` returns `void` (fire-and-forget), so
+  the helper is synchronous with a sync try/catch. Also made the screen's
+  `_authGateService` a lazy getter (it eagerly resolves
+  `FirebaseAuth.instance`, which blocks widget tests / cold-launch).
+- **Task 2 -- Real-time FCM push notifications**:
+  - NEW `lib/core/services/push_notification_service.dart`
+    (`PushNotificationService.instance` + `forTesting` seam): registers the
+    device FCM token on `users/{uid}.fcmTokens` (arrayUnion; the
+    `users/{uid}` rules already allow owner writes), stamps
+    `fcmTokensUpdatedAt`, re-persists on `onTokenRefresh`, and removes the
+    token on sign-out (`unregisterCurrentDevice`, called from
+    `AuthGateService.signOut` BEFORE the auth session ends).
+    `initialize()` (called from `main.dart` after `FirestoreBootstrap`)
+    registers the persisted session, re-registers on every
+    `authStateChanges` sign-in, and surfaces foreground FCM messages via
+    `flutter_local_notifications` on the shared `booking_status_channel`
+    (background/terminated messages are displayed by the OS). Pure
+    `describeMessage(RemoteMessage)` maps notification/data payloads to
+    (title, body, payload) for the displayer.
+  - Cloud Functions (`functions/src/index.ts`): NEW `onBookingCreated`
+    (notifies the OUTFITTER when a hunter books), `onPackageUpdated`
+    (notifies the owning outfitter on package status flips incl.
+    `sold_out`), and a second path in `onBookingUpdated` alerting the
+    outfitter when `dateChangeRequestPending` flips to true.
+    `bookingStatusBody` now covers the off-platform lifecycle
+    (`Pending Approval` / `Awaiting Payment` / `Confirmed` / `Declined` /
+    `Cancelled` / `Completed`). Shared `tokensForUser` helper reads
+    `users/{uid}.fcmTokens`; all pushes go through the existing
+    high-priority `sendFcm` multicast. `npx tsc --noEmit` clean.
+- **Task 3 -- Tests** (36 new, all pass):
+  `test/login_autofill_test.dart` (widget: AutofillGroup wrapping, hint
+  assertions via the inner `TextField` — `TextFormField` does NOT expose
+  `autofillHints`/`keyboardType` getters; mode-aware password hint;
+  structural finish-call contract), `test/autofill_credential_prompter_test.dart`
+  (platform-channel interception of `TextInput.finishAutofillContext`),
+  `test/push_notification_service_test.dart` (token save/remove/accumulate/
+  merge, register/unregister lifecycle, refresh re-persist,
+  `describeMessage` + foreground displayer routing via injected fakes +
+  FakeFirebaseFirestore), `test/push_notification_functions_contract_test.dart`
+  (structural parse of `functions/src/index.ts`).
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors,
+  0 warnings** (278 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): **All 1227 tests passed** (was 1191; +36 new). Env note:
+  re-installed Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so`
+  symlink (`LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config"
+  pubspec warning is the documented pre-existing spurious line.
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate `onBookingCreated` / `onPackageUpdated` /
+  the updated `onBookingUpdated`. No Firestore rules change needed
+  (`users/{uid}` owner-write already covers `fcmTokens`).
+- Files: `lib/features/auth/auth_screen.dart`,
+  `lib/features/auth/services/autofill_credential_prompter.dart` (NEW),
+  `lib/core/services/push_notification_service.dart` (NEW),
+  `lib/features/authentication/services/auth_gate_service.dart`,
+  `lib/main.dart`, `functions/src/index.ts`, 4 new test files, `AGENTS.md`.
+
+
 ## Phase -- Hunter Dashboard categorized feature folders (added 2026-08-23)
 
 - **Task 1 -- Folder organization**: the Hunter Dashboard's flat feature

@@ -232,10 +232,14 @@ async function sendFcm(
 /** Maps a booking status string to a human-readable push body. */
 function bookingStatusBody(newStatus: string): string {
   switch (newStatus.toLowerCase()) {
+    case "pending approval":
+      return "Your booking request was submitted and is awaiting outfitter approval.";
+    case "awaiting payment":
     case "approved":
-      return "Your booking has been approved!";
+      return "Your booking was approved! Please arrange payment with the outfitter.";
+    case "confirmed":
     case "paid":
-      return "Your booking is now Paid!";
+      return "Payment confirmed — your booking is confirmed!";
     case "declined":
       return "Your booking has been declined.";
     case "cancelled":
@@ -317,25 +321,156 @@ export const onNewChatMessage = onDocumentCreated(
 );
 
 /**
+ * Fetches the FCM tokens for a user document id. Never throws — returns an
+ * empty array when the doc does not exist or carries no tokens.
+ */
+async function tokensForUser(userId: string): Promise<string[]> {
+  if (!userId) return [];
+  const userSnap = await firestore().collection("users").doc(userId).get();
+  if (!userSnap.exists) return [];
+  return extractFcmTokens((userSnap.data() ?? {}).fcmTokens);
+}
+
+/**
+ * onBookingCreated
+ *
+ * Firestore trigger (v2) on `bookings/{bookingId}`.
+ *
+ * A new booking document means a HUNTER just booked (or requested) a
+ * package — notify the OUTFITTER so they can action the incoming request.
+ *
+ * Push payload:
+ *   - title: "New Booking Request"
+ *   - body:  e.g. "Bosveld Kudu Package was just booked by a hunter."
+ *   - data:  { bookingId, type: "booking_new" }
+ */
+export const onBookingCreated = onDocumentCreated(
+  { document: "bookings/{bookingId}", region: "us-central1" },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const booking = snap.data();
+    const bookingId = event.params.bookingId;
+
+    const outfitterId = (booking.outfitterId as string | undefined) ?? "";
+    if (!outfitterId) return;
+
+    const tokens = await tokensForUser(outfitterId);
+    if (tokens.length === 0) {
+      logger.info("onBookingCreated: outfitter has no FCM tokens", {
+        bookingId,
+        outfitterId,
+      });
+      return;
+    }
+
+    const packageName =
+      (booking.packageName as string | undefined) ?? "a hunting package";
+    await sendFcm(
+      tokens,
+      "New Booking Request",
+      `A hunter just booked ${packageName}. Review the request on your booking dashboard.`,
+      { bookingId, type: "booking_new" }
+    );
+  }
+);
+
+/**
  * onBookingUpdated
  *
  * Firestore trigger (v2) on `bookings/{bookingId}`.
  *
- * Fires only when the `status` field changes between the before/after
- * snapshots. The recipient is the "other" party:
- *   - if the hunter changed it (`updatedBy == hunterId`) → alert the outfitter
- *   - otherwise (outfitter or system) → alert the hunter.
- * When `updatedBy` is absent, the hunter is alerted by default, since most
- * status transitions (approval, decline) are outfitter/system initiated and
- * the hunter is the interested party.
+ * Two notification paths:
+ *   1. STATUS change — the recipient is the "other" party:
+ *        - if the hunter changed it (`updatedBy == hunterId`) → alert the outfitter
+ *        - otherwise (outfitter or system) → alert the hunter.
+ *      When `updatedBy` is absent, the hunter is alerted by default, since most
+ *      status transitions (approval, decline) are outfitter/system initiated and
+ *      the hunter is the interested party.
+ *   2. DATE-CHANGE request — when `dateChangeRequestPending` flips to true the
+ *      hunter modified the booking's hunt window → alert the outfitter.
  *
  * Push payload:
- *   - title: "Booking Status Update"
- *   - body:  e.g. "Your booking is now Paid!"
- *   - data:  { bookingId, type: "booking" }
+ *   - title: "Booking Status Update" (or "Date Change Requested")
+ *   - body:  e.g. "Payment confirmed — your booking is confirmed!"
+ *   - data:  { bookingId, type: "booking" } (or { bookingId, type: "date_change" })
  */
 export const onBookingUpdated = onDocumentUpdated(
   { document: "bookings/{bookingId}", region: "us-central1" },
+  async (event) => {
+    const change = event.data;
+    if (!change) return;
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after) return;
+
+    const bookingId = event.params.bookingId;
+    const hunterId = (after.hunterId as string | undefined) ?? "";
+    const outfitterId = (after.outfitterId as string | undefined) ?? "";
+
+    const beforeStatus = (before.status as string | undefined) ?? "";
+    const afterStatus = (after.status as string | undefined) ?? "";
+
+    // ── Path 1: status transition ──────────────────────────────────────
+    if (beforeStatus !== afterStatus) {
+      const actorId = (after.updatedBy as string | undefined) ?? "";
+      const recipientId =
+        actorId && actorId === hunterId ? outfitterId : hunterId;
+      if (recipientId) {
+        const tokens = await tokensForUser(recipientId);
+        if (tokens.length === 0) {
+          logger.info("onBookingUpdated: recipient has no FCM tokens", {
+            bookingId,
+            recipientId,
+          });
+        } else {
+          await sendFcm(
+            tokens,
+            "Booking Status Update",
+            bookingStatusBody(afterStatus),
+            { bookingId, type: "booking" }
+          );
+        }
+      }
+    }
+
+    // ── Path 2: hunter requested a date change → alert the outfitter ──
+    const wasPending = before.dateChangeRequestPending === true;
+    const isPending = after.dateChangeRequestPending === true;
+    if (!wasPending && isPending && outfitterId) {
+      const tokens = await tokensForUser(outfitterId);
+      if (tokens.length > 0) {
+        const packageName =
+          (after.packageName as string | undefined) ?? "a booking";
+        await sendFcm(
+          tokens,
+          "Date Change Requested",
+          `A hunter requested new hunt dates for ${packageName}. Review the request on your booking dashboard.`,
+          { bookingId, type: "date_change" }
+        );
+      }
+    }
+  }
+);
+
+/**
+ * onPackageUpdated
+ *
+ * Firestore trigger (v2) on `packages/{packageId}`.
+ *
+ * Fires only when the package's `status` field changes (e.g. active →
+ * sold_out after the last slot is booked, draft → active on publish,
+ * active → archived). Notifies the owning OUTFITTER so they have a
+ * real-time alert on inventory state changes — including the sold-out flip
+ * driven by a hunter's booking transaction.
+ *
+ * Push payload:
+ *   - title: "Package Status Update"
+ *   - body:  e.g. "'Bosveld Kudu Package' is now Sold Out."
+ *   - data:  { packageId, type: "package" }
+ */
+export const onPackageUpdated = onDocumentUpdated(
+  { document: "packages/{packageId}", region: "us-central1" },
   async (event) => {
     const change = event.data;
     if (!change) return;
@@ -347,34 +482,30 @@ export const onBookingUpdated = onDocumentUpdated(
     const afterStatus = (after.status as string | undefined) ?? "";
     if (beforeStatus === afterStatus) return;
 
-    const bookingId = event.params.bookingId;
-    const hunterId = (after.hunterId as string | undefined) ?? "";
+    const packageId = event.params.packageId;
     const outfitterId = (after.outfitterId as string | undefined) ?? "";
-    const actorId = (after.updatedBy as string | undefined) ?? "";
+    if (!outfitterId) return;
 
-    const recipientId =
-      actorId && actorId === hunterId ? outfitterId : hunterId;
-    if (!recipientId) return;
-
-    const userSnap = await firestore()
-      .collection("users")
-      .doc(recipientId)
-      .get();
-    if (!userSnap.exists) return;
-    const tokens = extractFcmTokens((userSnap.data() ?? {}).fcmTokens);
+    const tokens = await tokensForUser(outfitterId);
     if (tokens.length === 0) {
-      logger.info("onBookingUpdated: recipient has no FCM tokens", {
-        bookingId,
-        recipientId,
+      logger.info("onPackageUpdated: outfitter has no FCM tokens", {
+        packageId,
+        outfitterId,
       });
       return;
     }
 
+    const title = (after.title as string | undefined) ?? "Your package";
+    const readableStatus =
+      afterStatus === "sold_out"
+        ? "Sold Out"
+        : afterStatus.charAt(0).toUpperCase() + afterStatus.slice(1);
+
     await sendFcm(
       tokens,
-      "Booking Status Update",
-      bookingStatusBody(afterStatus),
-      { bookingId, type: "booking" }
+      "Package Status Update",
+      `'${title}' is now ${readableStatus}.`,
+      { packageId, type: "package" }
     );
   }
 );
