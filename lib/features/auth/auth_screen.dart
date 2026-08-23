@@ -18,7 +18,17 @@ import 'services/autofill_credential_prompter.dart';
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
 
-  const AuthScreen({super.key, required this.themedata});
+  /// Test seam: overrides the Google Sign-In invocation so widget tests can
+  /// exercise the failure / cancellation UI paths without a Firebase app or
+  /// the `google_sign_in` platform plugin.
+  @visibleForTesting
+  final Future<GoogleSignInResult> Function()? googleSignInOverride;
+
+  const AuthScreen({
+    super.key,
+    required this.themedata,
+    this.googleSignInOverride,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -71,28 +81,53 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final credential = await _authGateService.signInWithGoogle();
+      final override = widget.googleSignInOverride;
+      final result =
+          override != null
+              ? await override()
+              : await _authGateService.signInWithGoogle();
 
-      if (credential != null) {
+      // Guard every post-async-gap use of context / setState — without this
+      // an unmounted State throws "setState() called after dispose()" (the
+      // unhandled-exception crash reported in this flow).
+      if (!mounted) return;
+
+      if (result.isSuccess) {
         // Check if user needs 2FA
-        if (_requires2FA(credential.user)) {
+        if (_requires2FA(result.credential!.user)) {
           _show2FAVerificationSheet();
         } else {
           _routeAfterAuth();
         }
-      } else {
-        setState(() => _isLoading = false);
+        return;
       }
-    } catch (e) {
+
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Google Sign-In failed: $e'),
-            backgroundColor: Colors.red,
+
+      // A user-initiated cancel is silent (correct UX); a genuine failure
+      // surfaces the specific reason so the user (and support) can act.
+      if (result.cancelled) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.errorMessage ??
+                'Google Sign-In failed. Please try again.',
           ),
-        );
-      }
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google Sign-In failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

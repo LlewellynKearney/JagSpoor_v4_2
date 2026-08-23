@@ -1,6 +1,72 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Google Sign-In silent-failure fix + debug-keystore SHA fingerprint audit (added 2026-08-23)
+
+- **Audit findings (root causes of "Google Sign-In broke")**:
+  1. **Silent-failure defect (primary)**: `AuthGateService.signInWithGoogle()`
+     caught EVERY exception and returned `null`; `_handleGoogleSignIn`
+     (`auth_screen.dart`) treated `null` as "user cancelled" and simply
+     stopped the spinner — NO error ever surfaced. Any failure (unregistered
+     SHA-1 fingerprint -> `ApiException: 10` DEVELOPER_ERROR, null idToken,
+     network, Play Services) was invisible -> "tapping Google Sign-In does
+     nothing".
+  2. **Unregistered debug keystore (platform config)**: the debug APK built
+     in this sandbox is signed with a freshly-generated
+     `~/.android/debug.keystore` whose fingerprints are NOT registered in
+     the Firebase Console -> Google Sign-In fails with `ApiException: 10`
+     on that APK. `android/app/google-services.json` itself is CORRECT
+     (project `jagspoor`, Android OAuth client type 1 + web client type 3,
+     `package_name: com.example.jagspoor` matches `applicationId`).
+  3. **Null-token handling**: when the fingerprint isn't registered,
+     `googleAuth.idToken`/`accessToken` come back null and
+     `GoogleAuthProvider.credential(null, null)` throws — previously
+     swallowed into the silent null.
+  4. **Unhandled exceptions**: `_handleGoogleSignIn` called `setState` /
+     `showModalBottomSheet` after the async gap with no `mounted` guards ->
+     "setState() called after dispose()" if the user left mid-flow.
+- **Fix (`auth_gate_service.dart`)**: new public `GoogleSignInResult`
+  (success / cancelled / failure + `isSuccess`). `signInWithGoogle()` now
+  returns it: null googleUser -> cancelled; BOTH tokens null -> failure with
+  SHA-fingerprint guidance (was a silent throw); `PlatformException` ->
+  `friendlyGoogleSignInError`; `FirebaseAuthException` -> its message;
+  generic -> raw. New pure static `friendlyGoogleSignInError(Object)` maps
+  `ApiException: 10` / `sign_in_failed` / `DEVELOPER_ERROR` / `no_tokens` ->
+  "register SHA-1/SHA-256 in Firebase Console", `network_error` -> network
+  guidance, `sign_in_canceled` -> cancelled, else the plugin detail. The
+  `print` calls in this method were replaced with `debugPrint`.
+- **Fix (`auth_screen.dart`)**: `_handleGoogleSignIn` consumes the result —
+  mounted-guarded after the async gap; success -> 2FA sheet or
+  `_routeAfterAuth()`; cancelled -> silent spinner stop (correct UX);
+  failure -> red floating snackbar with the SPECIFIC message (6s). New
+  `@visibleForTesting googleSignInOverride` ctor seam for widget tests.
+- **Console action required (CANNOT be done from the sandbox)**: register
+  the signing keystore fingerprints in Firebase Console -> Project
+  `jagspoor` -> Settings -> Android app `com.example.jagspoor` -> SHA
+  certificate fingerprints. The sandbox debug keystore
+  (`~/.android/debug.keystore`, used for the local debug APK):
+  - SHA-1: `62:2C:2E:3C:35:1E:1A:8E:F2:4F:0F:17:27:83:95:1B:9B:90:F9:CB`
+  - SHA-256: `8F:6A:BD:CE:4C:B5:CB:CF:C4:14:88:6B:DF:7A:98:75:6E:38:E6:5A:7C:4E:15:60:81:13:FA:28:AF:2F:DB:25`
+  (every dev machine / CI debug keystore + the release keystore each need
+  their own entry; after adding, re-download `google-services.json` — not
+  strictly required for SHA registration to take effect, but keeps the
+  bundled `oauth_client` list in sync). `google_sign_in` 6.3.0 is the
+  resolved version; the classic `GoogleSignIn(signInOption:)` + `signIn()`
+  API is intact — no Dart migration needed.
+- **Tests** (`test/google_sign_in_flow_test.dart`, 14 tests, all pass):
+  `GoogleSignInResult` factory contracts; `friendlyGoogleSignInError`
+  (ApiException: 10 / DEVELOPER_ERROR / sign_in_failed / no_tokens / network
+  / canceled / generic platform + non-platform errors); widget tests via the
+  `googleSignInOverride` seam — failure surfaces the exact message in a
+  snackbar, cancellation is silent, a throwing override is caught by the
+  defensive catch (no unhandled exception).
+- **Verification**: `flutter analyze` 0 errors / 0 warnings (pre-existing
+  infos baseline). `flutter test` full suite green (see commit entry).
+- Files: `lib/features/authentication/services/auth_gate_service.dart`,
+  `lib/features/auth/auth_screen.dart`,
+  `test/google_sign_in_flow_test.dart` (NEW), `AGENTS.md`.
+
+
 ## Phase -- Credential autofill prompting + real-time booking/package FCM push notifications (added 2026-08-23)
 
 - **Task 1 -- Credential Save Prompt on Login** (`auth_screen.dart`):

@@ -1,5 +1,7 @@
 import 'dart:math';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,6 +9,33 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../admin/services/admin_auth_guard.dart';
 import '../../auth/services/user_role_provider.dart';
 import '../../../core/services/push_notification_service.dart';
+
+/// Outcome of a Google Sign-In attempt.
+///
+/// Distinguishes the three possible end states so the UI can react
+/// appropriately instead of treating every non-success as a silent cancel:
+///  * [success]    — a Firebase [UserCredential] was issued.
+///  * [cancelled]  — the user dismissed the Google account picker (silent).
+///  * [failure]    — an actual error occurred; [errorMessage] carries a
+///    user-actionable reason (e.g. unregistered SHA-1 fingerprint).
+class GoogleSignInResult {
+  final UserCredential? credential;
+  final bool cancelled;
+  final String? errorMessage;
+
+  const GoogleSignInResult._(this.credential, this.cancelled, this.errorMessage);
+
+  factory GoogleSignInResult.success(UserCredential credential) =>
+      GoogleSignInResult._(credential, false, null);
+
+  factory GoogleSignInResult.cancelled() =>
+      const GoogleSignInResult._(null, true, null);
+
+  factory GoogleSignInResult.failure(String message) =>
+      GoogleSignInResult._(null, false, message);
+
+  bool get isSuccess => credential != null;
+}
 
 /// AuthGateService - Advanced Authentication Shield
 /// Combines Google OAuth federated logins with SMS OTP 2FA authorization
@@ -34,20 +63,41 @@ class AuthGateService {
 
   /// Google Sign In - OAuth credential handshake
   /// Initiates absolute Google OAuth login layer on Android/iOS
-  /// Extracts token parameters and provisions authenticates user profile
-  Future<UserCredential?> signInWithGoogle() async {
+  /// Extracts token parameters and provisions authenticates user profile.
+  ///
+  /// Returns a [GoogleSignInResult] that distinguishes a genuine failure
+  /// (with a user-actionable [GoogleSignInResult.errorMessage]) from a user
+  /// cancellation, so the UI no longer treats every failure as a silent
+  /// cancel (the defect that made Google Sign-In appear to "do nothing").
+  Future<GoogleSignInResult> signInWithGoogle() async {
     try {
       // Trigger Google authentication flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
         // User cancelled the sign-in flow
-        return null;
+        return GoogleSignInResult.cancelled();
       }
 
       // Obtain auth details from the request
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+
+      // When the app's SHA-1/SHA-256 fingerprint is not registered in the
+      // Firebase Console, the plugin returns an account but BOTH tokens come
+      // back null — building a credential from them would throw. Detect it
+      // and surface an actionable message instead of a silent failure.
+      if (googleAuth.idToken == null && googleAuth.accessToken == null) {
+        debugPrint(
+          'AuthGateService: Google Sign-In returned no tokens '
+          '(likely unregistered SHA fingerprint)',
+        );
+        return GoogleSignInResult.failure(
+          friendlyGoogleSignInError(
+            PlatformException(code: 'sign_in_failed', details: 'no_tokens'),
+          ),
+        );
+      }
 
       // Create a new credential using the Google auth tokens
       final OAuthCredential credential = GoogleAuthProvider.credential(
@@ -60,12 +110,64 @@ class AuthGateService {
       final UserCredential userCredential =
           await _firebaseAuth.signInWithCredential(credential);
 
-      return userCredential;
+      return GoogleSignInResult.success(userCredential);
+    } on PlatformException catch (e) {
+      // google_sign_in plugin errors (ApiException: 10 DEVELOPER_ERROR,
+      // network_error, sign_in_failed, ...)
+      debugPrint('AuthGateService: Google Sign-In failed - ${e.code}: ${e.message}');
+      return GoogleSignInResult.failure(friendlyGoogleSignInError(e));
+    } on FirebaseAuthException catch (e) {
+      debugPrint('AuthGateService: Firebase rejected Google credential - ${e.code}');
+      return GoogleSignInResult.failure(
+        'Firebase rejected the Google credential: ${e.message ?? e.code}',
+      );
     } catch (e) {
-      // Log error and return null on failure
-      print('AuthGateService: Google Sign-In failed - $e');
-      return null;
+      debugPrint('AuthGateService: Google Sign-In failed - $e');
+      return GoogleSignInResult.failure('Google Sign-In failed: $e');
     }
+  }
+
+  /// Maps a Google Sign-In failure to a user-actionable message.
+  ///
+  /// The most common real-world cause is `ApiException: 10` /
+  /// `sign_in_failed` (DEVELOPER_ERROR): the signing keystore's SHA-1 /
+  /// SHA-256 fingerprint is not registered on the Android OAuth client in
+  /// the Firebase Console — which is exactly what happens with a freshly
+  /// generated debug keystore (CI machine, new dev laptop, sandbox).
+  /// Pure + static so it is unit-testable without a Firebase app.
+  static String friendlyGoogleSignInError(Object error) {
+    final code = error is PlatformException ? error.code : '';
+    final raw = error.toString();
+
+    final isDeveloperError =
+        code == 'sign_in_failed' ||
+        code == 'developer_error' ||
+        raw.contains('ApiException: 10') ||
+        raw.contains('DEVELOPER_ERROR') ||
+        raw.contains('no_tokens');
+    if (isDeveloperError) {
+      return 'Google Sign-In is not configured for this build. The signing '
+          "keystore's SHA-1/SHA-256 fingerprint must be registered in the "
+          'Firebase Console (Project Settings → Your Android app → SHA '
+          'certificate fingerprints). Please contact support.';
+    }
+
+    final isNetwork =
+        code == 'network_error' || raw.toLowerCase().contains('network');
+    if (isNetwork) {
+      return 'Google Sign-In failed due to a network error. Check your '
+          'connection and try again.';
+    }
+
+    if (code == 'sign_in_canceled') {
+      return 'Google Sign-In was cancelled.';
+    }
+
+    final detail =
+        error is PlatformException
+            ? (error.message ?? error.details?.toString() ?? code)
+            : raw;
+    return 'Google Sign-In failed: $detail';
   }
 
   /// Trigger SMS Two-Factor OTP Challenge
