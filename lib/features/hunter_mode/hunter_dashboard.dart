@@ -27,6 +27,7 @@ import 'screens/custom_package_farm_selection_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import '../subscription/subscription_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
 import 'widgets/dashboard_feature_folder.dart';
@@ -327,6 +328,20 @@ class _HunterDashboardState extends State<HunterDashboard> {
               context,
               MaterialPageRoute(
                 builder: (context) => OfflineNavigationScreen(theme: theme),
+              ),
+            ),
+      ),
+      DashboardFeature(
+        id: 'subscription',
+        icon: Icons.workspace_premium_rounded,
+        title: '💎 Subscription',
+        description:
+            'Manage your plan — 30-day free trial, then R19.99/month.',
+        onTap:
+            (context, theme) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SubscriptionScreen(theme: theme),
               ),
             ),
       ),

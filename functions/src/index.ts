@@ -1,15 +1,24 @@
 import { logger } from "firebase-functions/v2";
 import {
   onCall,
+  onRequest,
   HttpsError,
   type CallableRequest,
+  type Request,
 } from "firebase-functions/v2/https";
+import type { Response } from "express";
 import {
   onDocumentCreated,
   onDocumentUpdated,
 } from "firebase-functions/v2/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { firestore, auth, getAdmin } from "./firebase";
+import {
+  parseItnBody,
+  verifySignature,
+  validateWithPayFast,
+  parseSubscriptionPaymentId,
+} from "./payfast_subscription";
 
 // ────────────────────────────────────────────────────────────────────────────
 // 1. Admin: create outfitter account + document + custom claims
@@ -509,3 +518,148 @@ export const onPackageUpdated = onDocumentUpdated(
     );
   }
 );
+
+// ────────────────────────────────────────────────────────────────────────────
+// 6. PayFast subscription billing — ITN (Instant Transaction Notification)
+//    webhook that activates / cancels user subscriptions.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The merchant passphrase used to verify ITN signatures. Read from the
+ * PAYFAST_PASSPHRASE env var in production; falls back to the sandbox
+ * passphrase bundled with the app for the sandbox integration.
+ */
+const PAYFAST_PASSPHRASE =
+  process.env.PAYFAST_PASSPHRASE ?? "jagspoor_sandbox_2026";
+
+/** PayFast server-to-server validation endpoint (sandbox vs production). */
+const PAYFAST_VALIDATE_URL =
+  process.env.PAYFAST_VALIDATE_URL ??
+  "https://sandbox.payfast.co.za/eng/query/validate";
+
+/**
+ * payfastSubscriptionITN
+ *
+ * HTTPS onRequest webhook (public invoker) that receives PayFast Instant
+ * Transaction Notifications for subscription payments. Flow:
+ *   1. Parse the form-encoded ITN body (order preserved for the signature).
+ *   2. Verify the MD5 signature with the merchant passphrase.
+ *   3. Server-to-server validate the body with PayFast's validate endpoint.
+ *   4. Resolve the subscriber from `m_payment_id` (`sub_{userId}_{tier}`).
+ *   5. On `payment_status == COMPLETE`  -> users/{uid}.subscriptionStatus =
+ *      "active", subscriptionTier, subscriptionRenewalDate (the ITN
+ *      `billing_date`, else +30 days), subscriptionPromoCode.
+ *      On FAILED / CANCELLED           -> subscriptionStatus = "cancelled".
+ *
+ * Responds 200 on success / ignored (non-subscription) notifications so
+ * PayFast does not retry; 400 on malformed payloads; 403 on signature or
+ * server-validation failures.
+ */
+export const payfastSubscriptionITN = onRequest(
+  { region: "us-central1", invoker: "public", maxInstances: 10 },
+  async (req: Request, res: Response) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    const rawBody = (req.rawBody?.toString("utf8") ?? "") || "";
+    if (!rawBody) {
+      res.status(400).send("Empty ITN body");
+      return;
+    }
+
+    const { ordered, map } = parseItnBody(rawBody);
+    const receivedSignature = map["signature"] ?? "";
+
+    // 1. MD5 signature verification (data integrity).
+    if (!verifySignature(ordered, receivedSignature, PAYFAST_PASSPHRASE)) {
+      logger.warn("payfastSubscriptionITN: signature mismatch", {
+        mPaymentId: map["m_payment_id"],
+      });
+      res.status(403).send("Invalid signature");
+      return;
+    }
+
+    // 2. Server-to-server validation with PayFast.
+    const valid = await validateWithPayFast(rawBody, PAYFAST_VALIDATE_URL);
+    if (!valid) {
+      logger.warn("payfastSubscriptionITN: PayFast validation failed", {
+        mPaymentId: map["m_payment_id"],
+      });
+      res.status(403).send("PayFast validation failed");
+      return;
+    }
+
+    // 3. Resolve the subscriber (subscription-shaped m_payment_id only).
+    const mPaymentId = map["m_payment_id"] ?? "";
+    const { userId, tier: tierFromId } = parseSubscriptionPaymentId(mPaymentId);
+    if (!userId) {
+      logger.info("payfastSubscriptionITN: non-subscription ITN ignored", {
+        mPaymentId,
+      });
+      res.status(200).send("Ignored");
+      return;
+    }
+    const tier = map["custom_str2"] || tierFromId || "hunter";
+    const promoCode = map["custom_str3"] ?? "";
+    const paymentStatus = (map["payment_status"] ?? "").toUpperCase();
+
+    const userRef = firestore().collection("users").doc(userId);
+
+    if (paymentStatus === "COMPLETE") {
+      // Renewal date: the ITN billing_date when present, else +30 days.
+      let renewalDate: Date;
+      const billingDateStr = map["billing_date"] ?? "";
+      const parsed = new Date(billingDateStr);
+      if (billingDateStr && !isNaN(parsed.getTime())) {
+        renewalDate = parsed;
+      } else {
+        renewalDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      }
+      await userRef.set(
+        {
+          subscriptionStatus: "active",
+          subscriptionTier: tier,
+          subscriptionRenewalDate: renewalDate,
+          subscriptionPromoCode: promoCode,
+          subscriptionPayfastPaymentId: map["pf_payment_id"] ?? "",
+          subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      logger.info("payfastSubscriptionITN: subscription activated", {
+        userId,
+        tier,
+        mPaymentId,
+      });
+      res.status(200).send("OK");
+      return;
+    }
+
+    if (paymentStatus === "FAILED" || paymentStatus === "CANCELLED") {
+      await userRef.set(
+        {
+          subscriptionStatus: "cancelled",
+          subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      logger.info("payfastSubscriptionITN: subscription cancelled", {
+        userId,
+        paymentStatus,
+        mPaymentId,
+      });
+      res.status(200).send("OK");
+      return;
+    }
+
+    // Unknown / pending statuses are acknowledged without a state change.
+    logger.info("payfastSubscriptionITN: unhandled payment_status", {
+      userId,
+      paymentStatus,
+    });
+    res.status(200).send("OK");
+  }
+);
+

@@ -1,6 +1,109 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- PayFast subscription billing integration (added 2026-08-23)
+
+- **Task 1 -- Subscription service & checkout flow**
+  (`lib/features/subscription/services/payfast_service.dart`, NEW):
+  - `PayFastService` (singleton + pure static API): sandbox/production
+    endpoint toggling via `isSandbox` (debug builds + the
+    `--dart-define=PAYFAST_SANDBOX` default force the sandbox; release
+    honors the compiled flag). `activeConfig` resolves the exact sandbox
+    credentials -- merchant id `10053397`, key `svmau2781rcn`, passphrase
+    `jagspoor_sandbox_2026`, process URL
+    `https://sandbox.payfast.co.za/eng/process` (production URL constant
+    `https://www.payfast.co.za/eng/process`).
+  - Role-based pricing: `SubscriptionTier.hunter` R19.99/month,
+    `SubscriptionTier.outfitter` R199.99/month (`baseAmountFor`;
+    `fromAppRole` maps outfitter -> outfitter tier, everything else ->
+    hunter so admins/unknown are never over-charged).
+  - 30-day free trial: `trialDays = 30`; the payload's `billing_date` is
+    now+30d (first recurring charge), `custom_str1 = trial_30d`,
+    `custom_str2 = tier`, `custom_str3 = promo code`. PayFast subscription
+    fields: `subscription_type=1`, `frequency=3` (monthly), `cycles=0`
+    (until cancelled), `m_payment_id = sub_{userId}_{tier}`.
+  - MD5 signature: `generateSignature` / `verifySignature` /
+    `buildSignatureSource` -- ordered `key=value` pairs joined with `&`,
+    values percent-encoded with spaces as `+` (NOT `%20`), signature field
+    + empty values excluded, passphrase appended as `&passphrase=...`.
+  - `PayFastCheckoutPayload.toUri()` + `launchCheckout` (url_launcher,
+    external browser).
+- **Task 2 -- Promo code hook + subscription screen UI**:
+  - `PromoCodeEngine` (in `payfast_service.dart`): catalog-backed
+    validation (`JAGSPOOR10` 10%, `LAUNCH25` 25%, `SAHUNTER50` 50%),
+    case-insensitive normalize, `PromoCodeAdjustment.apply` (percent +
+    absolute, clamped >= 0). The checkout total is adjusted BEFORE the
+    payload is generated (`resolveAmount`).
+  - `lib/features/subscription/subscription_screen.dart` (NEW): theme-aware
+    screen with a status banner (NO ACTIVE SUBSCRIPTION / FREE TRIAL ACTIVE
+    with remaining days / SUBSCRIPTION ACTIVE with renewal date /
+    SUBSCRIPTION CANCELLED), both tier cards (R19.99 vs R199.99 + YOUR TIER
+    badge), a promo-code input + APPLY (invalid -> inline error; valid ->
+    adjusted "Promo-adjusted monthly" total), and a secure
+    "SUBSCRIBE VIA PAYFAST" button (disabled while active/launching;
+    launches the signed payload, then `markTrialStarted`). ValueKeys:
+    `subscriptionStatusBanner`, `tierCard_<tier>`, `promoCodeField`,
+    `applyPromoButton`, `promoAppliedLabel`, `checkoutTotalCard`,
+    `subscribeButton`.
+  - `lib/features/subscription/services/subscription_status_service.dart`
+    (NEW): `UserSubscription` model + reactive `watchMySubscription` /
+    `getMySubscription` / `markTrialStarted` on `users/{uid}` (owner-write
+    rules already cover it). Static test seams
+    (`firestoreForTesting` / `currentUserIdResolverForTesting`).
+  - Dashboard wiring: hunter dashboard `💎 Subscription` feature card;
+    outfitter dashboard "Subscription" feature card (before Permit Log).
+- **Task 3 -- Firestore & Cloud ITN webhook handler**:
+  - `functions/src/payfast_subscription.ts` (NEW): `pfEncode`,
+    `buildSignatureSource`, `computeSignature`/`verifySignature` (Node
+    `crypto` MD5), `parseItnBody` (order-preserving form parser),
+    `validateWithPayFast` (server-to-server `VALID` check, fail-closed),
+    `parseSubscriptionPaymentId` (`sub_{userId}_{tier}`).
+  - `functions/src/index.ts`: NEW `payfastSubscriptionITN` HTTPS onRequest
+    (public invoker, us-central1). Flow: POST-only -> parse body -> MD5
+    signature verify (403 on mismatch) -> PayFast server-to-server validate
+    (403 on failure) -> resolve subscriber from `m_payment_id` -> COMPLETE:
+    `users/{uid}` merge `subscriptionStatus: "active"`, `subscriptionTier`,
+    `subscriptionRenewalDate` (ITN `billing_date` else +30d),
+    `subscriptionPromoCode`, `subscriptionPayfastPaymentId`; FAILED /
+    CANCELLED: `subscriptionStatus: "cancelled"`. Non-subscription ITNs are
+    acknowledged with 200 "Ignored". Passphrase/validate URL read from
+    `PAYFAST_PASSPHRASE` / `PAYFAST_VALIDATE_URL` env vars (sandbox
+    defaults; documented in `functions/.env.example`). `npx tsc --noEmit`
+    clean. `Response` type imported from `express` (not exported by
+    firebase-functions v2 https).
+- **Task 4 -- Tests & verification** (67 new, all pass):
+  `test/payfast_service_test.dart` (42: config toggling, role pricing,
+  trial, signature generation/verification/tamper, promo engine, payload
+  construction), `test/subscription_status_service_test.dart` (11: model
+  hydration + FakeFirebaseFirestore service round-trips),
+  `test/subscription_screen_test.dart` (9 widget: rendering, YOUR TIER
+  badge, promo apply/invalid, status banners, disabled-when-active,
+  no-auth snackbar; `dragUntilVisible` for below-the-fold sections),
+  `test/payfast_itn_functions_contract_test.dart` (12 structural parse of
+  the TS sources).
+  - `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**
+    (277 pre-existing infos, unchanged baseline). `flutter test` (full
+    suite): **All 1308 tests passed** (+67 new). Env note: re-installed
+    Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so` symlink
+    (`LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config" pubspec
+    warning is the documented pre-existing spurious line.
+  - `pubspec.yaml`: added `crypto: ^3.0.7` (was transitive 3.0.7; now a
+    direct dep for the MD5 signature).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate `payfastSubscriptionITN`; set
+  `PAYFAST_PASSPHRASE` (and `PAYFAST_VALIDATE_URL` for production) via
+  functions env. The PayFast merchant portal's notify URL must point at
+  `https://us-central1-jagspoor.cloudfunctions.net/payfastSubscriptionITN`.
+- Files: `lib/features/subscription/services/payfast_service.dart` (NEW),
+  `lib/features/subscription/services/subscription_status_service.dart`
+  (NEW), `lib/features/subscription/subscription_screen.dart` (NEW),
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `functions/src/payfast_subscription.ts` (NEW), `functions/src/index.ts`,
+  `functions/.env.example`, `pubspec.yaml` / `pubspec.lock`,
+  `functions/package-lock.json` (NEW), 4 new test files, `AGENTS.md`.
+
+
 ## Phase -- Google Sign-In silent-failure fix + debug-keystore SHA fingerprint audit (added 2026-08-23)
 
 - **Audit findings (root causes of "Google Sign-In broke")**:

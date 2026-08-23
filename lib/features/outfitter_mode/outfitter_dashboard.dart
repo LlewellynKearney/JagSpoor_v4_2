@@ -18,6 +18,7 @@ import '../hunter_mode/services/user_role_resolver.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import '../subscription/subscription_screen.dart';
 import 'widgets/outfitter_scaffold.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -307,6 +308,26 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                               },
                             ),
                             const SizedBox(height: 12),
+
+                          // Subscription — PayFast billing management.
+                          _buildFeatureCard(
+                            icon: Icons.workspace_premium_rounded,
+                            title: 'Subscription',
+                            description:
+                                'Manage your plan — 30-day free trial, then R199.99/month.',
+                            theme: widget.theme,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => SubscriptionScreen(
+                                    theme: widget.theme,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
 
                           // Venison Permit Log & Manager — single consolidated
                           // entry for issuing + viewing venison transport
