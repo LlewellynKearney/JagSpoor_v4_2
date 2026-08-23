@@ -1,6 +1,73 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Hunter Dashboard categorized feature folders (added 2026-08-23)
+
+- **Task 1 -- Folder organization**: the Hunter Dashboard's flat feature
+  list is now grouped into three collapsible folders, with non-grouped
+  features rendering flat below under a "MORE MODULES" heading:
+  - **"All things guns"** (`Icons.gps_fixed_rounded`): Digital Firearm Safe,
+    Ammunition Manager.
+  - **"Market place"** (`Icons.storefront_rounded`): Package Marketplace,
+    Custom Package Builder, Trophy Registry & Booking.
+  - **"Tools"** (`Icons.handyman_rounded`): Ballistic Calculator, Field
+    Estimate Verification, Track (Spoor) Identifier, Scope Settings &
+    Tools, Shot Group Target Analyzer.
+  - Remaining features (Weather, SA Game Guide, Trophy Room, Mesh Sync,
+    Carcass Matrix, Offline Map, SAPS, Report Bug, Suggest Feature) stay
+    flat below, still sorted favorites-first via `_sortFeatures`.
+- **Task 2 -- Theme-aware folder component**: NEW
+  `lib/features/hunter_mode/widgets/dashboard_feature_folder.dart`
+  (`DashboardFeatureFolder` StatefulWidget). The header Card resolves the
+  bushveld palette through `HunterUi` (warm cream surface + defined warm
+  border + espresso title in Day mode; theme dark card + brushed-gold
+  `HunterAcaciaBackground.kOverlayGold` accents in Night mode) with a
+  category icon tile, feature-count badge, and `AnimatedRotation` chevron.
+  Expand/collapse uses `AnimatedSize` (280 ms easeInOutCubic) over a
+  `ClipRect`, with nested feature cards supplied by the dashboard via its
+  `_buildCard(..., compact: true)` (compact padding/icon/title sizes).
+  A public `accentColor(ThemeController)` helper exposes the gold-vs-theme
+  accent resolution for tests.
+- **Dashboard changes** (`hunter_dashboard.dart`): features are indexed by
+  id (`byId`), folder membership is the fixed spec order, and the
+  `folderFeatureIds` set keeps the flat list to non-grouped features only.
+  The folder header InkWell carries a `ValueKey('folderHeader_<title>')`.
+- **Task 3 -- Tests** (`test/hunter_dashboard_folders_test.dart`, 25 tests,
+  all pass):
+  - Standalone folder widget: collapsed-by-default (nested children absent),
+    tap-to-expand/collapse, `initiallyExpanded`, count badge, AnimatedSize
+    presence, light-mode cream/espresso palette + dark-mode gold accent
+    assertions.
+  - Dashboard-level: the three folder headers render; grouped features are
+    hidden until their folder expands; non-grouped features render flat
+    under "MORE MODULES".
+  - Navigation routing (one navigation per test, `NavigatorObserver`
+    subclass): tapping each nested feature pushes a `MaterialPageRoute`
+    whose builder returns the expected screen type
+    (FirearmSafeScreen/AmmunitionScreen/Marketplace/FarmSelection/
+    TrophyBrowser/BallisticCalc/FieldEstimate/SpoorHud/ShotGroupAnalyzer);
+    Scope Settings verified as a pushed modal (not MaterialPageRoute). The
+    pushed route is deliberately never pumped, so Firebase-touching
+    destinations never build.
+  - Structural source-parse contract locking the three folder titles +
+    membership ids.
+  - Test-environment notes: `pumpAndSettle` is avoided on the dashboard
+    (the NetworkDiagnosticHud runs a never-settling periodic Timer); a
+    manual bounded `drag` helper replaces `scrollUntilVisible` for the
+    lazy-built ListView; `SharedPreferences.setMockInitialValues({})` in
+    setUp.
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors,
+  0 warnings** (278 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): **All 1191 tests passed** (was 1166; +25 new). Env note:
+  re-installed Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so`
+  symlink (`LD_LIBRARY_PATH="$HOME/libs"`). The "Unexpected child config"
+  pubspec warning is the documented pre-existing spurious line.
+- Files: `lib/features/hunter_mode/widgets/dashboard_feature_folder.dart`
+  (NEW), `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `test/hunter_dashboard_folders_test.dart` (NEW), `AGENTS.md`.
+
+
+
 ## Phase -- Five-point enhancement: zero range, contrast fixes, RW parser, admin subscription + usage analytics (added 2026-08-23)
 
 - **Task 1 -- Ballistic Calculator zero distance 5-1000m** (`ballistic_calc_screen.dart`):

@@ -29,6 +29,7 @@ import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
+import 'widgets/dashboard_feature_folder.dart';
 
 class HunterDashboard extends StatefulWidget {
   final ThemeController theme;
@@ -409,15 +410,42 @@ class _HunterDashboardState extends State<HunterDashboard> {
       ),
     ];
 
-    // Combine all features for sorting
+    // Combine all features; the three collapsible folders pull their members
+    // by id, and the remaining features render flat below (favorites first).
     final allFeatures = [...hunterFeatures, ...marketplaceFeatures];
+    final byId = {for (final f in allFeatures) f.id: f};
 
-    allFeatures.sort(_sortFeatures);
+    const folderFeatureIds = <String>{
+      'firearm_safe', 'ammunition',
+      'marketplace', 'custom_package_builder', 'trophy_browser',
+      'ballistic_calculator', 'field_estimate', 'spoor_tracker',
+      'scope_settings', 'shot_group_analyzer',
+    };
+    final remainingFeatures =
+        allFeatures.where((f) => !folderFeatureIds.contains(f.id)).toList()
+          ..sort(_sortFeatures);
+
+    Widget buildFolder({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required List<String> ids,
+    }) {
+      return DashboardFeatureFolder(
+        theme: theme,
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        children: [
+          for (final id in ids)
+            _buildCard(context, theme, byId[id]!, compact: true),
+        ],
+      );
+    }
 
     return AnimatedBuilder(
       animation: theme,
       builder: (context, _) {
-        final features = allFeatures;
         return HunterScaffold(
           theme: theme,
           appBar: AppBar(
@@ -513,9 +541,50 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 ),
               ),
               const SizedBox(height: 12),
-              for (var i = 0; i < features.length; i++) ...[
+              buildFolder(
+                icon: Icons.gps_fixed_rounded,
+                title: 'All things guns',
+                subtitle: 'Firearm safe & ammunition management',
+                ids: const ['firearm_safe', 'ammunition'],
+              ),
+              const SizedBox(height: 16),
+              buildFolder(
+                icon: Icons.storefront_rounded,
+                title: 'Market place',
+                subtitle: 'Packages, custom builds & trophy bookings',
+                ids: const [
+                  'marketplace',
+                  'custom_package_builder',
+                  'trophy_browser',
+                ],
+              ),
+              const SizedBox(height: 16),
+              buildFolder(
+                icon: Icons.handyman_rounded,
+                title: 'Tools',
+                subtitle: 'Ballistics, field estimates & tracking utilities',
+                ids: const [
+                  'ballistic_calculator',
+                  'field_estimate',
+                  'spoor_tracker',
+                  'scope_settings',
+                  'shot_group_analyzer',
+                ],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'MORE MODULES',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: HunterUi.subtitleColor(theme),
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (var i = 0; i < remainingFeatures.length; i++) ...[
                 if (i > 0) const SizedBox(height: 16),
-                _buildCard(context, theme, features[i]),
+                _buildCard(context, theme, remainingFeatures[i]),
               ],
               const CopyrightFooter(),
             ],
@@ -528,8 +597,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
   Widget _buildCard(
     BuildContext context,
     ThemeController theme,
-    DashboardFeature feature,
-  ) {
+    DashboardFeature feature, {
+    bool compact = false,
+  }) {
     final bool isFavorite = favoriteIds.contains(feature.id);
     return Card(
       color: HunterUi.cardColor(theme),
@@ -548,10 +618,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
             },
             borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding: const EdgeInsets.all(20.0),
+              padding: EdgeInsets.all(compact ? 14.0 : 20.0),
               child: Row(
                 children: [
-                  Icon(feature.icon, color: theme.accentColor, size: 24),
+                  Icon(feature.icon,
+                      color: theme.accentColor, size: compact ? 22 : 24),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -560,7 +631,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                         Text(
                           feature.title,
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: compact ? 15 : 16,
                             fontWeight: FontWeight.bold,
                             color: HunterUi.titleColor(theme),
                           ),
