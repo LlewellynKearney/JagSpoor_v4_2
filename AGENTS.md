@@ -1,6 +1,72 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SA Game Guide polished promotional UI (rich media cards + grid) (added 2026-08-23)
+
+- **Task 1 -- Rich media species card**
+  (`lib/features/game_guide/widgets/game_species_card.dart`, NEW):
+  `GameSpeciesCard` -- full-bleed species photo (`Image.asset` via the
+  in-app resolver path, BoxFit.cover, icon fallback on error) with a smooth
+  4-stop dark `LinearGradient` overlay (33% black top -> transparent mid ->
+  55% -> 95% black bottom) for text legibility. A frosted circular
+  `_FrostedCircleButton` (ClipOval + BackdropFilter blur + dark circle +
+  `IconButton`, keyed `favoriteButton_<animalId>`) floats the favorite heart
+  in the top-right corner (amber `Icons.favorite_rounded` when favorited,
+  off-white border icon otherwise). Data attributes render as translucent
+  frosted-glass pills (`_FrostedPill`: ClipRRect + BackdropFilter +
+  translucent fill + border): amber category tag top-left
+  (`taxonomyLabel` -> "Mammal (Antelope)" / "Mammal (Big Game)" /
+  "Mammal (Predator)" / "Mammal (Pig)" / "Bird"), and across the lower
+  section the species name + italic scientific name + an amber
+  "RW Min: <value>" pill (`rwMinimumOf` resolves the three storage aliases,
+  "RW Min: N/A" fallback) + dark weight-range + shoulder-height pills.
+  Card chrome: 20px rounded corners; dark mode carries a warm amber glowing
+  border (`0xFFD4AF37` @ 0.35 + amber boxShadow), light mode the
+  `HunterUi.cardBorderColor` defined warm border.
+- **Task 2 -- Grid & header polish** (`lib/screens/animal_list_screen.dart`,
+  redesigned in place -- kept at this path because
+  `hunter_scaffold_rollout_test` source-parses it for the HunterScaffold
+  contract): the AppBar now shows clean "SA Game Guide" typography (w800,
+  22px) with quick-access actions on the right -- a search toggle
+  (`gameGuideSearchToggle`, swaps the title for an inline autofocus
+  TextField; also matches scientific names now) and a filter icon
+  (`gameGuideFilterButton`, opens a category `ChoiceChip` bottom sheet:
+  All / Big Game / Plains Game / Predator / Bird / Other). The species
+  listing is a responsive high-density `GridView` (
+  `SliverGridDelegateWithMaxCrossAxisExtent` maxCrossAxisExtent 280,
+  16px spacing, childAspectRatio 0.72) of `GameSpeciesCard`s, sorted
+  favorites-first then alphabetical. NEW
+  `lib/features/game_guide/services/game_guide_favorites_service.dart`
+  (`GameGuideFavoritesService` ChangeNotifier singleton): SharedPreferences
+  key `game_guide_favorite_species`, `init`/`toggle`/`isFavorite`/
+  `favoriteIds` + `resetForTesting` seam; the screen listens + re-renders.
+  NEW `lib/features/game_guide/game_guide_screen.dart`: canonical
+  feature-module entry -- `GameGuideScreen extends AnimalListScreen` alias +
+  re-exports (exports must precede the class declaration or the analyzer
+  errors `directive_after_declaration`). `@visibleForTesting
+  AnimalRepository? repository` ctor seam on the screen for
+  FakeFirebaseFirestore-backed widget tests.
+- **Task 3 -- Tests** (`test/game_guide_screen_test.dart`, 12 tests, all
+  pass): `taxonomyLabel` + `rwMinimumOf` pure helpers; card layout (Image +
+  BackdropFilter + name/scientific/pills + gradient stops); heart top-right
+  placement + tap callback (isolated card); filled amber heart when
+  favorited; dark-mode amber glow border; favorites service toggle/persist/
+  restore; screen header + 3-card grid render; search toggle filters; filter
+  sheet filters to Predator; favorite re-sort (driven via the service --
+  the isolated card test covers the heart tap; the grid-level coordinate
+  tap hits a GridView+BackdropFilter test-surface quirk).
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors,
+  0 warnings** (277 pre-existing infos, unchanged baseline). Env note:
+  re-installed Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so`
+  symlink (`LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config"
+  pubspec warning is the documented pre-existing spurious line.
+- Files: `lib/features/game_guide/widgets/game_species_card.dart` (NEW),
+  `lib/features/game_guide/services/game_guide_favorites_service.dart` (NEW),
+  `lib/features/game_guide/game_guide_screen.dart` (NEW),
+  `lib/screens/animal_list_screen.dart`, `test/game_guide_screen_test.dart`
+  (NEW), `AGENTS.md`.
+
+
 ## Phase -- PayFast subscription billing integration (added 2026-08-23)
 
 - **Task 1 -- Subscription service & checkout flow**
