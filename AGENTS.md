@@ -1,6 +1,72 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Five-point enhancement: zero range, contrast fixes, RW parser, admin subscription + usage analytics (added 2026-08-23)
+
+- **Task 1 -- Ballistic Calculator zero distance 5-1000m** (`ballistic_calc_screen.dart`):
+  the Environmental Parameters zero slider was 25-1000 with an auto-computed
+  division count that produced fractional steps on wide ranges. Now spans
+  `zeroDistanceMinMeters = 5.0` → `zeroDistanceMaxMeters = 1000.0` with
+  `zeroDistanceDivisions = 199` (clean 5m snaps). `_buildParameterRow`
+  gained an optional `divisions` override (explicit count wins; fallback
+  `((max - min) / 10).round()`).
+- **Task 2 -- Position Statistics Summary dark-mode contrast**: `_buildSummaryRow`
+  hardcoded `Color(0xFF1A2421)` labels + `Color(0xFF2E3D2F)` values
+  (illegible on the dark HUD card in Night mode). Now mode-aware via
+  `Theme.of(context).brightness`: labels → warm cream `0xFFEFE7DC`,
+  values → gold `0xFFD4AF37` in dark mode; the light palette is retained
+  for Day mode.
+- **Task 3 -- Trophy date picker dark mode fix**: `add_trophy_screen.dart` +
+  `edit_trophy_screen.dart` forced a `ColorScheme.light` in their picker
+  builders, so Night mode rendered dark text on the dark surface. New
+  shared `lib/core/widgets/date_picker_theme.dart`
+  (`JagSpoorDatePickerTheme.resolve(ThemeData, ThemeController)`) picks a
+  `ColorScheme.dark` (light onSurface on the dark card) in Night mode /
+  `ColorScheme.light` in Day mode, keyed off the ThemeController toggle.
+  Applied to both screens.
+- **Task 4 -- Field Estimate Verification Roland Ward comparison**: the bug
+  was the parser, not the operator — `field_estimate_screen.dart`'s
+  `[^0-9.]`-stripping parser collapsed mixed fractions like `'22 7/8 inches'`
+  to 2278, so a 30.00-inch estimate read as below-minimum. New shared
+  `parseRolandWardMinimumValue(String?)` in `lib/utils/animal_seeder.dart`
+  (mixed fractions → true numeric, plain decimals, null-safe). The
+  comparison operator `estimate >= minimum` (already correct) now compares
+  proper numeric values.
+- **Task 5 -- Admin subscription revenue + usage analytics**:
+  - NEW `lib/features/admin/services/subscription_config_service.dart`:
+    `SubscriptionConfig` (hunter/outfitter monthly ZAR amounts;
+    numeric-string tolerant; clamped non-negative) persisted on
+    `app_config/subscriptions` via `loadConfig`/`saveConfig`; pure
+    `computeRevenue` → `SubscriptionRevenue` (MRR, daily/weekly estimates,
+    ARR from subscriber counts × rates). `firestoreForTesting` seam.
+  - NEW `lib/features/admin/services/usage_analytics_service.dart`:
+    `UsageAnalyticsService` fire-and-forget tracker → `feature_usage_events`
+    (`event`, `type` screen_view/feature_usage, `role`, `userId`, server
+    timestamp). Role resolved from `UserRoleProvider` (hunter + outfitter
+    only — admins skipped to keep the partition clean); failures swallowed.
+    Pure `aggregateUsage` for role-partitioned summaries; `fetchUsageAnalytics`
+    bounded review. Wired into hunter + outfitter dashboards (screen views
+    on initState, feature-card taps).
+  - `admin_dashboard_screen.dart`: new "Subscription Revenue (ZAR)"
+    manual input card (hunter + outfitter fields + SAVE) and derived
+    MRR/ARR/daily/weekly card, plus a "Feature Usage by Role" section
+    (role-partitioned usage counts).
+  - `firestore.rules`: new `app_config/{docId}` (admin-only read/write) +
+    `feature_usage_events/{eventId}` (create signed-in; admin read/update/delete).
+- **Tests**: `test/ballistics_enhancements_test.dart` (9), `test/roland_ward_parser_test.dart`
+  (14), `test/admin_analytics_enhancements_test.dart` (21). `flutter analyze`:
+  0 errors / 0 warnings (unchanged info baseline). **Full suite: 1166 tests
+  passed.** Env note: re-installed Flutter 3.29.1 at `$HOME/flutter` +
+  `~/libs/libsqlite3.so` symlink (run tests with
+  `LD_LIBRARY_PATH="$HOME/libs"`); the Fetch resolves serverTimestamp() to a
+  Timestamp in FakeFirebaseFirestore (assert `containsKey`, not the FieldValue
+  type).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate `app_config` + `feature_usage_events` rules.
+- Files: 9 lib files, `firestore.rules`, 3 new test files, `AGENTS.md`.
+Pushed `4aa44c6..074e219 main -> main`.
+
+
 ## Phase -- SA Game Guide asset audit: 100% local photo coverage (added 2026-08-22)
 
 - **Audit**: parsed `assets/data/animals_seed.csv` (150 species = the
