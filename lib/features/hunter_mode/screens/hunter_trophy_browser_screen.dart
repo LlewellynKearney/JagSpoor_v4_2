@@ -5,6 +5,8 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../widgets/trophy_booking_confirmation_sheet.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/shared/widgets/hunter_grid_container.dart';
+import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 class HunterTrophyBrowserScreen extends StatefulWidget {
@@ -182,80 +184,56 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
     ).then((_) => _loadTrophies());
   }
 
-  /// High-contrast dark amber bordered fallback visual placeholder container for missing trophy images
-  Widget _buildTrophyPlaceholder(ThemeController theme) {
-    return Container(
-      width: 70,
-      height: 70,
-      decoration: BoxDecoration(
-        color: const Color(0xFF23180C),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.amber.shade800, width: 1.5),
+  /// Rich-media trophy stock card: full-bleed trophy photo with the dark
+  /// legibility gradient, an amber "TROPHY STOCK" tag, and frosted telemetry
+  /// pills for availability / measurement / sex / price across the lower
+  /// section. Tapping opens the standard booking confirmation sheet.
+  Widget _buildTrophyCard(ThemeController theme, Map<String, dynamic> trophy) {
+    final price = (trophy['pricePerTrophy'] as num?)?.toDouble() ?? 0.0;
+    final available = (trophy['available'] as num?)?.toInt() ?? 0;
+    final String imageUrl = trophy['imageUrl']?.toString().trim() ?? '';
+    final measurement = (trophy['trophyMeasurement'] as num?)?.toDouble();
+    final sex = (trophy['sex'] as String?)?.trim() ?? '';
+
+    final priceText =
+        'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+
+    return HunterMediaCard(
+      theme: theme,
+      image: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+      fallbackIcon: Icons.emoji_events_rounded,
+      title: trophy['species'] as String? ?? 'Unknown',
+      subtitle: locationLabel(trophy),
+      onTap: () => _openBookingSheet(trophy),
+      topLeftPill: const HunterMediaPill(
+        icon: Icons.emoji_events_rounded,
+        label: 'TROPHY STOCK',
+        amber: true,
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Corner HUD markers
-          Positioned(
-            top: 4,
-            left: 4,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Colors.amber.shade700, width: 2),
-                  left: BorderSide(color: Colors.amber.shade700, width: 2),
-                ),
-              ),
-            ),
+      pills: [
+        HunterMediaPill(
+          icon:
+              available > 0
+                  ? Icons.inventory_2_rounded
+                  : Icons.do_not_disturb_on_rounded,
+          label: available > 0 ? '$available available' : 'Sold out',
+          amber: available > 0,
+          accentColor: available > 0 ? null : Colors.redAccent,
+        ),
+        if (measurement != null)
+          HunterMediaPill(
+            icon: Icons.straighten_rounded,
+            label:
+                '${measurement % 1 == 0 ? measurement.toStringAsFixed(0) : measurement.toStringAsFixed(1)}"',
           ),
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Colors.amber.shade700, width: 2),
-                  right: BorderSide(color: Colors.amber.shade700, width: 2),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 4,
-            left: 4,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Colors.amber.shade700, width: 2),
-                  left: BorderSide(color: Colors.amber.shade700, width: 2),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 4,
-            right: 4,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Colors.amber.shade700, width: 2),
-                  right: BorderSide(color: Colors.amber.shade700, width: 2),
-                ),
-              ),
-            ),
-          ),
-          // Center icon inside dark amber bordered frame
-          const Icon(Icons.pets, color: Colors.amber, size: 32),
-        ],
-      ),
+        if (sex.isNotEmpty)
+          HunterMediaPill(icon: Icons.pets_rounded, label: sex),
+        HunterMediaPill(
+          icon: Icons.payments_rounded,
+          label: priceText,
+          amber: true,
+        ),
+      ],
     );
   }
 
@@ -403,217 +381,21 @@ class _HunterTrophyBrowserScreenState extends State<HunterTrophyBrowserScreen> {
                         ],
                       ),
                     )
-                    : ListView.builder(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, SafeBottomInset.of(context)),
-                      itemCount: _filteredTrophies.length,
-                      itemBuilder: (context, index) {
-                        final trophy = _filteredTrophies[index];
-                        final price =
-                            (trophy['pricePerTrophy'] as num?)?.toDouble() ??
-                            0.0;
-                        final available =
-                            (trophy['available'] as num?)?.toInt() ?? 0;
-                        final String imageUrl =
-                            trophy['imageUrl']?.toString() ?? '';
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          color: HunterUi.cardColor(theme),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: theme.accentColor.withValues(
-                                alpha: 0.2,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                          child: InkWell(
-                            // Tapping a card opens the standard Booking
-                            // Details / Confirmation Sheet (the same flow the
-                            // package marketplace + custom package builder
-                            // use) instead of the old multi-select quick-add.
-                            onTap: () => _openBookingSheet(trophy),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  // Trophy Image with Tactical HUD Placeholder
-                                  Container(
-                                    width: 70,
-                                    height: 70,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: theme.accentColor.withValues(
-                                          alpha: 0.5,
-                                        ),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(6),
-                                      child:
-                                          imageUrl.isNotEmpty
-                                              ? Image.network(
-                                                imageUrl,
-                                                fit: BoxFit.cover,
-                                                cacheWidth: 800,
-                                                headers: const {
-                                                  'Cache-Control': 'no-cache',
-                                                },
-                                                errorBuilder: (
-                                                  context,
-                                                  error,
-                                                  stackTrace,
-                                                ) {
-                                                  return _buildTrophyPlaceholder(
-                                                    theme,
-                                                  );
-                                                },
-                                              )
-                                              : _buildTrophyPlaceholder(theme),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Trophy Info
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                trophy['species'] as String? ??
-                                                    'Unknown',
-                                                style: TextStyle(
-                                                  color: theme.textColor,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.location_on_rounded,
-                                              color: theme.subtitleColor,
-                                              size: 14,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                // Resolved farm display name +
-                                                // town/province (never the
-                                                // raw farmId / "Unknown Farm"
-                                                // when a farms doc resolves).
-                                                locationLabel(trophy),
-                                                style: TextStyle(
-                                                  color: theme.subtitleColor,
-                                                  fontSize: 12,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color:
-                                                    available > 0
-                                                        ? Colors.green
-                                                            .withValues(
-                                                              alpha: 0.2,
-                                                            )
-                                                        : Colors.red.withValues(
-                                                          alpha: 0.2,
-                                                        ),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                available > 0
-                                                    ? '$available Available'
-                                                    : 'Sold Out',
-                                                style: TextStyle(
-                                                  color:
-                                                      available > 0
-                                                          ? Colors.green
-                                                          : Colors.red,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: theme.accentColor
-                                                    .withValues(alpha: 0.1),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                trophy['sex'] as String? ??
-                                                    'Mixed',
-                                                style: TextStyle(
-                                                  color: theme.accentColor,
-                                                  fontSize: 10,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Price
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        'R ${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                                        style: const TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      Text(
-                                        'per trophy',
-                                        style: TextStyle(
-                                          color: theme.subtitleColor,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                    : HunterGridContainer(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        16,
+                        16,
+                        SafeBottomInset.of(context),
+                      ),
+                      maxCrossAxisExtent: 320,
+                      childAspectRatio: 0.95,
+                      spacing: 14,
+                      children: [
+                        for (final trophy in _filteredTrophies)
+                          _buildTrophyCard(theme, trophy),
+                      ],
+                    )
           ),
         ],
       ),

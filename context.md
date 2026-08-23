@@ -1120,6 +1120,51 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   tests), `context.md`, `AGENTS.md`. No Firestore / Storage / rules /
   index / pubspec / manifest changes (pure logic + tests).
 
+### 16.14 Hunter Mode rich media design language expansion (implemented 2026-08-23)
+
+The SA Game Guide's rich media card design language (full-bleed imagery,
+smooth dark multi-stop gradient overlays, top-right frosted-circle actions,
+translucent frosted-glass telemetry pills, warm amber glow borders) is now
+packaged as shared base components and rolled out across Hunter Mode's
+tactical + reference modules.
+
+- **Shared base components** (`lib/features/shared/widgets/`, NEW):
+  - `HunterMediaCard` -- the reusable container extracted from
+    `GameSpeciesCard`: full-bleed `ImageProvider` background with a graceful
+    icon fallback, the 4-stop dark `legibilityGradient`, an amber
+    `topLeftPill` tag, `topRightActions` frosted-circle buttons, title +
+    italic subtitle + frosted pills, and the 20px rounded card with the dark
+    amber glow / light warm border. Companions: `HunterMediaPill` (spec),
+    `HunterFrostedPill` (overlay pill; `accentColor` override), `HunterDataPill`
+    (solid card-body stat pill), `HunterFrostedCircleButton`,
+    `kHunterMediaAmber`.
+  - `HunterGridContainer` -- the standardized responsive high-density
+    max-extent grid (280/0.72/16 defaults + static `gridDelegate(...)`).
+- **`GameSpeciesCard`** refactored onto `HunterMediaCard` (same API + visuals;
+  the 12 game-guide tests pass unchanged).
+- **Module rollouts**: Digital Firearm Safe (licence status badge + frosted
+  quick-action circles + caliber/barrel pills, grid layout); Ammunition
+  Manager (grid of ammunition-profile media cards with caliber pills; saved
+  factory/custom loads use clean `HunterDataPill`s for caliber/weight/
+  velocity); Package Marketplace (`_PackageCard` full-bleed hero + frosted
+  pricing / SOLD-OUT pill, contract-test invariants preserved); Trophy
+  Registry (rich-media stock cards with availability/measurement/sex/price
+  pills, grid layout).
+- **Verification**: `flutter analyze` -> 0 errors / 0 warnings (277 infos,
+  unchanged baseline). `flutter test` -> **All 1340 tests passed** (+20 new:
+  `hunter_media_card_test.dart` 15 + `hunter_grid_container_test.dart` 5).
+- Files: `lib/features/shared/widgets/hunter_media_card.dart` (NEW),
+  `lib/features/shared/widgets/hunter_grid_container.dart` (NEW),
+  `lib/features/game_guide/widgets/game_species_card.dart`,
+  `lib/features/hunter_mode/firearm_safe_screen.dart`,
+  `lib/features/ballistics/presentation/ammunition_screen.dart`,
+  `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart`,
+  `test/hunter_media_card_test.dart` (NEW),
+  `test/hunter_grid_container_test.dart` (NEW). No Firestore / Storage /
+  rules / index / pubspec / manifest changes (pure UI + shared widgets).
+
 ---
 
 ## 17. Project File Structure

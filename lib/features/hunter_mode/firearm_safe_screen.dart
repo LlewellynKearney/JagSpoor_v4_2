@@ -10,6 +10,8 @@ import 'maintenance.dart';
 import '../firearm_safe/data/services/firearm_pdf_generator.dart';
 import 'screens/firearm_renewal_screen.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/shared/widgets/hunter_grid_container.dart';
+import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 
 class FirearmSafeScreen extends StatefulWidget {
@@ -198,12 +200,15 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
                       return _buildEmptyState(theme);
                     }
 
-                    return ListView.builder(
-                      itemCount: firearms.length,
-                      itemBuilder: (context, index) {
-                        final firearm = firearms[index];
-                        return _buildFirearmCard(theme, firearm, index);
-                      },
+                    return HunterGridContainer(
+                      padding: EdgeInsets.zero,
+                      maxCrossAxisExtent: 340,
+                      childAspectRatio: 1.0,
+                      spacing: 14,
+                      children: [
+                        for (var i = 0; i < firearms.length; i++)
+                          _buildFirearmCard(theme, firearms[i], i),
+                      ],
                     );
                   },
                 ),
@@ -333,6 +338,11 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
     );
   }
 
+  /// Rich-media firearm card: a full-bleed tactical photo (or the dark
+  /// tactical placeholder) with the licence status badge pill top-left,
+  /// frosted quick-action circles top-right (log rounds / maintenance /
+  /// renew licence), and frosted telemetry pills for the caliber + barrel
+  /// life profile across the lower section.
   Widget _buildFirearmCard(
     ThemeController theme,
     Map<String, String> firearm,
@@ -340,7 +350,6 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
   ) {
     final total = barrelLifeTotal(firearm);
     final remaining = barrelLifeRemaining(firearm);
-    final usedFraction = barrelLifeUsedFraction(firearm);
     final usedPct = barrelLifeUsedPercent(firearm);
     final validity = licenceValidity(firearm['expiry']);
     final expired = validity == 'Expired';
@@ -352,212 +361,117 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
       } catch (_) {}
     }
     final isExpiringSoon = daysToExpiry != null && daysToExpiry <= 180;
+    final maintenanceDue = isMaintenanceDue(firearm);
 
-    return Card(
-      color: HunterUi.cardColor(theme),
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap:
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder:
-                    (context) => FirearmDetailScreen(
-                      theme: theme,
-                      firearm: firearm,
-                      onUpdated: (updated) async {
-                        final docId = firearm['docId'];
-                        if (docId != null) {
-                          await FirebaseFirestore.instance
-                              .collection('firearms')
-                              .doc(docId)
-                              .update(updated);
-                        }
-                      },
-                      onDeleted: () async {
-                        final docId = firearm['docId'];
-                        if (docId != null) {
-                          await FirebaseFirestore.instance
-                              .collection('firearms')
-                              .doc(docId)
-                              .delete();
-                        }
-                      },
-                    ),
-              ),
-            ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.shield_rounded, color: theme.accentColor),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${firearm['make']} (${firearm['caliber']})',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: theme.textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'S/N: ${firearm['serial']}',
-                          style: TextStyle(
-                            color: theme.subtitleColor,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.build_rounded,
-                      color:
-                          isMaintenanceDue(firearm)
-                              ? Colors.red
-                              : theme.subtitleColor,
-                    ),
-                    tooltip: 'Maintenance',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _openMaintenance(firearm),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: theme.subtitleColor,
-                    size: 14,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(
-                    expired
-                        ? Icons.event_busy_rounded
-                        : Icons.verified_user_rounded,
-                    size: 15,
-                    color: expired ? Colors.red : theme.accentColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Licence: $validity',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: expired ? Colors.red : theme.textColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (isExpiringSoon)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade800,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                      icon: const Icon(Icons.autorenew_rounded, size: 14),
-                      label: const Text(
-                        'Renew License',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (context) => FirearmRenewalScreen(
-                                  theme: theme,
-                                  firearm: firearm,
-                                ),
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (total > 0) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Barrel life: $remaining rds left',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.textColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '$usedPct% used',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: usedPct >= 85 ? Colors.red : theme.accentColor,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: LinearProgressIndicator(
-                    value: usedFraction,
-                    minHeight: 8,
-                    backgroundColor: theme.subtitleColor.withValues(alpha: 0.2),
-                    color: usedPct >= 85 ? Colors.red : theme.accentColor,
-                  ),
-                ),
-              ] else
-                Text(
-                  'Barrel life: not set',
-                  style: TextStyle(fontSize: 13, color: theme.subtitleColor),
-                ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _logRounds(firearm),
-                  icon: Icon(
-                    Icons.add_circle_outline,
-                    size: 18,
-                    color: theme.accentColor,
-                  ),
-                  label: Text(
-                    'LOG ROUNDS',
-                    style: TextStyle(
-                      color: theme.accentColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+    final photoPath = (firearm['photoPath'] ?? '').trim();
+    final make = (firearm['make'] ?? '').trim();
+    final model = (firearm['model'] ?? '').trim();
+    final caliber = (firearm['caliber'] ?? '').trim();
+    final serial = (firearm['serial'] ?? '').trim();
+    final makeModel = [make, model].where((part) => part.isNotEmpty).join(' ');
+    final title = makeModel.isEmpty ? 'Registered Firearm' : makeModel;
+
+    return HunterMediaCard(
+      theme: theme,
+      image: photoPath.isNotEmpty ? NetworkImage(photoPath) : null,
+      fallbackIcon: Icons.shield_rounded,
+      title: caliber.isNotEmpty ? '$title ($caliber)' : title,
+      subtitle: serial.isNotEmpty ? 'S/N: $serial' : null,
+      topLeftPill: HunterMediaPill(
+        icon: expired ? Icons.event_busy_rounded : Icons.verified_user_rounded,
+        label:
+            expired ? 'LICENCE EXPIRED' : 'LICENCE: ${validity.toUpperCase()}',
+        amber: !expired,
+        accentColor: expired ? Colors.redAccent : null,
       ),
+      topRightActions: [
+        HunterFrostedCircleButton(
+          icon: Icons.add_circle_outline,
+          iconColor: const Color(0xFFF5F1E8),
+          tooltip: 'Log rounds',
+          onPressed: () => _logRounds(firearm),
+        ),
+        const SizedBox(width: 6),
+        HunterFrostedCircleButton(
+          icon: Icons.build_rounded,
+          iconColor:
+              maintenanceDue ? Colors.redAccent : const Color(0xFFF5F1E8),
+          tooltip: 'Maintenance',
+          onPressed: () => _openMaintenance(firearm),
+        ),
+        if (isExpiringSoon) ...[
+          const SizedBox(width: 6),
+          HunterFrostedCircleButton(
+            icon: Icons.autorenew_rounded,
+            iconColor: Colors.orange.shade300,
+            tooltip: 'Renew license',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (context) =>
+                          FirearmRenewalScreen(theme: theme, firearm: firearm),
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+      pills: [
+        HunterMediaPill(
+          icon: Icons.gps_fixed_rounded,
+          label: caliber.isEmpty ? 'CALIBER N/A' : caliber,
+          amber: true,
+        ),
+        HunterMediaPill(
+          icon: Icons.speed_rounded,
+          label:
+              total > 0 ? 'Barrel: $remaining rds left' : 'Barrel life: not set',
+        ),
+        if (total > 0)
+          HunterMediaPill(
+            icon: Icons.donut_large_rounded,
+            label: '$usedPct% used',
+            amber: usedPct < 85,
+            accentColor: usedPct >= 85 ? Colors.redAccent : null,
+          ),
+        if (maintenanceDue)
+          HunterMediaPill(
+            icon: Icons.build_rounded,
+            label: 'MAINTENANCE DUE',
+            accentColor: Colors.redAccent,
+          ),
+      ],
+      onTap:
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (context) => FirearmDetailScreen(
+                    theme: theme,
+                    firearm: firearm,
+                    onUpdated: (updated) async {
+                      final docId = firearm['docId'];
+                      if (docId != null) {
+                        await FirebaseFirestore.instance
+                            .collection('firearms')
+                            .doc(docId)
+                            .update(updated);
+                      }
+                    },
+                    onDeleted: () async {
+                      final docId = firearm['docId'];
+                      if (docId != null) {
+                        await FirebaseFirestore.instance
+                            .collection('firearms')
+                            .doc(docId)
+                            .delete();
+                      }
+                    },
+                  ),
+            ),
+          ),
     );
   }
 

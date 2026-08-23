@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../hunter_mode/widgets/hunter_scaffold.dart';
+import '../../shared/widgets/hunter_media_card.dart';
 import '../data/factory_ammunition_repository.dart';
 
 class AmmunitionTypeSelectionScreen extends StatefulWidget {
@@ -1298,75 +1299,141 @@ class _AmmunitionTypeSelectionScreenState
             final isCustom = type == 'custom';
 
             final String primaryLabel;
-            final String secondaryLabel;
 
             if (isCustom) {
               final brand = data['bulletBrand'] ?? 'Unknown';
               final weight = data['bulletWeight'] ?? 'N/A';
-              final propBrand = data['propellantBrand'] ?? '';
-              final propType = data['propellantType'] ?? '';
               primaryLabel = '$brand ($weight gr) — Handload';
-              secondaryLabel =
-                  'Powder: $propBrand $propType | Velocity: ${data['muzzleVelocity'] ?? 0} fps';
             } else {
               final brand = data['brand'] ?? 'Unknown';
               final grain = data['bulletgrain'] ?? data['bulletGrain'] ?? 'N/A';
-              final desc = data['description'] ?? '';
               primaryLabel = '$brand ($grain gr) — Factory';
-              secondaryLabel =
-                  '$desc | Velocity: ${data['muzzleVelocity'] ?? 0} fps';
             }
+
+            final caliber = (widget.firearm['caliber'] ?? '').trim();
+            final weightGr =
+                isCustom
+                    ? '${data['bulletWeight'] ?? 'N/A'}'
+                    : '${data['bulletgrain'] ?? data['bulletGrain'] ?? 'N/A'}';
+            final velocityFps = '${data['muzzleVelocity'] ?? 0}';
 
             return Card(
               color: theme.cardColor,
               margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
                   color: theme.accentColor.withValues(alpha: 0.2),
                 ),
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                title: Text(
-                  primaryLabel,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: theme.textColor,
-                    fontSize: 15,
-                  ),
-                ),
-                subtitle: Text(
-                  secondaryLabel,
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 13),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      icon: Icon(
-                        Icons.edit_outlined,
-                        color: theme.accentColor,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        if (isCustom) {
-                          _editCustomVariation(doc.id, data);
-                        } else {
-                          _editFactoryVariation(doc.id, data);
-                        }
-                      },
+                    Row(
+                      children: [
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon:
+                                isCustom
+                                    ? Icons.handyman_rounded
+                                    : Icons.factory_rounded,
+                            label: isCustom ? 'HANDLOAD' : 'FACTORY',
+                            amber: true,
+                            accentColor:
+                                isCustom ? Colors.orange.shade300 : null,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            primaryLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: theme.textColor,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.edit_outlined,
+                            color: theme.accentColor,
+                            size: 20,
+                          ),
+                          tooltip: 'Edit',
+                          onPressed: () {
+                            if (isCustom) {
+                              _editCustomVariation(doc.id, data);
+                            } else {
+                              _editFactoryVariation(doc.id, data);
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.redAccent,
+                            size: 20,
+                          ),
+                          tooltip: 'Delete',
+                          onPressed: () => _deleteVariation(doc.id),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline_rounded,
-                        color: Colors.redAccent,
-                        size: 20,
-                      ),
-                      onPressed: () => _deleteVariation(doc.id),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (caliber.isNotEmpty)
+                          HunterDataPill(
+                            theme: theme,
+                            pill: HunterMediaPill(
+                              icon: Icons.gps_fixed_rounded,
+                              label: caliber,
+                              amber: true,
+                            ),
+                          ),
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon: Icons.scale_rounded,
+                            label: '$weightGr gr',
+                          ),
+                        ),
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon: Icons.speed_rounded,
+                            label: '$velocityFps fps',
+                          ),
+                        ),
+                        if (isCustom)
+                          HunterDataPill(
+                            theme: theme,
+                            pill: HunterMediaPill(
+                              icon: Icons.science_rounded,
+                              label:
+                                  'Powder: ${data['propellantBrand'] ?? ''} ${data['propellantType'] ?? ''}'
+                                      .trim(),
+                            ),
+                          )
+                        else if ((data['description'] ?? '')
+                            .toString()
+                            .isNotEmpty)
+                          HunterDataPill(
+                            theme: theme,
+                            pill: HunterMediaPill(
+                              icon: Icons.notes_rounded,
+                              label: '${data['description']}',
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../hunter_mode/widgets/hunter_scaffold.dart';
+import '../../shared/widgets/hunter_grid_container.dart';
+import '../../shared/widgets/hunter_media_card.dart';
 import 'ammunition_type_selection_screen.dart';
 
 class AmmunitionScreen extends StatefulWidget {
@@ -100,70 +102,63 @@ class _AmmunitionScreenState extends State<AmmunitionScreen> {
               );
             }
 
-            return ListView.builder(
+            return HunterGridContainer(
               padding: const EdgeInsets.all(16),
-              itemCount: docs.length,
-              itemBuilder: (context, index) {
-                final doc = docs[index];
-                final data = doc.data() as Map<String, dynamic>;
-                final make = data['make'] ?? 'Unknown';
-                final model = data['model'] ?? 'Unknown';
-                final caliber = data['caliber'] ?? 'N/A';
-
-                return Card(
-                  color: theme.cardColor,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: theme.accentColor.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    title: Text(
-                      '$make $model',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: theme.textColor,
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Caliber: $caliber',
-                      style: TextStyle(color: theme.subtitleColor),
-                    ),
-                    trailing: Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: theme.accentColor,
-                      size: 18,
-                    ),
-                    onTap: () {
-                      final firearmEntity = <String, String>{
-                        'docId': doc.id,
-                        ...data.map((k, v) => MapEntry(k, v?.toString() ?? '')),
-                      };
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (context) => AmmunitionTypeSelectionScreen(
-                                theme: theme,
-                                firearm: firearmEntity,
-                              ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
+              maxCrossAxisExtent: 260,
+              childAspectRatio: 1.3,
+              spacing: 12,
+              children: [
+                for (final doc in docs) _buildFirearmAmmoCard(theme, doc),
+              ],
             );
           },
         ),
       ),
+    );
+  }
+
+  /// Rich-media ammunition profile card for a registered firearm: full-bleed
+  /// tactical photo (or the dark placeholder) with a frosted amber caliber
+  /// data pill across the lower section.
+  Widget _buildFirearmAmmoCard(
+    ThemeController theme,
+    QueryDocumentSnapshot doc,
+  ) {
+    final data = doc.data() as Map<String, dynamic>;
+    final make = (data['make'] as String?) ?? 'Unknown';
+    final model = (data['model'] as String?) ?? 'Unknown';
+    final caliber = (data['caliber'] as String?) ?? 'N/A';
+    final photoPath = (data['photoPath'] as String?)?.trim() ?? '';
+
+    return HunterMediaCard(
+      theme: theme,
+      image: photoPath.isNotEmpty ? NetworkImage(photoPath) : null,
+      fallbackIcon: Icons.shield_rounded,
+      title: '$make $model',
+      topLeftPill: const HunterMediaPill(
+        icon: Icons.inventory_2_rounded,
+        label: 'AMMUNITION PROFILE',
+        amber: true,
+      ),
+      pills: [
+        HunterMediaPill(icon: Icons.gps_fixed_rounded, label: caliber, amber: true),
+      ],
+      onTap: () {
+        final firearmEntity = <String, String>{
+          'docId': doc.id,
+          ...data.map((k, v) => MapEntry(k, v?.toString() ?? '')),
+        };
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => AmmunitionTypeSelectionScreen(
+                  theme: theme,
+                  firearm: firearmEntity,
+                ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,6 +1,87 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Hunter Mode rich media design language expansion (added 2026-08-23)
+
+- **Task 1 -- Shared base components** (`lib/features/shared/widgets/`, NEW):
+  - `hunter_media_card.dart` -- `HunterMediaCard` (the reusable container
+    extracted from the SA Game Guide's `GameSpeciesCard`): full-bleed
+    background `ImageProvider` (any asset/network image) with a graceful
+    icon fallback, the smooth 4-stop dark legibility gradient
+    (`legibilityGradient`, 33% black -> transparent -> 55% -> 95% black),
+    an amber tag pill top-left (`topLeftPill`), interactive frosted-circle
+    action elements top-right (`topRightActions`), title + italic subtitle +
+    frosted telemetry pills across the lower section, and the 20px rounded
+    card carrying the warm amber glowing border in dark mode / defined warm
+    border in light mode. Companion public widgets: `HunterMediaPill` (data
+    spec: icon/label/amber/accentColor), `HunterFrostedPill` (translucent
+    overlay pill; `accentColor` overrides the two variants, e.g. a red
+    "expired" status badge), `HunterFrostedCircleButton` (top-right actions),
+    `HunterDataPill` (solid theme-aware pill for non-overlay card bodies --
+    the clean caliber/weight/velocity stat chip), and `kHunterMediaAmber`.
+  - `hunter_grid_container.dart` -- `HunterGridContainer`: the standardized
+    responsive high-density grid (`SliverGridDelegateWithMaxCrossAxisExtent`,
+    defaults 280 max extent / 0.72 aspect / 16 spacing, optional footer +
+    padding override, static `gridDelegate(...)` for custom surfaces).
+- **GameSpeciesCard refactored onto the base**: `GameSpeciesCard` now builds
+  on `HunterMediaCard` (same public API + identical visuals; the 12 existing
+  game-guide tests pass unchanged, incl. the favorite-heart key, gradient
+  stops, dark amber border, and screen grid assertions).
+- **Task 2 -- module redesigns**:
+  - **Digital Firearm Safe** (`firearm_safe_screen.dart`): firearm cards are
+    now rich-media `HunterMediaCard`s (full-bleed tactical photo via
+    `photoPath` / dark shield placeholder) with a licence status badge pill
+    (amber VALID / red EXPIRED), frosted quick-action circles (log rounds /
+    maintenance / renew-when-expiring), and caliber + barrel-life telemetry
+    pills; the arsenal list is now a `HunterGridContainer` (340/1.0/14).
+  - **Ammunition Manager** (`ammunition_screen.dart`): the firearm list is a
+    `HunterGridContainer` (260/1.3/12) of rich-media ammunition-profile cards
+    with a frosted amber caliber pill. Saved factory/custom load cards in
+    `ammunition_type_selection_screen.dart` now carry a FACTORY/HANDLOAD badge
+    + clean `HunterDataPill`s for caliber, bullet weight (gr), and velocity
+    (fps) + powder/description.
+  - **Marketplace & Packages** (`hunter_package_marketplace_screen.dart`):
+    `_PackageCard` gained a full-bleed promotional hero (first gallery image
+    with the legibility gradient, mode tag pill top-left, frosted pricing /
+    SOLD-OUT pill top-right); the body meta chips are now `HunterDataPill`s.
+    The contract-test invariants are preserved (title `fontSize: 16`, the
+    town row directly below it, `required this.town`, tabs unchanged).
+  - **Trophy Registry & Booking** (`hunter_trophy_browser_screen.dart`):
+    trophy stock cards are rich-media `HunterMediaCard`s (full-bleed trophy
+    photo / trophy-icon fallback) with a "TROPHY STOCK" tag + availability /
+    measurement / sex / price pills; the browser is now a
+    `HunterGridContainer` (320/0.95/14). The old bespoke amber-bordered
+    placeholder + thumbnail row card were removed; the standard booking
+    confirmation sheet flow is unchanged.
+- **Task 3 -- tests + verification**:
+  - NEW `test/hunter_media_card_test.dart` (15 tests: layout + gradient +
+    pills + top-right action placement/tap + card onTap + dark amber glow /
+    light warm border + pill variants + module-adoption structural checks).
+  - NEW `test/hunter_grid_container_test.dart` (5 tests: GridView render,
+    delegate defaults + overrides, footer, padding).
+  - `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**,
+    277 infos (unchanged baseline -- zero new issues introduced).
+  - `flutter test` (full suite): **All 1340 tests passed** (+20 new).
+- Env note: re-installed Flutter 3.29.1 at `$HOME/flutter` +
+  `~/libs/libsqlite3.so` symlink (run tests with
+  `LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config" pubspec
+  warning is the documented pre-existing spurious line. `dart format` was
+  deliberately NOT applied to the pre-existing files (the repo is not
+  format-clean -- untouched files fail the format check -- and formatter
+  churn would risk the source-string contract tests); only the two NEW
+  shared widget files are format-clean.
+- Files: `lib/features/shared/widgets/hunter_media_card.dart` (NEW),
+  `lib/features/shared/widgets/hunter_grid_container.dart` (NEW),
+  `lib/features/game_guide/widgets/game_species_card.dart`,
+  `lib/features/hunter_mode/firearm_safe_screen.dart`,
+  `lib/features/ballistics/presentation/ammunition_screen.dart`,
+  `lib/features/ballistics/presentation/ammunition_type_selection_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`,
+  `lib/features/hunter_mode/screens/hunter_trophy_browser_screen.dart`,
+  `test/hunter_media_card_test.dart` (NEW),
+  `test/hunter_grid_container_test.dart` (NEW), `AGENTS.md`.
+
+
 ## Phase -- SA Game Guide polished promotional UI (rich media cards + grid) (added 2026-08-23)
 
 - **Task 1 -- Rich media species card**

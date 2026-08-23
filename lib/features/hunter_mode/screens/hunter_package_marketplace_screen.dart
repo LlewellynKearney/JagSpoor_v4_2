@@ -17,6 +17,7 @@ import '../services/pricing_math.dart';
 import '../widgets/booking_availability_strip.dart';
 import '../widgets/outfitter_contact_card.dart';
 import '../widgets/photo_gallery_strip.dart';
+import '../../shared/widgets/hunter_media_card.dart';
 import '../widgets/hunter_scaffold.dart';
 
 class HunterPackageMarketplaceScreen extends StatefulWidget {
@@ -481,6 +482,12 @@ class _PackageCard extends StatelessWidget {
     final startDate = pricing.availabilityStart;
     final endDate = pricing.availabilityEnd;
 
+    // Full-bleed promotional hero imagery (the first uploaded gallery photo).
+    final galleryUrls = resolveGalleryUrls(data);
+    final heroUrl = galleryUrls.isNotEmpty ? galleryUrls.first : '';
+    final priceText =
+        'R ${totalPrice.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       color: HunterUi.cardColor(theme),
@@ -488,332 +495,313 @@ class _PackageCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: theme.accentColor.withValues(alpha: 0.2)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header Row
-              Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Full-bleed promotional hero with the dark legibility gradient,
+            // the pricing-mode tag (top-left) and the frosted pricing /
+            // sold-out pill (top-right).
+            SizedBox(
+              height: 150,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
+                  heroUrl.isNotEmpty
+                      ? Image.network(
+                        heroUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder:
+                            (context, error, stackTrace) =>
+                                _heroFallback(theme),
+                      )
+                      : _heroFallback(theme),
+                  const DecoratedBox(
                     decoration: BoxDecoration(
-                      color: theme.accentColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.cabin_rounded,
-                      color: theme.accentColor,
-                      size: 24,
+                      gradient: HunterMediaCard.legibilityGradient,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: HunterUi.titleColor(theme),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        // Town name directly below the package title so the
-                        // hunter sees the hunt location at a glance.
-                        if (town.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_city_rounded,
-                                color: theme.accentColor,
-                                size: 13,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  town,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: theme.accentColor,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 4),
-                        // Location info
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.location_on_rounded,
-                              color: HunterUi.subtitleColor(theme),
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                farmName.isNotEmpty
-                                    ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
-                                    : province.isNotEmpty
-                                        ? province
-                                        : 'Location TBD',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: HunterUi.subtitleColor(theme),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: HunterFrostedPill(
+                      pill: HunterMediaPill(
+                        icon:
+                            isItemized
+                                ? Icons.list_alt_rounded
+                                : Icons.payments_rounded,
+                        label: isItemized ? 'ITEMIZED' : 'ALL-INCLUSIVE',
+                        amber: true,
+                      ),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'R ${totalPrice.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                          style: const TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Text(
-                          'total price',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (isSoldOut) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'SOLD OUT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child:
+                        isSoldOut
+                            ? HunterFrostedPill(
+                              pill: HunterMediaPill(
+                                icon: Icons.do_not_disturb_on_rounded,
+                                label: 'SOLD OUT',
+                                accentColor: Colors.redAccent,
+                              ),
+                            )
+                            : HunterFrostedPill(
+                              pill: HunterMediaPill(
+                                icon: Icons.payments_rounded,
+                                label: priceText,
+                                amber: true,
                               ),
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+            ),
 
-              // Description
-              Text(
-                description,
-                style: TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 12),
-
-              // Package gallery (uploaded images, if any).
-              _buildGallery(theme),
-              const SizedBox(height: 12),
-
-              // Pricing mode + species + availability meta row.
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
+            // Body
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _metaChip(
-                    theme,
-                    icon: isItemized
-                        ? Icons.list_alt_rounded
-                        : Icons.payments_rounded,
-                    label: isItemized ? 'Itemized' : 'All-Inclusive',
-                  ),
-                  if (speciesCount > 0)
-                    _metaChip(
-                      theme,
-                      icon: Icons.pets_rounded,
-                      label: '$speciesCount species'
-                          '${lineItemCount > 0 ? ' · $lineItemCount items' : ''}',
-                    )
-                  else if (lineItemCount > 0)
-                    _metaChip(
-                      theme,
-                      icon: Icons.list_alt_rounded,
-                      label: '$lineItemCount items',
-                    ),
-                  if (startDate != null)
-                    _metaChip(
-                      theme,
-                      icon: Icons.event_available_rounded,
-                      label: BookingDateFormatter.formatDateRange(
-                              start: startDate, end: endDate) ??
-                          'Select dates',
-                    ),
-                  _metaChip(
-                    theme,
-                    icon: isSoldOut
-                        ? Icons.do_not_disturb_on_rounded
-                        : Icons.confirmation_number_rounded,
-                    label: PackageQuantity.remainingLabel(quantityAvailable),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Inclusions Tags
-              if (inclusions.isNotEmpty) ...[
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: inclusions.take(4).map((item) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.accentColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: theme.accentColor.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        item,
-                        style: TextStyle(
-                          color: theme.accentColor,
-                          fontSize: 11,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                if (inclusions.length > 4) ...[
-                  const SizedBox(height: 4),
+                  // Package title
                   Text(
-                    '+${inclusions.length - 4} more inclusions',
+                    title,
                     style: TextStyle(
-                      color: HunterUi.subtitleColor(theme),
-                      fontSize: 11,
-                      fontStyle: FontStyle.italic,
+                      color: HunterUi.titleColor(theme),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
                   ),
-                ],
-              ],
-              const SizedBox(height: 12),
-
-              // Book Button (disabled + relabelled when sold out).
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: isSoldOut ? null : onTap,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isSoldOut ? Colors.grey : const Color(0xFF1565C0),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  // Town name directly below the package title so the
+                  // hunter sees the hunt location at a glance.
+                  if (town.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_city_rounded,
+                          color: theme.accentColor,
+                          size: 13,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            town,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: theme.accentColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  ],
+                  const SizedBox(height: 4),
+                  // Location info
+                  Row(
                     children: [
                       Icon(
-                        isSoldOut
-                            ? Icons.do_not_disturb_rounded
-                            : Icons.book_online_rounded,
-                        size: 20,
+                        Icons.location_on_rounded,
+                        color: HunterUi.subtitleColor(theme),
+                        size: 14,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isSoldOut ? 'SOLD OUT' : 'VIEW DETAILS & BOOK',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          farmName.isNotEmpty
+                              ? '$farmName${province.isNotEmpty ? ', $province' : ''}'
+                              : province.isNotEmpty
+                                  ? province
+                                  : 'Location TBD',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: HunterUi.subtitleColor(theme),
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 10),
+
+                  // Description
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: HunterUi.subtitleColor(theme),
+                      fontSize: 13,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Species / availability / slots data pills.
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (speciesCount > 0)
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon: Icons.pets_rounded,
+                            label:
+                                '$speciesCount species'
+                                '${lineItemCount > 0 ? ' · $lineItemCount items' : ''}',
+                            amber: true,
+                          ),
+                        )
+                      else if (lineItemCount > 0)
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon: Icons.list_alt_rounded,
+                            label: '$lineItemCount items',
+                          ),
+                        ),
+                      if (startDate != null)
+                        HunterDataPill(
+                          theme: theme,
+                          pill: HunterMediaPill(
+                            icon: Icons.event_available_rounded,
+                            label:
+                                BookingDateFormatter.formatDateRange(
+                                  start: startDate,
+                                  end: endDate,
+                                ) ??
+                                'Select dates',
+                          ),
+                        ),
+                      HunterDataPill(
+                        theme: theme,
+                        pill: HunterMediaPill(
+                          icon:
+                              isSoldOut
+                                  ? Icons.do_not_disturb_on_rounded
+                                  : Icons.confirmation_number_rounded,
+                          label: PackageQuantity.remainingLabel(
+                            quantityAvailable,
+                          ),
+                          amber: !isSoldOut,
+                          accentColor: isSoldOut ? Colors.redAccent : null,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Inclusions Tags
+                  if (inclusions.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children:
+                          inclusions.take(4).map((item) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.accentColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: theme.accentColor.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                item,
+                                style: TextStyle(
+                                  color: theme.accentColor,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    ),
+                    if (inclusions.length > 4) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '+${inclusions.length - 4} more inclusions',
+                        style: TextStyle(
+                          color: HunterUi.subtitleColor(theme),
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                  const SizedBox(height: 12),
+
+                  // Book Button (disabled + relabelled when sold out).
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSoldOut ? null : onTap,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            isSoldOut ? Colors.grey : const Color(0xFF1565C0),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isSoldOut
+                                ? Icons.do_not_disturb_rounded
+                                : Icons.book_online_rounded,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isSoldOut ? 'SOLD OUT' : 'VIEW DETAILS & BOOK',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _metaChip(ThemeController theme,
-      {required IconData icon, required String label}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: theme.backgroundColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: theme.accentColor.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: theme.accentColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: HunterUi.subtitleColor(theme),
-              fontSize: 11,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  /// Horizontal strip of uploaded package gallery images. Returns an empty
-  /// [SizedBox] when the package has no images so the card layout is unchanged.
-  Widget _buildGallery(ThemeController theme) {
-    return PhotoGalleryStrip(
-      urls: resolveGalleryUrls(data),
-      theme: theme,
-      height: 96,
+  /// Dark tactical placeholder behind the hero when the package has no
+  /// uploaded imagery (or the image fails to load).
+  Widget _heroFallback(ThemeController theme) {
+    return ColoredBox(
+      color: const Color(0xFF2A241F),
+      child: Center(
+        child: Icon(
+          Icons.cabin_rounded,
+          size: 56,
+          color: theme.accentColor.withValues(alpha: 0.5),
+        ),
+      ),
     );
   }
 }
+
 
 class _BookingConfirmationSheet extends StatefulWidget {
   final String packageId;
