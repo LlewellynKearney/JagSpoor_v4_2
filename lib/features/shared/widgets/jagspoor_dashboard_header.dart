@@ -2,58 +2,52 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/hunter_media_card.dart';
+import 'hunter_media_card.dart';
 
-/// Frosted, two-line branded header for the Outfitter Mode dashboard.
+/// Frosted, two-line branded dashboard header shared by every JagSpoor
+/// portal (Hunter Mode, Outfitter Mode, and future role dashboards).
 ///
-/// Replaces the previous single static `Text('JagSpoor Outfitter')` AppBar
-/// title (which truncated at the action buttons on narrow devices) with a
-/// structured layout:
+/// Replaces the previous single static `Text` AppBar titles (which truncated
+/// at the action buttons on narrow devices) with a structured layout:
 ///
 /// - a bold header-caps `JAGSPOOR` wordmark (wrapped in a [FittedBox] with
 ///   [BoxFit.scaleDown] so it can never clip, regardless of device width),
-/// - a stylized amber `OUTFITTER MODE` sub-badge carrying a subtle glowing
-///   status dot that reflects the live outfitter sync state,
-/// - a compact trailing action group (8px rhythm) rendered via
-///   [HunterFrostedCircleButton] chips so the title keeps maximum width.
+/// - a stylized amber mode sub-badge ([modeBadgeText], e.g. `HUNTER MODE` /
+///   `OUTFITTER MODE` / `FARM MANAGER MODE`) carrying a subtle glowing
+///   status dot that reflects the live sync state,
+/// - a compact trailing action group ([actionButtons], typically rendered
+///   via [HunterFrostedCircleButton] chips on an 8px rhythm) so the title
+///   keeps maximum width.
 ///
-/// The header floats over the bushveld wallpaper on a frosted dark backdrop
-/// (`#1E1E1E` at ~82% opacity + ambient blur + warm bottom hairline).
-class OutfitterDashboardHeader extends StatelessWidget
+/// The header floats over the portal's background wallpaper on a frosted
+/// dark backdrop (`#1E1E1E` at ~82% opacity + ambient blur + warm bottom
+/// hairline).
+class JagSpoorDashboardHeader extends StatelessWidget
     implements PreferredSizeWidget {
-  /// The outfitter brand title (bold header caps).
+  /// The brand title (bold header caps).
   static const String brandTitle = 'JAGSPOOR';
-
-  /// The outfitter sub-badge label (manager branch still reads
-  /// "FARM MANAGER MODE").
-  static const String outfitterBadge = 'OUTFITTER MODE';
-
-  /// The farm-manager sub-badge label.
-  static const String managerBadge = 'FARM MANAGER MODE';
 
   /// The frosted dark backdrop color.
   static const Color backdropColor = Color(0xD11E1E1E);
 
-  /// Whether the caller is signed in as a farm manager (drives the badge
-  /// label).
-  final bool isManager;
+  /// The mode sub-badge label (e.g. `HUNTER MODE`, `OUTFITTER MODE`,
+  /// `FARM MANAGER MODE`).
+  final String modeBadgeText;
 
-  /// Whether outfitter dashboard sync is active (drives the glowing status
-  /// dot — warm amber when live, muted grey when offline).
+  /// Whether dashboard sync is active (drives the glowing status dot —
+  /// warm amber when live, muted grey when offline).
   final bool syncActive;
 
-  /// The trailing action buttons (already wrapped in frosted chips).
-  final List<Widget> actions;
+  /// The trailing action buttons (already wrapped in frosted chips,
+  /// separated by 8px spacing at the call site).
+  final List<Widget> actionButtons;
 
-  const OutfitterDashboardHeader({
+  const JagSpoorDashboardHeader({
     super.key,
-    required this.isManager,
+    required this.modeBadgeText,
     this.syncActive = true,
-    this.actions = const [],
+    this.actionButtons = const [],
   });
-
-  /// The badge label for the current role branch.
-  String get badgeLabel => isManager ? managerBadge : outfitterBadge;
 
   /// The status dot color (warm amber when sync is live).
   Color get syncDotColor =>
@@ -96,7 +90,7 @@ class OutfitterDashboardHeader extends StatelessWidget
                   // scale-down guarantees no truncation on narrow widths.
                   Expanded(child: _buildTitleBlock(context)),
                   const SizedBox(width: 8),
-                  ...actions,
+                  ...actionButtons,
                 ],
               ),
             ),
@@ -117,7 +111,7 @@ class OutfitterDashboardHeader extends StatelessWidget
           alignment: Alignment.centerLeft,
           child: Text(
             brandTitle,
-            key: const ValueKey('outfitterHeaderBrandTitle'),
+            key: const ValueKey('dashboardHeaderBrandTitle'),
             maxLines: 1,
             style: TextStyle(
               // The frosted dark backdrop is constant across Day/Night, so
@@ -139,14 +133,14 @@ class OutfitterDashboardHeader extends StatelessWidget
           ),
         ),
         const SizedBox(height: 3),
-        _ModeBadge(label: badgeLabel, syncActive: syncActive),
+        _ModeBadge(label: modeBadgeText, syncActive: syncActive),
       ],
     );
   }
 }
 
-/// The stylized `OUTFITTER MODE` sub-badge: a glowing sync-status dot plus
-/// amber letter-spaced caps on a translucent amber pill.
+/// The stylized mode sub-badge: a glowing sync-status dot plus amber
+/// letter-spaced caps on a translucent amber pill.
 class _ModeBadge extends StatelessWidget {
   final String label;
   final bool syncActive;
@@ -202,7 +196,7 @@ class _ModeBadge extends StatelessWidget {
               Flexible(
                 child: Text(
                   label,
-                  key: const ValueKey('outfitterHeaderModeBadge'),
+                  key: const ValueKey('dashboardHeaderModeBadge'),
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.fade,

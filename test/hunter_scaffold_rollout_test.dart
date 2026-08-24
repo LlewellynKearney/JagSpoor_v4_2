@@ -134,10 +134,13 @@ void main() {
         );
         expect(
           src.contains('backgroundColor: Colors.transparent') ||
-              src.contains('extendBodyBehindAppBar'),
+              src.contains('extendBodyBehindAppBar') ||
+              src.contains('JagSpoorDashboardHeader'),
           isTrue,
           reason: '${entry.key} must full-bleed the background under a '
-              'transparent AppBar (extendBodyBehindAppBar).',
+              'transparent AppBar (extendBodyBehindAppBar — set by '
+              'HunterScaffold when an appBar such as the shared frosted '
+              'JagSpoorDashboardHeader is supplied).',
         );
       });
     }
@@ -219,8 +222,8 @@ void main() {
               'stay readable on the bright region of the acacia photo.');
     });
 
-    test('the hunter dashboard uses chips for the theme toggle + profile icons',
-        () {
+    test('the hunter dashboard uses frosted chips for the theme toggle + '
+        'profile icons', () {
       final src = readSource(hunterScreens['dashboard']!);
       // The raw accent-only IconButtons for theme toggle/profile must be gone.
       expect(
@@ -229,11 +232,14 @@ void main() {
         reason: 'The low-contrast raw settings IconButton must be replaced '
             'by the chip.',
       );
-      expect(
-        src.split('HunterActionChip(').length - 1,
-        greaterThanOrEqualTo(2),
-        reason: 'Theme toggle + profile settings must each be a chip.',
-      );
+      // The header actions are the shared frosted circular chips (the same
+      // HunterFrostedCircleButton used by the Outfitter header).
+      expect(src.contains('HunterFrostedCircleButton'), isTrue,
+          reason: 'Theme toggle + profile settings must each be a frosted '
+              'circular chip.');
+      expect(src.contains('JagSpoorDashboardHeader'), isTrue,
+          reason: 'The dashboard must render the shared branded frosted '
+              'header.');
     });
   });
 
@@ -317,7 +323,8 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('Jagspoor: Hunter Mode'), findsOneWidget);
+      expect(find.text('JAGSPOOR'), findsOneWidget);
+      expect(find.text('HUNTER MODE'), findsOneWidget);
       expect(find.text('TACTICAL MODULES'), findsOneWidget);
       expect(find.text('SYSTEM ACTIVE'), findsOneWidget);
     });

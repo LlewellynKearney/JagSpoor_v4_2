@@ -27,6 +27,8 @@ import 'screens/custom_package_farm_selection_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import '../shared/widgets/hunter_media_card.dart';
+import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
@@ -129,6 +131,21 @@ class _HunterDashboardState extends State<HunterDashboard> {
     if (aFav && !bFav) return -1;
     if (!aFav && bFav) return 1;
     return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  }
+
+  /// A single frosted circular header action (the shared rich-media chip
+  /// used across both portal dashboards).
+  Widget _headerAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return HunterFrostedCircleButton(
+      icon: icon,
+      iconColor: kHunterMediaAmber,
+      tooltip: tooltip,
+      onPressed: onPressed,
+    );
   }
 
   @override
@@ -463,37 +480,31 @@ class _HunterDashboardState extends State<HunterDashboard> {
       builder: (context, _) {
         return HunterScaffold(
           theme: theme,
-          appBar: AppBar(
-            title: Text(
-              'Jagspoor: Hunter Mode',
-              style: TextStyle(
-                color: HunterUi.titleColor(theme),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            backgroundColor: Colors.transparent,
-            iconTheme: IconThemeData(color: HunterUi.titleColor(theme)),
-            elevation: 0,
-            actions: [
-              if (_isAdmin)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Container(
-                    decoration: HunterActionChip.decoration(),
-                    child: AdminModeSwitcherButton(
-                      theme: theme,
-                      activeMode: AdminMode.hunter,
-                    ),
+          appBar: JagSpoorDashboardHeader(
+            modeBadgeText: 'HUNTER MODE',
+            actionButtons: [
+              if (_isAdmin) ...[
+                AdminModeSwitcherButton(
+                  theme: theme,
+                  activeMode: AdminMode.hunter,
+                  buttonBuilder: (icon, tooltip, onPressed) =>
+                      _headerAction(
+                    icon: icon,
+                    tooltip: tooltip,
+                    onPressed: onPressed,
                   ),
                 ),
-              HunterActionChip(
+                const SizedBox(width: 8),
+              ],
+              _headerAction(
                 tooltip: theme.isDarkMode
                     ? 'Switch to Day Mode'
                     : 'Switch to Night Mode',
                 icon: theme.isDarkMode ? Icons.light_mode : Icons.dark_mode,
                 onPressed: () => theme.toggleThemeMode(),
               ),
-              HunterActionChip(
+              const SizedBox(width: 8),
+              _headerAction(
                 tooltip: 'Hunter Profile',
                 icon: Icons.settings_rounded,
                 onPressed: () => Navigator.push(

@@ -2,6 +2,64 @@
 
 
 
+## Phase -- Shared JagSpoorDashboardHeader across both portals (added 2026-08-24)
+
+- **Task 1 -- Shared component**
+  (`lib/features/shared/widgets/jagspoor_dashboard_header.dart`, NEW):
+  `JagSpoorDashboardHeader` (`PreferredSizeWidget`, `preferredSize ==
+  kToolbarHeight`) -- the frosted two-line branded header extracted from
+  the Outfitter-specific `OutfitterDashboardHeader` (now DELETED) and
+  generalized: `modeBadgeText` (required; e.g. 'HUNTER MODE' /
+  'OUTFITTER MODE' / 'FARM MANAGER MODE'), `actionButtons` (the trailing
+  frosted-chip group), and `syncActive` (drives the glowing status dot).
+  Fully preserved: the bold `JAGSPOOR` wordmark in a
+  `FittedBox(fit: BoxFit.scaleDown)` (can never clip), the amber
+  mode sub-badge pill (loose `Flexible` + `LayoutBuilder` so the label
+  fades instead of overflowing on the narrowest devices), the frosted
+  `#1E1E1E` @ 82% backdrop (`backdropColor = Color(0xD11E1E1E)`) with
+  ambient blur + warm amber hairline + subtle shadow, and the
+  amber/grey sync dot. ValueKeys renamed to the generic
+  `dashboardHeaderBrandTitle` / `dashboardHeaderModeBadge`.
+- **Task 2 -- Hunter Mode adoption** (`hunter_dashboard.dart`): the legacy
+  `AppBar(title: Text('Jagspoor: Hunter Mode'))` is replaced with
+  `JagSpoorDashboardHeader(modeBadgeText: 'HUNTER MODE')`; the existing
+  actions (admin mode switcher via the `buttonBuilder` seam, Day/Night
+  theme toggle, Hunter Profile settings) are wrapped in
+  `HunterFrostedCircleButton` chips via a new `_headerAction` helper with
+  consistent 8px `SizedBox` spacing. `HunterScaffold` already sets
+  `extendBodyBehindAppBar: appBar != null`, so the acacia background
+  full-bleeds under the frosted header unchanged.
+- **Task 3 -- Outfitter refactor** (`outfitter_dashboard.dart`): now
+  renders the shared `JagSpoorDashboardHeader` with
+  `modeBadgeText: _isManager ? 'FARM MANAGER MODE' : 'OUTFITTER MODE'`
+  and the same frosted-chip action group; the outfitter-specific header
+  file was deleted.
+- **Task 4 -- Tests**: NEW `test/jagspoor_dashboard_header_test.dart`
+  (23 tests, replacing the deleted `outfitter_dashboard_header_test.dart`):
+  brand + injected badge render, FittedBox scale-down contract, badge
+  injection, amber/grey sync dot, frosted backdrop + hairline + shadow,
+  dark mode, chip taps, preferredSize, and parallel 320/360/375/390/414/
+  768px multi-width overflow sweeps for BOTH the Outfitter and Hunter
+  configurations (`tester.takeException()` must be null). Updated
+  `hunter_scaffold_rollout_test.dart` (title assertion now 'JAGSPOOR' +
+  'HUNTER MODE'; the full-bleed contract accepts the shared header since
+  `HunterScaffold` sets `extendBodyBehindAppBar`; the chip assertion now
+  targets `HunterFrostedCircleButton`) and
+  `outfitter_scaffold_rollout_test.dart` (structural assertion now targets
+  `JagSpoorDashboardHeader`).
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): All 1380 tests passed (+7 net new).
+- Files: `lib/features/shared/widgets/jagspoor_dashboard_header.dart`
+  (NEW), `lib/features/outfitter_mode/widgets/outfitter_dashboard_header.dart`
+  (DELETED), `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `test/jagspoor_dashboard_header_test.dart` (NEW),
+  `test/outfitter_dashboard_header_test.dart` (DELETED),
+  `test/hunter_scaffold_rollout_test.dart`,
+  `test/outfitter_scaffold_rollout_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Outfitter Mode frosted dashboard header redesign (added 2026-08-24)
 
 - **New `OutfitterDashboardHeader`**

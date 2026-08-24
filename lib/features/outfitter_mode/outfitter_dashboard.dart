@@ -23,7 +23,7 @@ import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../subscription/subscription_screen.dart';
-import 'widgets/outfitter_dashboard_header.dart';
+import '../shared/widgets/jagspoor_dashboard_header.dart';
 import 'widgets/outfitter_scaffold.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -459,10 +459,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         },
       ),
     ];
-    return OutfitterDashboardHeader(
-      isManager: _isManager,
+    return JagSpoorDashboardHeader(
+      modeBadgeText: _isManager ? 'FARM MANAGER MODE' : 'OUTFITTER MODE',
       syncActive: !_isLoading,
-      actions: headerActions,
+      actionButtons: headerActions,
     );
   }
 
