@@ -2,6 +2,61 @@
 
 
 
+## Phase -- Outfitter Mode frosted dashboard header redesign (added 2026-08-24)
+
+- **New `OutfitterDashboardHeader`**
+  (`lib/features/outfitter_mode/widgets/outfitter_dashboard_header.dart`, NEW;
+  `PreferredSizeWidget`, `preferredSize == kToolbarHeight`): replaces the
+  single static `Text('JagSpoor Outfitter')` AppBar title (which truncated
+  against the action buttons on narrow phones) with a structured two-line
+  brand block:
+  - `JAGSPOOR` bold header-caps wordmark (white, w800, letterSpacing 2.6)
+    wrapped in a `FittedBox(fit: BoxFit.scaleDown)` inside an `Expanded`
+    title block so it can NEVER clip (it scales down instead);
+  - a stylized amber `OUTFITTER MODE` sub-badge (`FARM MANAGER MODE` in the
+    manager branch) -- translucent amber pill + `kHunterMediaAmber`
+    letter-spaced caps + a subtle glowing sync-status dot (warm amber halo
+    when `syncActive`, muted grey offline). The badge label uses a loose
+    `Flexible` inside a `LayoutBuilder`-constrained pill so the pill hugs
+    content when it fits and the label fades (never overflows) on the
+    narrowest devices.
+  - Frosted dark backdrop: `ClipRect` + `BackdropFilter` (10px blur) +
+    `#1E1E1E` @ 82% (`backdropColor = Color(0xD11E1E1E)`) + a warm amber
+    bottom hairline + a subtle ambient drop shadow, so the header floats
+    over the bushveld wallpaper without harsh contrast.
+- **Compact action bar**: the dashboard's `_buildAppBar` now renders the
+  header with its actions as `HunterFrostedCircleButton` chips (amber
+  glyphs) on an 8px `SizedBox` rhythm -- Info / (admin) Mode Switcher /
+  Settings / Sign out -- maximising the title width. The admin switcher
+  gained an optional `buttonBuilder` seam on `AdminModeSwitcherButton`
+  (`admin_mode_switcher.dart`) so the header wraps it in the same frosted
+  chip; the default plain `IconButton` path is unchanged (Hunter dashboard
+  untouched).
+- **Widget behaviour preserved**: the info modal, settings sheet, and
+  sign-out flows are the same callbacks, only re-chipped.
+- **Tests**: NEW `test/outfitter_dashboard_header_test.dart` (16 tests):
+  brand + badge render, FittedBox scale-down contract, manager badge swap,
+  amber/grey sync dot, frosted backdrop color + blur + hairline + shadow,
+  dark-mode render, 3 frosted action chips + tap handling, preferredSize,
+  and a 320/360/375/390/414/768px multi-width sweep asserting
+  `tester.takeException()` is null (no RenderFlex overflow -- the sweep
+  caught a real 58px badge-label overflow at 320px during development,
+  fixed by the loose-Flexible LayoutBuilder badge). Updated
+  `outfitter_dashboard_background_test.dart` title test to the new
+  'JAGSPOOR' / 'OUTFITTER MODE' structure, and
+  `outfitter_scaffold_rollout_test.dart` dashboard chip assertion to the
+  frosted-chip header contract.
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): All 1373 tests passed (+16 new).
+- Files: `lib/features/outfitter_mode/widgets/outfitter_dashboard_header.dart`
+  (NEW), `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/admin/widgets/admin_mode_switcher.dart`,
+  `test/outfitter_dashboard_header_test.dart` (NEW),
+  `test/outfitter_dashboard_background_test.dart`,
+  `test/outfitter_scaffold_rollout_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Outfitter Mode 'Report a Bug' + 'Suggest New Feature' parity (added 2026-08-24)
 
 - **Audit (Task 1)**: Hunter Mode's feedback pipeline is the shared trio --

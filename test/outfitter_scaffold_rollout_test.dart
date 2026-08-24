@@ -106,16 +106,15 @@ void main() {
               'icons stay readable on the bright sunrise region.');
     });
 
-    test('the outfitter dashboard uses chips for settings + sign-out icons',
+    test('the outfitter dashboard uses frosted chips for its header actions',
         () {
       final src = readSource(outfitterScreens['dashboard']!);
-      expect(
-        src.contains('OutfitterActionChip(\n          icon: Icons.settings_rounded') ||
-            src.contains('OutfitterActionChip(\n          icon: Icons.settings_rounded'),
-        isTrue,
-        reason: 'The settings icon must be a high-contrast OutfitterActionChip.',
-      );
-      expect(src.contains('OutfitterActionChip'), isTrue);
+      // The dashboard header groups its actions into frosted circular chips
+      // (Hunter-Mode parity) via the shared HunterFrostedCircleButton.
+      expect(src.contains('HunterFrostedCircleButton'), isTrue,
+          reason: 'The header actions must be frosted circular chips.');
+      expect(src.contains('OutfitterDashboardHeader'), isTrue,
+          reason: 'The dashboard must render the branded frosted header.');
       expect(src.contains('Icons.lock_reset_rounded'), isTrue);
       // The raw accent-only IconButton for settings/logout must be gone.
       expect(

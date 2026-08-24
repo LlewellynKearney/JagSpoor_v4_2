@@ -4,6 +4,7 @@ import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
+import '../shared/widgets/hunter_media_card.dart';
 import '../auth/auth_screen.dart';
 import '../auth/change_password_dialog.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
@@ -22,6 +23,7 @@ import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../subscription/subscription_screen.dart';
+import 'widgets/outfitter_dashboard_header.dart';
 import 'widgets/outfitter_scaffold.dart';
 
 class OutfitterDashboard extends StatefulWidget {
@@ -420,57 +422,61 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     BuildContext context,
     ThemeController theme,
   ) {
-    return AppBar(
-      title: Text(
-        _isManager ? 'Farm Manager' : 'JagSpoor Outfitter',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          // Dark espresso in Day mode (readable on the bright sunrise
-          // region), white in Night mode over the dark scrim.
-          color: OutfitterUi.titleColor(theme),
-          fontWeight: FontWeight.w800,
-          fontSize: 24,
-          letterSpacing: 1.2,
-        ),
+    // Compact action group: frosted circular chips on an 8px rhythm so the
+    // branded title block keeps the maximum available width.
+    final headerActions = <Widget>[
+      _headerAction(
+        icon: Icons.info_outline_rounded,
+        tooltip: 'Screen info',
+        onPressed: () =>
+            showAppInfoModal(context, AppScreenHelpScripts.outfitterDashboard),
       ),
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      actions: [
-        // Universal help: opens the theme-aware info modal for this screen.
-        OutfitterActionChip(
-          icon: Icons.info_outline_rounded,
-          tooltip: 'Screen info',
-          iconColor: theme.accentColor,
-          onPressed: () =>
-              showAppInfoModal(context, AppScreenHelpScripts.outfitterDashboard),
-        ),
-        if (_isAdmin)
-          AdminModeSwitcherButton(
-            theme: theme,
-            activeMode: AdminMode.outfitter,
-          ),
-        // High-contrast chip keeps the icon readable against the bright
-        // sunrise region of the bushveld background in both Day/Night modes.
-        OutfitterActionChip(
-          icon: Icons.settings_rounded,
-          tooltip: 'Outfitter settings',
-          iconColor: theme.accentColor,
-          onPressed: () => _showSettingsBottomSheet(context, theme),
-        ),
-        OutfitterActionChip(
-          icon: Icons.lock_reset_rounded,
-          tooltip: 'Sign out',
-          iconColor: theme.accentColor,
-          onPressed: () {
-            UserRoleResolver.instance.reset();
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => AuthScreen(themedata: theme)),
-            );
-          },
+      if (_isAdmin) ...[
+        const SizedBox(width: 8),
+        AdminModeSwitcherButton(
+          theme: theme,
+          activeMode: AdminMode.outfitter,
+          buttonBuilder: (icon, tooltip, onPressed) =>
+              _headerAction(icon: icon, tooltip: tooltip, onPressed: onPressed),
         ),
       ],
+      const SizedBox(width: 8),
+      _headerAction(
+        icon: Icons.settings_rounded,
+        tooltip: 'Outfitter settings',
+        onPressed: () => _showSettingsBottomSheet(context, theme),
+      ),
+      const SizedBox(width: 8),
+      _headerAction(
+        icon: Icons.lock_reset_rounded,
+        tooltip: 'Sign out',
+        onPressed: () {
+          UserRoleResolver.instance.reset();
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => AuthScreen(themedata: theme)),
+          );
+        },
+      ),
+    ];
+    return OutfitterDashboardHeader(
+      isManager: _isManager,
+      syncActive: !_isLoading,
+      actions: headerActions,
+    );
+  }
+
+  /// A single frosted circular header action (Hunter-Mode parity styling).
+  Widget _headerAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return HunterFrostedCircleButton(
+      icon: icon,
+      iconColor: kHunterMediaAmber,
+      tooltip: tooltip,
+      onPressed: onPressed,
     );
   }
 

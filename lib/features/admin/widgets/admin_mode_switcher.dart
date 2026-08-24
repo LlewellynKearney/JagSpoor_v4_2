@@ -187,13 +187,31 @@ class AdminModeSwitcherButton extends StatelessWidget {
     super.key,
     required this.theme,
     this.activeMode = AdminMode.admin,
+    this.buttonBuilder,
   });
 
   final ThemeController theme;
   final AdminMode activeMode;
 
+  /// Optional builder that renders the trigger button (icon, tooltip, tap).
+  /// Lets a host AppBar wrap the switcher in its own action-chip styling;
+  /// when omitted the default plain [IconButton] is used.
+  final Widget Function(
+    IconData icon,
+    String tooltip,
+    VoidCallback onPressed,
+  )? buttonBuilder;
+
   @override
   Widget build(BuildContext context) {
+    final builder = buttonBuilder;
+    if (builder != null) {
+      return builder(
+        Icons.swap_horiz_rounded,
+        'Switch mode',
+        () => _showSheet(context),
+      );
+    }
     return IconButton(
       icon: const Icon(Icons.swap_horiz_rounded),
       tooltip: 'Switch mode',
