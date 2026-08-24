@@ -504,45 +504,6 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   ),
                   const SizedBox(height: 12),
                   _buildUnitPreferenceCard(),
-                  const SizedBox(height: 12),
-                  Card(
-                    color: HunterUi.cardColor(widget.theme),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: widget.theme.accentColor.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          ElevatedButton(
-                            onPressed:
-                                () => widget.theme.setConcept(
-                                  HuntingConcept.thermalGlow,
-                                ),
-                            child: const Text('Thermal'),
-                          ),
-                          ElevatedButton(
-                            onPressed:
-                                () => widget.theme.setConcept(
-                                  HuntingConcept.walnutLuxury,
-                                ),
-                            child: const Text('Walnut'),
-                          ),
-                          ElevatedButton(
-                            onPressed:
-                                () => widget.theme.setConcept(
-                                  HuntingConcept.neonShock,
-                                ),
-                            child: const Text('Neon'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 24),
 
                   // Profile Photo Section
