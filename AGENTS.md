@@ -2,6 +2,54 @@
 
 
 
+## Phase -- Subscription screen mode-isolated tiers + comprehensive feature lists (added 2026-08-24)
+
+- **Task 1 -- Mode-isolated tier display**
+  (`lib/features/subscription/subscription_screen.dart`): `_buildTierCards`
+  now renders ONLY the active mode's tier card -- Hunter Mode shows only the
+  Hunter card (R19.99/month), Outfitter Mode shows only the Outfitter card
+  (R199.99/month); the other card is hidden completely. The active tier is
+  resolved by the existing `_tier` getter (`widget.tier` ??
+  `SubscriptionTier.fromAppRole(UserRoleProvider.instance.role)`). Both
+  dashboard call sites now pass the tier explicitly (mode-driven isolation
+  independent of the cached role provider): `hunter_dashboard.dart` passes
+  `tier: SubscriptionTier.hunter`, `outfitter_dashboard.dart` passes
+  `tier: SubscriptionTier.outfitter` (both gained the
+  `payfast_service.dart` import).
+- **Task 2 -- Comprehensive feature lists**: new static const
+  `_hunterPerks` (8 features: Full Hunter Toolkit & Ballistics Calculator;
+  Weather, Wind & Solunar Tracker; SA Game Guide & Field Estimates; Digital
+  Firearm Safe & Ammunition Manager; Package Marketplace & Custom Package
+  Builder; Digital Trophy Room & Sighting Logger; Off-Grid Topographic Maps
+  & Spoor Identifier; SAPS License Application Tracker) and
+  `_outfitterPerks` (7 features: Everything in Hunter Tier included; Farm
+  Control Panel & Manager Assignments; Custom Farm Species Price List
+  Management; Hunting Package Publishing & Booking Request Management;
+  Slaughterhouse & Carcass Weight Matrix; Off-Grid Mesh Sync & Team Radar;
+  Business Intelligence & Revenue Analytics).
+- **Task 3 -- Summary footer**: verified the "Then monthly (<tier>)"
+  checkout-total row already resolves dynamically from `_tier.key` +
+  `PayFastService.baseAmountFor(_tier)` (R 19.99 Hunter / R 199.99
+  Outfitter); locked with tests.
+- **Task 4 -- Tests**: `test/subscription_screen_test.dart` updated +4 (13
+  total): rendering group updated for the single-card contract (opposite
+  tier card absent); new "mode-isolated tier display" group -- Hunter Mode
+  renders only the hunter card with all 8 feature bullets and none of the
+  outfitter bullets; Outfitter Mode renders only the outfitter card with
+  all 7 feature bullets and no hunter-only bullets; the monthly summary
+  reflects the correct tier fee per mode.
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): All 1384 tests passed (+4 net new). Env note: re-installed
+  Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so` symlink (run
+  tests with `LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config"
+  pubspec warning is the documented pre-existing spurious line.
+- Files: `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `test/subscription_screen_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Shared JagSpoorDashboardHeader across both portals (added 2026-08-24)
 
 - **Task 1 -- Shared component**

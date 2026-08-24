@@ -46,11 +46,12 @@ void main() {
 
       expect(find.text('NO ACTIVE SUBSCRIPTION'), findsOneWidget);
       expect(find.text('TIER PRICING'), findsOneWidget);
+      // Hunter mode (default): ONLY the Hunter tier card renders.
       expect(find.text('R 19.99 / month'), findsOneWidget);
-      expect(find.text('R 199.99 / month'), findsOneWidget);
-      expect(find.text('After a 30-day free trial'), findsNWidgets(2));
+      expect(find.text('R 199.99 / month'), findsNothing);
+      expect(find.text('After a 30-day free trial'), findsOneWidget);
 
-      // The promo section sits below the tier cards on the 800x600 test
+      // The promo section sits below the tier card on the 800x600 test
       // surface; scroll it into view before asserting.
       await scrollTo(tester, find.byKey(const ValueKey('promoCodeField')));
       expect(find.text('PROMO CODE'), findsOneWidget);
@@ -65,28 +66,114 @@ void main() {
     testWidgets('marks the hunter tier as YOUR TIER by default', (tester) async {
       await pumpScreen(tester);
       final hunterCard = find.byKey(const ValueKey('tierCard_hunter'));
+      expect(hunterCard, findsOneWidget);
       expect(
         find.descendant(of: hunterCard, matching: find.text('YOUR TIER')),
         findsOneWidget,
       );
-      final outfitterCard = find.byKey(const ValueKey('tierCard_outfitter'));
-      expect(
-        find.descendant(of: outfitterCard, matching: find.text('YOUR TIER')),
-        findsNothing,
-      );
+      // The outfitter card is hidden completely in Hunter Mode.
+      expect(find.byKey(const ValueKey('tierCard_outfitter')), findsNothing);
     });
 
     testWidgets('marks the outfitter tier as YOUR TIER when tier is passed',
         (tester) async {
       await pumpScreen(tester, tier: SubscriptionTier.outfitter);
       final outfitterCard = find.byKey(const ValueKey('tierCard_outfitter'));
+      expect(outfitterCard, findsOneWidget);
       expect(
         find.descendant(of: outfitterCard, matching: find.text('YOUR TIER')),
         findsOneWidget,
       );
+      // The hunter card is hidden completely in Outfitter Mode.
+      expect(find.byKey(const ValueKey('tierCard_hunter')), findsNothing);
       // The checkout total maps the outfitter price.
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
       expect(find.text('R 199.99'), findsOneWidget);
+    });
+  });
+
+  group('mode-isolated tier display', () {
+    const hunterFeatures = [
+      'Full Hunter Toolkit & Ballistics Calculator',
+      'Weather, Wind & Solunar Tracker',
+      'SA Game Guide & Field Estimates',
+      'Digital Firearm Safe & Ammunition Manager',
+      'Package Marketplace & Custom Package Builder',
+      'Digital Trophy Room & Sighting Logger',
+      'Off-Grid Topographic Maps & Spoor Identifier',
+      'SAPS License Application Tracker',
+    ];
+
+    const outfitterFeatures = [
+      'Everything in Hunter Tier included',
+      'Farm Control Panel & Manager Assignments',
+      'Custom Farm Species Price List Management',
+      'Hunting Package Publishing & Booking Request Management',
+      'Slaughterhouse & Carcass Weight Matrix',
+      'Off-Grid Mesh Sync & Team Radar',
+      'Business Intelligence & Revenue Analytics',
+    ];
+
+    testWidgets('Hunter Mode renders ONLY the Hunter tier card with the '
+        'full hunter feature list', (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+
+      final hunterCard = find.byKey(const ValueKey('tierCard_hunter'));
+      expect(hunterCard, findsOneWidget);
+      expect(find.byKey(const ValueKey('tierCard_outfitter')), findsNothing);
+
+      for (final feature in hunterFeatures) {
+        expect(
+          find.descendant(of: hunterCard, matching: find.text(feature)),
+          findsOneWidget,
+          reason: 'missing hunter feature: $feature',
+        );
+      }
+      // Outfitter-only features never render in Hunter Mode.
+      for (final feature in outfitterFeatures) {
+        expect(find.text(feature), findsNothing);
+      }
+    });
+
+    testWidgets('Outfitter Mode renders ONLY the Outfitter tier card with '
+        'the full outfitter feature list', (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.outfitter);
+
+      final outfitterCard = find.byKey(const ValueKey('tierCard_outfitter'));
+      expect(outfitterCard, findsOneWidget);
+      expect(find.byKey(const ValueKey('tierCard_hunter')), findsNothing);
+
+      for (final feature in outfitterFeatures) {
+        expect(
+          find.descendant(of: outfitterCard, matching: find.text(feature)),
+          findsOneWidget,
+          reason: 'missing outfitter feature: $feature',
+        );
+      }
+      // Hunter-only feature bullets never render in Outfitter Mode.
+      expect(find.text('SAPS License Application Tracker'), findsNothing);
+      expect(
+        find.text('Digital Firearm Safe & Ammunition Manager'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the monthly summary reflects the Hunter tier fee',
+        (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+      await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
+      expect(find.text('Then monthly (hunter)'), findsOneWidget);
+      expect(find.text('R 19.99'), findsOneWidget);
+      expect(find.text('Then monthly (outfitter)'), findsNothing);
+    });
+
+    testWidgets('the monthly summary reflects the Outfitter tier fee',
+        (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.outfitter);
+      await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
+      expect(find.text('Then monthly (outfitter)'), findsOneWidget);
+      expect(find.text('R 199.99'), findsOneWidget);
+      expect(find.text('Then monthly (hunter)'), findsNothing);
     });
   });
 

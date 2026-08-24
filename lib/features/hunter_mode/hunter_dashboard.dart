@@ -30,6 +30,7 @@ import '../admin/widgets/admin_mode_switcher.dart';
 import '../shared/widgets/hunter_media_card.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
+import '../subscription/services/payfast_service.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
 import 'widgets/dashboard_feature_folder.dart';
@@ -358,7 +359,8 @@ class _HunterDashboardState extends State<HunterDashboard> {
             (context, theme) => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => SubscriptionScreen(theme: theme),
+                builder: (context) =>
+                    SubscriptionScreen(theme: theme, tier: SubscriptionTier.hunter),
               ),
             ),
       ),

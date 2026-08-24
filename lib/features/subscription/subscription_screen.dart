@@ -269,7 +269,35 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
+  /// Hunter-tier feature checklist (comprehensive).
+  static const List<String> _hunterPerks = [
+    'Full Hunter Toolkit & Ballistics Calculator',
+    'Weather, Wind & Solunar Tracker',
+    'SA Game Guide & Field Estimates',
+    'Digital Firearm Safe & Ammunition Manager',
+    'Package Marketplace & Custom Package Builder',
+    'Digital Trophy Room & Sighting Logger',
+    'Off-Grid Topographic Maps & Spoor Identifier',
+    'SAPS License Application Tracker',
+  ];
+
+  /// Outfitter-tier feature checklist (comprehensive — business & lodge
+  /// management on top of the full Hunter toolkit).
+  static const List<String> _outfitterPerks = [
+    'Everything in Hunter Tier included',
+    'Farm Control Panel & Manager Assignments',
+    'Custom Farm Species Price List Management',
+    'Hunting Package Publishing & Booking Request Management',
+    'Slaughterhouse & Carcass Weight Matrix',
+    'Off-Grid Mesh Sync & Team Radar',
+    'Business Intelligence & Revenue Analytics',
+  ];
+
+  /// Renders ONLY the active mode's tier card — Hunter Mode shows the Hunter
+  /// tier, Outfitter Mode shows the Outfitter tier; the other tier card is
+  /// hidden completely.
   Widget _buildTierCards(ThemeController theme) {
+    final isOutfitter = _tier == SubscriptionTier.outfitter;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -285,27 +313,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         const SizedBox(height: 10),
         _tierCard(
           theme,
-          tier: SubscriptionTier.hunter,
-          title: 'Hunter',
-          amount: PayFastService.hunterMonthlyZAR,
-          perks: const [
-            'Full hunter toolkit & offline maps',
-            'Package marketplace & bookings',
-            'Digital trophy room & firearm safe',
-          ],
-        ),
-        const SizedBox(height: 12),
-        _tierCard(
-          theme,
-          tier: SubscriptionTier.outfitter,
-          title: 'Outfitter',
-          amount: PayFastService.outfitterMonthlyZAR,
-          perks: const [
-            'Everything in Hunter',
-            'Farm control panel & price lists',
-            'Package publishing & booking requests',
-            'Business intelligence & analytics',
-          ],
+          tier: _tier,
+          title: isOutfitter ? 'Outfitter' : 'Hunter',
+          amount: PayFastService.baseAmountFor(_tier),
+          perks: isOutfitter ? _outfitterPerks : _hunterPerks,
         ),
       ],
     );
