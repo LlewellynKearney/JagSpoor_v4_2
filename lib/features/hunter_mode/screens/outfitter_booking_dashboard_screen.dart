@@ -19,6 +19,12 @@ class OutfitterBookingDashboardScreen extends StatefulWidget {
 
   const OutfitterBookingDashboardScreen({super.key, required this.theme});
 
+  @visibleForTesting
+  static FirebaseFirestore? firestoreForTesting;
+
+  @visibleForTesting
+  static String? Function()? currentUserIdResolverForTesting;
+
   @override
   State<OutfitterBookingDashboardScreen> createState() =>
       _OutfitterBookingDashboardScreenState();
@@ -34,6 +40,23 @@ class _OutfitterBookingDashboardScreenState
   /// booking; otherwise only bookings of that category are listed.
   BookingCategory? _categoryFilter;
 
+  FirebaseFirestore get _firestore =>
+      OutfitterBookingDashboardScreen.firestoreForTesting ??
+      FirebaseFirestore.instance;
+
+  /// Resolves the caller uid without ever throwing `[core/no-app]` on a cold
+  /// launch or in a widget test (mirrors the dashboard resilience pattern).
+  String? get _currentUserId {
+    final resolver =
+        OutfitterBookingDashboardScreen.currentUserIdResolverForTesting;
+    if (resolver != null) return resolver();
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +71,7 @@ class _OutfitterBookingDashboardScreenState
   }
 
   void _buildBookingQuery() {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = _currentUserId;
     if (UserRoleResolver.instance.isManager) {
       // Isolate logs purely to the manager's assigned concession property.
       // firestore.rules grants a farm manager read access to bookings on
@@ -61,7 +84,7 @@ class _OutfitterBookingDashboardScreenState
       // manager list query is rejected, the manager should instead resolve
       // the parent outfitter from farm_managers/{uid} and the bookings
       // should carry a `managerUids` array -- a future data migration).
-      _bookingQuery = FirebaseFirestore.instance
+      _bookingQuery = _firestore
           .collection('bookings')
           .where('farmId', isEqualTo: UserRoleResolver.instance.assignedFarmId);
     } else {
@@ -70,7 +93,7 @@ class _OutfitterBookingDashboardScreenState
       // `resource.data.outfitterId == request.auth.uid`, and this query
       // constrains `outfitterId` to `request.auth.uid`, so the list query
       // is queryable and the outfitter sees only their own bookings.
-      _bookingQuery = FirebaseFirestore.instance
+      _bookingQuery = _firestore
           .collection('bookings')
           .where('outfitterId', isEqualTo: currentUserId);
     }
@@ -80,42 +103,47 @@ class _OutfitterBookingDashboardScreenState
 
   @override
   Widget build(BuildContext context) {
+    // The transparent full-bleed AppBar (primary: true) already pads its
+    // title + back button below the system status bar, while the bushveld
+    // background extends behind it to the top edge. Hoist it so the body's
+    // top clearance can be derived from its REAL preferred height below.
+    final appBar = AppBar(
+      title: Text(
+        UserRoleResolver.instance.isManager
+            ? '💳 Farm Booking Requests'
+            : '💳 Booking Requests',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: OutfitterUi.titleColor(widget.theme),
+        ),
+      ),
+      backgroundColor: Colors.transparent,
+      foregroundColor: OutfitterUi.titleColor(widget.theme),
+      elevation: 0,
+      bottom: TabBar(
+        controller: _tabController,
+        labelColor: widget.theme.isDarkMode
+            ? widget.theme.accentColor
+            : OutfitterUi.lightTitle,
+        unselectedLabelColor: OutfitterUi.subtitleColor(widget.theme),
+        indicatorColor: widget.theme.accentColor,
+        tabs: const [
+          Tab(
+            icon: Icon(Icons.pending_actions_rounded),
+            text: 'Active Requests',
+          ),
+          Tab(
+            icon: Icon(Icons.archive_rounded),
+            text: 'Archived',
+          ),
+        ],
+      ),
+    );
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: widget.theme.backgroundColor,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          UserRoleResolver.instance.isManager
-              ? '💳 Farm Booking Requests'
-              : '💳 Booking Requests',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: OutfitterUi.titleColor(widget.theme),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        foregroundColor: OutfitterUi.titleColor(widget.theme),
-        elevation: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: widget.theme.isDarkMode
-              ? widget.theme.accentColor
-              : OutfitterUi.lightTitle,
-          unselectedLabelColor: OutfitterUi.subtitleColor(widget.theme),
-          indicatorColor: widget.theme.accentColor,
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.pending_actions_rounded),
-              text: 'Active Requests',
-            ),
-            Tab(
-              icon: Icon(Icons.archive_rounded),
-              text: 'Archived',
-            ),
-          ],
-        ),
-      ),
+      appBar: appBar,
       body: OutfitterBushveldBackground.stack(
         fallbackColor: widget.theme.backgroundColor,
         child: SafeArea(
@@ -188,10 +216,13 @@ class _OutfitterBookingDashboardScreenState
 
           return Column(
             children: [
-              // Clear the transparent full-bleed AppBar + TabBar (the
-              // SafeArea above only accounts for the status bar) so the
-              // category filter chips render cleanly below them.
-              const SizedBox(height: kToolbarHeight + kTextTabBarHeight),
+              // Clear the transparent full-bleed AppBar (the SafeArea above
+              // only accounts for the system status bar). Use the AppBar's
+              // REAL preferred height -- the icon+text tabs are taller than
+              // kTextTabBarHeight -- so the category filter chips always
+              // render cleanly below the header instead of sliding up
+              // underneath the TabBar.
+              SizedBox(height: appBar.preferredSize.height),
               _buildCategoryFilterBar(),
               Expanded(
                 child: TabBarView(
