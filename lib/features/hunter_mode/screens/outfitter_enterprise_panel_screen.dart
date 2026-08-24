@@ -48,6 +48,7 @@ class _OutfitterEnterprisePanelScreenState
   final _farmNameController = TextEditingController();
   final _districtController = TextEditingController();
   final _provinceController = TextEditingController();
+  final _townController = TextEditingController();
   final _managerEmailController = TextEditingController();
   final _managerNameController = TextEditingController();
   final _managerCellController = TextEditingController();
@@ -114,6 +115,7 @@ class _OutfitterEnterprisePanelScreenState
     _farmNameController.dispose();
     _districtController.dispose();
     _provinceController.dispose();
+    _townController.dispose();
     _managerEmailController.dispose();
     _managerNameController.dispose();
     _managerCellController.dispose();
@@ -454,6 +456,9 @@ class _OutfitterEnterprisePanelScreenState
         name: _farmNameController.text.trim(),
         district: _districtController.text.trim(),
         province: _provinceController.text.trim(),
+        town: _townController.text.trim().isEmpty
+            ? null
+            : _townController.text.trim(),
         sizeHectares: sizeHectares,
         contactNumber: _createContactNumberController.text.trim().isEmpty
             ? null
@@ -471,6 +476,7 @@ class _OutfitterEnterprisePanelScreenState
         _farmNameController.clear();
         _districtController.clear();
         _provinceController.clear();
+        _townController.clear();
         _createSizeHectaresController.clear();
         _createContactNumberController.clear();
         _createRegistrationNumberController.clear();
@@ -1272,6 +1278,17 @@ class _OutfitterEnterprisePanelScreenState
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _townController,
+                    style: TextStyle(color: theme.textColor),
+                    textInputAction: TextInputAction.next,
+                    decoration: _inputDecoration(
+                      hint: 'e.g. Upington',
+                      label: 'Town / City',
+                      theme: theme,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

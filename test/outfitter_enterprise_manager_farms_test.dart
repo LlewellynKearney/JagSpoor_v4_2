@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -116,6 +118,95 @@ void main() {
       final snap = await manager().getMyFarms();
 
       expect(snap.docs, isEmpty);
+    });
+  });
+
+  group('addFarm town field (Register New Farm payload)', () {
+    Future<Map<String, dynamic>> addAndRead({String? town}) async {
+      await manager().addFarm(
+        name: 'Kgalagadi Game Farm',
+        district: 'ZF Mgcawu',
+        province: 'Northern Cape',
+        town: town,
+      );
+      final snap = await fake.collection('farms').get();
+      expect(snap.docs, hasLength(1));
+      return snap.docs.first.data();
+    }
+
+    test('writes the town onto the farm document when provided', () async {
+      final data = await addAndRead(town: 'Upington');
+
+      expect(data['town'], 'Upington');
+    });
+
+    test('trims surrounding whitespace from the town', () async {
+      final data = await addAndRead(town: '  Kathu  ');
+
+      expect(data['town'], 'Kathu');
+    });
+
+    test('writes null town when the field is omitted', () async {
+      final data = await addAndRead();
+
+      expect(data.containsKey('town'), isTrue);
+      expect(data['town'], isNull);
+    });
+
+    test('writes null town when the field is blank', () async {
+      final data = await addAndRead(town: '   ');
+
+      expect(data['town'], isNull);
+    });
+
+    test('keeps the rest of the registration payload intact', () async {
+      final data = await addAndRead(town: 'Upington');
+
+      expect(data['outfitterId'], 'outfitter-1');
+      expect(data['name'], 'Kgalagadi Game Farm');
+      expect(data['district'], 'ZF Mgcawu');
+      expect(data['province'], 'Northern Cape');
+      expect(data['status'], 'active');
+    });
+
+    test('throws when unauthenticated', () async {
+      currentUid = null;
+
+      expect(
+        () => manager().addFarm(
+          name: 'Kgalagadi Game Farm',
+          district: 'ZF Mgcawu',
+          province: 'Northern Cape',
+          town: 'Upington',
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+  });
+
+  group('Register New Farm form town wiring (structural contract)', () {
+    final screenSrc = File(
+      'lib/features/hunter_mode/screens/outfitter_enterprise_panel_screen.dart',
+    ).readAsStringSync();
+
+    test('the registration form owns a town text editing controller', () {
+      expect(
+        screenSrc.contains(
+          'final _townController = TextEditingController();',
+        ),
+        isTrue,
+      );
+      expect(screenSrc.contains('_townController.dispose();'), isTrue);
+    });
+
+    test('the registration form renders a Town / City field', () {
+      expect(screenSrc.contains('controller: _townController,'), isTrue);
+      expect(screenSrc.contains("label: 'Town / City',"), isTrue);
+    });
+
+    test('the registration submit passes the town to addFarm', () {
+      expect(screenSrc.contains('town: _townController.text.trim().isEmpty'),
+          isTrue);
     });
   });
 }

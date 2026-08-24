@@ -79,6 +79,7 @@ class OutfitterEnterpriseManager {
   /// - [name]: Farm or concession name (e.g., "Kgalagadi Game Farm")
   /// - [district]: District or region name
   /// - [province]: Province (e.g., "Northern Cape")
+  /// - [town]: Optional town / city the farm belongs to.
   ///
   /// Returns: void (saves to Firestore 'farms' collection)
   ///
@@ -87,6 +88,7 @@ class OutfitterEnterpriseManager {
     required String name,
     required String district,
     required String province,
+    String? town,
     double? sizeHectares,
     String? contactNumber,
     String? registrationNumber,
@@ -106,6 +108,7 @@ class OutfitterEnterpriseManager {
       'name': name.trim(),
       'district': district.trim(),
       'province': province.trim(),
+      'town': town?.trim().isEmpty ?? true ? null : town!.trim(),
       'sizeHectares': sizeHectares,
       'contactNumber': contactNumber?.trim().isEmpty ?? true
           ? null
