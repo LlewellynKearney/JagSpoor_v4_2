@@ -26,6 +26,8 @@ class SupportEmailComposer {
   /// Build a `mailto:` URI for a bug report.
   ///
   /// [userId], [title], [steps], [severity] are injected into the body.
+  /// [mode] tags the originating portal ('Hunter' by default; 'Outfitter'
+  /// from the Outfitter portal) and drives the submission footer + channel.
   /// Returns a `Uri` whose `toString()` is a ready-to-launch mailto link with
   /// every component percent-encoded.
   static Uri buildBugReportMailtoUri({
@@ -33,6 +35,7 @@ class SupportEmailComposer {
     required String title,
     required String steps,
     required String severity,
+    String mode = 'Hunter',
   }) {
     final subject = '[Bug Report] ${_safe(title)}';
     final body = buildBugReportEmailBody(
@@ -40,6 +43,7 @@ class SupportEmailComposer {
       title: title,
       steps: steps,
       severity: severity,
+      mode: mode,
     );
     return _mailtoUri(subject, body);
   }
@@ -50,6 +54,7 @@ class SupportEmailComposer {
     required String title,
     required String description,
     required String benefits,
+    String mode = 'Hunter',
   }) {
     final subject = '[Feature Suggestion] ${_safe(title)}';
     final body = buildFeatureSuggestionEmailBody(
@@ -57,6 +62,7 @@ class SupportEmailComposer {
       title: title,
       description: description,
       benefits: benefits,
+      mode: mode,
     );
     return _mailtoUri(subject, body);
   }
@@ -72,12 +78,14 @@ class SupportEmailComposer {
   /// Structured tactical brief email body for bug reports.
   ///
   /// Pure function (no I/O) — safe to unit-test. Injects the reporter's User
-  /// ID, the reproduction steps, the severity, and a System Context block.
+  /// ID, the reproduction steps, the severity, the originating portal [mode],
+  /// and a System Context block.
   static String buildBugReportEmailBody({
     required String userId,
     required String title,
     required String steps,
     required String severity,
+    String mode = 'Hunter',
   }) {
     final buffer = StringBuffer();
     buffer.writeln('===============================================');
@@ -90,6 +98,7 @@ class SupportEmailComposer {
     buffer.writeln('  Severity   : ${_safe(severity)}');
     buffer.writeln('  Status     : OPEN');
     buffer.writeln('  User ID    : ${_safe(userId)}');
+    buffer.writeln('  Mode       : ${_safe(mode)}');
     buffer.writeln('-----------------------------------------------');
     buffer.writeln();
     buffer.writeln('▶ REPRODUCTION SEQUENCE');
@@ -98,11 +107,11 @@ class SupportEmailComposer {
     buffer.writeln();
     buffer.writeln('▶ SYSTEM CONTEXT');
     buffer.writeln('-----------------------------------------------');
-    buffer.write(systemContextBlock());
+    buffer.write(systemContextBlock(channel: _channelForMode(mode)));
     buffer.writeln('-----------------------------------------------');
     buffer.writeln();
     buffer.writeln('===============================================');
-    buffer.writeln('  Submitted via JagSpoor Hunter Dashboard');
+    buffer.writeln('  Submitted via JagSpoor ${_safe(mode)} Dashboard');
     buffer.writeln('  Timestamp: ${_utcTimestamp()}');
     buffer.writeln('===============================================');
     return buffer.toString();
@@ -111,13 +120,14 @@ class SupportEmailComposer {
   /// Structured platform-expansion brief email body for feature suggestions.
   ///
   /// Pure function (no I/O) — safe to unit-test. Injects the reporter's User
-  /// ID, the feature description, the expected benefits, and a System Context
-  /// block.
+  /// ID, the feature description, the expected benefits, the originating
+  /// portal [mode], and a System Context block.
   static String buildFeatureSuggestionEmailBody({
     required String userId,
     required String title,
     required String description,
     required String benefits,
+    String mode = 'Hunter',
   }) {
     final buffer = StringBuffer();
     buffer.writeln('===============================================');
@@ -129,6 +139,7 @@ class SupportEmailComposer {
     buffer.writeln('  Feature    : ${_safe(title)}');
     buffer.writeln('  Priority   : PENDING REVIEW');
     buffer.writeln('  User ID    : ${_safe(userId)}');
+    buffer.writeln('  Mode       : ${_safe(mode)}');
     buffer.writeln('-----------------------------------------------');
     buffer.writeln();
     buffer.writeln('▶ FUNCTIONAL SPECIFICATION');
@@ -141,11 +152,11 @@ class SupportEmailComposer {
     buffer.writeln();
     buffer.writeln('▶ SYSTEM CONTEXT');
     buffer.writeln('-----------------------------------------------');
-    buffer.write(systemContextBlock());
+    buffer.write(systemContextBlock(channel: _channelForMode(mode)));
     buffer.writeln('-----------------------------------------------');
     buffer.writeln();
     buffer.writeln('===============================================');
-    buffer.writeln('  Submitted via JagSpoor Hunter Dashboard');
+    buffer.writeln('  Submitted via JagSpoor ${_safe(mode)} Dashboard');
     buffer.writeln('  Timestamp: ${_utcTimestamp()}');
     buffer.writeln('===============================================');
     return buffer.toString();
@@ -155,8 +166,10 @@ class SupportEmailComposer {
   ///
   /// Pulls platform / OS version / locale from pure `dart:io` (no platform
   /// plugins), so it works everywhere and stays unit-testable on the desktop
-  /// test runner. Each field is on its own line for easy triage.
-  static String systemContextBlock() {
+  /// test runner. Each field is on its own line for easy triage. [channel]
+  /// identifies the originating portal (e.g. `hunter_dashboard` /
+  /// `outfitter_dashboard`).
+  static String systemContextBlock({String channel = 'hunter_dashboard'}) {
     String os;
     String osVersion;
     String locale;
@@ -181,9 +194,15 @@ class SupportEmailComposer {
       ..writeln('  Locale        : $locale')
       ..writeln('  CPU Cores     : $processorCount')
       ..writeln('  App Package   : com.jagspoor.app')
-      ..writeln('  Channel       : hunter_dashboard');
+      ..writeln('  Channel       : $channel');
     return buffer.toString();
   }
+
+  /// Maps a portal [mode] to the System Context channel slug.
+  static String _channelForMode(String mode) =>
+      mode.trim().toLowerCase() == 'outfitter'
+          ? 'outfitter_dashboard'
+          : 'hunter_dashboard';
 
   /// Compose the final `mailto:` [Uri] with explicit percent-encoding.
   ///

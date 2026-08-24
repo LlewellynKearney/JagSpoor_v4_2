@@ -8,11 +8,19 @@ import '../services/feedback_firebase_service.dart';
 
 /// BugReportModal provides a bottom sheet form for submitting bug reports.
 /// Dynamically styled via Theme.of(context) governed by Hunter Profile HUD settings.
+///
+/// Shared by Hunter Mode and Outfitter Mode: [mode] tags the submission's
+/// originating portal ([FeedbackMode.hunter] by default) so the backend
+/// record + support email reflect which mode the reporter was using.
 class BugReportModal extends StatefulWidget {
   /// Maximum number of screenshot attachments a reporter may add.
   static const int maxScreenshots = 5;
 
-  const BugReportModal({super.key});
+  /// The app mode the report originates from ([FeedbackMode.hunter] by
+  /// default; pass [FeedbackMode.outfitter] from the Outfitter portal).
+  final String mode;
+
+  const BugReportModal({super.key, this.mode = FeedbackMode.hunter});
 
   @override
   State<BugReportModal> createState() => _BugReportModalState();
@@ -136,6 +144,7 @@ class _BugReportModalState extends State<BugReportModal> {
         steps: _stepsController.text.trim(),
         severity: _selectedSeverity,
         screenshotUrls: screenshotUrls,
+        mode: widget.mode,
       );
 
       // Build the automated support email (User ID + description + system
@@ -146,6 +155,7 @@ class _BugReportModalState extends State<BugReportModal> {
         title: _titleController.text.trim(),
         steps: _stepsController.text.trim(),
         severity: _selectedSeverity,
+        mode: widget.mode,
       );
       final launched = await SupportEmailComposer.launch(mailtoUri);
 

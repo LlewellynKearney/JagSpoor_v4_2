@@ -1,6 +1,74 @@
 # JagSpoor -- Agent Memory
 
 
+
+## Phase -- Outfitter Mode 'Report a Bug' + 'Suggest New Feature' parity (added 2026-08-24)
+
+- **Audit (Task 1)**: Hunter Mode's feedback pipeline is the shared trio --
+  the theme-driven bottom-sheet modals
+  `lib/features/hunter_mode/presentation/bug_report_modal.dart`
+  (`BugReportModal`) + `feature_suggestion_modal.dart`
+  (`FeatureSuggestionModal`), the Firestore service
+  `lib/features/hunter_mode/services/feedback_firebase_service.dart`
+  (`FeedbackFirebaseService` -> `bug_reports` / `feature_suggestions`
+  collections; create is already `isSignedIn()` in `firestore.rules`, so no
+  rules change was needed), and the automated support-email handoff
+  `lib/features/support/services/support_email_composer.dart`
+  (`SupportEmailComposer` -> `mailto:support@jag-spoor.co.za` with
+  `Uri.encodeComponent` escaping + System Context device metadata).
+- **Shared service now mode-aware**: `FeedbackFirebaseService` gained a
+  `FeedbackMode` constants class (`hunter` = 'Hunter', `outfitter` =
+  'Outfitter') and an optional `mode` param (default hunter) on both
+  `submitBugReport` + `submitFeatureSuggestion`. Every document now carries
+  `mode` + a best-effort `devicePlatform` marker (guarded
+  `Platform.operatingSystem`, 'web' fallback), alongside the existing
+  `hunterId` uid stamp (kept for back-compat + rules) + content +
+  server timestamp -- so an outfitter submission records the user ID,
+  current mode ('Outfitter'), device metadata, and content to the same
+  backend target.
+- **Support email mode tagging**: `SupportEmailComposer` body/mailto
+  builders take an optional `mode` (default 'Hunter') -- the brief now
+  carries a `Mode : ...` line, the footer reads 'Submitted via JagSpoor
+  <Mode> Dashboard', and `systemContextBlock({channel})` takes a channel
+  param (hunter_dashboard default; outfitter_dashboard via
+  `_channelForMode`). Defaults keep every Hunter-mode call + existing test
+  contract unchanged.
+- **Modal parity**: both modals gained a `mode` ctor param (default
+  `FeedbackMode.hunter`) wired through to the service + composer. Hunter
+  dashboard call sites are unchanged (the default applies).
+- **Outfitter dashboard integration**: two new feature cards at the end of
+  the dashboard list (before `CopyrightFooter`, visible to farm managers
+  too since feedback is universal): 'Report Bug'
+  (`Icons.bug_report_rounded`) + 'Suggest New Feature'
+  (`Icons.lightbulb_outline_rounded`), each opening the same shared modal
+  via `showModalBottomSheet(isScrollControlled: true)` with
+  `mode: FeedbackMode.outfitter`, styled by the existing
+  `_buildFeatureCard` design system (cream card + accent icon tile +
+  arrow) and tracked via `UsageAnalyticsService.trackFeatureUsage`.
+- **Tests**: NEW `test/outfitter_feedback_parity_test.dart` (17 tests, all
+  pass) -- FeedbackMode constants; FakeFirebaseFirestore submission
+  contracts (uid + mode 'Outfitter' + devicePlatform + content +
+  screenshot preservation for bugs; mode + content for suggestions;
+  hunter default back-compat); SupportEmailComposer mode/channel tagging
+  (+ hunter defaults + explicit channel); widget tests pumping the
+  `OutfitterDashboard` -- both cards render, tapping opens the shared modal
+  with `mode == FeedbackMode.outfitter` + the exact Hunter-mode form
+  (headers, submit labels, validators blocking empty submissions, filled
+  form keeps submit enabled). Note: the modal submit button sits below the
+  fold on the 800x600 test surface -- use `tester.ensureVisible` before
+  tapping it inside the bottom sheet's scroll view.
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): All 1357 tests passed (+17 new). Env note: re-installed
+  Flutter 3.29.1 at `$HOME/flutter` + `~/libs/libsqlite3.so` symlink (run
+  tests with `LD_LIBRARY_PATH="$HOME/libs"`).
+- Files: `lib/features/hunter_mode/services/feedback_firebase_service.dart`,
+  `lib/features/hunter_mode/presentation/bug_report_modal.dart`,
+  `lib/features/hunter_mode/presentation/feature_suggestion_modal.dart`,
+  `lib/features/support/services/support_email_composer.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `test/outfitter_feedback_parity_test.dart` (NEW), `AGENTS.md`.
+
 ## Phase -- Hunter Mode rich media design language expansion (added 2026-08-23)
 
 - **Task 1 -- Shared base components** (`lib/features/shared/widgets/`, NEW):

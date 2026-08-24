@@ -6,8 +6,16 @@ import '../services/feedback_firebase_service.dart';
 /// FeatureSuggestionModal provides a bottom sheet form for submitting
 /// feature suggestions. Dynamically styled via Theme.of(context) governed
 /// by Hunter Profile HUD settings.
+///
+/// Shared by Hunter Mode and Outfitter Mode: [mode] tags the submission's
+/// originating portal ([FeedbackMode.hunter] by default) so the backend
+/// record + support email reflect which mode the reporter was using.
 class FeatureSuggestionModal extends StatefulWidget {
-  const FeatureSuggestionModal({super.key});
+  /// The app mode the suggestion originates from ([FeedbackMode.hunter] by
+  /// default; pass [FeedbackMode.outfitter] from the Outfitter portal).
+  final String mode;
+
+  const FeatureSuggestionModal({super.key, this.mode = FeedbackMode.hunter});
 
   @override
   State<FeatureSuggestionModal> createState() => _FeatureSuggestionModalState();
@@ -40,6 +48,7 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         benefits: _benefitsController.text.trim(),
+        mode: widget.mode,
       );
 
       // Build the automated support email (User ID + description + system
@@ -51,6 +60,7 @@ class _FeatureSuggestionModalState extends State<FeatureSuggestionModal> {
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         benefits: _benefitsController.text.trim(),
+        mode: widget.mode,
       );
       final launched = await SupportEmailComposer.launch(mailtoUri);
 

@@ -15,6 +15,9 @@ import '../hunter_mode/screens/outfitter_booking_dashboard_screen.dart';
 import '../hunter_mode/screens/outfitter_revenue_screen.dart';
 import '../hunter_mode/screens/venison_permit_list_screen.dart';
 import '../hunter_mode/services/user_role_resolver.dart';
+import '../hunter_mode/services/feedback_firebase_service.dart';
+import '../hunter_mode/presentation/bug_report_modal.dart';
+import '../hunter_mode/presentation/feature_suggestion_modal.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
@@ -354,6 +357,51 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             },
                           ),
                         ],
+                          const SizedBox(height: 12),
+
+                          // Report Bug — the shared feedback pipeline (same
+                          // modal + Firestore collections as Hunter Mode),
+                          // tagged with the 'Outfitter' mode. Visible to
+                          // managers too (feedback is universal).
+                          _buildFeatureCard(
+                            icon: Icons.bug_report_rounded,
+                            title: 'Report Bug',
+                            description:
+                                'Encountered a glitch? Log it to support with device diagnostics.',
+                            theme: widget.theme,
+                            onTap: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (sheetContext) =>
+                                    const BugReportModal(
+                                  mode: FeedbackMode.outfitter,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Suggest New Feature — the same shared submission
+                          // pipeline, tagged with the 'Outfitter' mode.
+                          _buildFeatureCard(
+                            icon: Icons.lightbulb_outline_rounded,
+                            title: 'Suggest New Feature',
+                            description:
+                                'Have an idea to improve the outfitter toolkit? Inform our engineering team.',
+                            theme: widget.theme,
+                            onTap: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (sheetContext) =>
+                                    const FeatureSuggestionModal(
+                                  mode: FeedbackMode.outfitter,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
                           const CopyrightFooter(),
                         ],
                       ),
