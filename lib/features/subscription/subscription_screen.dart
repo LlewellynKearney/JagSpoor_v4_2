@@ -281,10 +281,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     'SAPS License Application Tracker',
   ];
 
-  /// Outfitter-tier feature checklist (comprehensive — business & lodge
-  /// management on top of the full Hunter toolkit).
+  /// Outfitter-tier feature checklist (comprehensive — outfitter / farm
+  /// manager business & lodge management features only).
   static const List<String> _outfitterPerks = [
-    'Everything in Hunter Tier included',
     'Farm Control Panel & Manager Assignments',
     'Custom Farm Species Price List Management',
     'Hunting Package Publishing & Booking Request Management',

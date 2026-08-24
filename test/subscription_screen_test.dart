@@ -105,7 +105,6 @@ void main() {
     ];
 
     const outfitterFeatures = [
-      'Everything in Hunter Tier included',
       'Farm Control Panel & Manager Assignments',
       'Custom Farm Species Price List Management',
       'Hunting Package Publishing & Booking Request Management',
@@ -156,6 +155,9 @@ void main() {
         find.text('Digital Firearm Safe & Ammunition Manager'),
         findsNothing,
       );
+      // The inaccurate "Everything in Hunter Tier included" copy was removed;
+      // only outfitter/farm-manager features are listed.
+      expect(find.text('Everything in Hunter Tier included'), findsNothing);
     });
 
     testWidgets('the monthly summary reflects the Hunter tier fee',
