@@ -103,11 +103,14 @@ class _OutfitterBookingDashboardScreenState
 
   @override
   Widget build(BuildContext context) {
-    // The transparent full-bleed AppBar (primary: true) already pads its
-    // title + back button below the system status bar, while the bushveld
-    // background extends behind it to the top edge. Hoist it so the body's
-    // top clearance can be derived from its REAL preferred height below.
+    // The transparent full-bleed header must explicitly clear the device
+    // status bar: the AppBar is `primary: false` and wrapped in a
+    // `SafeArea(top: true)` below, so the title + back button always sit
+    // below the system status bar while the bushveld background still
+    // full-bleeds to the top edge behind the transparent header.
+    final double statusBarTop = MediaQuery.of(context).padding.top;
     final appBar = AppBar(
+      primary: false,
       title: Text(
         UserRoleResolver.instance.isManager
             ? '💳 Farm Booking Requests'
@@ -139,11 +142,25 @@ class _OutfitterBookingDashboardScreenState
         ],
       ),
     );
+    // Wrap the non-primary AppBar in an explicit `SafeArea(top: true)` so
+    // the title and back button cleanly clear the device status bar. The
+    // PreferredSize height gains the status-bar inset; `extendBodyBehindAppBar`
+    // keeps the full-bleed background image extending to the top edge.
+    final PreferredSizeWidget header = PreferredSize(
+      preferredSize:
+          Size.fromHeight(appBar.preferredSize.height + statusBarTop),
+      child: SafeArea(
+        left: false,
+        right: false,
+        bottom: false,
+        child: appBar,
+      ),
+    );
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: widget.theme.backgroundColor,
       extendBodyBehindAppBar: true,
-      appBar: appBar,
+      appBar: header,
       body: OutfitterBushveldBackground.stack(
         fallbackColor: widget.theme.backgroundColor,
         child: SafeArea(
