@@ -2,6 +2,50 @@
 
 
 
+## Phase -- Firestore users/{userId} robust write-rule hotfixes (added 2026-08-25)
+
+- **Hotfix 1 (commit `fed02e8`)** -- `allow delete: if isSignedIn() &&
+  request.auth.uid == userId;` added to `match /users/{userId}`. Root cause:
+  `AccountDeletionService.deleteUserEntireDataPack()` batch-deletes
+  `users/{uid}` and, with no delete grant, the whole GDPR deletion batch
+  failed with `PERMISSION_DENIED` under the default-deny catch-all.
+- **Hotfix 2** -- the split `allow create` / `allow update` grants on
+  `users/{userId}` were consolidated into a single robust `allow write`:
+  ```
+  allow write: if isSignedIn() && request.auth.uid == userId
+    && (resource == null
+      || !('deviceFingerprint' in resource.data)
+      || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint);
+  ```
+  - `resource == null` is REQUIRED for creation: on create `resource` is
+    null, and touching `resource.data` on a create raises an evaluation
+    error that silently DENIES the write. The guard admits the initial
+    profile document unconditionally for the owner.
+  - Merge-updates: every profile field (medical info, legal compliance,
+    battery settings, bookingSync, FCM tokens, subscription state) is
+    owner-writable EXCEPT the immutable `deviceFingerprint` (Task 11
+    device-level trial-abuse prevention): merge updates that do not touch
+    the field pass (the value is preserved, so the equality holds);
+    rotation/removal is denied.
+  - The syntax moved from `resource.data.has('deviceFingerprint')` to
+    `('deviceFingerprint' in resource.data)`; BOTH contract test suites
+    assert the exact form (`test/device_trial_abuse_contract_test.dart` +
+    the "users/{userId} profile write contract (hotfix)" group in
+    `test/firestore_rules_seeding_test.dart`), so keep them in sync.
+  - The explicit owner `allow delete` grant stays separate (deleting a doc
+    whose `deviceFingerprint` exists would error the write-rule's right
+    disjunct because `request.resource` is null on delete; the separate
+    delete grant keeps GDPR deletion working).
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings (277 pre-existing infos, unchanged baseline). `flutter test`
+  (full suite): all pass. Env: `$HOME/flutter` + `~/libs/libsqlite3.so`
+  symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`).
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env to activate.
+- Files: `firestore.rules`, `test/firestore_rules_seeding_test.dart`,
+  `test/device_trial_abuse_contract_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Booking Requests Header Status Bar Overlap Fix (Task 12) (added 2026-08-25)
 
 - **Task 1 -- Screen located**: the primary booking requests screen is

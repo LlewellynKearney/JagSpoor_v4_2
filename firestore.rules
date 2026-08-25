@@ -73,27 +73,32 @@ service cloud.firestore {
     // Basic user profiles: readable by any signed-in user (marketplace
     // display names, outfitter contact resolution, booking party names).
     //
-    // Create / update: ONLY the owner (request.auth.uid == userId). The
-    // owner has full permission to write and update EVERY profile field on
-    // their own document — personal details, emergency medical info
+    // Write (create + update): ONLY the owner (request.auth.uid == userId).
+    // The owner has full permission to write and update EVERY profile field
+    // on their own document: personal details, emergency medical info
     // (bloodType / allergies / medicalAid / emergencyContact), legal
     // compliance (idNumber / hunterStatus / provincialPermits), battery
-    // settings, bookingSync config, FCM tokens, subscription state, etc. —
-    // so profile saves never fail with a permission-denied error. The
-    // single exception is the `deviceFingerprint` field (hardware
-    // fingerprint used for device-level trial-abuse prevention: one free
-    // trial per physical device), which is immutable once set — merge
-    // updates that do not touch the field preserve the value and always
-    // pass; writing a different value (or removing it) is denied so a
-    // malicious user cannot rotate fingerprints.
+    // settings, bookingSync config, FCM tokens, subscription state, etc.,
+    // so profile saves never fail with a permission-denied error. One
+    // robust write grant handles both operations:
+    //  - Creation: `resource` is null on create, so the `resource == null`
+    //    disjunct admits the initial profile document unconditionally for
+    //    the owner (accessing `resource.data` on a create would error and
+    //    silently deny the write).
+    //  - Merge-updates: EVERY field may be changed EXCEPT the immutable
+    //    `deviceFingerprint` (hardware fingerprint used for device-level
+    //    trial-abuse prevention: one free trial per physical device). Merge
+    //    updates that do not touch the field preserve the value and always
+    //    pass; writing a different value (or removing it) is denied so a
+    //    malicious user cannot rotate fingerprints.
     //
     // Delete: the owner may delete their own profile document (GDPR account
     // deletion via AccountDeletionService, which batch-deletes users/{uid}).
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId
-        && (!resource.data.has('deviceFingerprint')
+      allow write: if isSignedIn() && request.auth.uid == userId
+        && (resource == null
+          || !('deviceFingerprint' in resource.data)
           || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint);
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }

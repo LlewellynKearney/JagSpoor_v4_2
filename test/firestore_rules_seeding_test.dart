@@ -109,43 +109,50 @@ void main() {
   // The hunter profile screen writes medical info (bloodType / allergies /
   // medicalAid / emergencyContact), legal compliance (idNumber /
   // hunterStatus / provincialPermits), battery settings, and every other
-  // profile field to `users/{uid}` via `set(merge: true)`. The owner must
-  // have full permission to write and update their own profile fields
-  // without a permission-denied error. The single restricted field is
-  // `deviceFingerprint` (device-level trial-abuse prevention), which stays
-  // immutable once set.
+  // profile field to `users/{uid}` via `set(merge: true)`. One robust
+  // `allow write` grant covers BOTH profile creation and merge-updates for
+  // the owner without a permission-denied error. The single restricted
+  // field is `deviceFingerprint` (device-level trial-abuse prevention),
+  // which stays immutable once set.
   group('users/{userId} profile write contract (hotfix)', () {
     test('users read = isSignedIn()', () {
       final block = _blockFor(rules, 'users');
       expect(block, contains('allow read: if isSignedIn()'));
     });
 
-    test('users create = owner-scoped signed-in', () {
+    test('users write = owner-scoped signed-in (creation + merge-updates)', () {
       final block = _blockFor(rules, 'users');
       expect(
         block,
-        contains('allow create: if isSignedIn() && request.auth.uid == userId;'),
+        contains('allow write: if isSignedIn() && request.auth.uid == userId'),
       );
+      // The old split `allow create` / `allow update` grants were
+      // consolidated into the single robust `allow write` grant.
+      expect(block, isNot(contains('allow create:')));
+      expect(block, isNot(contains('allow update:')));
     });
 
-    test('users update = owner-scoped signed-in (full profile fields)', () {
+    test('users write gracefully handles creation (resource-null guard)', () {
       final block = _blockFor(rules, 'users');
-      expect(block, contains('allow update: if isSignedIn() && request.auth.uid == userId'));
+      // On create `resource` is null; the guard admits the initial document
+      // unconditionally (touching `resource.data` on create would error and
+      // silently deny the write).
+      expect(block, contains('resource == null'));
     });
 
-    test('users update restricts ONLY deviceFingerprint (immutability kept)', () {
+    test('users write restricts ONLY deviceFingerprint (immutability kept)', () {
       final block = _blockFor(rules, 'users');
       // The trial-abuse immutability clause must remain intact.
-      expect(block, contains("resource.data.has('deviceFingerprint')"));
+      expect(block, contains("'deviceFingerprint' in resource.data"));
       expect(
         block,
         contains('resource.data.deviceFingerprint == '
             'request.resource.data.deviceFingerprint'),
       );
-      // No OTHER field may be restricted in the update grant — the owner
-      // must be able to update every profile field (medical info, legal
-      // compliance, battery settings, …) without a permission-denied.
-      final restrictions = RegExp(r"resource\.data\.has\('([^']+)'\)")
+      // No OTHER field may be frozen in the write grant — the owner must be
+      // able to update every profile field (medical info, legal compliance,
+      // battery settings, …) without a permission-denied.
+      final restrictions = RegExp(r"'([^']+)' in resource\.data")
           .allMatches(block)
           .map((m) => m.group(1))
           .toList();

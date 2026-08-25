@@ -110,17 +110,20 @@ void main() {
 
   group('firestore.rules freeze the fingerprint once set', () {
     test('users update is denied when the fingerprint would change', () {
-      expect(rulesSource, contains("resource.data.has('deviceFingerprint')"));
+      expect(rulesSource,
+          contains("'deviceFingerprint' in resource.data"));
       expect(rulesSource,
           contains('resource.data.deviceFingerprint == '
               'request.resource.data.deviceFingerprint'));
     });
 
-    test('users create is still owner-scoped signed-in', () {
+    test('users write is owner-scoped signed-in (covers create + update), '
+        'with a resource-null create guard', () {
       expect(rulesSource,
           contains('match /users/{userId}'));
       expect(rulesSource,
-          contains('allow create: if isSignedIn() && request.auth.uid == userId;'));
+          contains('allow write: if isSignedIn() && request.auth.uid == userId'));
+      expect(rulesSource, contains('resource == null'));
     });
   });
 }
