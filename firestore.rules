@@ -71,17 +71,31 @@ service cloud.firestore {
     }
 
     // Basic user profiles: readable by any signed-in user (marketplace
-    // display names), writable only by the owner. The `deviceFingerprint`
-    // field (hardware fingerprint used for device-level trial-abuse
-    // prevention: one free trial per physical device) is immutable once set —
-    // the owner may only re-write the same value (merge semantics); changing
-    // it is denied so a malicious user cannot rotate fingerprints.
+    // display names, outfitter contact resolution, booking party names).
+    //
+    // Create / update: ONLY the owner (request.auth.uid == userId). The
+    // owner has full permission to write and update EVERY profile field on
+    // their own document — personal details, emergency medical info
+    // (bloodType / allergies / medicalAid / emergencyContact), legal
+    // compliance (idNumber / hunterStatus / provincialPermits), battery
+    // settings, bookingSync config, FCM tokens, subscription state, etc. —
+    // so profile saves never fail with a permission-denied error. The
+    // single exception is the `deviceFingerprint` field (hardware
+    // fingerprint used for device-level trial-abuse prevention: one free
+    // trial per physical device), which is immutable once set — merge
+    // updates that do not touch the field preserve the value and always
+    // pass; writing a different value (or removing it) is denied so a
+    // malicious user cannot rotate fingerprints.
+    //
+    // Delete: the owner may delete their own profile document (GDPR account
+    // deletion via AccountDeletionService, which batch-deletes users/{uid}).
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn() && request.auth.uid == userId
         && (!resource.data.has('deviceFingerprint')
           || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint);
+      allow delete: if isSignedIn() && request.auth.uid == userId;
     }
     match /users {
       allow list: if isSignedIn();

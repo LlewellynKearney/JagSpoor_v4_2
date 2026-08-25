@@ -104,6 +104,66 @@ void main() {
     });
   });
 
+  // ── users/{userId} profile write contract (hotfix) ───────────────────────
+  //
+  // The hunter profile screen writes medical info (bloodType / allergies /
+  // medicalAid / emergencyContact), legal compliance (idNumber /
+  // hunterStatus / provincialPermits), battery settings, and every other
+  // profile field to `users/{uid}` via `set(merge: true)`. The owner must
+  // have full permission to write and update their own profile fields
+  // without a permission-denied error. The single restricted field is
+  // `deviceFingerprint` (device-level trial-abuse prevention), which stays
+  // immutable once set.
+  group('users/{userId} profile write contract (hotfix)', () {
+    test('users read = isSignedIn()', () {
+      final block = _blockFor(rules, 'users');
+      expect(block, contains('allow read: if isSignedIn()'));
+    });
+
+    test('users create = owner-scoped signed-in', () {
+      final block = _blockFor(rules, 'users');
+      expect(
+        block,
+        contains('allow create: if isSignedIn() && request.auth.uid == userId;'),
+      );
+    });
+
+    test('users update = owner-scoped signed-in (full profile fields)', () {
+      final block = _blockFor(rules, 'users');
+      expect(block, contains('allow update: if isSignedIn() && request.auth.uid == userId'));
+    });
+
+    test('users update restricts ONLY deviceFingerprint (immutability kept)', () {
+      final block = _blockFor(rules, 'users');
+      // The trial-abuse immutability clause must remain intact.
+      expect(block, contains("resource.data.has('deviceFingerprint')"));
+      expect(
+        block,
+        contains('resource.data.deviceFingerprint == '
+            'request.resource.data.deviceFingerprint'),
+      );
+      // No OTHER field may be restricted in the update grant — the owner
+      // must be able to update every profile field (medical info, legal
+      // compliance, battery settings, …) without a permission-denied.
+      final restrictions = RegExp(r"resource\.data\.has\('([^']+)'\)")
+          .allMatches(block)
+          .map((m) => m.group(1))
+          .toList();
+      expect(restrictions, ['deviceFingerprint'],
+          reason: 'only deviceFingerprint may be frozen on the users doc');
+    });
+
+    test('users delete = owner-scoped signed-in (GDPR account deletion)', () {
+      final block = _blockFor(rules, 'users');
+      // AccountDeletionService batch-deletes users/{uid}; without an owner
+      // delete grant the whole deletion batch fails with permission-denied.
+      expect(
+        block,
+        contains('allow delete: if isSignedIn() && request.auth.uid == userId;'),
+      );
+    });
+  });
+
   // ── Bookings enterprise access contract ──────────────────────────────────
   //
   // The outfitter booking dashboard queries `.where('outfitterId',
