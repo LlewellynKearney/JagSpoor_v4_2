@@ -31,9 +31,6 @@ class AppColors {
   static const Color error = Color(0xFFEF4444);
 }
 
-// Atmospheric "concept" accents retained for backwards compatibility.
-enum HuntingConcept { thermalGlow, walnutLuxury, neonShock }
-
 /// Central Day/Night theme controller. Persists the chosen mode to
 /// SharedPreferences so it survives restarts, and exposes both the current-mode
 /// color getters (for legacy screen consumers) and separate [lightTheme] /
@@ -51,11 +48,9 @@ class ThemeController extends ChangeNotifier {
   static ThemeController get instance => _instance ??= ThemeController();
   static ThemeController? _instance;
 
-  HuntingConcept _currentConcept = HuntingConcept.walnutLuxury;
   bool _isDarkMode = false;
   bool _initialized = false;
 
-  HuntingConcept get currentConcept => _currentConcept;
   bool get isDarkMode => _isDarkMode;
 
   /// Material [ThemeMode] for [MaterialApp.themeMode].
@@ -80,11 +75,6 @@ class ThemeController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsKey, _isDarkMode);
     } catch (_) {}
-  }
-
-  void setConcept(HuntingConcept concept) {
-    _currentConcept = concept;
-    notifyListeners();
   }
 
   /// Toggles Day ↔ Night and persists the choice. The [MaterialApp] rebuilds

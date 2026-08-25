@@ -499,16 +499,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
     );
   }
 
-  String _getHudModeText() {
-    switch (widget.theme.currentConcept) {
-      case HuntingConcept.thermalGlow:
-        return 'THERMAL IMAGING ACTIVE';
-      case HuntingConcept.neonShock:
-        return 'NIGHT VISION SYSTEM';
-      case HuntingConcept.walnutLuxury:
-        return 'OPTICS HUD ACTIVE';
-    }
-  }
+  String _getHudModeText() => 'OPTICS HUD ACTIVE';
 
   Widget _buildCategorySelector(Color scanColor) {
     final categories = TrackCategory.values;

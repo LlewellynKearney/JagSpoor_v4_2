@@ -12,8 +12,8 @@ import '../../ballistics/data/ballistics_engine.dart';
 /// by the hunter profile's ThemeController for consistent styling.
 class JagspoorTheme {
   // Primary theme colors - can be overridden dynamically
-  static Color walnutLuxury = const Color(0xFF8B4513);
-  static Color thermalGlow = const Color(0xFFC5A059);
+  static Color hudBorder = const Color(0xFF8B4513);
+  static Color hudAccent = const Color(0xFFC5A059);
   static Color tacticalDark = const Color(0xFF121212);
   static Color hudCardBackground = const Color(0xFF1E1E1E);
 
@@ -24,8 +24,8 @@ class JagspoorTheme {
     required Color cardColor,
     required Color textColor,
   }) {
-    thermalGlow = accentColor;
-    walnutLuxury = accentColor.withValues(alpha: 0.6);
+    hudAccent = accentColor;
+    hudBorder = accentColor.withValues(alpha: 0.6);
     tacticalDark = backgroundColor;
     hudCardBackground = cardColor;
   }
@@ -303,7 +303,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
     return Scaffold(
       backgroundColor: JagspoorTheme.tacticalDark,
       appBar: AppBar(
-        backgroundColor: JagspoorTheme.walnutLuxury,
+        backgroundColor: JagspoorTheme.hudBorder,
         title: const Text(
           'HUD BALLISTIC DATA SYSTEM',
           style: TextStyle(
@@ -315,13 +315,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         actions: [
           AppInfoIconButton(
             screenKey: AppScreenHelpScripts.hunterBallisticsCalculator,
-            iconColor: JagspoorTheme.thermalGlow,
+            iconColor: JagspoorTheme.hudAccent,
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: JagspoorTheme.thermalGlow,
-          labelColor: JagspoorTheme.thermalGlow,
+          indicatorColor: JagspoorTheme.hudAccent,
+          labelColor: JagspoorTheme.hudAccent,
           unselectedLabelColor: Colors.white,
           tabs: const [Tab(icon: Icon(Icons.tune), text: 'Cartridge Data')],
         ),
@@ -335,7 +335,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               Text(
                 '🏹 TACTICAL PROFILE DATA MATRIX',
                 style: TextStyle(
-                  color: JagspoorTheme.thermalGlow,
+                  color: JagspoorTheme.hudAccent,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -353,7 +353,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       child: Text(
                         'OFFLINE SAFE MODULE ACTIVE',
                         style: TextStyle(
-                          color: JagspoorTheme.thermalGlow,
+                          color: JagspoorTheme.hudAccent,
                           fontSize: 14,
                         ),
                       ),
@@ -390,7 +390,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       child: Text(
                         'NO REGISTERED FIREARMS',
                         style: TextStyle(
-                          color: JagspoorTheme.thermalGlow,
+                          color: JagspoorTheme.hudAccent,
                           fontSize: 14,
                         ),
                       ),
@@ -473,7 +473,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                         Text(
                           '${_targetRangeMeters.toInt()} m',
                           style: TextStyle(
-                            color: JagspoorTheme.thermalGlow,
+                            color: JagspoorTheme.hudAccent,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -580,7 +580,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                           child: Text(
                             'Drag Model',
                             style: TextStyle(
-                              color: JagspoorTheme.thermalGlow,
+                              color: JagspoorTheme.hudAccent,
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                             ),
@@ -639,7 +639,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 Text(
                   '📊 TRAJECTORY COMPUTATION GRID',
                   style: TextStyle(
-                    color: JagspoorTheme.thermalGlow,
+                    color: JagspoorTheme.hudAccent,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -743,12 +743,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         color: JagspoorTheme.hudCardBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: JagspoorTheme.thermalGlow.withValues(alpha: 0.5),
+          color: JagspoorTheme.hudAccent.withValues(alpha: 0.5),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: JagspoorTheme.thermalGlow.withValues(alpha: 0.1),
+            color: JagspoorTheme.hudAccent.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -761,14 +761,14 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
             children: [
               Icon(
                 Icons.analytics_outlined,
-                color: JagspoorTheme.thermalGlow,
+                color: JagspoorTheme.hudAccent,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
                 '🎯 POSITION STATISTICS SUMMARY (1000m Flight Path)',
                 style: TextStyle(
-                  color: JagspoorTheme.thermalGlow,
+                  color: JagspoorTheme.hudAccent,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5,
@@ -876,7 +876,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       decoration: BoxDecoration(
         color: JagspoorTheme.hudCardBackground,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+        border: Border.all(color: JagspoorTheme.hudBorder.withAlpha(128)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1012,7 +1012,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       decoration: BoxDecoration(
         color: JagspoorTheme.hudCardBackground,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+        border: Border.all(color: JagspoorTheme.hudBorder.withAlpha(128)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1027,7 +1027,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               Text(
                 firearmLabel,
                 style: TextStyle(
-                  color: JagspoorTheme.thermalGlow,
+                  color: JagspoorTheme.hudAccent,
                   fontSize: 11,
                 ),
               ),
@@ -1044,12 +1044,12 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   verticalInterval: 100,
                   getDrawingHorizontalLine:
                       (value) => FlLine(
-                        color: JagspoorTheme.walnutLuxury.withAlpha(51),
+                        color: JagspoorTheme.hudBorder.withAlpha(51),
                         strokeWidth: 1,
                       ),
                   getDrawingVerticalLine:
                       (value) => FlLine(
-                        color: JagspoorTheme.walnutLuxury.withAlpha(51),
+                        color: JagspoorTheme.hudBorder.withAlpha(51),
                         strokeWidth: 1,
                       ),
                 ),
@@ -1094,7 +1094,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                 borderData: FlBorderData(
                   show: true,
                   border: Border.all(
-                    color: JagspoorTheme.walnutLuxury.withAlpha(128),
+                    color: JagspoorTheme.hudBorder.withAlpha(128),
                   ),
                 ),
                 // Target Range Indicator Line (v17.1) + zero baseline.
@@ -1102,7 +1102,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   verticalLines: [
                     VerticalLine(
                       x: _targetRangeMeters,
-                      color: JagspoorTheme.thermalGlow,
+                      color: JagspoorTheme.hudAccent,
                       strokeWidth: 2,
                       dashArray: [8, 4],
                       label: VerticalLineLabel(
@@ -1122,7 +1122,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   horizontalLines: [
                     HorizontalLine(
                       y: 0,
-                      color: JagspoorTheme.walnutLuxury.withAlpha(96),
+                      color: JagspoorTheme.hudBorder.withAlpha(96),
                       strokeWidth: 1.5,
                       label: HorizontalLineLabel(
                         show: true,
@@ -1145,13 +1145,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                   LineChartBarData(
                     spots: dropSpots,
                     isCurved: true,
-                    color: JagspoorTheme.thermalGlow,
+                    color: JagspoorTheme.hudAccent,
                     barWidth: 2,
                     isStrokeCapRound: true,
                     dotData: const FlDotData(show: false),
                     belowBarData: BarAreaData(
                       show: true,
-                      color: JagspoorTheme.thermalGlow.withAlpha(26),
+                      color: JagspoorTheme.hudAccent.withAlpha(26),
                     ),
                   ),
                   LineChartBarData(
@@ -1180,7 +1180,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                                 TextStyle(
                                   color:
                                       isDrop
-                                          ? JagspoorTheme.thermalGlow
+                                          ? JagspoorTheme.hudAccent
                                           : Colors.blueAccent,
                                   fontSize: 12,
                                 ),
@@ -1195,7 +1195,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildLegendItem('DROP (cm)', JagspoorTheme.thermalGlow),
+              _buildLegendItem('DROP (cm)', JagspoorTheme.hudAccent),
               const SizedBox(width: 24),
               _buildLegendItem('WIND (cm)', Colors.blueAccent),
             ],
@@ -1212,13 +1212,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
       decoration: BoxDecoration(
         color: JagspoorTheme.hudCardBackground,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: JagspoorTheme.walnutLuxury.withAlpha(128)),
+        border: Border.all(color: JagspoorTheme.hudBorder.withAlpha(128)),
       ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.shield, color: JagspoorTheme.walnutLuxury, size: 64),
+            Icon(Icons.shield, color: JagspoorTheme.hudBorder, size: 64),
             const SizedBox(height: 16),
             Text(
               'SELECT FIREARM TO ACTIVATE',
@@ -1230,7 +1230,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
             ),
             Text(
               'TRAJECTORY COMPUTATION ENGINE',
-              style: TextStyle(color: JagspoorTheme.thermalGlow, fontSize: 12),
+              style: TextStyle(color: JagspoorTheme.hudAccent, fontSize: 12),
             ),
           ],
         ),
