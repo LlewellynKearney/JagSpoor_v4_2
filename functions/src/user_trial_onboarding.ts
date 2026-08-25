@@ -166,7 +166,10 @@ export interface SmtpConfig {
 /**
  * Resolves the SMTP relay configuration from the environment.
  *
- * Defaults target the Afrihost relay (smtp.afrihost.co.za:587, STARTTLS).
+ * Defaults target the Afrihost-hosted mailbox relay over SSL
+ * (smtp.ucebox.co.za:465, `secure: true` — port 465 uses implicit TLS, so
+ * the connection is SSL-encrypted from the first byte). The alternative
+ * Afrihost mailbox host `mail.jag-spoor.co.za` serves the same SSL relay.
  * Returns null when no credentials are configured so callers can skip the
  * email gracefully (dev / emulator environments).
  */
@@ -177,9 +180,11 @@ export function smtpConfigFromEnv(
   const pass = env.SMTP_PASS ?? "";
   if (!user || !pass) return null;
   return {
-    host: (env.SMTP_HOST ?? "").trim() || "smtp.afrihost.co.za",
-    port: parseInt(env.SMTP_PORT ?? "", 10) || 587,
-    secure: (env.SMTP_SECURE ?? "").trim().toLowerCase() === "true",
+    host: (env.SMTP_HOST ?? "").trim() || "smtp.ucebox.co.za",
+    port: parseInt(env.SMTP_PORT ?? "", 10) || 465,
+    // Port 465 is implicit SSL, so secure defaults to true; only an explicit
+    // SMTP_SECURE=false opts out (e.g. a STARTTLS 587 relay).
+    secure: (env.SMTP_SECURE ?? "").trim().toLowerCase() !== "false",
     user,
     pass,
     from: (env.SMTP_FROM ?? "").trim() || "support@jag-spoor.co.za",

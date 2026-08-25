@@ -23,14 +23,15 @@ test("trialEndsAtFrom returns exactly 30 days in the future", () => {
   assert.equal(end.toISOString(), "2026-09-24T10:30:00.000Z");
 });
 
-test("smtpConfigFromEnv defaults to the Afrihost relay", () => {
+test("smtpConfigFromEnv defaults to the Afrihost SSL relay", () => {
   const config = onboarding.smtpConfigFromEnv({
     SMTP_USER: "support@jag-spoor.co.za",
     SMTP_PASS: "secret",
   });
-  assert.equal(config.host, "smtp.afrihost.co.za");
-  assert.equal(config.port, 587);
-  assert.equal(config.secure, false);
+  assert.equal(config.host, "smtp.ucebox.co.za");
+  assert.equal(config.port, 465);
+  // Port 465 uses implicit TLS — secure defaults to true.
+  assert.equal(config.secure, true);
   assert.equal(config.user, "support@jag-spoor.co.za");
   assert.equal(config.pass, "secret");
   assert.equal(config.from, "support@jag-spoor.co.za");
@@ -62,6 +63,19 @@ test("smtpConfigFromEnv honors explicit overrides", () => {
     from: "noreply@example.co.za",
     fromName: "Example",
   });
+});
+
+test("smtpConfigFromEnv honors an explicit SMTP_SECURE=false opt-out", () => {
+  const config = onboarding.smtpConfigFromEnv({
+    SMTP_HOST: "smtp.afrihost.co.za",
+    SMTP_PORT: "587",
+    SMTP_SECURE: "false",
+    SMTP_USER: "u@example.co.za",
+    SMTP_PASS: "p",
+  });
+  assert.equal(config.host, "smtp.afrihost.co.za");
+  assert.equal(config.port, 587);
+  assert.equal(config.secure, false);
 });
 
 test("formatTrialDate renders a locale-independent long date", () => {
@@ -105,9 +119,9 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
     displayName: "Pieter",
     trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
     config: {
-      host: "smtp.afrihost.co.za",
-      port: 587,
-      secure: false,
+      host: "smtp.ucebox.co.za",
+      port: 465,
+      secure: true,
       user: "support@jag-spoor.co.za",
       pass: "secret",
       from: "support@jag-spoor.co.za",
@@ -118,7 +132,7 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
       return { sendMail: async (msg) => sent.push(msg) };
     },
   });
-  assert.equal(seenConfig.host, "smtp.afrihost.co.za");
+  assert.equal(seenConfig.host, "smtp.ucebox.co.za");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "newuser@example.co.za");
   assert.equal(sent[0].from, '"JagSpoor" <support@jag-spoor.co.za>');
@@ -139,9 +153,9 @@ test("sendWelcomeEmail sets plain-text alternative + outbound headers", async ()
     displayName: "Pieter",
     trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
     config: {
-      host: "smtp.afrihost.co.za",
-      port: 587,
-      secure: false,
+      host: "smtp.ucebox.co.za",
+      port: 465,
+      secure: true,
       user: "support@jag-spoor.co.za",
       pass: "secret",
       from: "support@jag-spoor.co.za",

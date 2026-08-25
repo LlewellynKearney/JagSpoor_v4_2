@@ -54,9 +54,11 @@ void main() {
   });
 
   group('welcome email dispatch', () {
-    test('sends via SMTP with Afrihost defaults', () {
-      expect(onboardingSource, contains('"smtp.afrihost.co.za"'));
-      expect(onboardingSource, contains('587'));
+    test('sends via SMTP with Afrihost SSL defaults', () {
+      expect(onboardingSource, contains('"smtp.ucebox.co.za"'));
+      expect(onboardingSource, contains('465'));
+      // Port 465 is implicit TLS — the transport is SSL-secured by default.
+      expect(onboardingSource, contains('!== "false"'));
       expect(onboardingSource, contains('nodemailer.createTransport'));
       expect(onboardingSource, contains('auth: { user: config.user, pass: config.pass }'));
     });
@@ -89,7 +91,7 @@ void main() {
       ]) {
         expect(envExample, contains(variable), reason: '$variable documented');
       }
-      expect(envExample, contains('smtp.afrihost.co.za'));
+      expect(envExample, contains('smtp.ucebox.co.za'));
     });
 
     test('mail options carry a text alternative + standard outbound headers',

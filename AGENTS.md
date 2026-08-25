@@ -2,6 +2,36 @@
 
 
 
+## Phase -- Nodemailer transport moved to Afrihost secure SSL defaults (added 2026-08-25)
+
+- **Change** (`functions/src/user_trial_onboarding.ts`
+  `smtpConfigFromEnv`): the welcome-email SMTP defaults moved from the
+  STARTTLS relay (`smtp.afrihost.co.za:587`, `secure: false`) to the
+  Afrihost-hosted mailbox relay over SSL: `SMTP_HOST` default
+  `smtp.ucebox.co.za` (alternative Afrihost mailbox host
+  `mail.jag-spoor.co.za`), `SMTP_PORT` default `465`, and `secure` now
+  DEFAULTS TO `true` (port 465 is implicit TLS; only an explicit
+  `SMTP_SECURE=false` opts out for a STARTTLS relay). Auth still reads
+  `SMTP_USER` / `SMTP_PASS`; missing credentials return null so the email
+  stays best-effort.
+- **Env docs**: `functions/.env.example` SMTP section updated to
+  `smtp.ucebox.co.za` / `465` / `SMTP_SECURE=true` with the implicit-TLS
+  rationale documented.
+- **Tests**: `functions/test/user_trial_onboarding.test.js` (26/26 pass via
+  `npm test`) -- defaults test asserts the SSL relay; new opt-out test
+  asserts an explicit `SMTP_SECURE=false` override still yields
+  `secure: false`. `test/welcome_email_functions_contract_test.dart`
+  contract assertions updated (`"smtp.ucebox.co.za"`, `465`,
+  `!== "false"`).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate; ensure the functions env sets `SMTP_USER` /
+  `SMTP_PASS`.
+- Files: `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `functions/.env.example`,
+  `test/welcome_email_functions_contract_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Developer/tester exemption for device-level trial-abuse check (added 2026-08-25)
 
 - **Change** (`functions/src/user_trial_onboarding.ts`): the
