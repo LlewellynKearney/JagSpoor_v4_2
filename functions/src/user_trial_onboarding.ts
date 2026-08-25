@@ -200,11 +200,14 @@ export function smtpConfigFromEnv(
  * Identifying the sending agent (`X-Mailer`) and the sending organization
  * (`Organization`) improves the deliverability score of the message and
  * reduces spam rejections by receiving relays (an unidentifiable custom
- * mailer is a common spam-heuristic trigger).
+ * mailer is a common spam-heuristic trigger). `X-Priority: 3` marks the
+ * message as normal priority (bulk-mailer heuristics penalize a missing
+ * priority header).
  */
 export const OUTBOUND_MAIL_HEADERS: Record<string, string> = {
-  "X-Mailer": "JagSpoor Mailer",
+  "X-Mailer": "JagSpoor App Engine",
   "Organization": "JagSpoor",
+  "X-Priority": "3",
 };
 
 /** Formats a date as "25 September 2026" (locale-independent). */
@@ -315,10 +318,22 @@ export async function sendWelcomeEmail(options: {
     // improves the deliverability score of HTML-only-looking messages).
     text: email.text,
     html: email.html,
-    // Standard outbound headers (X-Mailer / Organization) — also set as
-    // transport defaults above; the per-message copy guarantees they are
-    // present even for custom (test-injected) transports.
-    headers: { ...OUTBOUND_MAIL_HEADERS },
+    // Standard outbound headers (X-Mailer / Organization / X-Priority) —
+    // also set as transport defaults above; the per-message copy guarantees
+    // they are present even for custom (test-injected) transports. The
+    // Message-ID must be unique per message, so it is generated here rather
+    // than in the shared constant: a missing or duplicate Message-ID is a
+    // primary "550 High probability of spam" trigger on the Afrihost
+    // outbound filter.
+    headers: {
+      ...OUTBOUND_MAIL_HEADERS,
+      "Message-ID":
+        "<" +
+        Date.now() +
+        "." +
+        Math.random().toString(36).substring(2) +
+        "@jag-spoor.co.za>",
+    },
   });
 }
 

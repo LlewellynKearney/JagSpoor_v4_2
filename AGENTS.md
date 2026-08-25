@@ -1,6 +1,39 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Anti-spam outbound mail headers for the Afrihost filter (added 2026-08-25)
+
+- **Change** (`functions/src/user_trial_onboarding.ts`): the welcome-email
+  mail options now carry explicit anti-spam headers so Afrihost's outbound
+  mail filter stops rejecting the automated trial/verification emails with
+  "550 High probability of spam". `OUTBOUND_MAIL_HEADERS` now sets
+  `X-Mailer: "JagSpoor App Engine"` (was `JagSpoor Mailer`),
+  `Organization: "JagSpoor"`, and `X-Priority: "3"` (normal priority; a
+  missing priority header is a bulk-mailer heuristic). The per-message
+  `sendMail` `headers` additionally generate a UNIQUE `Message-ID`
+  (`<Date.now()>.<random base36>@jag-spoor.co.za>`) per dispatch -- a
+  missing/duplicate Message-ID is a primary 550 trigger, so it is generated
+  per message rather than in the shared constant. The transport-level
+  default headers and the per-message headers now agree on `X-Mailer`.
+- **Tests**: `functions/test/user_trial_onboarding.test.js` (26/26 pass via
+  `npm test` -- run `npm install` first if `tsc` is missing): the
+  `OUTBOUND_MAIL_HEADERS` test asserts the new `X-Mailer` + `X-Priority`;
+  the `sendWelcomeEmail` test asserts the per-message headers + a
+  Message-ID format regex (`^<\d+\.[a-z0-9]+@jag-spoor\.co\.za>$`) and
+  uniqueness across two dispatches (second send added).
+  `test/welcome_email_functions_contract_test.dart` contract assertions
+  updated (`"X-Mailer": "JagSpoor App Engine"`, `"X-Priority": "3"`,
+  `"Message-ID"`, `@jag-spoor.co.za>`); Flutter SDK is not installed in
+  this sandbox, so the Dart contract assertions were verified via exact
+  string containment against the TS source (the test is a pure source
+  parse).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate.
+- Files: `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `test/welcome_email_functions_contract_test.dart`, `AGENTS.md`.
+
+
 
 ## Phase -- Nodemailer transport moved to Afrihost secure SSL defaults (added 2026-08-25)
 

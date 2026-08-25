@@ -97,13 +97,18 @@ void main() {
     test('mail options carry a text alternative + standard outbound headers',
         () {
       // Deliverability contract: plain-text alternative, standard outbound
-      // headers (X-Mailer / Organization), and a sender that strictly matches
-      // the configured SMTP_FROM / SMTP_FROM_NAME env vars.
+      // anti-spam headers (X-Mailer / Organization / X-Priority + a unique
+      // per-message Message-ID on the jag-spoor.co.za domain), and a sender
+      // that strictly matches the configured SMTP_FROM / SMTP_FROM_NAME env
+      // vars.
       expect(onboardingSource, contains('text: email.text'));
       expect(onboardingSource, contains('html: email.html'));
       expect(onboardingSource, contains('OUTBOUND_MAIL_HEADERS'));
-      expect(onboardingSource, contains('"X-Mailer": "JagSpoor Mailer"'));
+      expect(onboardingSource, contains('"X-Mailer": "JagSpoor App Engine"'));
       expect(onboardingSource, contains('"Organization": "JagSpoor"'));
+      expect(onboardingSource, contains('"X-Priority": "3"'));
+      expect(onboardingSource, contains('"Message-ID"'));
+      expect(onboardingSource, contains('@jag-spoor.co.za>'));
       expect(onboardingSource,
           contains('from: `"\${options.config.fromName}" <\${options.config.from}>`'));
     });

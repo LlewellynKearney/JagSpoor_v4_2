@@ -142,8 +142,12 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
 });
 
 test("OUTBOUND_MAIL_HEADERS carry the standard deliverability headers", () => {
-  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["X-Mailer"], "JagSpoor Mailer");
+  assert.equal(
+    onboarding.OUTBOUND_MAIL_HEADERS["X-Mailer"],
+    "JagSpoor App Engine"
+  );
   assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["Organization"], "JagSpoor");
+  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["X-Priority"], "3");
 });
 
 test("sendWelcomeEmail sets plain-text alternative + outbound headers", async () => {
@@ -163,17 +167,41 @@ test("sendWelcomeEmail sets plain-text alternative + outbound headers", async ()
     },
     createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
   });
-  assert.equal(sent.length, 1);
+  // A second dispatch to verify the per-message Message-ID is unique.
+  await onboarding.sendWelcomeEmail({
+    to: "newuser@example.co.za",
+    displayName: "Pieter",
+    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
+    config: {
+      host: "smtp.ucebox.co.za",
+      port: 465,
+      secure: true,
+      user: "support@jag-spoor.co.za",
+      pass: "secret",
+      from: "support@jag-spoor.co.za",
+      fromName: "JagSpoor",
+    },
+    createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
+  });
+  assert.equal(sent.length, 2);
   // from strictly matches SMTP_FROM_NAME / SMTP_FROM.
   assert.equal(sent[0].from, '"JagSpoor" <support@jag-spoor.co.za>');
   // Plain-text alternative present alongside the HTML body.
   assert.ok(sent[0].text && sent[0].text.length > 0, "text alternative set");
   assert.ok(sent[0].html && sent[0].html.length > 0, "html body set");
-  // Standard outbound deliverability headers.
-  assert.deepEqual(sent[0].headers, {
-    "X-Mailer": "JagSpoor Mailer",
-    "Organization": "JagSpoor",
-  });
+  // Standard outbound anti-spam deliverability headers.
+  assert.equal(sent[0].headers["X-Mailer"], "JagSpoor App Engine");
+  assert.equal(sent[0].headers["Organization"], "JagSpoor");
+  assert.equal(sent[0].headers["X-Priority"], "3");
+  // A unique per-message Message-ID on the jag-spoor.co.za domain.
+  assert.match(
+    sent[0].headers["Message-ID"],
+    /^<\d+\.[a-z0-9]+@jag-spoor\.co\.za>$/
+  );
+  assert.notEqual(
+    sent[0].headers["Message-ID"],
+    sent[1].headers["Message-ID"]
+  );
 });
 
 test("index.js entry point exports the auth onCreate trigger", () => {
