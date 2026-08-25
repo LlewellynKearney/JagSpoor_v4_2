@@ -264,9 +264,11 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder:
-          (context) => Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          (context) => SafeArea(
+            bottom: true,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
@@ -280,6 +282,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   onTap: () => Navigator.pop(context, ImageSource.gallery),
                 ),
               ],
+              ),
             ),
           ),
     );
