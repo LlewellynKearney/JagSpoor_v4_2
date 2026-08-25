@@ -37,7 +37,8 @@ class GameSpeciesCard extends StatelessWidget {
 
   /// Category tag rendered as a taxonomy-style pill, e.g. "Mammal (Antelope)".
   static String taxonomyLabel(String category) {
-    switch (category.toLowerCase()) {
+    final trimmed = category.trim();
+    switch (trimmed.toLowerCase()) {
       case 'antelope':
         return 'Mammal (Antelope)';
       case 'big_game':
@@ -49,8 +50,15 @@ class GameSpeciesCard extends StatelessWidget {
       case 'bird':
         return 'Bird';
       default:
-        if (category.isEmpty) return 'Mammal';
-        final pretty = category
+        if (trimmed.isEmpty) return 'Mammal';
+        // The seeder stores fully-qualified taxonomy strings (e.g.
+        // 'Mammal (Antelope)', 'Bird (Gamebird)'). Pass those through
+        // unchanged instead of wrapping them in 'Mammal (...)' a second
+        // time (the double-wrap display bug).
+        if (trimmed.contains('(') || trimmed.contains(' ')) {
+          return trimmed;
+        }
+        final pretty = trimmed
             .split('_')
             .map(
               (part) =>

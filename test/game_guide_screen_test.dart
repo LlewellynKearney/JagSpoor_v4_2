@@ -5,17 +5,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/game_guide/services/game_guide_favorites_service.dart';
+import 'package:jagspoor/features/game_guide/services/game_guide_filter.dart';
 import 'package:jagspoor/features/game_guide/widgets/game_species_card.dart';
 import 'package:jagspoor/models/animal.dart';
 import 'package:jagspoor/repositories/animal_repository.dart';
 import 'package:jagspoor/screens/animal_list_screen.dart';
 
+// Fixtures use the seeded `animalType` taxonomy strings (the value the
+// seeder writes into `animals.category`), so the filter tests exercise the
+// real production data shape rather than legacy literal codes.
 Animal _kudu() => const Animal(
   id: 'kudu-1',
   name: 'Greater Kudu',
   scientificName: 'Tragelaphus strepsiceros',
   afrikaansName: 'Koedoe',
-  category: 'antelope',
+  category: 'Mammal (Antelope)',
   habitat: 'Savanna',
   imageUrl: '',
   rwMinimum: '53 7/8 inches',
@@ -28,7 +32,7 @@ Animal _impala() => const Animal(
   id: 'impala-1',
   name: 'Impala',
   scientificName: 'Aepyceros melampus',
-  category: 'antelope',
+  category: 'Mammal (Antelope)',
   habitat: 'Savanna',
   imageUrl: '',
   rwMinimum: '23 5/8 inches',
@@ -38,13 +42,47 @@ Animal _leopard() => const Animal(
   id: 'leopard-1',
   name: 'Leopard',
   scientificName: 'Panthera pardus',
-  category: 'predator',
+  category: 'Mammal (Predator)',
   habitat: 'Bushveld',
   imageUrl: '',
 );
 
+Animal _buffalo() => const Animal(
+  id: 'buffalo-1',
+  name: 'Cape Buffalo',
+  scientificName: 'Syncerus caffer',
+  category: 'Mammal (Dangerous Game)',
+  habitat: 'Savanna',
+  imageUrl: '',
+);
+
+Animal _guineafowl() => const Animal(
+  id: 'guineafowl-1',
+  name: 'Helmeted Guineafowl',
+  scientificName: 'Numida meleagris',
+  category: 'Bird (Gamebird)',
+  habitat: 'Savanna',
+  imageUrl: '',
+);
+
+Animal _aardvark() => const Animal(
+  id: 'aardvark-1',
+  name: 'Aardvark',
+  scientificName: 'Orycteropus afer',
+  category: 'Mammal (Other)',
+  habitat: 'Savanna',
+  imageUrl: '',
+);
+
 Future<void> _seedAnimals(FakeFirebaseFirestore firestore) async {
-  for (final animal in [_kudu(), _impala(), _leopard()]) {
+  for (final animal in [
+    _kudu(),
+    _impala(),
+    _leopard(),
+    _buffalo(),
+    _guineafowl(),
+    _aardvark(),
+  ]) {
     await firestore.collection('animals').doc(animal.id).set(animal.toJson());
   }
 }
@@ -94,6 +132,24 @@ void main() {
       expect(GameSpeciesCard.taxonomyLabel('predator'), 'Mammal (Predator)');
       expect(GameSpeciesCard.taxonomyLabel('bird'), 'Bird');
       expect(GameSpeciesCard.taxonomyLabel(''), 'Mammal');
+    });
+
+    test('taxonomyLabel passes seeded taxonomy strings through unchanged', () {
+      // Regression guard for the double-wrap bug: a seeded category like
+      // 'Mammal (Antelope)' must render as-is, not 'Mammal (Mammal
+      // (Antelope))'.
+      expect(
+        GameSpeciesCard.taxonomyLabel('Mammal (Antelope)'),
+        'Mammal (Antelope)',
+      );
+      expect(
+        GameSpeciesCard.taxonomyLabel('Bird (Gamebird)'),
+        'Bird (Gamebird)',
+      );
+      expect(
+        GameSpeciesCard.taxonomyLabel('Mammal (Dangerous Game)'),
+        'Mammal (Dangerous Game)',
+      );
     });
 
     test('rwMinimumOf resolves the three storage aliases', () {
@@ -223,6 +279,96 @@ void main() {
     });
   });
 
+  group('GameGuideFilter (pure category logic)', () {
+    test('resolves legacy literal codes to the same buckets', () {
+      expect(GameGuideFilter.categoryLabelOf('antelope'), 'Plains Game');
+      expect(GameGuideFilter.categoryLabelOf('pig'), 'Plains Game');
+      expect(GameGuideFilter.categoryLabelOf('big_game'), 'Big Game');
+      expect(GameGuideFilter.categoryLabelOf('predator'), 'Predator');
+      expect(GameGuideFilter.categoryLabelOf('bird'), 'Bird');
+      expect(GameGuideFilter.categoryLabelOf('other'), 'Other');
+    });
+
+    test('resolves seeded taxonomy strings to the hunting buckets', () {
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Antelope)'),
+        'Plains Game',
+      );
+      expect(GameGuideFilter.categoryLabelOf('Mammal (Pig)'), 'Plains Game');
+      expect(GameGuideFilter.categoryLabelOf('Mammal (Equid)'), 'Plains Game');
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Giraffid)'),
+        'Plains Game',
+      );
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Dangerous Game)'),
+        'Big Game',
+      );
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Protected - Dangerous Game)'),
+        'Big Game',
+      );
+      // Lion is a Big Five species -- 'dangerous' is checked before
+      // 'predator' so it lands in the Big Game bucket.
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Predator - Dangerous)'),
+        'Big Game',
+      );
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Predator)'),
+        'Predator',
+      );
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Predator - small)'),
+        'Predator',
+      );
+      expect(
+        GameGuideFilter.categoryLabelOf('Mammal (Predator - medium)'),
+        'Predator',
+      );
+      expect(GameGuideFilter.categoryLabelOf('Bird (Gamebird)'), 'Bird');
+      expect(GameGuideFilter.categoryLabelOf('Bird (Waterfowl)'), 'Bird');
+      expect(GameGuideFilter.categoryLabelOf('Reptile (Monitor)'), 'Other');
+      expect(GameGuideFilter.categoryLabelOf('Mammal (Hyrax)'), 'Other');
+    });
+
+    test('null and empty categories resolve to Other', () {
+      expect(GameGuideFilter.categoryLabelOf(null), 'Other');
+      expect(GameGuideFilter.categoryLabelOf(''), 'Other');
+      expect(GameGuideFilter.categoryLabelOf('   '), 'Other');
+    });
+
+    test('matchesCategory admits everything for All and null filters', () {
+      expect(GameGuideFilter.matchesCategory(_kudu(), 'All'), isTrue);
+      expect(GameGuideFilter.matchesCategory(_kudu(), null), isTrue);
+      expect(GameGuideFilter.matchesCategory(_kudu(), 'Plains Game'), isTrue);
+      expect(GameGuideFilter.matchesCategory(_kudu(), 'Predator'), isFalse);
+    });
+
+    test('matchesSearch matches name, scientific, Afrikaans, keywords', () {
+      expect(GameGuideFilter.matchesSearch(_kudu(), 'kudu'), isTrue);
+      expect(GameGuideFilter.matchesSearch(_kudu(), 'strepsiceros'), isTrue);
+      expect(GameGuideFilter.matchesSearch(_kudu(), 'koedoe'), isTrue);
+      expect(
+        GameGuideFilter.matchesSearch(
+          const Animal(
+            id: 'x',
+            name: 'X',
+            scientificName: '',
+            category: 'other',
+            habitat: '',
+            imageUrl: '',
+            searchKeywords: ['springbok'],
+          ),
+          'springbok',
+        ),
+        isTrue,
+      );
+      expect(GameGuideFilter.matchesSearch(_kudu(), 'zebra'), isFalse);
+      expect(GameGuideFilter.matchesSearch(_kudu(), ''), isTrue);
+    });
+  });
+
   group('GameGuideFavoritesService', () {
     test('toggle persists + notifies and isFavorite reflects state', () async {
       final service = GameGuideFavoritesService.instance;
@@ -284,9 +430,13 @@ void main() {
       expect(find.byKey(const ValueKey('gameGuideSearchToggle')), findsOneWidget);
       expect(find.byKey(const ValueKey('gameGuideFilterButton')), findsOneWidget);
       expect(find.byType(GridView), findsOneWidget);
-      expect(find.byType(GameSpeciesCard), findsNWidgets(3));
+      expect(find.byType(GameSpeciesCard), findsNWidgets(6));
       expect(find.text('Greater Kudu'), findsOneWidget);
       expect(find.text('Impala'), findsOneWidget);
+      expect(find.text('Cape Buffalo'), findsOneWidget);
+      expect(find.text('Helmeted Guineafowl'), findsOneWidget);
+      expect(find.text('Leopard'), findsOneWidget);
+      expect(find.text('Aardvark'), findsOneWidget);
     });
 
     testWidgets('search icon toggles the inline search field and filters', (
@@ -326,6 +476,91 @@ void main() {
       expect(find.text('Impala'), findsNothing);
     });
 
+    testWidgets('Big Game filter resolves the seeded dangerous-game bucket', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Big Game'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cape Buffalo'), findsOneWidget);
+      expect(find.text('Leopard'), findsNothing);
+      expect(find.text('Greater Kudu'), findsNothing);
+      expect(find.text('Helmeted Guineafowl'), findsNothing);
+      expect(find.text('Aardvark'), findsNothing);
+    });
+
+    testWidgets('Plains Game filter resolves antelope + pig families', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plains Game'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Greater Kudu'), findsOneWidget);
+      expect(find.text('Impala'), findsOneWidget);
+      expect(find.text('Leopard'), findsNothing);
+      expect(find.text('Cape Buffalo'), findsNothing);
+      expect(find.text('Helmeted Guineafowl'), findsNothing);
+      expect(find.text('Aardvark'), findsNothing);
+    });
+
+    testWidgets('Bird filter resolves the seeded bird families', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bird'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Helmeted Guineafowl'), findsOneWidget);
+      expect(find.text('Greater Kudu'), findsNothing);
+      expect(find.text('Leopard'), findsNothing);
+    });
+
+    testWidgets('Other filter excludes categorized species', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Other'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aardvark'), findsOneWidget);
+      expect(find.text('Greater Kudu'), findsNothing);
+      expect(find.text('Cape Buffalo'), findsNothing);
+      expect(find.text('Leopard'), findsNothing);
+      expect(find.text('Helmeted Guineafowl'), findsNothing);
+    });
+
+    testWidgets('selecting All clears the category filter state', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      // Apply a restrictive bucket first...
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Predator'));
+      await tester.pumpAndSettle();
+      expect(find.text('Leopard'), findsOneWidget);
+      expect(find.text('Greater Kudu'), findsNothing);
+
+      // ...then reset to All and confirm the full grid state is restored.
+      await tester.tap(find.byKey(const ValueKey('gameGuideFilterButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All'));
+      await tester.pumpAndSettle();
+      expect(find.text('Greater Kudu'), findsOneWidget);
+      expect(find.text('Leopard'), findsOneWidget);
+      expect(find.text('Aardvark'), findsOneWidget);
+      expect(find.byType(GameSpeciesCard), findsNWidgets(6));
+    });
+
     testWidgets('tapping a card heart favorites it and sorts it first', (
       tester,
     ) async {
@@ -338,8 +573,15 @@ void main() {
 
       expect(
         cardIds(),
-        <String>['kudu-1', 'impala-1', 'leopard-1'],
-        reason: 'Alphabetical order renders Greater Kudu before Impala.',
+        <String>[
+          'aardvark-1',
+          'buffalo-1',
+          'kudu-1',
+          'guineafowl-1',
+          'impala-1',
+          'leopard-1',
+        ],
+        reason: 'No favorites -- the grid renders in alphabetical order.',
       );
 
       // The heart button itself is tap-tested in the isolated card suite;

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/copyright_footer.dart';
 import '../features/game_guide/services/game_guide_favorites_service.dart';
+import '../features/game_guide/services/game_guide_filter.dart';
 import '../features/game_guide/widgets/game_species_card.dart';
 import '../features/hunter_mode/widgets/hunter_scaffold.dart';
 import '../models/animal.dart';
@@ -35,18 +36,13 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _searchActive = false;
-  String _categoryFilter = 'All';
+  String _categoryFilter = GameGuideFilter.all;
 
   Set<String> get _favoriteIds => _favorites.favoriteIds;
 
-  static const List<String> _filterOptions = <String>[
-    'All',
-    'Big Game',
-    'Plains Game',
-    'Predator',
-    'Bird',
-    'Other',
-  ];
+  /// The filter-sheet category options, single-sourced from
+  /// [GameGuideFilter] so the chips always match the bucket resolution.
+  static const List<String> _filterOptions = GameGuideFilter.categories;
 
   @override
   void initState() {
@@ -67,37 +63,6 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
 
   void _onFavoritesChanged() {
     if (mounted) setState(() {});
-  }
-
-  bool _matchesSearch(Animal animal, String query) {
-    if (query.isEmpty) return true;
-    final normalized = query.toLowerCase().trim();
-
-    if (animal.name.toLowerCase().contains(normalized)) return true;
-    if (animal.scientificName.toLowerCase().contains(normalized)) return true;
-    if (animal.afrikaansName?.toLowerCase().contains(normalized) ?? false) {
-      return true;
-    }
-    return animal.searchKeywords.any(
-      (keyword) => keyword.toLowerCase().contains(normalized),
-    );
-  }
-
-  String _categoryLabel(String category) {
-    switch (category.toLowerCase()) {
-      case 'big_game':
-        return 'Big Game';
-      case 'antelope':
-        return 'Plains Game';
-      case 'predator':
-        return 'Predator';
-      case 'pig':
-        return 'Plains Game';
-      case 'bird':
-        return 'Bird';
-      default:
-        return 'Other';
-    }
   }
 
   String? _getAssetPathForAnimal(String animalName) {
@@ -289,13 +254,17 @@ class _AnimalListScreenState extends State<AnimalListScreen> {
                 final filtered =
                     animals
                         .where(
-                          (animal) => _matchesSearch(animal, _searchQuery),
+                          (animal) =>
+                              GameGuideFilter.matchesSearch(
+                                animal,
+                                _searchQuery,
+                              ),
                         )
                         .where(
-                          (animal) =>
-                              _categoryFilter == 'All' ||
-                              _categoryLabel(animal.category) ==
-                                  _categoryFilter,
+                          (animal) => GameGuideFilter.matchesCategory(
+                            animal,
+                            _categoryFilter,
+                          ),
                         )
                         .toList()
                       ..sort(_favoritesFirst);
