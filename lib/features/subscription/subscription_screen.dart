@@ -33,6 +33,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   PromoCodeAdjustment? _appliedPromo;
   String? _promoError;
   bool _isLaunching = false;
+  bool _isCancelling = false;
 
   SubscriptionTier get _tier =>
       widget.tier ??
@@ -155,6 +156,76 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       );
     } finally {
       if (mounted) setState(() => _isLaunching = false);
+    }
+  }
+
+  /// Shows the cancellation confirmation dialog ("Manage Subscription"
+  /// option). Returns true when the user confirmed the cancellation.
+  Future<bool> _confirmCancellation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel Subscription?'),
+        content: const Text(
+          'This ends your recurring billing with PayFast. Your access stays '
+          'active until the end of the current billing period.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('KEEP SUBSCRIPTION'),
+          ),
+          FilledButton(
+            key: const ValueKey('confirmCancelButton'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('YES, CANCEL'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _cancelSubscription() async {
+    if (_isCancelling) return;
+    final confirmed = await _confirmCancellation();
+    if (!mounted || !confirmed) return;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    // Capture the subscribed tier for the confirmation message before any
+    // async gaps below.
+    setState(() => _isCancelling = true);
+    try {
+      await SubscriptionStatusService.instance.cancelSubscription();
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Subscription cancelled — your recurring billing has been '
+            'terminated.',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cancellation could not be confirmed. Your recurring billing is '
+            'unchanged — please try again.',
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isCancelling = false);
     }
   }
 
@@ -548,12 +619,44 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Widget _buildSubscribeButton(ThemeController theme, UserSubscription sub) {
-    final alreadyActive = sub.isActive;
+    // Active subscription / live free trial: the primary checkout button is
+    // replaced by the manage / cancel action, since re-subscribing while
+    // billed would create a duplicate recurring billing token.
+    if (sub.hasSubscription) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: const ValueKey('cancelSubscriptionButton'),
+          onPressed: _isCancelling ? null : _cancelSubscription,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red.shade700,
+            side: BorderSide(color: Colors.red.shade700, width: 1.6),
+            disabledForegroundColor: theme.subtitleColor,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          icon: _isCancelling
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.red.shade700,
+                  ),
+                )
+              : Icon(Icons.cancel_outlined, color: Colors.red.shade700),
+          label: Text(
+            _isCancelling ? 'CANCELLING…' : 'CANCEL SUBSCRIPTION',
+            style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1),
+          ),
+        ),
+      );
+    }
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
         key: const ValueKey('subscribeButton'),
-        onPressed: alreadyActive || _isLaunching ? null : _subscribe,
+        onPressed: _isLaunching ? null : _subscribe,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.green.shade700,
           foregroundColor: Colors.white,
@@ -567,13 +670,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               )
-            : Icon(alreadyActive ? Icons.verified_rounded : Icons.lock_rounded),
+            : const Icon(Icons.lock_rounded),
         label: Text(
-          alreadyActive
-              ? 'SUBSCRIPTION ACTIVE'
-              : _isLaunching
-                  ? 'OPENING PAYFAST…'
-                  : 'SUBSCRIBE VIA PAYFAST',
+          _isLaunching ? 'OPENING PAYFAST…' : 'SUBSCRIBE VIA PAYFAST',
           style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1),
         ),
       ),

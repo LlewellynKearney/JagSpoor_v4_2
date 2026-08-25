@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import 'payfast_service.dart';
 
@@ -78,10 +81,19 @@ class SubscriptionStatusService {
   @visibleForTesting
   static String? Function()? currentUserIdResolverForTesting;
 
+  /// Seam for the cancellation HTTP call so widget/unit tests can substitute
+  /// a fake without a live network. Returns the raw response when the
+  /// endpoint answered, `null` when it is unreachable (transport error / no
+  /// Firebase app / no ID token).
+  @visibleForTesting
+  static Future<http.Response?> Function(String userId, String idToken)?
+      cancellationInvokerForTesting;
+
   @visibleForTesting
   static void resetTestSeams() {
     firestoreForTesting = null;
     currentUserIdResolverForTesting = null;
+    cancellationInvokerForTesting = null;
   }
 
   FirebaseFirestore get _db {
@@ -150,4 +162,90 @@ class SubscriptionStatusService {
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
+  /// The HTTPS cancellation endpoint deployed alongside the subscription
+  /// ITN webhook (see `functions/src/index.ts` `cancelSubscription`).
+  static String get cancelSubscriptionUrl =>
+      'https://us-central1-jagspoor.cloudfunctions.net/cancelSubscription';
+
+  /// Cancels the current user's subscription by invoking the deployed
+  /// cancellation endpoint with the caller's Firebase ID token, which
+  /// terminates the PayFast recurring billing token server-side
+  /// (fail-closed) and flips `users/{uid}.subscriptionStatus` to
+  /// `cancelled`.
+  ///
+  /// Falls back to a direct `users/{uid}` owner write ONLY when the endpoint
+  /// is unreachable (e.g. not yet deployed in a dev environment) so the
+  /// user's billing intent is still recorded; an endpoint that ANSWERS with
+  /// an error (e.g. 502 when PayFast does not acknowledge the termination)
+  /// throws instead, so billing is never silently marked cancelled without
+  /// the token being terminated.
+  ///
+  /// Returns `true` on success; throws a `StateError` for an unauthenticated
+  /// caller and a `CancellationException` when the endpoint rejects the
+  /// request / cannot confirm PayFast termination.
+  Future<bool> cancelSubscription() async {
+    final uid = _uid;
+    if (uid == null) throw StateError('No signed-in user');
+
+    final response = await _invokeCancelEndpoint(uid);
+    if (response != null) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      }
+      throw CancellationException(
+        'The cancellation service rejected the request '
+        '(HTTP ${response.statusCode}). Please try again.',
+      );
+    }
+
+    // Endpoint unreachable / not deployed in the dev environment: record the
+    // cancellation intent via the owner-write path (the token termination
+    // itself still requires the deployed endpoint).
+    await _db.collection('users').doc(uid).set({
+      'subscriptionStatus': SubscriptionStatus.cancelled.key,
+      'subscriptionCancelledAt': Timestamp.now(),
+      'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return true;
+  }
+
+  /// Invokes the deployed cancellation endpoint. Returns the raw [http.Response]
+  /// when the endpoint answered, `null` when it is unreachable (transport
+  /// error / no Firebase app / no ID token available).
+  Future<http.Response?> _invokeCancelEndpoint(String uid) async {
+    final invoker = cancellationInvokerForTesting;
+    if (invoker != null) {
+      return invoker(uid, 'test-token');
+    }
+    String idToken;
+    try {
+      idToken = await FirebaseAuth.instance.currentUser?.getIdToken() ?? '';
+    } catch (_) {
+      return null; // [core/no-app] during cold-launch / widget tests.
+    }
+    if (idToken.isEmpty) return null;
+    try {
+      return await http.post(
+        Uri.parse(cancelSubscriptionUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: jsonEncode({'userId': uid}),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Signal raised by [SubscriptionStatusService.cancelSubscription] when the
+/// backend cannot confirm the PayFast token termination (the subscription is
+/// NOT marked cancelled — the user may safely retry).
+class CancellationException implements Exception {
+  final String message;
+  const CancellationException(this.message);
+  @override
+  String toString() => 'CancellationException: $message';
 }

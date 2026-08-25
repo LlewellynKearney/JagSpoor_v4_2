@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/subscription/services/payfast_service.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
@@ -229,8 +230,8 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('shows SUBSCRIPTION ACTIVE and disables the subscribe button',
-        (tester) async {
+    testWidgets('shows SUBSCRIPTION ACTIVE and swaps the subscribe button '
+        'for the cancel action', (tester) async {
       await fake.collection('users').doc('uid-1').set({
         'subscriptionStatus': 'active',
         'subscriptionTier': 'outfitter',
@@ -238,11 +239,14 @@ void main() {
       await pumpScreen(tester);
 
       expect(find.text('SUBSCRIPTION ACTIVE'), findsOneWidget);
-      await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
-      final button = tester.widget<FilledButton>(
-        find.byKey(const ValueKey('subscribeButton')),
+      // The primary checkout action is replaced by the manage/cancel option
+      // (re-subscribing while billed would duplicate the billing token).
+      expect(find.byKey(const ValueKey('subscribeButton')), findsNothing);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('cancelSubscriptionButton')),
       );
-      expect(button.onPressed, isNull);
+      expect(find.text('CANCEL SUBSCRIPTION'), findsOneWidget);
     });
 
     testWidgets('shows SUBSCRIPTION CANCELLED for a cancelled sub',
@@ -252,6 +256,116 @@ void main() {
       });
       await pumpScreen(tester);
       expect(find.text('SUBSCRIPTION CANCELLED'), findsOneWidget);
+      // A cancelled subscription can re-subscribe from scratch: the primary
+      // checkout action is rendered again in place of the cancel action.
+      await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
+      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+    });
+  });
+
+  group('subscription cancellation', () {
+    testWidgets('rendered during the free trial too', (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trial',
+        'subscriptionTier': 'hunter',
+        'subscriptionTrialEndsAt': DateTime.now().add(const Duration(days: 20)),
+      });
+      await pumpScreen(tester);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('cancelSubscriptionButton')),
+      );
+      expect(find.text('CANCEL SUBSCRIPTION'), findsOneWidget);
+      expect(find.byKey(const ValueKey('subscribeButton')), findsNothing);
+    });
+
+    testWidgets('keeps the subscription when the dialog is dismissed',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionTier': 'outfitter',
+      });
+      var seamCalls = 0;
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async {
+        seamCalls++;
+        return http.Response('{}', 200);
+      };
+
+      await pumpScreen(tester);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('cancelSubscriptionButton')),
+      );
+      await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cancel Subscription?'), findsOneWidget);
+      await tester.tap(find.text('KEEP SUBSCRIPTION'));
+      await tester.pumpAndSettle();
+      expect(seamCalls, 0);
+    });
+
+    testWidgets('confirms cancellation and shows the termination message',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionTier': 'outfitter',
+      });
+      var seamCalls = 0;
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async {
+        seamCalls++;
+        expect(userId, 'uid-1');
+        return http.Response('{"result": "success"}', 200);
+      };
+
+      await pumpScreen(tester);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('cancelSubscriptionButton')),
+      );
+      await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cancel Subscription?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('confirmCancelButton')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(seamCalls, 1);
+      expect(
+        find.textContaining('Subscription cancelled'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows an error when the endpoint rejects the cancellation',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionTier': 'outfitter',
+      });
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async => http.Response('error', 502);
+
+      await pumpScreen(tester);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('cancelSubscriptionButton')),
+      );
+      await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('confirmCancelButton')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        find.textContaining('could not be confirmed'),
+        findsOneWidget,
+      );
     });
   });
 

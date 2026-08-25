@@ -60,6 +60,11 @@ void main() {
       expect(indexSource, contains('subscriptionStatus: "cancelled"'));
     });
 
+    test('persists the recurring billing token on COMPLETE so it can be '
+        'terminated on cancellation', () {
+      expect(indexSource, contains('subscriptionPayfastToken: map["token"]'));
+    });
+
     test('resolves the subscriber from the m_payment_id shape', () {
       expect(indexSource, contains('parseSubscriptionPaymentId(mPaymentId)'));
       expect(indexSource, contains('custom_str2'));
@@ -69,6 +74,49 @@ void main() {
     test('rejects non-POST and empty-body requests', () {
       expect(indexSource, contains('res.status(405).send("Method Not Allowed")'));
       expect(indexSource, contains('res.status(400).send("Empty ITN body")'));
+    });
+  });
+
+  group('cancelSubscription endpoint', () {
+    test('is exported as a public onRequest function in us-central1', () {
+      expect(indexSource, contains('export const cancelSubscription'));
+      expect(indexSource, contains('invoker: "public"'));
+      expect(indexSource, contains('region: "us-central1"'));
+    });
+
+    test('enforces a verified Bearer Firebase ID token', () {
+      expect(indexSource, contains('req.headers.authorization'));
+      expect(indexSource, contains('getAdmin().auth().verifyIdToken(idToken)'));
+      // A missing / invalid token is rejected before any billing change.
+      expect(indexSource, contains('res.status(401).send("Unauthorized")'));
+    });
+
+    test('only the owning account may cancel its own subscription', () {
+      // The body's userId must match the verified token uid.
+      expect(indexSource, contains(
+          'res.status(403).send("You may only cancel your own subscription")'));
+    });
+
+    test('terminates the PayFast token via the cancel API (fail-closed)', () {
+      expect(indexSource, contains('cancelPayfastSubscriptionToken('));
+      // Unable to confirm -> 502, subscription NOT marked cancelled.
+      expect(indexSource, contains('"Unable to confirm PayFast cancellation"'));
+      expect(helperSource,
+          contains('export async function cancelPayfastSubscriptionToken'));
+      expect(helperSource, contains(r'/v1/subscriptions/${token}/cancel'));
+      expect(helperSource, contains('return response.ok'));
+    });
+
+    test('marks the status cancelled only after token termination succeeds',
+        () {
+      expect(indexSource, contains('subscriptionCancelledAt: new Date()'));
+      expect(indexSource, contains('res.status(200).json({ result: "success"'));
+    });
+
+    test('uses the correct merchant id + api base', () {
+      expect(indexSource, contains('PAYFAST_MERCHANT_ID'));
+      expect(helperSource, contains('export const PAYFAST_API_BASE'));
+      expect(helperSource, contains('"https://api.payfast.co.za"'));
     });
   });
 

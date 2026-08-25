@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:jagspoor/features/subscription/services/payfast_service.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
 
@@ -126,6 +127,61 @@ void main() {
       });
       final sub = await SubscriptionStatusService.instance.getMySubscription();
       expect(sub.status, SubscriptionStatus.cancelled);
+    });
+  });
+
+  group('SubscriptionStatusService.cancelSubscription', () {
+    test('rejects an unauthenticated caller', () {
+      SubscriptionStatusService.currentUserIdResolverForTesting = () => null;
+      expect(
+        () => SubscriptionStatusService.instance.cancelSubscription(),
+        throwsStateError,
+      );
+    });
+
+    test('invokes the endpoint with the current uid and returns true on 2xx',
+        () async {
+      String? seenUid;
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async {
+        seenUid = userId;
+        return http.Response('{"result": "success"}', 200);
+      };
+      final ok = await SubscriptionStatusService.instance.cancelSubscription();
+      expect(ok, isTrue);
+      expect(seenUid, 'uid-1');
+    });
+
+    test('throws CancellationException when the endpoint rejects the request',
+        () async {
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async => http.Response('error', 502);
+      expect(
+        () => SubscriptionStatusService.instance.cancelSubscription(),
+        throwsA(isA<CancellationException>()),
+      );
+      // The subscription is NOT silently marked cancelled without the token
+      // being terminated.
+      final sub = await SubscriptionStatusService.instance.getMySubscription();
+      expect(sub.status, isNot(SubscriptionStatus.cancelled));
+    });
+
+    test('falls back to an owner write when the endpoint is unreachable',
+        () async {
+      SubscriptionStatusService.cancellationInvokerForTesting =
+          (userId, idToken) async => null;
+      final ok = await SubscriptionStatusService.instance.cancelSubscription();
+      expect(ok, isTrue);
+      final snap = await fake.collection('users').doc('uid-1').get();
+      expect(snap.data()!['subscriptionStatus'], 'cancelled');
+      expect(snap.data()!.containsKey('subscriptionCancelledAt'), isTrue);
+    });
+
+    test('cancelSubscriptionUrl targets the us-central1 function', () {
+      expect(
+        SubscriptionStatusService.cancelSubscriptionUrl,
+        'https://us-central1-jagspoor.cloudfunctions.net/cancelSubscription',
+      );
     });
   });
 }

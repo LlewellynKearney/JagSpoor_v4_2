@@ -114,3 +114,75 @@ export function parseSubscriptionPaymentId(mPaymentId: string): {
   if (!match) return { userId: null, tier: null };
   return { userId: match[1], tier: match[2] };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Subscription token termination (cancel API)
+// ────────────────────────────────────────────────────────────────────────────
+
+/** PayFast subscription-cancel API endpoint (production). */
+export const PAYFAST_API_BASE =
+  process.env.PAYFAST_API_BASE ?? "https://api.payfast.co.za";
+
+/** PayFast subscription-cancel API endpoint (sandbox). */
+export const PAYFAST_API_BASE_SANDBOX = "https://sandbox.payfast.co.za";
+
+/**
+ * Builds a PayFast API signature for the token-termination call: the three
+ * API fields (`merchant-id`, `timestamp`, `version`) sorted alphabetically,
+ * percent-encoded, with the merchant passphrase appended.
+ */
+export function generateApiSignature(
+  merchantId: string,
+  passphrase: string,
+  timestamp: string,
+  version: string
+): string {
+  const fields: Record<string, string> = {
+    "merchant-id": merchantId,
+    timestamp,
+    version,
+  };
+  const parts = Object.keys(fields)
+    .sort()
+    .map((key) => `${key}=${pfEncode(fields[key])}`);
+  parts.push(`passphrase=${pfEncode(passphrase)}`);
+  return createHash("md5").update(parts.join("&")).digest("hex");
+}
+
+/**
+ * Terminates a PayFast recurring billing token safely: POSTs to PayFast's
+ * API endpoint `{base}/v1/subscriptions/{token}/cancel` with the signed
+ * merchant headers. Returns `true` only on a 2xx acknowledgement — a network
+ * failure / non-2xx response returns false so the caller refuses to mark
+ * the subscription cancelled (fail-closed).
+ */
+export async function cancelPayfastSubscriptionToken(
+  token: string,
+  merchantId: string,
+  passphrase: string,
+  baseUrl: string
+): Promise<boolean> {
+  try {
+    const timestamp = new Date().toISOString();
+    const version = "v1";
+    const signature = generateApiSignature(
+      merchantId,
+      passphrase,
+      timestamp,
+      version
+    );
+    const url = `${baseUrl}/v1/subscriptions/${token}/cancel`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "merchant-id": merchantId,
+        timestamp,
+        version,
+        signature,
+      },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}

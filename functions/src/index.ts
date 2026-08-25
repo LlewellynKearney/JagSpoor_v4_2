@@ -18,6 +18,8 @@ import {
   verifySignature,
   validateWithPayFast,
   parseSubscriptionPaymentId,
+  cancelPayfastSubscriptionToken,
+  PAYFAST_API_BASE,
 } from "./payfast_subscription";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -624,6 +626,9 @@ export const payfastSubscriptionITN = onRequest(
           subscriptionRenewalDate: renewalDate,
           subscriptionPromoCode: promoCode,
           subscriptionPayfastPaymentId: map["pf_payment_id"] ?? "",
+          // The recurring billing token used by the cancellation endpoint to
+          // terminate future charges safely.
+          subscriptionPayfastToken: map["token"] ?? "",
           subscriptionUpdatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -660,6 +665,103 @@ export const payfastSubscriptionITN = onRequest(
       paymentStatus,
     });
     res.status(200).send("OK");
+  }
+);
+
+// ────────────────────────────────────────────────────────────────────────────
+// 3. Subscription cancellation — safely terminate the recurring billing token
+// ────────────────────────────────────────────────────────────────────────────
+
+/** PayFast merchant id used by the cancellation endpoint (sandbox default). */
+const PAYFAST_MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID ?? "10053397";
+
+/**
+ * cancelSubscription
+ *
+ * HTTPS onRequest endpoint (public invoker; auth enforced via the Firebase
+ * ID token). Flow:
+ *   1. POST-only.
+ *   2. `Authorization: Bearer <Firebase ID token>` verified with the Admin
+ *      SDK; the body's `userId` must match the token's uid (an account may
+ *      only cancel its own subscription).
+ *   3. The stored `subscriptionPayfastToken` (persisted by the ITN handler
+ *      on activation) is terminated server-to-server via PayFast's cancel
+ *      API — fail-closed: the subscription is only marked cancelled when
+ *      PayFast acknowledges the termination (or no token exists yet, e.g.
+ *      inside the free trial before the first billing comes due).
+ *   4. On success: users/{uid}.subscriptionStatus = "cancelled".
+ */
+export const cancelSubscription = onRequest(
+  { region: "us-central1", invoker: "public", maxInstances: 10 },
+  async (req: Request, res: Response) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    // 1. Authorization: Bearer Firebase ID token verified with the Admin SDK.
+    const header = (req.headers.authorization ?? "").toString();
+    const idToken = header.startsWith("Bearer ") ? header.substring(7) : "";
+    let userIdFromToken: string | null = null;
+    if (idToken) {
+      try {
+        const decoded = await getAdmin().auth().verifyIdToken(idToken);
+        userIdFromToken = decoded.uid;
+      } catch {
+        userIdFromToken = null;
+      }
+    }
+    if (!userIdFromToken) {
+      res.status(401).send("Unauthorized");
+      return;
+    }
+
+    // 2. Body: { userId } (JSON); the token's uid must match (own-account only).
+    const body = (req.body ?? {}) as { userId?: string };
+    const userId = (body.userId ?? "").toString().trim();
+    if (!userId || userId !== userIdFromToken) {
+      res.status(403).send("You may only cancel your own subscription");
+      return;
+    }
+
+    // 3. Terminate the recurring billing token with PayFast (fail-closed).
+    const userRef = firestore().collection("users").doc(userId);
+    const snap = await userRef.get();
+    const userData = snap.data() ?? {};
+    const token = (userData["subscriptionPayfastToken"] ?? "").toString();
+    let tokenTerminated = false;
+    if (token) {
+      tokenTerminated = await cancelPayfastSubscriptionToken(
+        token,
+        PAYFAST_MERCHANT_ID,
+        PAYFAST_PASSPHRASE,
+        PAYFAST_API_BASE
+      );
+      if (!tokenTerminated) {
+        logger.warn("cancelSubscription: PayFast token termination failed", {
+          userId,
+        });
+        res
+          .status(502)
+          .json({ result: "error", message: "Unable to confirm PayFast cancellation" });
+        return;
+      }
+    }
+
+    // 4. Mark the subscription cancelled on the user's profile.
+    await userRef.set(
+      {
+        subscriptionStatus: "cancelled",
+        subscriptionCancelledAt: new Date(),
+        subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    logger.info("cancelSubscription: subscription cancelled", {
+      userId,
+      tokenTerminated,
+    });
+    res.status(200).json({ result: "success", tokenTerminated });
   }
 );
 
