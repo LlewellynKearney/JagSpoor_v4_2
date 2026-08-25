@@ -2,6 +2,81 @@
 
 
 
+## Phase -- Email Verification / OTP Security Flow (Task 10) (added 2026-08-25)
+
+- **Task 1 -- Gating/routing logic located**: root routing lives in
+  `lib/core/splash_screen.dart` (`_navigateToNextScreen` boot routing),
+  `lib/features/auth/auth_screen.dart` (`_routeAfterAuth` post-auth routing
+  + the registration path in `_handleAuth`), and
+  `lib/features/auth/widgets/role_guarded_route.dart` (`RoleGuardedRoute`
+  wrapping the three dashboard routes in `main.dart`).
+- **Task 2 -- Email-verification check**:
+  - `lib/features/auth/services/email_verification_guard.dart` (NEW, pure):
+    `EmailVerificationGuard.requiresVerification({isSignedIn,
+    hasEmailAddress, emailVerified})` -- a signed-in account WITH an email
+    address that is NOT verified is gated from core features. Phone-only
+    accounts (no email) are exempt; signed-out users route to auth anyway;
+    Google-sign-in accounts arrive pre-verified from the provider.
+  - `lib/features/auth/services/email_verification_service.dart` (NEW):
+    `EmailVerificationService.instance` wraps Firebase Auth's built-in
+    verification flow -- `currentStatus()` (`EmailVerificationStatus`
+    snapshot; never throws; `[core/no-app]` -> signed-out status),
+    `sendVerificationEmail()` (StateError when no signed-in email user),
+    `refreshStatus()` (`user.reload()` + re-read `emailVerified`), and
+    `signOut()`. Static test seams (`statusResolverForTesting` /
+    `verificationSenderForTesting` / `statusRefresherForTesting` /
+    `signOutForTesting` + `resetTestSeams()`), mirroring the project's
+    established service-seam pattern. The JagSpoor account mail domain is
+    hosted on Afrihost; Firebase dispatches the verification email itself.
+  - Gates wired at three layers: splash boot routing (before role
+    resolution), auth-screen `_routeAfterAuth` (before role routing --
+    covers email/password login, Google sign-in, and the 2FA-verified
+    callback), and `RoleGuardedRoute._authorize` (defense-in-depth so a
+    deep-link cold launch into a dashboard cannot bypass verification). The
+    registration path in `_handleAuth` now sends the verification email
+    immediately after account creation (best-effort try/catch) and routes
+    the new user to the verification screen instead of straight to role
+    selection. Every gate passes a continuation (`onVerified`) that resumes
+    the caller's normal routing once verified.
+- **Task 3 -- UI** (`lib/features/auth/screens/email_verification_screen.dart`,
+  NEW): `EmailVerificationScreen` -- explains the Afrihost-hosted
+  verification link, shows the target email (`verificationEmailLabel`),
+  "I'VE VERIFIED -- REFRESH STATUS" (`refreshVerificationButton`; verified
+  -> `onVerified` continuation, unverified -> orange guidance snackbar),
+  "RESEND VERIFICATION EMAIL" (`resendVerificationButton`) with a 60-second
+  retry cooldown reusing the pure `PasswordResetCooldown` statics (each
+  resend invalidates the previous link and re-queues a delivery), and
+  "USE A DIFFERENT ACCOUNT" (`useDifferentAccountButton`; signs out +
+  routes to `/`). Theme-aware via `ThemeController`, `CopyrightFooter` at
+  the tail. Ctor overrides (`sendVerificationEmailOverride` /
+  `refreshVerificationStatusOverride` / `signOutOverride` /
+  `statusResolverOverride`) mirror the `googleSignInOverride` seam.
+- **Task 4 -- Tests + verification**:
+  - `test/email_verification_flow_test.dart` (NEW, 25 tests): guard policy
+    matrix, status model, service seam delegation + no-Firebase fallbacks,
+    widget tests (render contract, refresh->continuation, refresh->snackbar,
+    resend + cooldown disable + confirmation snackbar, resend failure
+    snackbar, sign-out routing via `initialRoute`-based MaterialApp), and a
+    structural source-parse contract asserting all three gate layers.
+  - `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings (277
+    pre-existing infos, unchanged baseline).
+  - `flutter test` (full suite): **All 1480 tests passed** (+25 new). Env
+    note: re-installed Flutter 3.29.1 at `$HOME/flutter`; recreated the
+    `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+    symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`); the pubspec
+    "Unexpected child config" warning is the documented pre-existing
+    spurious line.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side auth flow; Firebase Auth email templates govern the email
+  content in the Firebase Console).
+- Files: `lib/features/auth/services/email_verification_guard.dart` (NEW),
+  `lib/features/auth/services/email_verification_service.dart` (NEW),
+  `lib/features/auth/screens/email_verification_screen.dart` (NEW),
+  `lib/features/auth/auth_screen.dart`, `lib/core/splash_screen.dart`,
+  `lib/features/auth/widgets/role_guarded_route.dart`,
+  `test/email_verification_flow_test.dart` (NEW), `AGENTS.md`.
+
+
 ## Phase -- Automated 30-Day Free Trial & Welcome Email Flow (Task 9) (added 2026-08-25)
 
 - **Task 1 -- Trigger located**: no Auth user-creation trigger existed in
