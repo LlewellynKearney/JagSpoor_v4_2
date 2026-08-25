@@ -54,14 +54,29 @@ void main() {
   });
 
   group('welcome email dispatch', () {
-    test('sends via SMTP with Brevo STARTTLS defaults', () {
-      expect(onboardingSource, contains('"smtp-relay.brevo.com"'));
-      expect(onboardingSource, contains('587'));
+    test('sends via SMTP with permanent hardcoded Brevo STARTTLS defaults', () {
+      // The Brevo transport settings are permanent code defaults (NOT
+      // env-overridable).
+      expect(onboardingSource,
+          contains('SMTP_HOST_DEFAULT = "smtp-relay.brevo.com"'));
+      expect(onboardingSource, contains('SMTP_PORT_DEFAULT = 587'));
       // Port 587 is STARTTLS — the transport starts plain and upgrades to
-      // TLS via STARTTLS (secure defaults to false).
-      expect(onboardingSource, contains('=== "true"'));
+      // TLS via STARTTLS (secure is permanently false).
+      expect(onboardingSource, contains('SMTP_SECURE_DEFAULT = false'));
+      expect(onboardingSource,
+          contains('SMTP_FROM_DEFAULT = "admin@jag-spoor.co.za"'));
+      expect(onboardingSource, contains('SMTP_FROM_NAME_DEFAULT = "JagSpoor"'));
+      // Only the credentials are read from the environment — no credentials
+      // are hardcoded, and no env override can move the transport off Brevo.
+      expect(onboardingSource, contains('env.SMTP_USER'));
+      expect(onboardingSource, contains('env.SMTP_PASS'));
+      expect(onboardingSource, isNot(contains('env.SMTP_HOST')));
+      expect(onboardingSource, isNot(contains('env.SMTP_PORT')));
+      expect(onboardingSource, isNot(contains('env.SMTP_SECURE')));
+      expect(onboardingSource, isNot(contains('env.SMTP_FROM')));
       expect(onboardingSource, contains('nodemailer.createTransport'));
-      expect(onboardingSource, contains('auth: { user: config.user, pass: config.pass }'));
+      expect(onboardingSource,
+          contains('auth: { user: config.user, pass: config.pass }'));
     });
 
     test('informs the user of the 30-day free trial + expiration date', () {
@@ -81,18 +96,16 @@ void main() {
     });
 
     test('SMTP environment variables are documented', () {
+      // Only the credentials are env-configured; the Brevo transport settings
+      // are permanent hardcoded code defaults documented in the comments.
       for (final variable in [
-        'SMTP_HOST',
-        'SMTP_PORT',
-        'SMTP_SECURE',
         'SMTP_USER',
         'SMTP_PASS',
-        'SMTP_FROM',
-        'SMTP_FROM_NAME',
       ]) {
         expect(envExample, contains(variable), reason: '$variable documented');
       }
       expect(envExample, contains('smtp-relay.brevo.com'));
+      expect(envExample, contains('Firebase Secret'));
     });
 
     test('mail options carry a text alternative + standard outbound headers',
@@ -100,8 +113,8 @@ void main() {
       // Deliverability contract: plain-text alternative, standard outbound
       // anti-spam headers (X-Mailer / Organization / X-Priority + a unique
       // per-message Message-ID on the jag-spoor.co.za domain), and a sender
-      // that strictly matches the configured SMTP_FROM / SMTP_FROM_NAME env
-      // vars.
+      // that strictly matches the hardcoded SMTP_FROM_NAME_DEFAULT /
+      // SMTP_FROM_DEFAULT identity.
       expect(onboardingSource, contains('text: email.text'));
       expect(onboardingSource, contains('html: email.html'));
       expect(onboardingSource, contains('OUTBOUND_MAIL_HEADERS'));

@@ -1,6 +1,37 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Brevo SMTP made the permanent code default (added 2026-08-25)
+
+- **Change** (`functions/src/user_trial_onboarding.ts`): the welcome-email
+  transport settings are now permanent hardcoded constants, NOT
+  env-overridable: `SMTP_HOST_DEFAULT = "smtp-relay.brevo.com"`,
+  `SMTP_PORT_DEFAULT = 587`, `SMTP_SECURE_DEFAULT = false` (STARTTLS),
+  `SMTP_FROM_DEFAULT = "admin@jag-spoor.co.za"`,
+  `SMTP_FROM_NAME_DEFAULT = "JagSpoor"`. `smtpConfigFromEnv` reads ONLY the
+  credentials from the environment (`SMTP_USER` / `SMTP_PASS` -- SMTP_PASS
+  stays linked to the Firebase Secret; no credentials are hardcoded) and
+  still returns null when they are unset (email stays best-effort).
+- **Env docs**: `functions/.env.example` SMTP section reduced to
+  `SMTP_USER` / `SMTP_PASS` with the hardcoded Brevo defaults documented in
+  the comments.
+- **Tests**: `functions/test/user_trial_onboarding.test.js` (26/26 pass via
+  `npm test` -- run `npm install` first if `tsc` is missing): the override
+  tests were replaced with a constants contract test + an
+  "ignores env overrides" test asserting host/port/secure/from/fromName
+  always resolve to the Brevo defaults. The Dart contract test
+  `test/welcome_email_functions_contract_test.dart` was updated to assert
+  the hardcoded constants, the credentials-only env surface
+  (`isNot(contains('env.SMTP_HOST'))` etc.), and the trimmed .env.example
+  documentation (verified via exact string containment; Flutter SDK not
+  required for the pure source parse).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate.
+- Files: `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`, `functions/.env.example`,
+  `test/welcome_email_functions_contract_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Booking Requests screen overflow + filter-bar spacing fix (added 2026-08-25)
 
 - **Filter chips row** (`lib/features/hunter_mode/screens/

@@ -164,11 +164,24 @@ export interface SmtpConfig {
 }
 
 /**
+ * Permanent Brevo relay defaults — hardcoded in source (non-sensitive
+ * transport settings), NOT env-overridable. Port 587 is STARTTLS, so
+ * `secure` is false: the connection starts plain and upgrades to TLS via
+ * the STARTTLS command.
+ */
+export const SMTP_HOST_DEFAULT = "smtp-relay.brevo.com";
+export const SMTP_PORT_DEFAULT = 587;
+export const SMTP_SECURE_DEFAULT = false;
+export const SMTP_FROM_DEFAULT = "admin@jag-spoor.co.za";
+export const SMTP_FROM_NAME_DEFAULT = "JagSpoor";
+
+/**
  * Resolves the SMTP relay configuration from the environment.
  *
- * Defaults target the Brevo transactional email relay over STARTTLS
- * (smtp-relay.brevo.com:587, `secure: false` — port 587 is STARTTLS, so the
- * connection starts plain and upgrades to TLS via the STARTTLS command).
+ * Only the credentials (`SMTP_USER` / `SMTP_PASS`, the latter linked to the
+ * Firebase Secret) are read from the environment — no credentials are
+ * hardcoded. The non-sensitive transport settings (host / port / secure /
+ * sender identity) are the permanent hardcoded Brevo defaults above.
  * Returns null when no credentials are configured so callers can skip the
  * email gracefully (dev / emulator environments).
  */
@@ -179,15 +192,13 @@ export function smtpConfigFromEnv(
   const pass = env.SMTP_PASS ?? "";
   if (!user || !pass) return null;
   return {
-    host: (env.SMTP_HOST ?? "").trim() || "smtp-relay.brevo.com",
-    port: parseInt(env.SMTP_PORT ?? "", 10) || 587,
-    // Port 587 is STARTTLS, so secure defaults to false; only an explicit
-    // SMTP_SECURE=true opts in (e.g. an implicit-TLS 465 relay).
-    secure: (env.SMTP_SECURE ?? "").trim().toLowerCase() === "true",
+    host: SMTP_HOST_DEFAULT,
+    port: SMTP_PORT_DEFAULT,
+    secure: SMTP_SECURE_DEFAULT,
     user,
     pass,
-    from: (env.SMTP_FROM ?? "").trim() || "admin@jag-spoor.co.za",
-    fromName: (env.SMTP_FROM_NAME ?? "").trim() || "JagSpoor",
+    from: SMTP_FROM_DEFAULT,
+    fromName: SMTP_FROM_NAME_DEFAULT,
   };
 }
 

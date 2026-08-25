@@ -44,7 +44,17 @@ test("smtpConfigFromEnv returns null when credentials are missing", () => {
   assert.equal(onboarding.smtpConfigFromEnv({ SMTP_PASS: "p" }), null);
 });
 
-test("smtpConfigFromEnv honors explicit overrides", () => {
+test("the Brevo transport defaults are permanent hardcoded constants", () => {
+  assert.equal(onboarding.SMTP_HOST_DEFAULT, "smtp-relay.brevo.com");
+  assert.equal(onboarding.SMTP_PORT_DEFAULT, 587);
+  assert.equal(onboarding.SMTP_SECURE_DEFAULT, false);
+  assert.equal(onboarding.SMTP_FROM_DEFAULT, "admin@jag-spoor.co.za");
+  assert.equal(onboarding.SMTP_FROM_NAME_DEFAULT, "JagSpoor");
+});
+
+test("smtpConfigFromEnv ignores env overrides for the transport settings", () => {
+  // The Brevo defaults are the permanent code default — only the credentials
+  // (SMTP_USER / SMTP_PASS) are read from the environment.
   const config = onboarding.smtpConfigFromEnv({
     SMTP_HOST: "mail.example.co.za",
     SMTP_PORT: "465",
@@ -55,27 +65,14 @@ test("smtpConfigFromEnv honors explicit overrides", () => {
     SMTP_FROM_NAME: "Example",
   });
   assert.deepEqual(config, {
-    host: "mail.example.co.za",
-    port: 465,
-    secure: true,
+    host: "smtp-relay.brevo.com",
+    port: 587,
+    secure: false,
     user: "u@example.co.za",
     pass: "p",
-    from: "noreply@example.co.za",
-    fromName: "Example",
+    from: "admin@jag-spoor.co.za",
+    fromName: "JagSpoor",
   });
-});
-
-test("smtpConfigFromEnv honors an explicit SMTP_SECURE=true opt-in", () => {
-  const config = onboarding.smtpConfigFromEnv({
-    SMTP_HOST: "smtp.ucebox.co.za",
-    SMTP_PORT: "465",
-    SMTP_SECURE: "true",
-    SMTP_USER: "u@example.co.za",
-    SMTP_PASS: "p",
-  });
-  assert.equal(config.host, "smtp.ucebox.co.za");
-  assert.equal(config.port, 465);
-  assert.equal(config.secure, true);
 });
 
 test("formatTrialDate renders a locale-independent long date", () => {
@@ -184,7 +181,8 @@ test("sendWelcomeEmail sets plain-text alternative + outbound headers", async ()
     createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
   });
   assert.equal(sent.length, 2);
-  // from strictly matches SMTP_FROM_NAME / SMTP_FROM.
+  // from strictly matches the hardcoded SMTP_FROM_NAME_DEFAULT /
+  // SMTP_FROM_DEFAULT sender identity.
   assert.equal(sent[0].from, '"JagSpoor" <admin@jag-spoor.co.za>');
   // Plain-text alternative present alongside the HTML body.
   assert.ok(sent[0].text && sent[0].text.length > 0, "text alternative set");
