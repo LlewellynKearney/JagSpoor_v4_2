@@ -140,6 +140,19 @@ export function smtpConfigFromEnv(
 
 // ── Welcome email content ────────────────────────────────────────────────────
 
+/**
+ * Standard outbound mail headers applied to every dispatched email.
+ *
+ * Identifying the sending agent (`X-Mailer`) and the sending organization
+ * (`Organization`) improves the deliverability score of the message and
+ * reduces spam rejections by receiving relays (an unidentifiable custom
+ * mailer is a common spam-heuristic trigger).
+ */
+export const OUTBOUND_MAIL_HEADERS: Record<string, string> = {
+  "X-Mailer": "JagSpoor Mailer",
+  "Organization": "JagSpoor",
+};
+
 /** Formats a date as "25 September 2026" (locale-independent). */
 export function formatTrialDate(date: Date): string {
   const months = [
@@ -229,6 +242,8 @@ export async function sendWelcomeEmail(options: {
         port: config.port,
         secure: config.secure,
         auth: { user: config.user, pass: config.pass },
+        // Default headers applied to every message from this transport.
+        headers: { ...OUTBOUND_MAIL_HEADERS },
       }));
   const transporter = buildTransport(options.config);
   const email = buildWelcomeEmail({
@@ -236,11 +251,20 @@ export async function sendWelcomeEmail(options: {
     trialEndsAt: options.trialEndsAt,
   });
   await transporter.sendMail({
+    // The sender address strictly matches the configured SMTP_FROM /
+    // SMTP_FROM_NAME env vars (a sender / relay mismatch is a common spam
+    // rejection cause).
     from: `"${options.config.fromName}" <${options.config.from}>`,
     to: options.to,
     subject: email.subject,
+    // Plain-text alternative alongside the HTML body (multipart/alternative
+    // improves the deliverability score of HTML-only-looking messages).
     text: email.text,
     html: email.html,
+    // Standard outbound headers (X-Mailer / Organization) — also set as
+    // transport defaults above; the per-message copy guarantees they are
+    // present even for custom (test-injected) transports.
+    headers: { ...OUTBOUND_MAIL_HEADERS },
   });
 }
 

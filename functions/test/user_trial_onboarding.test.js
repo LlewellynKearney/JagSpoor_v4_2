@@ -127,6 +127,41 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
   assert.match(sent[0].html, /24 September 2026/);
 });
 
+test("OUTBOUND_MAIL_HEADERS carry the standard deliverability headers", () => {
+  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["X-Mailer"], "JagSpoor Mailer");
+  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["Organization"], "JagSpoor");
+});
+
+test("sendWelcomeEmail sets plain-text alternative + outbound headers", async () => {
+  const sent = [];
+  await onboarding.sendWelcomeEmail({
+    to: "newuser@example.co.za",
+    displayName: "Pieter",
+    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
+    config: {
+      host: "smtp.afrihost.co.za",
+      port: 587,
+      secure: false,
+      user: "support@jag-spoor.co.za",
+      pass: "secret",
+      from: "support@jag-spoor.co.za",
+      fromName: "JagSpoor",
+    },
+    createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
+  });
+  assert.equal(sent.length, 1);
+  // from strictly matches SMTP_FROM_NAME / SMTP_FROM.
+  assert.equal(sent[0].from, '"JagSpoor" <support@jag-spoor.co.za>');
+  // Plain-text alternative present alongside the HTML body.
+  assert.ok(sent[0].text && sent[0].text.length > 0, "text alternative set");
+  assert.ok(sent[0].html && sent[0].html.length > 0, "html body set");
+  // Standard outbound deliverability headers.
+  assert.deepEqual(sent[0].headers, {
+    "X-Mailer": "JagSpoor Mailer",
+    "Organization": "JagSpoor",
+  });
+});
+
 test("index.js entry point exports the auth onCreate trigger", () => {
   const index = require("../lib/index.js");
   assert.ok(index.initializeNewUserTrial, "initializeNewUserTrial exported");

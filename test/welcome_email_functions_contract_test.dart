@@ -92,6 +92,20 @@ void main() {
       expect(envExample, contains('smtp.afrihost.co.za'));
     });
 
+    test('mail options carry a text alternative + standard outbound headers',
+        () {
+      // Deliverability contract: plain-text alternative, standard outbound
+      // headers (X-Mailer / Organization), and a sender that strictly matches
+      // the configured SMTP_FROM / SMTP_FROM_NAME env vars.
+      expect(onboardingSource, contains('text: email.text'));
+      expect(onboardingSource, contains('html: email.html'));
+      expect(onboardingSource, contains('OUTBOUND_MAIL_HEADERS'));
+      expect(onboardingSource, contains('"X-Mailer": "JagSpoor Mailer"'));
+      expect(onboardingSource, contains('"Organization": "JagSpoor"'));
+      expect(onboardingSource,
+          contains('from: `"\${options.config.fromName}" <\${options.config.from}>`'));
+    });
+
     test('nodemailer is a declared functions dependency', () {
       expect(packageJson, contains('"nodemailer"'));
       expect(packageJson, contains('"@types/nodemailer"'));
