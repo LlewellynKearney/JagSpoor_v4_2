@@ -3,9 +3,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
+import '../services/media_storage_analytics.dart';
 import '../services/subscription_config_service.dart';
 import '../services/usage_analytics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
+import '../widgets/media_storage_charts.dart';
 import 'create_user_screen.dart';
 import 'bulk_csv_import_screen.dart';
 
@@ -38,6 +40,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   FinancialAnalytics? _financials;
   UsageAnalytics _usage = const UsageAnalytics(byRole: {});
   SubscriptionRevenue? _subscriptionRevenue;
+  MediaStorageAnalytics? _mediaAnalytics;
   final TextEditingController _hunterSubController = TextEditingController();
   final TextEditingController _outfitterSubController = TextEditingController();
   bool _savingConfig = false;
@@ -78,6 +81,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAnalyticsService.instance.fetchFinancialAnalytics(),
         UsageAnalyticsService.instance.fetchUsageAnalytics(),
         SubscriptionConfigService.instance.loadConfig(),
+        MediaStorageAnalyticsService.instance.fetch(),
       ]);
       final metrics = results[0] as AdminMetrics;
       final config = results[3] as SubscriptionConfig;
@@ -88,6 +92,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _metrics = metrics;
         _financials = results[1] as FinancialAnalytics;
         _usage = results[2] as UsageAnalytics;
+        _mediaAnalytics = results[4] as MediaStorageAnalytics;
         _subscriptionRevenue = SubscriptionConfigService.computeRevenue(
           config,
           hunterCount: metrics.activeHunters,
@@ -198,6 +203,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           const SizedBox(height: 24),
                           _buildSectionHeader('Feature Usage by Role'),
                           _buildFeatureUsageSection(),
+                          const SizedBox(height: 24),
+                          _buildSectionHeader('Media & Storage'),
+                          _buildMediaStorageSection(),
                           const SizedBox(height: 24),
                           _buildSectionHeader('User Engagement'),
                           _buildEngagementRow(),
@@ -538,7 +546,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required String title,
     required RoleUsageSummary summary,
   }) {
-    final names = summary.orderedFeatures;
+    final entries = summary.breakdown(limit: 5);
     return Container(
       decoration: BoxDecoration(
         color: widget.theme.cardColor,
@@ -570,27 +578,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          if (names.isEmpty)
+          if (entries.isEmpty)
             Text(
               'No usage recorded yet.',
               style: TextStyle(
                   color: widget.theme.subtitleColor, fontSize: 11),
             )
-          else
-            ...names.take(6).map((name) => Padding(
+          else ...[
+            ...entries.map((entry) => Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
-                          name,
+                          entry.name,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              color: widget.theme.subtitleColor, fontSize: 11),
+                              color: entry.name == UsageBreakdownEntry.otherName
+                                  ? widget.theme.subtitleColor.withAlpha(160)
+                                  : widget.theme.subtitleColor,
+                              fontStyle:
+                                  entry.name == UsageBreakdownEntry.otherName
+                                      ? FontStyle.italic
+                                      : FontStyle.normal,
+                              fontSize: 11),
                         ),
                       ),
                       Text(
-                        summary.featureCounts[name].toString(),
+                        '${entry.count} · ${entry.percent.toStringAsFixed(1)}%',
                         style: TextStyle(
                             color: widget.theme.textColor,
                             fontWeight: FontWeight.bold,
@@ -599,8 +614,116 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ],
                   ),
                 )),
+            const SizedBox(height: 6),
+            Divider(height: 1, color: widget.theme.textColor.withAlpha(15)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(
+                        color: widget.theme.subtitleColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11),
+                  ),
+                ),
+                Text(
+                  '${summary.total} · 100.0%',
+                  style: TextStyle(
+                      color: widget.theme.accentColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  // ── Media & Storage ─────────────────────────────────────────────────────
+  Widget _buildMediaStorageSection() {
+    final analytics = _mediaAnalytics;
+    if (analytics == null) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(
+                    Icons.photo_library_outlined,
+                    'Photos Uploaded',
+                    analytics.totalPhotos)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(Icons.cloud_outlined, 'Est. Storage (MB)',
+                    analytics.estimatedFootprintMb.round())),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: widget.theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Photo Upload Volume (last ${analytics.dailyTrend.length} days)',
+                style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              PhotoUploadTrendBarChart(
+                theme: widget.theme,
+                points: analytics.dailyTrend,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: widget.theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Storage Footprint by Collection (est.)',
+                style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              StorageFootprintPieChart(
+                theme: widget.theme,
+                byCollection: analytics.byCollection,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${analytics.totalDocsWithPhotos} documents carry photos · '
+                '~${MediaStorageAggregator.averagePhotoBytes ~/ 1024} KB per photo',
+                style: TextStyle(
+                    color: widget.theme.subtitleColor, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

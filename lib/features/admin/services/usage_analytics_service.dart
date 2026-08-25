@@ -4,6 +4,23 @@ import 'package:flutter/foundation.dart';
 
 import '../../auth/services/user_role_provider.dart';
 
+/// One row of the role usage breakdown: a feature name, its event count, and
+/// its share of the role's total (0.0–100.0).
+class UsageBreakdownEntry {
+  final String name;
+  final int count;
+  final double percent;
+
+  const UsageBreakdownEntry({
+    required this.name,
+    required this.count,
+    required this.percent,
+  });
+
+  /// Display name of the synthesized remainder bucket.
+  static const String otherName = 'Other actions';
+}
+
 /// Aggregated usage totals for one role partition (Hunter / Outfitter).
 class RoleUsageSummary {
   final AppRole role;
@@ -19,6 +36,47 @@ class RoleUsageSummary {
     entries.sort((a, b) =>
         b.value != a.value ? b.value.compareTo(a.value) : a.key.compareTo(b.key));
     return entries.map((e) => e.key).toList();
+  }
+
+  /// The count share (0.0–100.0) of a single feature within this role's
+  /// total. Zero when the role has no recorded events.
+  double percentageOf(String feature) {
+    if (total == 0) return 0.0;
+    return (featureCounts[feature] ?? 0) / total * 100.0;
+  }
+
+  /// Display breakdown: the top [limit] features (descending usage) plus a
+  /// synthesized [UsageBreakdownEntry.otherName] row carrying the remaining
+  /// actions when more than [limit] features exist.
+  ///
+  /// Invariants (verified by tests):
+  ///   - sum(entry.count) == [total] exactly, and
+  ///   - sum(entry.percent) ≈ 100.0,
+  /// so the displayed counts/percentages always cleanly balance out with the
+  /// role total (the remainder is never silently dropped from the math).
+  List<UsageBreakdownEntry> breakdown({int limit = 6}) {
+    if (total == 0) return const [];
+    final names = orderedFeatures;
+    final shown = names.take(limit).toList();
+    final entries = <UsageBreakdownEntry>[
+      for (final name in shown)
+        UsageBreakdownEntry(
+          name: name,
+          count: featureCounts[name] ?? 0,
+          percent: percentageOf(name),
+        ),
+    ];
+    final shownCount =
+        shown.fold(0, (acc, n) => acc + (featureCounts[n] ?? 0));
+    final remainder = total - shownCount;
+    if (remainder > 0) {
+      entries.add(UsageBreakdownEntry(
+        name: UsageBreakdownEntry.otherName,
+        count: remainder,
+        percent: remainder / total * 100.0,
+      ));
+    }
+    return entries;
   }
 }
 
