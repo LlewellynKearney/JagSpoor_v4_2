@@ -33,6 +33,10 @@ dependencies:
   # MD5 signature generation for the PayFast subscription checkout payload
   crypto: ^3.0.7
 
+  # Hardware-backed device identifier extraction (device-level trial-abuse
+  # prevention during account creation)
+  device_info_plus: ^11.2.0
+
   # PDF generation and sharing
   pdf: ^3.11.0
   printing: ^5.14.3

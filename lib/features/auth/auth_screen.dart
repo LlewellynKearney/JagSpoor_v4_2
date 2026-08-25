@@ -15,6 +15,7 @@ import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
 import 'services/email_verification_service.dart';
+import 'services/device_fingerprint_service.dart';
 import 'screens/email_verification_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -99,6 +100,13 @@ class _AuthScreenState extends State<AuthScreen> {
         if (_requires2FA(result.credential!.user)) {
           _show2FAVerificationSheet();
         } else {
+          // Stamp the device fingerprint (merge-write onto users/{uid}) so the
+          // backend trial trigger can read it at first sign-in; retry loops in
+          // the trigger bridge the small write race window.
+          final user = result.credential!.user;
+          if (user != null) {
+            await _stampDeviceFingerprint(user);
+          }
           _routeAfterAuth();
         }
         return;
@@ -138,6 +146,15 @@ class _AuthScreenState extends State<AuthScreen> {
     // For now, check if user has phone number linked
     // In production, check Firestore user profile for 2FA flag
     return user?.phoneNumber != null;
+  }
+
+  /// Stamps the hardware-backed device fingerprint onto `users/{uid}` so the
+  /// backend trial-abuse check (`initializeNewUserTrial` Cloud Function) can
+  /// honor the one-trial-per-device policy. Best-effort: failures are logged
+  /// inside the service and never block the auth route.
+  Future<void> _stampDeviceFingerprint(User user) async {
+    await DeviceFingerprintService.instance
+        .stampDeviceFingerprint(user.uid);
   }
 
   /// Show 2FA Verification Bottom Sheet
@@ -354,6 +371,12 @@ class _AuthScreenState extends State<AuthScreen> {
         // prompts to save the email + password.
         AutofillCredentialPrompter.promptSaveCredentials();
       } else {
+        // Resolve the hardware fingerprint BEFORE account creation so the
+        // initial users doc write can carry it — the backend onCreate trial
+        // trigger reads it while checking for trial abuse on this device.
+        final deviceFingerprint = await DeviceFingerprintService.instance
+            .computeFingerprint();
+
         // Create Firebase Auth user
         final userCredential = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(email: email, password: password);
@@ -371,6 +394,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 .doc(user.uid)
                 .set({
                   'email': email,
+                  if (deviceFingerprint != null && deviceFingerprint.isNotEmpty)
+                    'deviceFingerprint': deviceFingerprint,
                   'createdAt': FieldValue.serverTimestamp(),
                   'updatedAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));

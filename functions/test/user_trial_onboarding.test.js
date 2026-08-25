@@ -133,3 +133,120 @@ test("index.js entry point exports the auth onCreate trigger", () => {
   const trigger = index.initializeNewUserTrial.__trigger;
   assert.ok(trigger, "trigger metadata present");
 });
+
+// ── Device-level trial abuse prevention helpers ─────────────────────────────
+
+test("trial block reasons are stable constants", () => {
+  assert.equal(
+    onboarding.TRIAL_BLOCK_REASON_DUPLICATE,
+    "duplicate_device_fingerprint"
+  );
+  assert.equal(
+    onboarding.TRIAL_BLOCK_REASON_UNSET,
+    "fingerprint_unavailable"
+  );
+  assert.equal(
+    onboarding.TRIAL_BLOCK_REASON_ERROR,
+    "duplicate_check_error"
+  );
+});
+
+test("resolveDeviceFingerprint returns the stamped fingerprint", async () => {
+  const fingerprint = await onboarding.resolveDeviceFingerprint(async () => ({
+    data: () => ({ deviceFingerprint: "  abc-hash  " }),
+  }));
+  assert.equal(fingerprint, "abc-hash");
+});
+
+test("resolveDeviceFingerprint polls until the stamp lands", async () => {
+  let calls = 0;
+  const fingerprint = await onboarding.resolveDeviceFingerprint(
+    async () => {
+      calls++;
+      return {
+        data: () => (calls < 3 ? {} : { deviceFingerprint: "fp-123" }),
+      };
+    },
+    { timeoutMs: 5000, intervalMs: 1 }
+  );
+  assert.equal(fingerprint, "fp-123");
+  assert.ok(calls >= 3);
+});
+
+test("resolveDeviceFingerprint times out (fail-closed empty result)", async () => {
+  const started = Date.now();
+  const fingerprint = await onboarding.resolveDeviceFingerprint(
+    async () => ({ data: () => ({}) }),
+    { timeoutMs: 5, intervalMs: 1 }
+  );
+  assert.equal(fingerprint, "");
+  assert.ok(Date.now() - started < 5000, "exits promptly after timeout");
+});
+
+test("otherUserHasDeviceFingerprint detects a different uid", async () => {
+  const fakeUsersRef = {
+    where: (field, op, value) => ({
+      limit: (n) => ({
+        get: async () => {
+          assert.equal(field, "deviceFingerprint");
+          assert.equal(op, "==");
+          assert.equal(value, "fp-abc");
+          return { docs: [{ id: "other-user" }] };
+        },
+      }),
+    }),
+  };
+  assert.equal(
+    await onboarding.otherUserHasDeviceFingerprint(
+      fakeUsersRef,
+      "fp-abc",
+      "self-uid"
+    ),
+    true
+  );
+});
+
+test("otherUserHasDeviceFingerprint ignores the self doc", async () => {
+  const fakeUsersRef = {
+    where: () => ({
+      limit: () => ({
+        get: async () => ({ docs: [{ id: "self-uid" }] }),
+      }),
+    }),
+  };
+  assert.equal(
+    await onboarding.otherUserHasDeviceFingerprint(
+      fakeUsersRef,
+      "fp-abc",
+      "self-uid"
+    ),
+    false
+  );
+});
+
+test("otherUserHasDeviceFingerprint returns false on an empty snapshot", async () => {
+  const fakeUsersRef = {
+    where: () => ({ limit: () => ({ get: async () => ({ docs: [] }) }) }),
+  };
+  assert.equal(
+    await onboarding.otherUserHasDeviceFingerprint(
+      fakeUsersRef,
+      "fp-abc",
+      "self-uid"
+    ),
+    false
+  );
+});
+
+test("blocked trigger write marks requiresPayment + blocked status", () => {
+  // Structural contract: the handler's blocked branch writes the fail-closed
+  // state (this assertion inspects the compiled source text).
+  const fs = require("node:fs");
+  const compiled = fs.readFileSync(
+    __dirname + "/../lib/user_trial_onboarding.js",
+    "utf8"
+  );
+  assert.match(compiled, /subscriptionStatus: "blocked"/);
+  assert.match(compiled, /requiresPayment: true/);
+  assert.match(compiled, /trialBlockedReason/);
+});

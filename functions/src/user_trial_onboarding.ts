@@ -13,7 +13,15 @@ import { firestore } from "./firebase";
 //      `subscriptionStatus: 'trialing'` with `trialEndsAt` exactly 30 days in
 //      the future and `requiresPayment: false` (merge-write; an existing
 //      non-trial subscription state is never clobbered).
-//   2. Dispatches a welcome email over SMTP (Afrihost relay) informing the
+//   2. Guards the trial with a **fail-closed device-level abuse check**:
+//      the client stamps a hardware-backed `deviceFingerprint` (SHA-256 of
+//      the Android ID / iOS identifierForVendor) on `users/{uid}` at
+//      account-creation time; when another user doc already carries the same
+//      fingerprint, the trial is BLOCKED (`subscriptionStatus: 'blocked'`,
+//      `requiresPayment: true`, `trialBlockedReason`) so a malicious user
+//      cannot spin up infinite trial accounts on the same physical device.
+//      A missing fingerprint or a check error blocks as well (fail-closed).
+//   3. Dispatches a welcome email over SMTP (Afrihost relay) informing the
 //      user of the 30-day free trial period and its expiration date.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -28,6 +36,70 @@ export const TRIAL_PERIOD_MS = TRIAL_PERIOD_DAYS * 24 * 60 * 60 * 1000;
  */
 export function trialEndsAtFrom(startedAt: Date): Date {
   return new Date(startedAt.getTime() + TRIAL_PERIOD_MS);
+}
+
+// ── Device-level trial abuse prevention (fail-closed) ────────────────────────
+
+/**
+ * How long the trigger polls the `users/{uid}` doc for the client's
+ * `deviceFingerprint` stamp before treating it as unavailable (fail-closed
+ * block). The client writes the fingerprint immediately after
+ * `createUserWithEmailAndPassword` / Google sign-in, so a short poll bridges
+ * the auth onCreate / client write race window.
+ */
+export const FINGERPRINT_POLL_TIMEOUT_MS = 15000;
+
+/** Poll interval between doc reads while awaiting the fingerprint stamp. */
+export const FINGERPRINT_POLL_INTERVAL_MS = 1000;
+
+/** Trial block reasons recorded on the user's profile. */
+export const TRIAL_BLOCK_REASON_DUPLICATE = "duplicate_device_fingerprint";
+export const TRIAL_BLOCK_REASON_UNSET = "fingerprint_unavailable";
+export const TRIAL_BLOCK_REASON_ERROR = "duplicate_check_error";
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Polls the user's profile doc until the client's `deviceFingerprint` stamp
+ * lands, up to `timeoutMs`. Returns the fingerprint, or an empty string when
+ * the stamp never arrived (fail-closed block).
+ */
+export async function resolveDeviceFingerprint(
+  readDoc: () => Promise<unknown>,
+  options?: { timeoutMs?: number; intervalMs?: number }
+): Promise<string> {
+  const timeout = options?.timeoutMs ?? FINGERPRINT_POLL_TIMEOUT_MS;
+  const interval = options?.intervalMs ?? FINGERPRINT_POLL_INTERVAL_MS;
+  const startedAt = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const snapshot: any = await readDoc();
+    const data: any = snapshot?.data?.() ?? {};
+    const fingerprint = (data["deviceFingerprint"] ?? "").toString().trim();
+    if (fingerprint) return fingerprint;
+    if (Date.now() - startedAt >= timeout) return "";
+    await sleep(interval);
+  }
+}
+
+/**
+ * Whether ANY other user doc already carries this device fingerprint — the
+ * same physical device already claimed (or attempted) its one free trial.
+ * Any match is sufficient: a previous user on the device always went through
+ * account creation and the trial check, so the device has exhausted its
+ * single free trial.
+ */
+export async function otherUserHasDeviceFingerprint(
+  usersRef: any,
+  fingerprint: string,
+  excludeUid: string
+): Promise<boolean> {
+  const snap = await usersRef
+    .where("deviceFingerprint", "==", fingerprint)
+    .limit(500)
+    .get();
+  return snap.docs.some((doc: any) => doc.id !== excludeUid);
 }
 
 // ── SMTP (Afrihost) configuration ────────────────────────────────────────────
@@ -184,9 +256,13 @@ export async function sendWelcomeEmail(options: {
  *      `requiresPayment: false`). An already-existing non-trial
  *      `subscriptionStatus` (e.g. pre-provisioned billing state) is
  *      preserved so the trigger can never downgrade an account.
- *   2. Sends the welcome email over the SMTP (Afrihost) relay. Email
- *      delivery is best-effort: an SMTP failure is logged and never fails
- *      the trigger (the trial state has already been committed).
+ *      The trial init is gated by a fail-closed device-level abuse check:
+ *      missing fingerprint, a duplicate fingerprint on another user doc, or
+ *      a check error blocks the trial (`subscriptionStatus: 'blocked'` +
+ *      `trialBlockedReason` + `requiresPayment: true`).
+ *   2. Sends the welcome email over the SMTP (Afrihost) relay — skipped when
+ *      the trial was blocked. Email delivery is best-effort: an SMTP failure
+ *      is logged and never fails the trigger.
  */
 export const initializeNewUserTrial = functionsV1
   .region("us-central1")
@@ -198,17 +274,73 @@ export const initializeNewUserTrial = functionsV1
     const now = new Date();
     const trialEndsAt = trialEndsAtFrom(now);
 
-    // 1. Initialize the 30-day free trial on the user's Firestore profile.
+    // 1. Initialize the 30-day free trial on the user's Firestore profile —
+    //    but only after the fail-closed device-level abuse check clears.
     const userRef = firestore().collection("users").doc(uid);
     const snap = await userRef.get();
     const existingStatus = ((snap.data() ?? {})["subscriptionStatus"] ?? "")
       .toString()
       .trim();
+
+    // Fail-closed trial-abuse check. A non-trial pre-existing status (e.g.
+    // pre-provisioned billing) is preserved without the check.
+    let trialBlockedReason = "";
+    let trialBlockedCheckErrorDetail = "";
     if (existingStatus !== "" && existingStatus !== "trialing") {
       logger.info(
         "initializeNewUserTrial: existing subscription state preserved",
         { uid, subscriptionStatus: existingStatus }
       );
+    } else {
+      const fingerprint = await resolveDeviceFingerprint(
+        () => userRef.get()
+      );
+      if (!fingerprint) {
+        trialBlockedReason = TRIAL_BLOCK_REASON_UNSET;
+      } else {
+        try {
+          const hasDuplicate = await otherUserHasDeviceFingerprint(
+            firestore().collection("users"),
+            fingerprint,
+            uid
+          );
+          if (hasDuplicate) {
+            trialBlockedReason = TRIAL_BLOCK_REASON_DUPLICATE;
+          }
+        } catch (err) {
+          // Fail-closed: an unverifiable check blocks the trial rather than
+          // letting a possible abuser through.
+          trialBlockedReason = TRIAL_BLOCK_REASON_ERROR;
+          trialBlockedCheckErrorDetail =
+            err instanceof Error ? err.message : String(err);
+        }
+      }
+    }
+
+    if (trialBlockedReason) {
+      await userRef.set(
+        {
+          subscriptionStatus: "blocked",
+          requiresPayment: true,
+          trialBlockedReason,
+          subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      logger.warn(
+        "initializeNewUserTrial: free trial blocked (device abuse check)",
+        {
+          uid,
+          trialBlockedReason,
+          checkError: trialBlockedCheckErrorDetail,
+        }
+      );
+      // Blocked accounts get no welcome email (do not promise a trial).
+      return;
+    }
+
+    if (existingStatus !== "" && existingStatus !== "trialing") {
+      // Pre-existing status preserved — no trial write needed.
     } else {
       await userRef.set(
         {
@@ -226,7 +358,7 @@ export const initializeNewUserTrial = functionsV1
       });
     }
 
-    // 2. Dispatch the welcome email (best-effort).
+    // 3. Dispatch the welcome email (best-effort).
     if (!email) {
       logger.warn(
         "initializeNewUserTrial: no email on the new user record; " +

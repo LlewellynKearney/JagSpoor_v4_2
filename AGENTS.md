@@ -2,6 +2,74 @@
 
 
 
+## Phase -- Device-Level Trial Abuse Prevention (Task 11) (added 2026-08-25)
+
+- **Task 1 -- Registration/trial logic located**: client-side sign-up lives
+  in `lib/features/auth/auth_screen.dart` (`_handleAuth` -- email/password
+  registration; `_handleGoogleSignIn` -- Google); the backend trial
+  initialization is the `initializeNewUserTrial` v1 Auth `onCreate` trigger
+  in `functions/src/user_trial_onboarding.ts` (added in Task 9).
+- **Task 2 -- Hardware ID / device fingerprinting**:
+  `lib/features/auth/services/device_fingerprint_service.dart` (NEW).
+  `DeviceFingerprintService.instance.computeFingerprint()` computes a
+  SHA-256 hash of the platform hardware identifier via `device_info_plus`
+  (Android `Settings.Secure.ANDROID_ID`; iOS `identifierForVendor`;
+  plus manufacturer/model to prevent collisions). null on unsupported
+  platforms/widget-test hosts (never throws). `stampDeviceFingerprint(uid)`
+  merge-writes the fingerprint + `deviceFingerprintUpdatedAt` onto
+  `users/{uid}`. Static test seams (`fingerprintResolverForTesting` /
+  `stampWriterForTesting` + `resetTestSeams()`). New `device_info_plus: ^11.2.0`
+  dep. Wired at registration (`_handleAuth` computes the fingerprint BEFORE
+  account creation so the initial users doc write carries it) and Google
+  sign-in (`_stampDeviceFingerprint` helper on first sign-in, completing the
+  merge-write).
+- **Task 3 -- Backend fail-closed check**
+  (`functions/src/user_trial_onboarding.ts`): the trigger gates trial init
+  with a duplicate-device check. `resolveDeviceFingerprint` polls the
+  `users/{uid}` doc for the client's `deviceFingerprint` stamp
+  (`FINGERPRINT_POLL_TIMEOUT_MS = 15000`,
+  `FINGERPRINT_POLL_INTERVAL_MS = 1000`) to bridge the onCreate/client-write
+  race window. `otherUserHasDeviceFingerprint` queries
+  `users.deviceFingerprint == fingerprint` excluding the self uid (any match
+  = device's one free trial was already claimed/attempted). Block reasons:
+  `duplicate_device_fingerprint` / `fingerprint_unavailable` (stamp never
+  landed) / `duplicate_check_error` (query failure). FAIL-CLOSED: any of
+  those sets `subscriptionStatus: 'blocked'`, `requiresPayment: true`, and
+  `trialBlockedReason` (welcome email deliberately skipped).
+- **Firestore rules**: `users/{userId}` now has separate `create`
+  (owner-scoped signed-in) and `update` (owner-scoped signed-in + the
+  immutable `deviceFingerprint`: `!resource.data.has('deviceFingerprint')`
+  or unchanged value). A malicious user cannot rotate fingerprints.
+- **Task 4 -- Tests + verification**:
+  - `functions/test/user_trial_onboarding.test.js` gained 8 node:test unit
+    tests (block-reason constants; resolveDeviceFingerprint return/poll/
+    timeout; otherUserHasDeviceFingerprint self-exclusion/non-match; the
+    blocked-branch compiled-source contract). `npm test`: **18/18 pass**.
+  - `test/device_fingerprint_service_test.dart` (NEW, 9 flutter unit
+    tests): seam-backed compute/stamp flows, null/unavailable graceful
+    handling.
+  - `test/device_trial_abuse_contract_test.dart` (NEW, 14 structural
+    contract tests): client wiring, service internals, backend block
+    contract, and the rules immutability guarantee, mirroring the
+    `welcome_email_functions_contract_test.dart` pattern.
+  - `flutter analyze`: 0 errors, 0 warnings (277 infos, unchanged baseline).
+    `flutter test`: **All 1503 tests passed** (+23 new). Env note: re-installed
+    Flutter 3.29.1 at `$HOME/flutter` (CI pin) + recreated the
+    `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+    symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`). `npx tsc
+    --noEmit` in `functions/` clean; `npm test` 18/18 pass.
+- Deploy reminder: `npx firebase-tools deploy --only
+  functions,firestore:rules` in a credentialed env to activate the
+  device-fingerprint-abuse check + immutable users rule.
+- Files: `lib/features/auth/services/device_fingerprint_service.dart` (NEW),
+  `lib/features/auth/auth_screen.dart`,
+  `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`, `firestore.rules`,
+  `pubspec.yaml` / `pubspec.lock` (`device_info_plus: ^11.2.0`),
+  `test/device_fingerprint_service_test.dart` (NEW),
+  `test/device_trial_abuse_contract_test.dart` (NEW), `AGENTS.md`.
+
+
 ## Phase -- Email Verification / OTP Security Flow (Task 10) (added 2026-08-25)
 
 - **Task 1 -- Gating/routing logic located**: root routing lives in
