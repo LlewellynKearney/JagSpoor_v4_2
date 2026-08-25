@@ -54,11 +54,12 @@ void main() {
   });
 
   group('welcome email dispatch', () {
-    test('sends via SMTP with Afrihost SSL defaults', () {
-      expect(onboardingSource, contains('"smtp.ucebox.co.za"'));
-      expect(onboardingSource, contains('465'));
-      // Port 465 is implicit TLS — the transport is SSL-secured by default.
-      expect(onboardingSource, contains('!== "false"'));
+    test('sends via SMTP with Brevo STARTTLS defaults', () {
+      expect(onboardingSource, contains('"smtp-relay.brevo.com"'));
+      expect(onboardingSource, contains('587'));
+      // Port 587 is STARTTLS — the transport starts plain and upgrades to
+      // TLS via STARTTLS (secure defaults to false).
+      expect(onboardingSource, contains('=== "true"'));
       expect(onboardingSource, contains('nodemailer.createTransport'));
       expect(onboardingSource, contains('auth: { user: config.user, pass: config.pass }'));
     });
@@ -91,7 +92,7 @@ void main() {
       ]) {
         expect(envExample, contains(variable), reason: '$variable documented');
       }
-      expect(envExample, contains('smtp.ucebox.co.za'));
+      expect(envExample, contains('smtp-relay.brevo.com'));
     });
 
     test('mail options carry a text alternative + standard outbound headers',

@@ -24,7 +24,7 @@ import { firestore } from "./firebase";
 //      Whitelisted developer/tester accounts (TRIAL_ABUSE_EXEMPT_EMAILS +
 //      the TRIAL_EXEMPT_EMAILS / TRIAL_EXEMPT_UIDS env vars) bypass the
 //      check so the team can test trials from one physical device.
-//   3. Dispatches a welcome email over SMTP (Afrihost relay) informing the
+//   3. Dispatches a welcome email over SMTP (Brevo relay) informing the
 //      user of the 30-day free trial period and its expiration date.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -151,7 +151,7 @@ export async function otherUserHasDeviceFingerprint(
   return snap.docs.some((doc: any) => doc.id !== excludeUid);
 }
 
-// ── SMTP (Afrihost) configuration ────────────────────────────────────────────
+// ── SMTP (Brevo) configuration ───────────────────────────────────────────────
 
 export interface SmtpConfig {
   host: string;
@@ -166,10 +166,9 @@ export interface SmtpConfig {
 /**
  * Resolves the SMTP relay configuration from the environment.
  *
- * Defaults target the Afrihost-hosted mailbox relay over SSL
- * (smtp.ucebox.co.za:465, `secure: true` — port 465 uses implicit TLS, so
- * the connection is SSL-encrypted from the first byte). The alternative
- * Afrihost mailbox host `mail.jag-spoor.co.za` serves the same SSL relay.
+ * Defaults target the Brevo transactional email relay over STARTTLS
+ * (smtp-relay.brevo.com:587, `secure: false` — port 587 is STARTTLS, so the
+ * connection starts plain and upgrades to TLS via the STARTTLS command).
  * Returns null when no credentials are configured so callers can skip the
  * email gracefully (dev / emulator environments).
  */
@@ -180,14 +179,14 @@ export function smtpConfigFromEnv(
   const pass = env.SMTP_PASS ?? "";
   if (!user || !pass) return null;
   return {
-    host: (env.SMTP_HOST ?? "").trim() || "smtp.ucebox.co.za",
-    port: parseInt(env.SMTP_PORT ?? "", 10) || 465,
-    // Port 465 is implicit SSL, so secure defaults to true; only an explicit
-    // SMTP_SECURE=false opts out (e.g. a STARTTLS 587 relay).
-    secure: (env.SMTP_SECURE ?? "").trim().toLowerCase() !== "false",
+    host: (env.SMTP_HOST ?? "").trim() || "smtp-relay.brevo.com",
+    port: parseInt(env.SMTP_PORT ?? "", 10) || 587,
+    // Port 587 is STARTTLS, so secure defaults to false; only an explicit
+    // SMTP_SECURE=true opts in (e.g. an implicit-TLS 465 relay).
+    secure: (env.SMTP_SECURE ?? "").trim().toLowerCase() === "true",
     user,
     pass,
-    from: (env.SMTP_FROM ?? "").trim() || "support@jag-spoor.co.za",
+    from: (env.SMTP_FROM ?? "").trim() || "admin@jag-spoor.co.za",
     fromName: (env.SMTP_FROM_NAME ?? "").trim() || "JagSpoor",
   };
 }
@@ -279,7 +278,7 @@ export function buildWelcomeEmail(options: {
 }
 
 /**
- * Dispatches the welcome email via the configured SMTP (Afrihost) relay.
+ * Dispatches the welcome email via the configured SMTP (Brevo) relay.
  *
  * The transporter factory is injectable for tests; the default builds a
  * nodemailer transport from the SMTP config.
@@ -323,8 +322,8 @@ export async function sendWelcomeEmail(options: {
     // they are present even for custom (test-injected) transports. The
     // Message-ID must be unique per message, so it is generated here rather
     // than in the shared constant: a missing or duplicate Message-ID is a
-    // primary "550 High probability of spam" trigger on the Afrihost
-    // outbound filter.
+    // primary "550 High probability of spam" trigger on outbound spam
+    // filters.
     headers: {
       ...OUTBOUND_MAIL_HEADERS,
       "Message-ID":
@@ -353,7 +352,7 @@ export async function sendWelcomeEmail(options: {
  *      missing fingerprint, a duplicate fingerprint on another user doc, or
  *      a check error blocks the trial (`subscriptionStatus: 'blocked'` +
  *      `trialBlockedReason` + `requiresPayment: true`).
- *   2. Sends the welcome email over the SMTP (Afrihost) relay — skipped when
+ *   2. Sends the welcome email over the SMTP (Brevo) relay — skipped when
  *      the trial was blocked. Email delivery is best-effort: an SMTP failure
  *      is logged and never fails the trigger.
  */

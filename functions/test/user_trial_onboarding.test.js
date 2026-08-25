@@ -23,18 +23,18 @@ test("trialEndsAtFrom returns exactly 30 days in the future", () => {
   assert.equal(end.toISOString(), "2026-09-24T10:30:00.000Z");
 });
 
-test("smtpConfigFromEnv defaults to the Afrihost SSL relay", () => {
+test("smtpConfigFromEnv defaults to the Brevo STARTTLS relay", () => {
   const config = onboarding.smtpConfigFromEnv({
-    SMTP_USER: "support@jag-spoor.co.za",
+    SMTP_USER: "b6b730001@smtp-brevo.com",
     SMTP_PASS: "secret",
   });
-  assert.equal(config.host, "smtp.ucebox.co.za");
-  assert.equal(config.port, 465);
-  // Port 465 uses implicit TLS — secure defaults to true.
-  assert.equal(config.secure, true);
-  assert.equal(config.user, "support@jag-spoor.co.za");
+  assert.equal(config.host, "smtp-relay.brevo.com");
+  assert.equal(config.port, 587);
+  // Port 587 uses STARTTLS — secure defaults to false.
+  assert.equal(config.secure, false);
+  assert.equal(config.user, "b6b730001@smtp-brevo.com");
   assert.equal(config.pass, "secret");
-  assert.equal(config.from, "support@jag-spoor.co.za");
+  assert.equal(config.from, "admin@jag-spoor.co.za");
   assert.equal(config.fromName, "JagSpoor");
 });
 
@@ -65,17 +65,17 @@ test("smtpConfigFromEnv honors explicit overrides", () => {
   });
 });
 
-test("smtpConfigFromEnv honors an explicit SMTP_SECURE=false opt-out", () => {
+test("smtpConfigFromEnv honors an explicit SMTP_SECURE=true opt-in", () => {
   const config = onboarding.smtpConfigFromEnv({
-    SMTP_HOST: "smtp.afrihost.co.za",
-    SMTP_PORT: "587",
-    SMTP_SECURE: "false",
+    SMTP_HOST: "smtp.ucebox.co.za",
+    SMTP_PORT: "465",
+    SMTP_SECURE: "true",
     SMTP_USER: "u@example.co.za",
     SMTP_PASS: "p",
   });
-  assert.equal(config.host, "smtp.afrihost.co.za");
-  assert.equal(config.port, 587);
-  assert.equal(config.secure, false);
+  assert.equal(config.host, "smtp.ucebox.co.za");
+  assert.equal(config.port, 465);
+  assert.equal(config.secure, true);
 });
 
 test("formatTrialDate renders a locale-independent long date", () => {
@@ -119,12 +119,12 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
     displayName: "Pieter",
     trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
     config: {
-      host: "smtp.ucebox.co.za",
-      port: 465,
-      secure: true,
-      user: "support@jag-spoor.co.za",
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      user: "b6b730001@smtp-brevo.com",
       pass: "secret",
-      from: "support@jag-spoor.co.za",
+      from: "admin@jag-spoor.co.za",
       fromName: "JagSpoor",
     },
     createTransport: (config) => {
@@ -132,10 +132,10 @@ test("sendWelcomeEmail dispatches via the configured SMTP transport", async () =
       return { sendMail: async (msg) => sent.push(msg) };
     },
   });
-  assert.equal(seenConfig.host, "smtp.ucebox.co.za");
+  assert.equal(seenConfig.host, "smtp-relay.brevo.com");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "newuser@example.co.za");
-  assert.equal(sent[0].from, '"JagSpoor" <support@jag-spoor.co.za>');
+  assert.equal(sent[0].from, '"JagSpoor" <admin@jag-spoor.co.za>');
   assert.match(sent[0].subject, /30-Day Free Trial/i);
   assert.match(sent[0].text, /24 September 2026/);
   assert.match(sent[0].html, /24 September 2026/);
@@ -157,12 +157,12 @@ test("sendWelcomeEmail sets plain-text alternative + outbound headers", async ()
     displayName: "Pieter",
     trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
     config: {
-      host: "smtp.ucebox.co.za",
-      port: 465,
-      secure: true,
-      user: "support@jag-spoor.co.za",
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      user: "b6b730001@smtp-brevo.com",
       pass: "secret",
-      from: "support@jag-spoor.co.za",
+      from: "admin@jag-spoor.co.za",
       fromName: "JagSpoor",
     },
     createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
@@ -173,19 +173,19 @@ test("sendWelcomeEmail sets plain-text alternative + outbound headers", async ()
     displayName: "Pieter",
     trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
     config: {
-      host: "smtp.ucebox.co.za",
-      port: 465,
-      secure: true,
-      user: "support@jag-spoor.co.za",
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      user: "b6b730001@smtp-brevo.com",
       pass: "secret",
-      from: "support@jag-spoor.co.za",
+      from: "admin@jag-spoor.co.za",
       fromName: "JagSpoor",
     },
     createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
   });
   assert.equal(sent.length, 2);
   // from strictly matches SMTP_FROM_NAME / SMTP_FROM.
-  assert.equal(sent[0].from, '"JagSpoor" <support@jag-spoor.co.za>');
+  assert.equal(sent[0].from, '"JagSpoor" <admin@jag-spoor.co.za>');
   // Plain-text alternative present alongside the HTML body.
   assert.ok(sent[0].text && sent[0].text.length > 0, "text alternative set");
   assert.ok(sent[0].html && sent[0].html.length > 0, "html body set");
