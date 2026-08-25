@@ -21,6 +21,9 @@ import { firestore } from "./firebase";
 //      `requiresPayment: true`, `trialBlockedReason`) so a malicious user
 //      cannot spin up infinite trial accounts on the same physical device.
 //      A missing fingerprint or a check error blocks as well (fail-closed).
+//      Whitelisted developer/tester accounts (TRIAL_ABUSE_EXEMPT_EMAILS +
+//      the TRIAL_EXEMPT_EMAILS / TRIAL_EXEMPT_UIDS env vars) bypass the
+//      check so the team can test trials from one physical device.
 //   3. Dispatches a welcome email over SMTP (Afrihost relay) informing the
 //      user of the 30-day free trial period and its expiration date.
 // ────────────────────────────────────────────────────────────────────────────
@@ -56,6 +59,52 @@ export const FINGERPRINT_POLL_INTERVAL_MS = 1000;
 export const TRIAL_BLOCK_REASON_DUPLICATE = "duplicate_device_fingerprint";
 export const TRIAL_BLOCK_REASON_UNSET = "fingerprint_unavailable";
 export const TRIAL_BLOCK_REASON_ERROR = "duplicate_check_error";
+
+// ── Developer / tester exemption ─────────────────────────────────────────────
+
+/**
+ * Known developer / tester accounts exempt from the device-level
+ * trial-abuse check. These accounts are used by the development team to
+ * register and test trial flows repeatedly from the same physical device,
+ * so the hardware-fingerprint duplicate guard must never block them.
+ */
+export const TRIAL_ABUSE_EXEMPT_EMAILS: readonly string[] = [
+  "llewellynkearney@hotmail.co.za",
+  "llewellynkearney@gmail.com",
+  "admin@jag-spoor.co.za",
+];
+
+/**
+ * Whether the account is exempt from the device-level trial-abuse check.
+ *
+ * An account is exempt when its email matches `TRIAL_ABUSE_EXEMPT_EMAILS`
+ * (case-insensitive) or when its email / uid appears in the deploy-time
+ * `TRIAL_EXEMPT_EMAILS` / `TRIAL_EXEMPT_UIDS` env vars (comma-separated),
+ * so an additional developer device account can be whitelisted without a
+ * code change.
+ */
+export function isTrialAbuseExempt(options: {
+  email?: string;
+  uid?: string;
+  env?: NodeJS.ProcessEnv;
+}): boolean {
+  const env = options.env ?? process.env;
+  const email = (options.email ?? "").trim().toLowerCase();
+  const uid = (options.uid ?? "").trim();
+  const exemptEmails = new Set<string>(TRIAL_ABUSE_EXEMPT_EMAILS);
+  const exemptUids = new Set<string>();
+  for (const raw of (env.TRIAL_EXEMPT_EMAILS ?? "").split(",")) {
+    const value = raw.trim().toLowerCase();
+    if (value) exemptEmails.add(value);
+  }
+  for (const raw of (env.TRIAL_EXEMPT_UIDS ?? "").split(",")) {
+    const value = raw.trim();
+    if (value) exemptUids.add(value);
+  }
+  if (email && exemptEmails.has(email)) return true;
+  if (uid && exemptUids.has(uid)) return true;
+  return false;
+}
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -307,13 +356,22 @@ export const initializeNewUserTrial = functionsV1
       .trim();
 
     // Fail-closed trial-abuse check. A non-trial pre-existing status (e.g.
-    // pre-provisioned billing) is preserved without the check.
+    // pre-provisioned billing) is preserved without the check, and
+    // whitelisted developer/tester accounts bypass the check entirely so
+    // the team can register + test trial flows repeatedly from the same
+    // physical device.
     let trialBlockedReason = "";
     let trialBlockedCheckErrorDetail = "";
     if (existingStatus !== "" && existingStatus !== "trialing") {
       logger.info(
         "initializeNewUserTrial: existing subscription state preserved",
         { uid, subscriptionStatus: existingStatus }
+      );
+    } else if (isTrialAbuseExempt({ email, uid })) {
+      logger.info(
+        "initializeNewUserTrial: device trial-abuse check bypassed " +
+          "(exempt developer/tester account)",
+        { uid, email }
       );
     } else {
       const fingerprint = await resolveDeviceFingerprint(

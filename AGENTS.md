@@ -2,6 +2,53 @@
 
 
 
+## Phase -- Developer/tester exemption for device-level trial-abuse check (added 2026-08-25)
+
+- **Change** (`functions/src/user_trial_onboarding.ts`): the
+  `initializeNewUserTrial` Auth onCreate trigger's fail-closed
+  hardware-fingerprint check now bypasses whitelisted developer/tester
+  accounts so the team can register + test trial flows repeatedly from the
+  same physical device without being blocked as `duplicate_device_fingerprint`.
+  - New `TRIAL_ABUSE_EXEMPT_EMAILS` const: `llewellynkearney@hotmail.co.za`,
+    `llewellynkearney@gmail.com`, `admin@jag-spoor.co.za`.
+  - New pure helper `isTrialAbuseExempt({email, uid, env})` -- matches the
+    built-in email list case-insensitively and merges deploy-time
+    `TRIAL_EXEMPT_EMAILS` / `TRIAL_EXEMPT_UIDS` env vars (comma-separated)
+    so an additional developer uid can be whitelisted without a code change.
+  - The trigger evaluates `isTrialAbuseExempt({ email, uid })` in an
+    `else if` branch BETWEEN the pre-existing-status preservation and the
+    fingerprint poll, so exempt accounts skip `resolveDeviceFingerprint` /
+    `otherUserHasDeviceFingerprint` entirely and proceed to the normal
+    trial init + welcome email. The fail-closed block for all other
+    accounts is unchanged.
+- **Env docs**: `functions/.env.example` documents `TRIAL_EXEMPT_EMAILS` /
+  `TRIAL_EXEMPT_UIDS` (leave empty in production unless actively testing).
+- **No client / rules change**: the client still stamps `deviceFingerprint`
+  on `users/{uid}` (harmless for exempt accounts; useful for audit), and
+  the `firestore.rules` immutability contract is untouched.
+- **Tests**: `functions/test/user_trial_onboarding.test.js` +7 (25/25 pass
+  via `npm test`): exemption list contents, case-insensitive email match,
+  non-exempt rejection, env-whitelisted uid/email extras, and the compiled
+  contract that the exemption branch precedes the device check.
+  `test/device_trial_abuse_contract_test.dart` +3 (new
+  "developer/tester trial-abuse exemption" group): whitelist contents,
+  env-var helper surface, and the ordering contract
+  (`isTrialAbuseExempt({ email, uid })` before the last
+  `resolveDeviceFingerprint(` call in the TS source).
+- **Verification**: `npm test` in `functions/` 25/25 pass. `flutter analyze`
+  (Flutter 3.29.1, CI pin): 0 errors, 0 warnings (277 pre-existing infos,
+  unchanged baseline). `flutter test` (full suite): **All 1512 tests
+  passed** (run with `LD_LIBRARY_PATH="$HOME/libs"`; re-installed Flutter
+  3.29.1 at `$HOME/flutter` + recreated the `~/libs/libsqlite3.so`
+  symlink).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate the exemption.
+- Files: `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `functions/.env.example`, `test/device_trial_abuse_contract_test.dart`,
+  `AGENTS.md`.
+
+
 ## Phase -- Firestore users/{userId} robust write-rule hotfixes (added 2026-08-25)
 
 - **Hotfix 1 (commit `fed02e8`)** -- `allow delete: if isSignedIn() &&

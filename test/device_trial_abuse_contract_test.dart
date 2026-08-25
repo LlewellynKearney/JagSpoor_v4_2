@@ -108,6 +108,38 @@ void main() {
     });
   });
 
+  group('developer/tester trial-abuse exemption', () {
+    test('the known test emails are whitelisted', () {
+      expect(onboardingSource, contains('TRIAL_ABUSE_EXEMPT_EMAILS'));
+      expect(onboardingSource, contains('llewellynkearney@hotmail.co.za'));
+      expect(onboardingSource, contains('llewellynkearney@gmail.com'));
+      expect(onboardingSource, contains('admin@jag-spoor.co.za'));
+    });
+
+    test('the exemption helper supports env-whitelisted emails + uids', () {
+      expect(onboardingSource,
+          contains('export function isTrialAbuseExempt'));
+      expect(onboardingSource, contains('TRIAL_EXEMPT_EMAILS'));
+      expect(onboardingSource, contains('TRIAL_EXEMPT_UIDS'));
+    });
+
+    test('the trigger consults the exemption before the device check', () {
+      expect(onboardingSource,
+          contains('} else if (isTrialAbuseExempt({ email, uid })) {'));
+      expect(onboardingSource,
+          contains('device trial-abuse check bypassed'));
+      final exemptIdx =
+          onboardingSource.indexOf('isTrialAbuseExempt({ email, uid })');
+      final checkIdx =
+          onboardingSource.lastIndexOf('resolveDeviceFingerprint(');
+      expect(exemptIdx, greaterThan(-1));
+      expect(checkIdx, greaterThan(-1));
+      expect(exemptIdx, lessThan(checkIdx),
+          reason: 'the exemption bypass must be evaluated before the '
+              'fail-closed device check runs');
+    });
+  });
+
   group('firestore.rules freeze the fingerprint once set', () {
     test('users update is denied when the fingerprint would change', () {
       expect(rulesSource,

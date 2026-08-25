@@ -285,3 +285,91 @@ test("blocked trigger write marks requiresPayment + blocked status", () => {
   assert.match(compiled, /requiresPayment: true/);
   assert.match(compiled, /trialBlockedReason/);
 });
+
+// ── Developer / tester trial-abuse exemption ────────────────────────────────
+
+test("the known developer/tester emails are exempt from the abuse check", () => {
+  assert.deepEqual([...onboarding.TRIAL_ABUSE_EXEMPT_EMAILS], [
+    "llewellynkearney@hotmail.co.za",
+    "llewellynkearney@gmail.com",
+    "admin@jag-spoor.co.za",
+  ]);
+});
+
+test("isTrialAbuseExempt matches whitelisted emails case-insensitively", () => {
+  assert.equal(
+    onboarding.isTrialAbuseExempt({
+      email: "llewellynkearney@hotmail.co.za",
+    }),
+    true
+  );
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ email: "LlewellynKearney@Gmail.com" }),
+    true
+  );
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ email: "  admin@jag-spoor.co.za  " }),
+    true
+  );
+});
+
+test("isTrialAbuseExempt rejects non-exempt accounts", () => {
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ email: "poacher@example.com" }),
+    false
+  );
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ email: "", uid: "" }),
+    false
+  );
+  assert.equal(onboarding.isTrialAbuseExempt({}), false);
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ uid: "random-uid-123" }),
+    false
+  );
+});
+
+test("isTrialAbuseExempt honors env-whitelisted uids + emails", () => {
+  const env = {
+    TRIAL_EXEMPT_UIDS: "dev-uid-1, dev-uid-2",
+    TRIAL_EXEMPT_EMAILS: "tester@jag-spoor.co.za",
+  };
+  assert.equal(onboarding.isTrialAbuseExempt({ uid: "dev-uid-2", env }), true);
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ email: "Tester@Jag-Spoor.co.za", env }),
+    true
+  );
+  assert.equal(
+    onboarding.isTrialAbuseExempt({ uid: "not-exempt-uid", env }),
+    false
+  );
+  // The built-in list still applies alongside env extras.
+  assert.equal(
+    onboarding.isTrialAbuseExempt({
+      email: "admin@jag-spoor.co.za",
+      env,
+    }),
+    true
+  );
+});
+
+test("the trigger bypasses the device check for exempt accounts", () => {
+  // Structural contract: the handler consults the exemption BEFORE the
+  // fail-closed device check (this assertion inspects the compiled source).
+  const fs = require("node:fs");
+  const compiled = fs.readFileSync(
+    __dirname + "/../lib/user_trial_onboarding.js",
+    "utf8"
+  );
+  assert.match(compiled, /isTrialAbuseExempt/);
+  assert.match(compiled, /trial-abuse check bypassed/);
+  // The exemption branch must be evaluated before resolveDeviceFingerprint.
+  const exemptIdx = compiled.indexOf("isTrialAbuseExempt({ email, uid })");
+  const checkIdx = compiled.indexOf("resolveDeviceFingerprint(");
+  assert.ok(exemptIdx > -1, "exemption branch present in the handler");
+  assert.ok(checkIdx > -1, "device check present in the handler");
+  assert.ok(
+    exemptIdx < compiled.lastIndexOf("resolveDeviceFingerprint("),
+    "exemption is consulted before the fail-closed device check"
+  );
+});
