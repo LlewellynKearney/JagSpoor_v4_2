@@ -2,6 +2,46 @@
 
 
 
+## Phase -- Booking Requests Header Status Bar Overlap Fix (Task 12) (added 2026-08-25)
+
+- **Task 1 -- Screen located**: the primary booking requests screen is
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`
+  (`OutfitterBookingDashboardScreen`; entered from the outfitter dashboard's
+  "Incoming Booking Requests" card; there is no copy under
+  `lib/features/outfitter_mode/`). It renders a transparent full-bleed AppBar
+  ("Booking Requests" / "Farm Booking Requests" + a 2-tab Active/Archived
+  TabBar) over the shared `OutfitterBushveldBackground` with
+  `extendBodyBehindAppBar: true`.
+- **Task 2 -- SafeArea(top: true) header wrap**: the AppBar is built with
+  `primary: false` and wrapped as
+  `PreferredSize(preferredSize: Size.fromHeight(appBar.preferredSize.height +
+  statusBarTop), child: SafeArea(top: true, left: false, right: false,
+  bottom: false, child: appBar))`, where `statusBarTop =
+  MediaQuery.of(context).padding.top` is read in `build()`. The header is
+  passed directly to `Scaffold.appBar`, so the title, back button, and the
+  Active/Archived TabBar always clear the device status bar / notch on every
+  device, while the bushveld background still full-bleeds to the top edge.
+  The body's `SafeArea` + the `SizedBox(height: appBar.preferredSize.height)`
+  spacer keep the category filter chips fully below the header (the icon+text
+  tabs are taller than `kTextTabBarHeight`). This phase made the `top: true`
+  flag EXPLICIT (it previously relied on the SafeArea default) so the status-
+  bar-clearing contract is stated at the call site per the task spec; the
+  overlap fix itself was already present at HEAD.
+- **Task 3 -- Tests + verification**:
+  - `test/outfitter_booking_dashboard_header_test.dart` (3 widget tests, all
+    pass): title + back button clear a 32px simulated status bar; bushveld
+    background still extends to the top edge; the "Standard Hunting Packages"
+    category filter chip renders fully below the AppBar + TabBar.
+  - `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings**, 277
+    pre-existing infos (unchanged baseline).
+  - `flutter test` (full suite): **All 1503 tests passed**, zero failures.
+    Env note: re-installed Flutter 3.29.1 at `$HOME/flutter` + recreated the
+    `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+    symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`).
+- Files: `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `AGENTS.md`.
+
+
 ## Phase -- Device-Level Trial Abuse Prevention (Task 11) (added 2026-08-25)
 
 - **Task 1 -- Registration/trial logic located**: client-side sign-up lives

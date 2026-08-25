@@ -150,6 +150,7 @@ class _OutfitterBookingDashboardScreenState
       preferredSize:
           Size.fromHeight(appBar.preferredSize.height + statusBarTop),
       child: SafeArea(
+        top: true,
         left: false,
         right: false,
         bottom: false,
