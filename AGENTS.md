@@ -2,6 +2,70 @@
 
 
 
+## Phase -- Subscription Unsubscribe/Cancel Flow (Task 4) (added 2026-08-25)
+
+- **Task 1 -- Screen + service located**: `lib/features/subscription/subscription_screen.dart`
+  (checkout screen) + `lib/features/subscription/services/subscription_status_service.dart`
+  (`SubscriptionStatusService` singleton, reads/writes `users/{uid}`).
+- **Task 2 -- Primary button swaps to manage/cancel** (`subscription_screen.dart`
+  `_buildSubscribeButton`): when `UserSubscription.hasSubscription` (active OR
+  live free trial) the green "SUBSCRIBE VIA PAYFAST" `FilledButton` is replaced
+  by a red-outlined "CANCEL SUBSCRIPTION" `OutlinedButton.icon`
+  (`ValueKey('cancelSubscriptionButton')`) with a `CANCELLING…` spinner state;
+  a cancelled subscription flips back to the subscribe button so the user can
+  re-subscribe. `_cancelSubscription` runs a confirmation `AlertDialog`
+  (`ValueKey('confirmCancelButton')` / "KEEP SUBSCRIPTION"), then calls
+  `SubscriptionStatusService.cancelSubscription()` and surfaces a green
+  termination snackbar on success or a red "could not be confirmed" snackbar
+  when the backend cannot confirm (fail-closed UX; billing unchanged).
+- **Task 3 -- Cancellation action + Cloud Function endpoint**
+  (`functions/src/index.ts` `cancelSubscription`, HTTPS onRequest, public
+  invoker, us-central1): POST-only; verifies the `Authorization: Bearer`
+  Firebase ID token with the Admin SDK (401); the body's `userId` must match
+  the token uid (403, own-account only); terminates the stored
+  `subscriptionPayfastToken` (persisted by the ITN handler on activation)
+  server-to-server via `cancelPayfastSubscriptionToken`
+  (`functions/src/payfast_subscription.ts`: POST
+  `{PAYFAST_API_BASE}/v1/subscriptions/{token}/cancel` with MD5-signed
+  `merchant-id`/`timestamp`/`version` headers) -- FAIL-CLOSED: a non-2xx or
+  transport failure returns HTTP 502 and the subscription is NOT marked
+  cancelled; only on PayFast acknowledgement (or no token yet, e.g. mid-trial)
+  does it write `subscriptionStatus: 'cancelled'` +
+  `subscriptionCancelledAt`. Client-side
+  `SubscriptionStatusService.cancelSubscription()` invokes the endpoint with
+  the caller's ID token (`cancelSubscriptionUrl`), returns true on 2xx, throws
+  `CancellationException` on an answered error (never silently marks
+  cancelled), and only falls back to a direct owner write when the endpoint
+  is UNREACHABLE (dev env, not yet deployed). `npx tsc --noEmit` clean.
+  `functions/.env.example` now documents the endpoint's `PAYFAST_MERCHANT_ID`
+  + `PAYFAST_API_BASE` env vars (sandbox values; production base is the
+  code default).
+- **Task 4 -- Tests (verified, all pass)**: `test/subscription_screen_test.dart`
+  "subscription cancellation" group (4 widget tests: cancel button rendered
+  during trial, dialog-dismiss keeps subscription, confirm -> endpoint invoked
+  + termination snackbar, endpoint 502 -> error snackbar, via the
+  `cancellationInvokerForTesting` seam);
+  `test/subscription_status_service_test.dart`
+  `SubscriptionStatusService.cancelSubscription` group (5: unauth rejection,
+  2xx -> true, answered error -> CancellationException, unreachable ->
+  owner-write fallback, endpoint URL);
+  `test/payfast_itn_functions_contract_test.dart` "cancelSubscription endpoint"
+  group (6 structural tests incl. the fail-closed 502 contract).
+- **Verification**: `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors,
+  0 warnings on the subscription files. `flutter test` (full suite): **All
+  1412 tests passed**. Env note: re-installed Flutter 3.29.1 at
+  `$HOME/flutter` + `~/libs/libsqlite3.so` symlink (run tests with
+  `LD_LIBRARY_PATH="$HOME/libs"`); the "Unexpected child config" pubspec
+  warning is the documented pre-existing spurious line.
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate `cancelSubscription`; set `PAYFAST_MERCHANT_ID`
+  / `PAYFAST_API_BASE` (production values) alongside `PAYFAST_PASSPHRASE`.
+- Files: `functions/.env.example` (documented cancellation env vars),
+  `AGENTS.md`. (The screen / service / Cloud Function / test implementation
+  was already present at HEAD; this phase verified it end-to-end and closed
+  the env-documentation gap.)
+
+
 ## Phase -- Subscription screen mode-isolated tiers + comprehensive feature lists (added 2026-08-24)
 
 - **Task 1 -- Mode-isolated tier display**
