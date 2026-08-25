@@ -2,6 +2,71 @@
 
 
 
+## Phase -- Automated 30-Day Free Trial & Welcome Email Flow (Task 9) (added 2026-08-25)
+
+- **Task 1 -- Trigger located**: no Auth user-creation trigger existed in
+  `functions/src/`; one was added.
+- **Task 2 -- Trial initialization** (`functions/src/user_trial_onboarding.ts`,
+  NEW): `initializeNewUserTrial` -- a firebase-functions **v1 Auth `onCreate`
+  trigger** (`functionsV1.region("us-central1").auth.user().onCreate(...)`;
+  firebase-functions 6.6.0 still ships the v1 provider). For every newly
+  created Auth user it merge-writes `users/{uid}` with
+  `subscriptionStatus: 'trialing'`, `trialStartedAt: now`,
+  `trialEndsAt: trialEndsAtFrom(now)` (exactly 30 days:
+  `TRIAL_PERIOD_DAYS = 30` -> `TRIAL_PERIOD_MS = 30 * 24 * 60 * 60 * 1000`),
+  `requiresPayment: false`, and a `subscriptionUpdatedAt` server timestamp.
+  An already-existing non-trial `subscriptionStatus` is preserved (the
+  trigger can never downgrade a pre-provisioned account). The trigger is
+  re-exported from `functions/src/index.ts` (the functions entry point).
+- **Task 3 -- Welcome email via SMTP/Afrihost**: same module. Nodemailer
+  (new `nodemailer` dep + `@types/nodemailer` dev dep) dispatches a branded
+  welcome email ("Welcome to JagSpoor -- Your 30-Day Free Trial Is Active!")
+  carrying the 30-day trial period + the expiration date
+  (`buildWelcomeEmail` / `formatTrialDate` -- locale-independent long date).
+  `smtpConfigFromEnv` resolves `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/
+  `SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`/`SMTP_FROM_NAME` with Afrihost relay
+  defaults (`smtp.afrihost.co.za:587`, STARTTLS) and returns null when
+  credentials are unset, so the email is **best-effort**: missing creds /
+  missing user email / a send failure are logged and never fail the trigger
+  (the trial state is already committed). `sendWelcomeEmail` accepts an
+  injectable transporter factory for tests. `functions/.env.example` now
+  documents all seven SMTP env vars.
+- **Task 4 -- Tests + verification**:
+  - `functions/package.json` gained a `test` script
+    (`npm run build && node --test test/*.test.js` -- note: `node --test test/`
+    with a trailing-slash directory arg fails MODULE_NOT_FOUND on Node 22;
+    the glob form is required).
+  - `functions/test/user_trial_onboarding.test.js` (NEW, 10 node:test unit
+    tests against the compiled `lib/`): trial constants + exact 30-day math,
+    Afrihost defaults / null-without-creds / overrides, date formatting,
+    welcome-email content (30-day trial + expiration date in subject/text/
+    html), injected-transporter dispatch contract, and the index.js trigger
+    export. Set `GCLOUD_PROJECT` before requiring (the v1 auth trigger's
+    `__trigger` getter throws without it).
+  - `test/welcome_email_functions_contract_test.dart` (NEW, 9 structural
+    contract tests parsing the TS sources + .env.example + package.json --
+    the established project pattern since the Firebase emulator cannot run
+    in this sandbox).
+  - `functions/.gitignore`: added `!test/*.js` (the blanket `*.js` rule for
+    compiled output was ignoring the new test file).
+  - `npx tsc --noEmit` clean; `npm test` 10/10 pass; `flutter analyze`
+    (Flutter 3.29.1, CI pin): 0 errors, 0 warnings (277 pre-existing infos,
+    unchanged baseline); `flutter test` full suite: **All 1455 tests
+    passed** (+9 new). Env note: re-installed Flutter 3.29.1 at
+    `$HOME/flutter`; the sqlite link is the user-space
+    `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+    symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate `initializeNewUserTrial`; set `SMTP_USER` /
+  `SMTP_PASS` (and optionally the other SMTP_* vars) alongside
+  `PAYFAST_PASSPHRASE`.
+- Files: `functions/src/user_trial_onboarding.ts` (NEW),
+  `functions/src/index.ts`, `functions/.env.example`,
+  `functions/package.json` / `functions/package-lock.json` (nodemailer +
+  test script), `functions/.gitignore` (`!test/*.js`),
+  `functions/test/user_trial_onboarding.test.js` (NEW),
+  `test/welcome_email_functions_contract_test.dart` (NEW), `AGENTS.md`.
+
 ## Phase -- Subscription Unsubscribe/Cancel Flow (Task 4) (added 2026-08-25)
 
 - **Task 1 -- Screen + service located**: `lib/features/subscription/subscription_screen.dart`

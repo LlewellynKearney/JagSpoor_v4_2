@@ -1,8 +1,10 @@
 {
   "name": "jagspoor-functions",
-  "description": "Firebase Cloud Functions for the JagSpoor marketplace (admin provisioning, FCM notifications).",
+  "description": "Firebase Cloud Functions for the JagSpoor marketplace (admin provisioning, FCM notifications, trial onboarding + welcome email).",
   "private": true,
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "main": "lib/index.js",
   "scripts": {
     "lint": "eslint --ext .ts src",
@@ -10,13 +12,16 @@
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "npm run build && node --test test/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",
-    "firebase-functions": "^6.0.1"
+    "firebase-functions": "^6.0.1",
+    "nodemailer": "^9.0.5"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.1",
     "typescript": "^5.6.3"
   }
 }
