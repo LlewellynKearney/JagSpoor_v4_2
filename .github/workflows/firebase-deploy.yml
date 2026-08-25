@@ -1,0 +1,37 @@
+name: Firebase Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Minimal permissions — the deploy only needs to read the repo; Firebase
+# access is granted via the FIREBASE_TOKEN secret.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Functions & Firestore Rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm install
+
+      - name: Build TypeScript functions
+        working-directory: functions
+        run: npm run build
+
+      - name: Deploy to Firebase
+        run: npx firebase-tools deploy --only functions,firestore:rules --token "${{ secrets.FIREBASE_TOKEN }}"
