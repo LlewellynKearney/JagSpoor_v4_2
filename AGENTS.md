@@ -1,6 +1,46 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Booking Requests screen overflow + filter-bar spacing fix (added 2026-08-25)
+
+- **Filter chips row** (`lib/features/hunter_mode/screens/
+  outfitter_booking_dashboard_screen.dart` `_buildCategoryFilterBar`): the
+  "All / Standard Hunting Packages / Custom Hunting Packages / Trophy Hunt
+  Requests" chip row is wrapped in a horizontal `SingleChildScrollView`
+  (`Axis.horizontal` + `BouncingScrollPhysics()`, keyed
+  `categoryFilterScrollView`) so every category stays reachable by swiping on
+  narrow devices with no text clipping or RenderFlex overflow at the screen
+  edge. The container's top padding was tightened 10 -> 8 for a polished gap
+  under the Active Requests / Archived TabBar.
+- **Real overflows found + fixed by a narrow-width probe** (320/360px,
+  1.0/1.3 text scale, standard + CUSTOM_BUILT bookings with a 7-figure
+  total):
+  - `_FinancialRow` (same file): the `spaceBetween` label/value Row had two
+    unconstrained Texts -> 6px right overflow at 320px/1.3 (worse with large
+    totals). Label is now `Expanded` (value hugs the right edge) + value
+    `Flexible`, both `maxLines: 1` + `TextOverflow.ellipsis`.
+  - `HunterContactCard` + `OutfitterContactCard` (booking cards on both
+    portals): the heading `Text` (65px overflow) and the `_loadingRow` text
+    (334px overflow) were unconstrained in their Rows. Both now use
+    `Expanded` (heading also `maxLines: 2` + ellipsis).
+- **Tests**: `test/outfitter_booking_dashboard_header_test.dart` +12 (14
+  total): the chips-row scrollability contract (chips inside a horizontal
+  `SingleChildScrollView`) + a `layout overflow sweep` group (5 widths x 2
+  text scales, standard + CUSTOM_BUILT bookings, asserts
+  `tester.takeException()` is null).
+- **Verification**: `flutter analyze` on the 4 changed files: No issues
+  found. `flutter test` (full suite): **All 1523 tests passed**. Env note:
+  re-installed Flutter 3.29.1 (CI pin) at `$HOME/flutter` + recreated the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`); the pubspec
+  "Unexpected child config" warning is the documented pre-existing spurious
+  line.
+- Files: `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `lib/features/hunter_mode/widgets/hunter_contact_card.dart`,
+  `lib/features/hunter_mode/widgets/outfitter_contact_card.dart`,
+  `test/outfitter_booking_dashboard_header_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Anti-spam outbound mail headers for the Afrihost filter (added 2026-08-25)
 
 - **Change** (`functions/src/user_trial_onboarding.ts`): the welcome-email

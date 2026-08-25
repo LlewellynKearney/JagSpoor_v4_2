@@ -260,9 +260,15 @@ class _OutfitterBookingDashboardScreenState
     );
   }
 
-  /// The three category filter buttons shown under the AppBar (plus an "All"
+  /// The three category filter chips shown under the AppBar (plus an "All"
   /// reset chip). Selecting a chip filters both the Active Requests and
   /// Archived lists to that booking category.
+  ///
+  /// The chip row is wrapped in a horizontal [SingleChildScrollView] so every
+  /// category remains reachable by swiping on narrow devices -- the row never
+  /// clips or overflows the screen edge. The 8px top padding keeps a tight,
+  /// polished gap between the Active Requests / Archived TabBar and the
+  /// filter row.
   Widget _buildCategoryFilterBar() {
     final theme = widget.theme;
     return Container(
@@ -273,8 +279,9 @@ class _OutfitterBookingDashboardScreenState
           bottom: BorderSide(color: OutfitterUi.cardBorderColor(theme)),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: SingleChildScrollView(
+        key: const ValueKey('categoryFilterScrollView'),
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         child: Row(
@@ -1427,23 +1434,36 @@ class _FinancialRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: isTotal ? theme.textColor : OutfitterUi.subtitleColor(theme),
-            fontSize: isTotal ? 14 : 13,
-            fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+        // The label expands so the value hugs the right edge; both sides
+        // ellipsize so a large total on a narrow device can never overflow
+        // the row.
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  isTotal ? theme.textColor : OutfitterUi.subtitleColor(theme),
+              fontSize: isTotal ? 14 : 13,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            color:
-                isTotal
-                    ? Colors.green
-                    : theme.textColor,
-            fontSize: isTotal ? 18 : 14,
-            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  isTotal
+                      ? Colors.green
+                      : theme.textColor,
+              fontSize: isTotal ? 18 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+            ),
           ),
         ),
       ],

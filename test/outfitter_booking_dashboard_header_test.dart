@@ -124,4 +124,79 @@ void main() {
           'AppBar + TabBar header.',
     );
   });
+
+  testWidgets('category filter chips row is horizontally scrollable',
+      (tester) async {
+    await pumpScreen(tester);
+
+    // The chips row must live inside a horizontal SingleChildScrollView so
+    // every category stays reachable by swiping on narrow devices (no text
+    // clipping or RenderFlex overflow at the screen edge).
+    final scrollView = find.byWidgetPredicate(
+      (w) =>
+          w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    expect(scrollView, findsOneWidget);
+    expect(
+      find.descendant(
+        of: scrollView,
+        matching: find.text('Custom Hunting Packages'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: scrollView,
+        matching: find.text('Standard Hunting Packages'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  group('layout overflow sweep', () {
+    for (final width in [320.0, 360.0, 375.0, 414.0, 768.0]) {
+      for (final scale in [1.0, 1.3]) {
+        testWidgets('no overflow at ${width}px x$scale', (tester) async {
+          tester.view.physicalSize = Size(width, 800);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.reset);
+
+          await fake.collection('bookings').doc('b1').set({
+            'outfitterId': 'test-uid',
+            'hunterId': 'h1',
+            'packageId': 'pkg-1',
+            'packageName': 'Standard Package',
+            'status': 'Pending Approval',
+            'bookingTimestamp': 1700000000000,
+            'totalHunterPriceRands': 25000.0,
+          });
+          await fake.collection('bookings').doc('b2').set({
+            'outfitterId': 'test-uid',
+            'hunterId': 'h1',
+            'packageId': 'CUSTOM_BUILT',
+            'packageName': 'Custom Package · Bosveld',
+            'status': 'Awaiting Payment',
+            'bookingTimestamp': 1700000000001,
+            'totalHunterPriceRands': 1234567.89,
+          });
+
+          await tester.pumpWidget(
+            MediaQuery(
+              data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+              child: MaterialApp(
+                home: OutfitterBookingDashboardScreen(
+                  theme: ThemeController(),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull,
+              reason: 'Layout overflow on the Booking Requests screen at '
+                  '${width}px width, ${scale}x text scale.');
+        });
+      }
+    }
+  });
 }

@@ -97,13 +97,17 @@ class _HunterContactCardState extends State<HunterContactCard> {
               Icon(Icons.contact_phone_rounded,
                   color: theme.accentColor, size: 18),
               const SizedBox(width: 8),
-              Text(
-                widget.heading,
-                style: TextStyle(
-                  color: theme.subtitleColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
+              Expanded(
+                child: Text(
+                  widget.heading,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.subtitleColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
             ],
@@ -129,9 +133,11 @@ class _HunterContactCardState extends State<HunterContactCard> {
           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green),
         ),
         const SizedBox(width: 12),
-        Text(
-          'Loading hunter contact details...',
-          style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+        Expanded(
+          child: Text(
+            'Loading hunter contact details...',
+            style: TextStyle(color: theme.subtitleColor, fontSize: 13),
+          ),
         ),
       ],
     );
