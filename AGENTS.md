@@ -1,6 +1,60 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Welcome email + device-fingerprint trial-abuse check removed from Cloud Functions (added 2026-08-26)
+
+- **Change** (`functions/src/user_trial_onboarding.ts`, rewritten): the
+  `initializeNewUserTrial` v1 Auth `onCreate` trigger now SOLELY provisions
+  the 30-day free trial on `users/{uid}` (`subscriptionStatus: 'trialing'`,
+  `trialStartedAt`, `trialEndsAt` = now + 30 days via
+  `TRIAL_PERIOD_DAYS`/`TRIAL_PERIOD_MS`/`trialEndsAtFrom`,
+  `requiresPayment: false`, `subscriptionUpdatedAt` server timestamp,
+  merge-write). A pre-existing non-trial `subscriptionStatus` is still
+  preserved (no downgrade). REMOVED entirely: all Nodemailer/SMTP transport
+  logic (`SmtpConfig`, `smtpConfigFromEnv`, the hardcoded Brevo
+  `SMTP_*_DEFAULT` constants, `OUTBOUND_MAIL_HEADERS`, `formatTrialDate`,
+  `buildWelcomeEmail`, `sendWelcomeEmail`, the best-effort email dispatch)
+  and the whole fail-closed device-level trial-abuse check
+  (`FINGERPRINT_POLL_TIMEOUT_MS` / `FINGERPRINT_POLL_INTERVAL_MS`,
+  `TRIAL_BLOCK_REASON_*`, `TRIAL_ABUSE_EXEMPT_EMAILS`,
+  `isTrialAbuseExempt`, `resolveDeviceFingerprint`,
+  `otherUserHasDeviceFingerprint`, the `subscriptionStatus: 'blocked'`
+  branch).
+- **Deps**: `nodemailer` + `@types/nodemailer` removed from
+  `functions/package.json` / `package-lock.json` (`npm uninstall`);
+  description no longer mentions the welcome email.
+- **Env docs**: `functions/.env.example` SMTP (`SMTP_USER`/`SMTP_PASS`) and
+  trial-exemption (`TRIAL_EXEMPT_EMAILS`/`TRIAL_EXEMPT_UIDS`) sections
+  removed; only the PayFast vars remain.
+- **Tests**: `functions/test/user_trial_onboarding.test.js` rewritten --
+  6/6 pass via `npm test` (trial constants, `trialEndsAtFrom`, index.js
+  trigger export, trialing-state write contract, non-trial preservation
+  contract, and a negative contract asserting no SMTP/nodemailer/
+  fingerprint surface remains in the compiled module). Dart contract tests
+  updated: `test/welcome_email_functions_contract_test.dart` renamed to
+  `test/trial_onboarding_functions_contract_test.dart` (welcome-email group
+  replaced with a "no welcome-email or trial-abuse surface remains" group);
+  `test/device_trial_abuse_contract_test.dart` dropped the two backend
+  groups that parsed the functions source (client-side fingerprint stamping
+  + rules-immutability groups retained -- the CLIENT-side
+  `DeviceFingerprintService` + `firestore.rules` immutability are unchanged;
+  only the Functions-side check was removed).
+- **Verification**: `npm test` in `functions/` 6/6 pass; `npx tsc --noEmit`
+  clean; `flutter analyze` on the changed Dart tests: No issues found;
+  targeted `flutter test` on the 3 contract suites: 74/74 pass. Env note:
+  re-installed Flutter 3.29.1 (CI pin) at `$HOME/flutter` + the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink (run tests with `LD_LIBRARY_PATH="$HOME/libs"`).
+- Deploy reminder: `npx firebase-tools deploy --only functions` in a
+  credentialed env to activate the trial-only trigger.
+- Files: `functions/src/user_trial_onboarding.ts`,
+  `functions/src/index.ts`, `functions/.env.example`,
+  `functions/package.json`, `functions/package-lock.json`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `test/trial_onboarding_functions_contract_test.dart` (renamed),
+  `test/device_trial_abuse_contract_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Brevo SMTP made the permanent code default (added 2026-08-25)
 
 - **Change** (`functions/src/user_trial_onboarding.ts`): the welcome-email

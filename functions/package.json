@@ -1,6 +1,6 @@
 {
   "name": "jagspoor-functions",
-  "description": "Firebase Cloud Functions for the JagSpoor marketplace (admin provisioning, FCM notifications, trial onboarding + welcome email).",
+  "description": "Firebase Cloud Functions for the JagSpoor marketplace (admin provisioning, FCM notifications, trial onboarding).",
   "private": true,
   "engines": {
     "node": "22"
@@ -17,11 +17,9 @@
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",
-    "firebase-functions": "^6.0.1",
-    "nodemailer": "^9.0.5"
+    "firebase-functions": "^6.0.1"
   },
   "devDependencies": {
-    "@types/nodemailer": "^8.0.1",
     "typescript": "^5.6.3"
   }
 }

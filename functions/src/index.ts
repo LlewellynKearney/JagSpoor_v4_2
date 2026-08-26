@@ -22,8 +22,8 @@ import {
   PAYFAST_API_BASE,
 } from "./payfast_subscription";
 
-// Automated 30-day free trial initialization + welcome email dispatch on
-// Firebase Auth user creation (see user_trial_onboarding.ts).
+// Automated 30-day free trial initialization on Firebase Auth user creation
+// (see user_trial_onboarding.ts).
 export { initializeNewUserTrial } from "./user_trial_onboarding";
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 "use strict";
 
-// Unit tests for the automated 30-day free trial & welcome email flow
+// Unit tests for the automated 30-day free trial provisioning flow
 // (functions/src/user_trial_onboarding.ts). These exercise the compiled
 // pure helpers directly — no Firebase emulator is required.
 
@@ -8,6 +8,7 @@ process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "jagspoor-test";
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 
 const onboarding = require("../lib/user_trial_onboarding.js");
 
@@ -23,185 +24,6 @@ test("trialEndsAtFrom returns exactly 30 days in the future", () => {
   assert.equal(end.toISOString(), "2026-09-24T10:30:00.000Z");
 });
 
-test("smtpConfigFromEnv defaults to the Brevo STARTTLS relay", () => {
-  const config = onboarding.smtpConfigFromEnv({
-    SMTP_USER: "b6b730001@smtp-brevo.com",
-    SMTP_PASS: "secret",
-  });
-  assert.equal(config.host, "smtp-relay.brevo.com");
-  assert.equal(config.port, 587);
-  // Port 587 uses STARTTLS — secure defaults to false.
-  assert.equal(config.secure, false);
-  assert.equal(config.user, "b6b730001@smtp-brevo.com");
-  assert.equal(config.pass, "secret");
-  assert.equal(config.from, "admin@jag-spoor.co.za");
-  assert.equal(config.fromName, "JagSpoor");
-});
-
-test("smtpConfigFromEnv returns null when credentials are missing", () => {
-  assert.equal(onboarding.smtpConfigFromEnv({}), null);
-  assert.equal(onboarding.smtpConfigFromEnv({ SMTP_USER: "u" }), null);
-  assert.equal(onboarding.smtpConfigFromEnv({ SMTP_PASS: "p" }), null);
-});
-
-test("the Brevo transport defaults are permanent hardcoded constants", () => {
-  assert.equal(onboarding.SMTP_HOST_DEFAULT, "smtp-relay.brevo.com");
-  assert.equal(onboarding.SMTP_PORT_DEFAULT, 587);
-  assert.equal(onboarding.SMTP_SECURE_DEFAULT, false);
-  assert.equal(onboarding.SMTP_FROM_DEFAULT, "admin@jag-spoor.co.za");
-  assert.equal(onboarding.SMTP_FROM_NAME_DEFAULT, "JagSpoor");
-});
-
-test("smtpConfigFromEnv ignores env overrides for the transport settings", () => {
-  // The Brevo defaults are the permanent code default — only the credentials
-  // (SMTP_USER / SMTP_PASS) are read from the environment.
-  const config = onboarding.smtpConfigFromEnv({
-    SMTP_HOST: "mail.example.co.za",
-    SMTP_PORT: "465",
-    SMTP_SECURE: "true",
-    SMTP_USER: "u@example.co.za",
-    SMTP_PASS: "p",
-    SMTP_FROM: "noreply@example.co.za",
-    SMTP_FROM_NAME: "Example",
-  });
-  assert.deepEqual(config, {
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false,
-    user: "u@example.co.za",
-    pass: "p",
-    from: "admin@jag-spoor.co.za",
-    fromName: "JagSpoor",
-  });
-});
-
-test("formatTrialDate renders a locale-independent long date", () => {
-  assert.equal(
-    onboarding.formatTrialDate(new Date(Date.UTC(2026, 8, 24))),
-    "24 September 2026"
-  );
-  assert.equal(
-    onboarding.formatTrialDate(new Date(Date.UTC(2026, 0, 1))),
-    "1 January 2026"
-  );
-});
-
-test("welcome email informs the user of the 30-day trial + expiration", () => {
-  const expiry = new Date(Date.UTC(2026, 8, 24)); // 24 September 2026
-  const email = onboarding.buildWelcomeEmail({
-    displayName: "Pieter",
-    trialEndsAt: expiry,
-  });
-  assert.match(email.subject, /30-Day Free Trial/i);
-  for (const body of [email.text, email.html]) {
-    assert.match(body, /Pieter/);
-    assert.match(body, /30-day free trial/i);
-    assert.match(body, /24 September 2026/);
-  }
-});
-
-test("welcome email falls back to a generic greeting without a name", () => {
-  const email = onboarding.buildWelcomeEmail({
-    displayName: "",
-    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
-  });
-  assert.match(email.text, /Hi Hunter,/);
-});
-
-test("sendWelcomeEmail dispatches via the configured SMTP transport", async () => {
-  const sent = [];
-  let seenConfig = null;
-  await onboarding.sendWelcomeEmail({
-    to: "newuser@example.co.za",
-    displayName: "Pieter",
-    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
-    config: {
-      host: "smtp-relay.brevo.com",
-      port: 587,
-      secure: false,
-      user: "b6b730001@smtp-brevo.com",
-      pass: "secret",
-      from: "admin@jag-spoor.co.za",
-      fromName: "JagSpoor",
-    },
-    createTransport: (config) => {
-      seenConfig = config;
-      return { sendMail: async (msg) => sent.push(msg) };
-    },
-  });
-  assert.equal(seenConfig.host, "smtp-relay.brevo.com");
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].to, "newuser@example.co.za");
-  assert.equal(sent[0].from, '"JagSpoor" <admin@jag-spoor.co.za>');
-  assert.match(sent[0].subject, /30-Day Free Trial/i);
-  assert.match(sent[0].text, /24 September 2026/);
-  assert.match(sent[0].html, /24 September 2026/);
-});
-
-test("OUTBOUND_MAIL_HEADERS carry the standard deliverability headers", () => {
-  assert.equal(
-    onboarding.OUTBOUND_MAIL_HEADERS["X-Mailer"],
-    "JagSpoor App Engine"
-  );
-  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["Organization"], "JagSpoor");
-  assert.equal(onboarding.OUTBOUND_MAIL_HEADERS["X-Priority"], "3");
-});
-
-test("sendWelcomeEmail sets plain-text alternative + outbound headers", async () => {
-  const sent = [];
-  await onboarding.sendWelcomeEmail({
-    to: "newuser@example.co.za",
-    displayName: "Pieter",
-    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
-    config: {
-      host: "smtp-relay.brevo.com",
-      port: 587,
-      secure: false,
-      user: "b6b730001@smtp-brevo.com",
-      pass: "secret",
-      from: "admin@jag-spoor.co.za",
-      fromName: "JagSpoor",
-    },
-    createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
-  });
-  // A second dispatch to verify the per-message Message-ID is unique.
-  await onboarding.sendWelcomeEmail({
-    to: "newuser@example.co.za",
-    displayName: "Pieter",
-    trialEndsAt: new Date(Date.UTC(2026, 8, 24)),
-    config: {
-      host: "smtp-relay.brevo.com",
-      port: 587,
-      secure: false,
-      user: "b6b730001@smtp-brevo.com",
-      pass: "secret",
-      from: "admin@jag-spoor.co.za",
-      fromName: "JagSpoor",
-    },
-    createTransport: () => ({ sendMail: async (msg) => sent.push(msg) }),
-  });
-  assert.equal(sent.length, 2);
-  // from strictly matches the hardcoded SMTP_FROM_NAME_DEFAULT /
-  // SMTP_FROM_DEFAULT sender identity.
-  assert.equal(sent[0].from, '"JagSpoor" <admin@jag-spoor.co.za>');
-  // Plain-text alternative present alongside the HTML body.
-  assert.ok(sent[0].text && sent[0].text.length > 0, "text alternative set");
-  assert.ok(sent[0].html && sent[0].html.length > 0, "html body set");
-  // Standard outbound anti-spam deliverability headers.
-  assert.equal(sent[0].headers["X-Mailer"], "JagSpoor App Engine");
-  assert.equal(sent[0].headers["Organization"], "JagSpoor");
-  assert.equal(sent[0].headers["X-Priority"], "3");
-  // A unique per-message Message-ID on the jag-spoor.co.za domain.
-  assert.match(
-    sent[0].headers["Message-ID"],
-    /^<\d+\.[a-z0-9]+@jag-spoor\.co\.za>$/
-  );
-  assert.notEqual(
-    sent[0].headers["Message-ID"],
-    sent[1].headers["Message-ID"]
-  );
-});
-
 test("index.js entry point exports the auth onCreate trigger", () => {
   const index = require("../lib/index.js");
   assert.ok(index.initializeNewUserTrial, "initializeNewUserTrial exported");
@@ -209,207 +31,43 @@ test("index.js entry point exports the auth onCreate trigger", () => {
   assert.ok(trigger, "trigger metadata present");
 });
 
-// ── Device-level trial abuse prevention helpers ─────────────────────────────
-
-test("trial block reasons are stable constants", () => {
-  assert.equal(
-    onboarding.TRIAL_BLOCK_REASON_DUPLICATE,
-    "duplicate_device_fingerprint"
-  );
-  assert.equal(
-    onboarding.TRIAL_BLOCK_REASON_UNSET,
-    "fingerprint_unavailable"
-  );
-  assert.equal(
-    onboarding.TRIAL_BLOCK_REASON_ERROR,
-    "duplicate_check_error"
-  );
-});
-
-test("resolveDeviceFingerprint returns the stamped fingerprint", async () => {
-  const fingerprint = await onboarding.resolveDeviceFingerprint(async () => ({
-    data: () => ({ deviceFingerprint: "  abc-hash  " }),
-  }));
-  assert.equal(fingerprint, "abc-hash");
-});
-
-test("resolveDeviceFingerprint polls until the stamp lands", async () => {
-  let calls = 0;
-  const fingerprint = await onboarding.resolveDeviceFingerprint(
-    async () => {
-      calls++;
-      return {
-        data: () => (calls < 3 ? {} : { deviceFingerprint: "fp-123" }),
-      };
-    },
-    { timeoutMs: 5000, intervalMs: 1 }
-  );
-  assert.equal(fingerprint, "fp-123");
-  assert.ok(calls >= 3);
-});
-
-test("resolveDeviceFingerprint times out (fail-closed empty result)", async () => {
-  const started = Date.now();
-  const fingerprint = await onboarding.resolveDeviceFingerprint(
-    async () => ({ data: () => ({}) }),
-    { timeoutMs: 5, intervalMs: 1 }
-  );
-  assert.equal(fingerprint, "");
-  assert.ok(Date.now() - started < 5000, "exits promptly after timeout");
-});
-
-test("otherUserHasDeviceFingerprint detects a different uid", async () => {
-  const fakeUsersRef = {
-    where: (field, op, value) => ({
-      limit: (n) => ({
-        get: async () => {
-          assert.equal(field, "deviceFingerprint");
-          assert.equal(op, "==");
-          assert.equal(value, "fp-abc");
-          return { docs: [{ id: "other-user" }] };
-        },
-      }),
-    }),
-  };
-  assert.equal(
-    await onboarding.otherUserHasDeviceFingerprint(
-      fakeUsersRef,
-      "fp-abc",
-      "self-uid"
-    ),
-    true
-  );
-});
-
-test("otherUserHasDeviceFingerprint ignores the self doc", async () => {
-  const fakeUsersRef = {
-    where: () => ({
-      limit: () => ({
-        get: async () => ({ docs: [{ id: "self-uid" }] }),
-      }),
-    }),
-  };
-  assert.equal(
-    await onboarding.otherUserHasDeviceFingerprint(
-      fakeUsersRef,
-      "fp-abc",
-      "self-uid"
-    ),
-    false
-  );
-});
-
-test("otherUserHasDeviceFingerprint returns false on an empty snapshot", async () => {
-  const fakeUsersRef = {
-    where: () => ({ limit: () => ({ get: async () => ({ docs: [] }) }) }),
-  };
-  assert.equal(
-    await onboarding.otherUserHasDeviceFingerprint(
-      fakeUsersRef,
-      "fp-abc",
-      "self-uid"
-    ),
-    false
-  );
-});
-
-test("blocked trigger write marks requiresPayment + blocked status", () => {
-  // Structural contract: the handler's blocked branch writes the fail-closed
-  // state (this assertion inspects the compiled source text).
-  const fs = require("node:fs");
+test("the trigger writes the trialing state to users/{uid}", () => {
+  // Structural contract: the handler merge-writes the trial state (this
+  // assertion inspects the compiled source text).
   const compiled = fs.readFileSync(
     __dirname + "/../lib/user_trial_onboarding.js",
     "utf8"
   );
-  assert.match(compiled, /subscriptionStatus: "blocked"/);
-  assert.match(compiled, /requiresPayment: true/);
-  assert.match(compiled, /trialBlockedReason/);
+  assert.match(compiled, /subscriptionStatus: "trialing"/);
+  assert.match(compiled, /trialEndsAt/);
+  assert.match(compiled, /requiresPayment: false/);
+  assert.match(compiled, /merge: true/);
 });
 
-// ── Developer / tester trial-abuse exemption ────────────────────────────────
-
-test("the known developer/tester emails are exempt from the abuse check", () => {
-  assert.deepEqual([...onboarding.TRIAL_ABUSE_EXEMPT_EMAILS], [
-    "llewellynkearney@hotmail.co.za",
-    "llewellynkearney@gmail.com",
-    "admin@jag-spoor.co.za",
-  ]);
-});
-
-test("isTrialAbuseExempt matches whitelisted emails case-insensitively", () => {
-  assert.equal(
-    onboarding.isTrialAbuseExempt({
-      email: "llewellynkearney@hotmail.co.za",
-    }),
-    true
-  );
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ email: "LlewellynKearney@Gmail.com" }),
-    true
-  );
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ email: "  admin@jag-spoor.co.za  " }),
-    true
-  );
-});
-
-test("isTrialAbuseExempt rejects non-exempt accounts", () => {
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ email: "poacher@example.com" }),
-    false
-  );
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ email: "", uid: "" }),
-    false
-  );
-  assert.equal(onboarding.isTrialAbuseExempt({}), false);
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ uid: "random-uid-123" }),
-    false
-  );
-});
-
-test("isTrialAbuseExempt honors env-whitelisted uids + emails", () => {
-  const env = {
-    TRIAL_EXEMPT_UIDS: "dev-uid-1, dev-uid-2",
-    TRIAL_EXEMPT_EMAILS: "tester@jag-spoor.co.za",
-  };
-  assert.equal(onboarding.isTrialAbuseExempt({ uid: "dev-uid-2", env }), true);
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ email: "Tester@Jag-Spoor.co.za", env }),
-    true
-  );
-  assert.equal(
-    onboarding.isTrialAbuseExempt({ uid: "not-exempt-uid", env }),
-    false
-  );
-  // The built-in list still applies alongside env extras.
-  assert.equal(
-    onboarding.isTrialAbuseExempt({
-      email: "admin@jag-spoor.co.za",
-      env,
-    }),
-    true
-  );
-});
-
-test("the trigger bypasses the device check for exempt accounts", () => {
-  // Structural contract: the handler consults the exemption BEFORE the
-  // fail-closed device check (this assertion inspects the compiled source).
-  const fs = require("node:fs");
+test("the trigger preserves a pre-existing non-trial subscription status", () => {
+  // Structural contract: an existing non-trial status short-circuits the
+  // trial write so the trigger can never downgrade an account.
   const compiled = fs.readFileSync(
     __dirname + "/../lib/user_trial_onboarding.js",
     "utf8"
   );
-  assert.match(compiled, /isTrialAbuseExempt/);
-  assert.match(compiled, /trial-abuse check bypassed/);
-  // The exemption branch must be evaluated before resolveDeviceFingerprint.
-  const exemptIdx = compiled.indexOf("isTrialAbuseExempt({ email, uid })");
-  const checkIdx = compiled.indexOf("resolveDeviceFingerprint(");
-  assert.ok(exemptIdx > -1, "exemption branch present in the handler");
-  assert.ok(checkIdx > -1, "device check present in the handler");
-  assert.ok(
-    exemptIdx < compiled.lastIndexOf("resolveDeviceFingerprint("),
-    "exemption is consulted before the fail-closed device check"
+  assert.match(
+    compiled,
+    /existingStatus !== "" && existingStatus !== "trialing"/
   );
+});
+
+test("no welcome-email or trial-abuse surface remains", () => {
+  // The module must not reference any SMTP / nodemailer transport or the
+  // device-fingerprint trial-abuse check anymore.
+  const compiled = fs.readFileSync(
+    __dirname + "/../lib/user_trial_onboarding.js",
+    "utf8"
+  );
+  assert.doesNotMatch(compiled, /nodemailer/i);
+  assert.doesNotMatch(compiled, /smtp/i);
+  assert.doesNotMatch(compiled, /sendWelcomeEmail/);
+  assert.doesNotMatch(compiled, /deviceFingerprint/i);
+  assert.doesNotMatch(compiled, /isTrialAbuseExempt/);
+  assert.doesNotMatch(compiled, /trialBlockedReason/);
 });
