@@ -34,7 +34,7 @@ android {
         // library manifests, so flutter.minSdkVersion (21 on the 3.29.1 pin)
         // fails the manifest merger ("minSdkVersion 21 cannot be smaller
         // than version 23 declared in library [:firebase_analytics]").
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName
