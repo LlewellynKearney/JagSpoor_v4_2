@@ -14,9 +14,7 @@ import 'services/user_role_provider.dart';
 import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
-import 'services/email_verification_service.dart';
 import 'services/device_fingerprint_service.dart';
-import 'screens/email_verification_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -193,24 +191,6 @@ class _AuthScreenState extends State<AuthScreen> {
   /// login. Role selection is strictly reserved for new sign-ups, dual-role
   /// accounts, and `unassigned`/`admin` profiles.
   Future<void> _routeAfterAuth() async {
-    // Email-verification gate: an unverified email/password account must
-    // verify its address via Firebase Auth's built-in verification flow
-    // before accessing core app features (the role dashboards). The
-    // verification screen's continuation resumes this routing.
-    if (await _requiresEmailVerification()) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => EmailVerificationScreen(
-            theme: widget.themedata,
-            onVerified: _routeAfterAuth,
-          ),
-        ),
-      );
-      return;
-    }
-
     // Resolve the role ONCE (forceRefresh to bypass any stale cache from a
     // previous session) and cache it so the destination route guard admits
     // the user without a re-fetch.
@@ -277,17 +257,6 @@ class _AuthScreenState extends State<AuthScreen> {
           MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         );
     }
-  }
-
-  /// Whether the signed-in account must complete Firebase Auth's built-in
-  /// email-verification flow before accessing core app features. Delegates to
-  /// the shared [EmailVerificationService] status snapshot (which carries the
-  /// [EmailVerificationGuard] policy) so every gate in the app makes the same
-  /// decision. Never throws — an unresolved status means "not gated" here so
-  /// a transient Firebase hiccup cannot trap a user on the auth screen.
-  Future<bool> _requiresEmailVerification() async {
-    final status = await EmailVerificationService.instance.currentStatus();
-    return status.requiresVerification;
   }
 
   /// Ensures the signed-in outfitter's `users/{uid}` document carries an
@@ -405,15 +374,6 @@ class _AuthScreenState extends State<AuthScreen> {
           }
         }
 
-        // Send the Firebase Auth email-verification link to the newly
-        // registered address (best-effort — a send failure still routes the
-        // user to the verification screen, where they can resend).
-        try {
-          await EmailVerificationService.instance.sendVerificationEmail();
-        } catch (_) {
-          // Non-fatal: the verification screen offers a resend action.
-        }
-
         setState(() => _isLoading = false);
 
         if (!mounted) return;
@@ -429,23 +389,10 @@ class _AuthScreenState extends State<AuthScreen> {
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
-        // Guide the newly registered user to verify their email before
-        // accessing core app features; the verification screen continues to
-        // role selection once the address is verified.
+        // New registration: no role assigned yet — route to role selection.
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => EmailVerificationScreen(
-              theme: widget.themedata,
-              onVerified: () {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => const RoleSelectionScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         );
         return;
       }

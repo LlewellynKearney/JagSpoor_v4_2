@@ -3,8 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
-import '../features/auth/screens/email_verification_screen.dart';
-import '../features/auth/services/email_verification_service.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
@@ -74,25 +72,6 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => AuthScreen(themedata: widget.theme)),
-      );
-      return;
-    }
-
-    // Email-verification gate: an unverified email account must verify via
-    // Firebase Auth's built-in verification flow before reaching a dashboard.
-    // The verification screen's continuation restarts this boot routing.
-    final verificationStatus =
-        await EmailVerificationService.instance.currentStatus();
-    if (verificationStatus.requiresVerification) {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EmailVerificationScreen(
-            theme: widget.theme,
-            onVerified: _navigateToNextScreen,
-          ),
-        ),
       );
       return;
     }

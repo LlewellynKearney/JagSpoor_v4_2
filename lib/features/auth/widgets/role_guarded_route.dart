@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../screens/email_verification_screen.dart';
-import '../services/email_verification_service.dart';
 import '../services/role_guard.dart';
 import '../services/user_role_provider.dart';
 
@@ -50,29 +48,6 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
   }
 
   Future<void> _authorize() async {
-    // Defense-in-depth email-verification gate: an unverified email account
-    // is bounced to the verification screen before the role check, so a
-    // deep-link cold launch straight into a guarded dashboard cannot bypass
-    // Firebase Auth's built-in email-verification flow. The verification
-    // screen's continuation re-runs this authorization once verified.
-    final verificationStatus =
-        await EmailVerificationService.instance.currentStatus();
-    if (verificationStatus.requiresVerification) {
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => EmailVerificationScreen(
-              theme: ThemeController.instance,
-              onVerified: _authorize,
-            ),
-          ),
-        );
-      });
-      return;
-    }
-
     final provider = UserRoleProvider.instance;
 
     // Resolve the role if not already (covers deep-link / direct route entry).
