@@ -1,9 +1,10 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 import 'package:jagspoor/core/theme/app_theme.dart';
-import 'package:jagspoor/features/subscription/services/payfast_service.dart';
+import 'package:jagspoor/features/subscription/services/play_billing_service.dart';
+import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
 import 'package:jagspoor/features/subscription/subscription_screen.dart';
 
@@ -14,9 +15,25 @@ void main() {
     fake = FakeFirebaseFirestore();
     SubscriptionStatusService.firestoreForTesting = fake;
     SubscriptionStatusService.currentUserIdResolverForTesting = () => 'uid-1';
+    TestWidgetsFlutterBinding.ensureInitialized();
+    // Stub the platform launcher so launchUrl completes without a native
+    // intent (the Play subscription center URL is still asserted directly).
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/url_launcher'),
+      (call) async => true,
+    );
   });
 
-  tearDown(SubscriptionStatusService.resetTestSeams);
+  tearDown(() {
+    SubscriptionStatusService.resetTestSeams();
+    PlayBillingService.resetTestSeams();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/url_launcher'),
+      null,
+    );
+  });
 
   Widget buildScreen({SubscriptionTier? tier}) => MaterialApp(
         home: SubscriptionScreen(theme: ThemeController(), tier: tier),
@@ -59,7 +76,7 @@ void main() {
       expect(find.byKey(const ValueKey('promoCodeField')), findsOneWidget);
 
       await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
-      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
       expect(find.byKey(const ValueKey('checkoutTotalCard')), findsOneWidget);
       expect(find.text('R 0.00'), findsOneWidget); // free trial row
     });
@@ -239,14 +256,14 @@ void main() {
       await pumpScreen(tester);
 
       expect(find.text('SUBSCRIPTION ACTIVE'), findsOneWidget);
-      // The primary checkout action is replaced by the manage/cancel option
-      // (re-subscribing while billed would duplicate the billing token).
+      // The primary checkout action is replaced by the manage-in-Google-Play
+      // option (Play owns recurring billing).
       expect(find.byKey(const ValueKey('subscribeButton')), findsNothing);
       await scrollTo(
         tester,
         find.byKey(const ValueKey('cancelSubscriptionButton')),
       );
-      expect(find.text('CANCEL SUBSCRIPTION'), findsOneWidget);
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsOneWidget);
     });
 
     testWidgets('shows SUBSCRIPTION CANCELLED for a cancelled sub',
@@ -259,7 +276,7 @@ void main() {
       // A cancelled subscription can re-subscribe from scratch: the primary
       // checkout action is rendered again in place of the cancel action.
       await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
-      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
       expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
           findsNothing);
     });
@@ -277,23 +294,16 @@ void main() {
         tester,
         find.byKey(const ValueKey('cancelSubscriptionButton')),
       );
-      expect(find.text('CANCEL SUBSCRIPTION'), findsOneWidget);
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsOneWidget);
       expect(find.byKey(const ValueKey('subscribeButton')), findsNothing);
     });
 
-    testWidgets('keeps the subscription when the dialog is dismissed',
+    testWidgets('dismissing the manage dialog keeps the subscription',
         (tester) async {
       await fake.collection('users').doc('uid-1').set({
         'subscriptionStatus': 'active',
         'subscriptionTier': 'outfitter',
       });
-      var seamCalls = 0;
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async {
-        seamCalls++;
-        return http.Response('{}', 200);
-      };
-
       await pumpScreen(tester);
       await scrollTo(
         tester,
@@ -302,26 +312,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Cancel Subscription?'), findsOneWidget);
+      expect(find.text('Manage Subscription'), findsOneWidget);
       await tester.tap(find.text('KEEP SUBSCRIPTION'));
       await tester.pumpAndSettle();
-      expect(seamCalls, 0);
+      // No navigation / URL launch happens when the user keeps the sub.
+      expect(find.text('Manage Subscription'), findsNothing);
     });
 
-    testWidgets('confirms cancellation and shows the termination message',
-        (tester) async {
+    testWidgets('confirming opens the Google Play deep link', (tester) async {
       await fake.collection('users').doc('uid-1').set({
         'subscriptionStatus': 'active',
         'subscriptionTier': 'outfitter',
       });
-      var seamCalls = 0;
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async {
-        seamCalls++;
-        expect(userId, 'uid-1');
-        return http.Response('{"result": "success"}', 200);
-      };
-
       await pumpScreen(tester);
       await scrollTo(
         tester,
@@ -330,41 +332,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Cancel Subscription?'), findsOneWidget);
+      expect(find.text('Manage Subscription'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('confirmCancelButton')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-
-      expect(seamCalls, 1);
-      expect(
-        find.textContaining('Subscription cancelled'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('shows an error when the endpoint rejects the cancellation',
-        (tester) async {
-      await fake.collection('users').doc('uid-1').set({
-        'subscriptionStatus': 'active',
-        'subscriptionTier': 'outfitter',
-      });
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async => http.Response('error', 502);
-
-      await pumpScreen(tester);
-      await scrollTo(
-        tester,
-        find.byKey(const ValueKey('cancelSubscriptionButton')),
-      );
-      await tester.tap(find.byKey(const ValueKey('cancelSubscriptionButton')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('confirmCancelButton')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
 
+      // The Play subscription center is policy-compliant billing management.
       expect(
-        find.textContaining('could not be confirmed'),
-        findsOneWidget,
+        PlayBillingService.instance.subscriptionCenterUrlFor(
+          SubscriptionTier.outfitter,
+        ),
+        contains('play.google.com/store/account/subscriptions'),
       );
     });
   });
@@ -382,7 +359,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(
-        find.text('Please sign in with a valid email to subscribe.'),
+        find.text('Please sign in to subscribe.'),
         findsOneWidget,
       );
     });

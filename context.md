@@ -15,7 +15,7 @@ detail. It was reconciled against the actual source on the date above.
 1. [System Overview](#1-system-overview)
 2. [Role-Based Access Control & Dashboards](#2-role-based-access-control--dashboards)
 3. [Marketplace & Financial Layer](#3-marketplace--financial-layer)
-4. [PayFast Payment Integration](#4-payfast-payment-integration)
+4. [Subscription Billing — Google Play Billing](#4-subscription-billing--google-play-billing)
 5. [Firestore Security Rules Overhaul](#5-firestore-security-rules-overhaul)
 6. [On-Device Photo Compression Pipeline](#6-on-device-photo-compression-pipeline)
 7. [FCM Push Notifications & Real-Time Indicators](#7-fcm-push-notifications--real-time-indicators)
@@ -49,7 +49,7 @@ clipping behind gesture bars.
   entry is multiplied by `1.075` and rounded to two decimals
   (`(value * 1.075).toStringAsFixed(2)`) before rendering on any hunter-facing
   viewport or A4 statement. See [§3](#3-marketplace--financial-layer) and
-  [§4](#4-payfast-payment-integration) for the split-payment model.
+  [§4](#4-subscription-billing--google-play-billing).
 - **Currency standard.** All pricing fields use the South African Rand symbol
   (`R `) exclusively. Dollar (`$`) notations are forbidden.
 
@@ -112,7 +112,7 @@ static const double platformCommissionRate = 0.075;
   - `basePriceRands` — the outfitter's listed base price.
   - `platformCommissionRands = basePriceRands × 0.075` — the platform commission.
   - `totalHunterPriceRands = basePriceRands + platformCommissionRands` — the gross
-    amount the hunter pays (the PayFast charge amount).
+    amount the hunter pays.
   - `depositFraction = 0.25`, `depositAmountRands`, `balanceAmountRands` — the
     25% non-refundable deposit due once the outfitter approves the booking.
 - Outfitters cannot book their own packages (enforced in code).
@@ -124,7 +124,7 @@ The booking document therefore carries the full split:
 |-------|---------|
 | `basePriceRands` | Outfitter net (gross minus commission) |
 | `platformCommissionRands` | Platform's 7.5% cut |
-| `totalHunterPriceRands` | Gross booking volume charged to the hunter via PayFast |
+| `totalHunterPriceRands` | Gross booking volume charged to the hunter |
 | `depositAmountRands` | 25% non-refundable deposit due on approval |
 | `balanceAmountRands` | Remaining balance settled with the outfitter |
 
@@ -147,70 +147,56 @@ count, with instant cross-role synchronization (Outfitter ↔ Hunter).
 
 ---
 
-## 4. PayFast Payment Integration
+## 4. Subscription Billing — Google Play Billing
 
-PayFast (South African payment gateway) is integrated for booking checkout, with
-the server-side reconciliation handled by a Cloud Function webhook.
+Subscription billing (Hunter R19.99/month, Outfitter R199.99/month) is handled
+exclusively through **Google Play Billing** via the official `in_app_purchase`
+Flutter plugin. The legacy PayFast payment gateway integration (client checkout
+URLs, the `payfastITNHandler` / `cancelSubscription` Cloud Function webhooks,
+and the PayFast `payfast.ts` crypto helpers) has been **completely removed**.
+Google Play owns the recurring-billing lifecycle (renewals, pause, cancellation,
+payment methods); the app mirrors the entitlement onto `users/{uid}`.
 
-### 4.1 Sandbox & Checkout Launch Flow
-Location: `lib/features/hunter_mode/screens/hunter_package_marketplace_screen.dart`.
+### 4.1 Google Play Billing Service
+Location: `lib/features/subscription/services/play_billing_service.dart`.
 
-- The hunter booking card (`_HunterBookingCard`) renders a **"Pay via PayFast"**
-  button only when the booking is in a payable status
-  (`pending_payment`, `pending_deposit`, or `approved`) **and** has a non-zero
-  price. The price is resolved from `totalHunterPriceRands`, falling back to
-  `totalPriceZAR`.
-- `_initiatePayFastCheckout()` builds a PayFast sandbox URL from the booking
-  details and launches it externally via `url_launcher`
-  (`launchUrl(uri, mode: LaunchMode.externalApplication)`).
-- **Sandbox configuration** (PayFast's published sandbox test credentials — *not*
-  production secrets; replace merchant_id/merchant_key/host with live values
-  before launch):
+- `PlayBillingService.instance` wraps `InAppPurchase.instance`:
+  `isBillingSupported()`, `loadProducts()` (maps Play `ProductDetails` to
+  `PlayProduct`), `purchaseProduct(tier)` (launches the Play billing flow via
+  `buyNonConsumable`), `purchaseStream` (reacts to purchase completions + pending
+  purchases), `completePurchase(purchase)`, `restorePurchases()`, and
+  `subscriptionCenterUrlFor(tier)` (deep link to the Google Play subscriptions
+  center for policy-compliant manage/pause/cancel).
+- Shared pricing model: `lib/features/subscription/services/subscription_pricing.dart`
+  — `SubscriptionTier` (hunter/outfitter) with the Play Console product ids
+  `jagspoor_hunter_monthly` / `jagspoor_outfitter_monthly`, `SubscriptionStatus`,
+  the promo-code engine (`JAGSPOOR10` 10%, `LAUNCH25` 25%, `SAHUNTER50` 50%), and
+  `SubscriptionTrial.trialDays = 30`.
+- **Entitlement mirror** (`lib/features/subscription/services/subscription_status_service.dart`):
+  `recordPlayPurchase({tier, purchaseToken, renewalDate})` writes
+  `subscriptionStatus: 'active'`, `subscriptionTier`,
+  `subscriptionProvider: 'google_play_billing'`, `subscriptionPlayPurchaseToken`,
+  `subscriptionRenewalDate` onto `users/{uid}`; `recordPlayCancellation()`
+  writes the cancelled state.
 
-  ```dart
-  const String _kPayfastSandboxHost = 'https://sandbox.payfast.co.za';
-  const String _kPayfastSandboxMerchantId = '10000100';
-  const String _kPayfastSandboxMerchantKey = '46f0cd694581a';
-  ```
+### 4.2 Subscription Screen
+Location: `lib/features/subscription/subscription_screen.dart`.
 
-- **Booking linkage:** the Flutter client passes the Firestore booking id as
-  `m_payment_id` when constructing the PayFast payment request. PayFast echoes it
-  back unchanged in the ITN, allowing reconciliation.
+- The primary checkout action is **"SUBSCRIBE VIA GOOGLE PLAY"** — tapping it
+  invokes `PlayBillingService.purchaseProduct(tier)` (the native Play Billing
+  purchase flow; no webview, no redirect).
+- When the user already has an active subscription (or a live trial), the button
+  is replaced by **"MANAGE IN GOOGLE PLAY"** which deep-links to the Play Store
+  subscriptions center — Play handles pause/cancel/payment methods, satisfying
+  the Google Play Payments policy for recurring subscriptions.
+- The tier cards show the Play-loaded price when the catalog resolves, falling
+  back to the local R19.99 / R199.99 constants.
 
-### 4.2 ITN Webhook Handler (Cloud Function)
-Location: `functions/src/index.ts` → `payfastITNHandler`.
-
-`payfastITNHandler` is an HTTPS `onRequest` function (region `us-central1`,
-public invoker) that receives PayFast's Instant Transaction Notification (ITN)
-after a payment is processed. Flow:
-
-1. **Reject non-POST** requests early (405).
-2. **Signature verification** — reads the raw body for byte-exact md5 signature
-   verification (`verifySignature`). Uses constant-time comparison. On failure,
-   responds `200 signature_invalid` (stops retries without confirming).
-3. **Server-to-server validation** — calls PayFast's `validate` endpoint
-   (`validateWithPayFast`) to confirm the ITN genuinely originated from PayFast.
-4. **Status processing** — only `COMPLETE` payments trigger a booking update.
-5. **Booking update** — on `COMPLETE`, updates `bookings/{m_payment_id}`:
-   - `status: 'Paid'`
-   - `paymentTimestamp` (server timestamp)
-   - `payfastpfPaymentId`
-   - `itemName`, `paymentStatus`, `updatedAt`
-6. **Confirmation** — returns PayFast's confirmation token (`200`) to halt
-   retries. On a failed booking write it returns `500` so PayFast retries.
-
-The function uses the Admin SDK, so it bypasses Firestore security rules
-entirely. Crypto helpers live in `functions/src/payfast.ts` (signature
-build/compute/verify, `validateWithPayFast` using global `fetch`). The merchant
-pass phrase is read from the `PAYFAST_PASSPHRASE` environment variable.
-
-### 4.3 Split-Payment Reconciliation
-Because the booking document already carries `basePriceRands`,
-`platformCommissionRands`, and `totalHunterPriceRands` (see [§3.2](#32-split-payment-model-gross-vs-commission)),
-the `Paid` status set by the ITN handler marks the *gross* booking volume as
-collected. The platform commission is already computed and stored, so revenue
-dashboards can report gross booking volume vs. platform commission directly from
-the Firestore fields without any additional calculation at payment time.
+### 4.3 Free Trial
+The 30-day free trial is provisioned via the Play Console subscription offer
+(`SubscriptionTrial.trialDays = 30` mirrors the advertised window). The backend
+`initializeNewUserTrial` Auth trigger (see `functions/src/user_trial_onboarding.ts`)
+still provisions the trial state on account creation.
 
 ---
 
@@ -274,7 +260,9 @@ may read or write:
   `hunterId`/`outfitterId`). Either party may update non-status fields (status
   frozen). This prevents a hunter from self-approving their own booking.
 - **Delete:** admin only.
-- The PayFast ITN Cloud Function uses the Admin SDK, so it bypasses these rules.
+- Subscription entitlement writes on `users/{uid}` (Google Play Billing receipts/
+  state mirrors) use the owner-scoped `users` rule; no payment webhook exists
+  anymore.
 
 `bookings/{bookingId}/chats/{chatId}` (nested negotiation subcollection):
 - **Read/write:** restricted to the two booking parties via
@@ -368,7 +356,7 @@ and never crash a trigger.
 - **`onBookingUpdated`** — `onDocumentUpdated` on `bookings/{bookingId}`. Fires
   only when the `status` field changes between before/after snapshots. The
   recipient is the "other" party: if `updatedBy == hunterId`, alert the outfitter;
-  otherwise (outfitter or system, e.g. the PayFast ITN webhook) alert the hunter.
+  otherwise (outfitter or system, e.g. a Cloud Function) alert the hunter.
   When `updatedBy` is absent the hunter is alerted by default.
   - Title: `"Booking Status Update"`
   - Body: mapped via `bookingStatusBody()` — e.g. `"Your booking is now Paid!"`,
@@ -565,13 +553,12 @@ functions, all region `us-central1`:
 
 | Function | Type | Purpose |
 |----------|------|---------|
-| `payfastITNHandler` | HTTPS `onRequest` (public) | PayFast ITN: signature verify → server validation → mark booking `Paid`. Uses `PAYFAST_PASSPHRASE` env var. |
 | `adminCreateOutfitter` | `onCall` (admin claim required) | Creates Auth user (Admin SDK, does NOT log out caller), writes `/outfitters/{uid}`, sets `{ role: 'outfitter' }` claims. Rolls back on failure. |
+| `initializeNewUserTrial` | Firebase Auth `onCreate` trigger | Provisions the 30-day free trial on `users/{uid}` for every new Auth user. |
 | `onNewChatMessage` | Firestore `onDocumentCreated` (`bookings/{id}/chats/{chatId}`) | FCM push to the non-sender booking party on new chat message. |
 | `onBookingUpdated` | Firestore `onDocumentUpdated` (`bookings/{id}`) | FCM push to the "other" party when booking `status` changes. |
 
-Helpers: `functions/src/payfast.ts` (signature build/compute/verify,
-`validateWithPayFast`), `functions/src/firebase.ts` (Admin SDK init).
+Helpers: `functions/src/firebase.ts` (Admin SDK init); PayFast helpers are removed. All exported functions are region `us-central1`.
 
 ---
 
@@ -621,8 +608,8 @@ Triggered on push to `main` and manual `workflow_dispatch`.
   `@firebase/rules-unit-testing` cannot execute here. Rules were validated
   structurally (JSON valid, default-deny present, `tsc` clean) but not via
   emulator integration tests.
-- PayFast signature logic was unit-tested in isolation (round-trip + tamper
-  detection pass).
+- No payment-gateway modules remain in `functions/` — the only functions are
+  admin provisioning, trial onboarding, and FCM triggers.
 
 ### 15.2 Deploy Commands (when credentials available)
 
@@ -632,19 +619,17 @@ cd /workspace/project/JagSpoor_v4_2
 npx firebase-tools deploy --only functions,firestore:rules,firestore:indexes,storage
 # Includes: bookings/farms/trophies/scanned_pricelists composite indexes +
 # trophy_photos storage rules + hardened firestore.rules.
-# Set PayFast passphrase:
-npx firebase-tools functions:set PAYFAST_PASSPHRASE=...
+# No payment-gateway env vars are required (Google Play Billing owns billing).
 ```
 
 ### 15.3 Security Notes
-- PayFast sandbox credentials in `hunter_package_marketplace_screen.dart` are
-  PayFast's published sandbox test values, not production secrets. Replace with
-  live merchant credentials before launch (and move them off the client into a
-  server-generated payment request for production).
+- Subscription billing uses Google Play Billing (`in_app_purchase`); no payment-
+  gateway credentials exist in the client or server. Product ids must be configured
+  in the Google Play Console (`jagspoor_hunter_monthly`, `jagspoor_outfitter_monthly`).
 - Firestore rules enforce default-deny; Storage rules scope writes per owner uid.
   `permit_signatures/{permitId}/{fileName}` permits any authenticated user to
   write (dual-party permit signatures); reads are globally authenticated-read.
-- `PAYFAST_PASSPHRASE` is a server-side env var, never bundled into the client.
+- No payment secrets are stored in the client; Play handles all billing.
 
 ---
 
@@ -739,7 +724,7 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   unchanged — it remains the server-side catalog for any non-screen consumers;
   the repository is the screen's authoritative offline-first source.
 
-### 16.8 Outfitter Mode refactor — AI price-list quantity limits, per-farm cost config, per-farm PayFast routing (implemented 2026-08-15)
+### 16.8 (superseded) Outfitter Mode refactor — AI price-list quantity limits, per-farm cost config (implemented 2026-08-15; the per-farm PayFast routing described below was later removed entirely with the migration to Google Play Billing.)
 - **AI price-list scanner — quantity limits**: `PricelistItem` gained a
   `quantityLimit` (`int?`) field. The parser now extracts the limit from
   common SA price-list notations (`x3`, `max 5`, `qty 2`, `(3 avail)`,
@@ -764,7 +749,7 @@ The Trophy Room share button (grid card + detail screen AppBar) now shares the
   `OutfitterEnterpriseManager.updateFarmCosts`. The Edit Farm sheet in the
   Enterprise Control Panel gained a "COST RATES (PACKAGE BUILDER)" section
   editing all six rate fields.
-- **Per-farm PayFast routing**: `FarmPayFastProfile` (merchant id, merchant
+- **Per-farm PayFast routing (REMOVED with the Google Play Billing migration)**: `FarmPayFastProfile` (merchant id, merchant
   key, passphrase, live-vs-sandbox toggle) is persisted as a nested
   `payfastProfile` map on the farm document via
   `OutfitterEnterpriseManager.updateFarmPayFastProfile` /
@@ -1200,7 +1185,7 @@ lib/
 │   ├── game_guide/                         # SA Game Guide (animals)
 │   ├── hunter_mode/
 │   │   ├── screens/
-│   │   │   ├── hunter_package_marketplace_screen.dart   # PayFast checkout + booking cards
+│   │   │   ├── hunter_package_marketplace_screen.dart   # Marketplace + booking cards
 │   │   │   ├── outfitter_booking_dashboard_screen.dart  # Outfitter booking queue
 │   │   │   ├── license_scanner_screen.dart              # PDF417 mobile_scanner
 │   │   │   └── ...
@@ -1227,8 +1212,8 @@ lib/
 
 functions/                                # Cloud Functions (TypeScript, Node 22)
 ├── src/
-│   ├── index.ts                          # payfastITNHandler, adminCreateOutfitter, FCM triggers
-│   ├── payfast.ts                        # PayFast signature + validation helpers
+│   ├── index.ts                          # adminCreateOutfitter, initializeNewUserTrial, FCM triggers
+│   ├── firebase.ts                        # Admin SDK init
 │   └── firebase.ts                       # Admin SDK init
 ├── package.json
 └── tsconfig.json

@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Required for Google Play Billing subscriptions (in_app_purchase). -->
+    <uses-permission android:name="com.android.vending.BILLING" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Gallery / photo-library access for image_picker.
          Android 13+ (API 33+, incl. 14 / S26+) uses the granular

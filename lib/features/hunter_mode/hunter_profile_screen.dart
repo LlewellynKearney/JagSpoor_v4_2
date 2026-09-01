@@ -9,6 +9,7 @@ import '../../core/widgets/copyright_footer.dart';
 import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
+import '../auth/screens/privacy_policy_screen.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
@@ -965,6 +966,85 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           fontSize: 14,
                         ),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Privacy & Data - Google Play policy compliance. Exposes
+                  // the privacy policy and the in-app account/data deletion
+                  // mechanism so users can request erasure without leaving
+                  // the app (required by the Google Play Data safety +
+                  // account-deletion policy).
+                  _buildSectionHeader('PRIVACY & DATA'),
+                  const SizedBox(height: 12),
+                  Card(
+                    color: HunterUi.cardColor(widget.theme),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(
+                            Icons.privacy_tip_outlined,
+                            color: widget.theme.accentColor,
+                          ),
+                          title: Text(
+                            'Privacy Policy',
+                            style: TextStyle(
+                              color: HunterUi.titleColor(widget.theme),
+                            ),
+                          ),
+                          subtitle: Text(
+                            'How JagSpoor collects, uses and protects your data.',
+                            style: TextStyle(
+                              color: HunterUi.subtitleColor(widget.theme),
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            color: HunterUi.subtitleColor(widget.theme),
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PrivacyPolicyScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: Icon(
+                            Icons.delete_sweep_outlined,
+                            color: Colors.red.shade400,
+                          ),
+                          title: Text(
+                            'Delete My Account & Data',
+                            style: TextStyle(
+                              color: HunterUi.titleColor(widget.theme),
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Permanently erase your account and all associated '
+                            'personal data (in-app, no web form required).',
+                            style: TextStyle(
+                              color: HunterUi.subtitleColor(widget.theme),
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            color: HunterUi.subtitleColor(widget.theme),
+                          ),
+                          onTap: _showDeleteAccountDialog,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 32),

@@ -23,7 +23,7 @@ import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../subscription/subscription_screen.dart';
-import '../subscription/services/payfast_service.dart';
+import '../subscription/services/subscription_pricing.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import 'widgets/outfitter_scaffold.dart';
 
@@ -315,7 +315,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             ),
                             const SizedBox(height: 12),
 
-                          // Subscription — PayFast billing management.
+                          // Subscription — Google Play Billing management.
                           _buildFeatureCard(
                             icon: Icons.workspace_premium_rounded,
                             title: 'Subscription',

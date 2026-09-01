@@ -1978,6 +1978,86 @@ shared-surface stack:
   `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart` (leak fix),
   `test/hunter_scaffold_rollout_test.dart` (NEW).
 
+## Phase -- Google Play Billing migration (PayFast removed) + dark-mode ballistic chart contrast + Play compliance (added 2026-09-01)
+
+- **PayFast payment integration completely removed** from both the Flutter
+  client and the Cloud Functions:
+  - Deleted `lib/features/subscription/services/payfast_service.dart` and the
+    PayFast ITN contract tests (`test/payfast_service_test.dart`,
+    `test/payfast_itn_functions_contract_test.dart`).
+  - Deleted `functions/src/payfast_subscription.ts` and removed the
+    `payfastSubscriptionITN` + `cancelSubscription` HTTPS onRequest functions
+    + `PAYFAST_*` env constants from `functions/src/index.ts`.
+    `functions/.env.example` re-written to state no payment-gateway env vars
+    are required (Play owns recurring billing).
+  - Removed the `jagspoor://payment-return` deep-link intent filter that was
+    only used by the PayFast browser-checkout return, and the
+    `com.android.vending.BILLING` permission is now declared explicitly.
+- **Google Play Billing integration** (official `in_app_purchase: ^3.2.3`):
+  - `lib/features/subscription/services/subscription_pricing.dart` (NEW):
+    single source of truth for `SubscriptionTier` (hunter/outfitter via the
+    Play product ids `jagspoor_hunter_monthly` / `jagspoor_outfitter_monthly`),
+    `SubscriptionStatus`, the promo-code engine (`JAGSPOOR10` / `LAUNCH25` /
+    `SAHUNTER50`), and `SubscriptionTrial.trialDays = 30`.
+  - `lib/features/subscription/services/play_billing_service.dart` (NEW):
+    wraps `InAppPurchase.instance` — `isBillingSupported`, `loadProducts`
+    (maps Play `ProductDetails` to `PlayProduct`), `purchaseProduct`
+    (`buyNonConsumable`), `purchaseStream`, `completePurchase`,
+    `restorePurchases`, and `subscriptionCenterUrlFor(tier)` (the deep link to
+    Play's subscriptions center for policy-compliant manage/cancel).
+  - `lib/features/subscription/services/subscription_status_service.dart`:
+    `UserSubscription` model rewritten — `recordPlayPurchase({tier,
+    purchaseToken, renewalDate})` writes
+    `subscriptionStatus: 'active'`, `subscriptionTier`,
+    `subscriptionProvider: 'google_play_billing'`,
+    `subscriptionPlayPurchaseToken`, `subscriptionRenewalDate`;
+    `recordPlayCancellation()`. The PayFast `cancelSubscription` URL client
+    + `cancellationInvokerForTesting` seam were removed.
+  - `lib/features/subscription/subscription_screen.dart`: subscribe button is
+    now "SUBSCRIBE VIA GOOGLE PLAY" (`_subscribe` -> Play Billing
+    `purchaseProduct`); the cancel action opens Google Play's subscription
+    center (`MANAGE IN GOOGLE PLAY`) with a confirmation dialog — Play is
+    authoritative for pause/cancel. Tier cards show the Play-loaded price
+    when the catalog resolves.
+  - Dashboards import `subscription_pricing.dart` (was `payfast_service.dart`)
+    for `SubscriptionTier.hunter/outfitter` at the `SubscriptionScreen`
+    call sites.
+- **Google Play compliance**:
+  - `android/app/build.gradle.kts`: `minSdk = 23` (was
+    `flutter.minSdkVersion`, 21) so the resolved Firebase manifests +
+    Play Billing merge cleanly; `targetSdk = 36` (Android 16) already
+    satisfies the current Google Play / Play Billing API-level requirement
+    (documented inline).
+  - Hunter Profile gained a "PRIVACY & DATA" section exposing the in-app
+    Privacy Policy link and an explicit "Delete My Account & Data" entry
+    (the account-deletion mechanism already exists in-app via
+    `AccountDeletionService`), satisfying Google Play's in-app data-deletion
+    policy without a web form.
+- **Dark-mode ballistic chart contrast** (`ballistic_calc_screen.dart`):
+  the DROP & WINDAGE chart's title, axis labels, grid-line labels, legend,
+  and the target-range readouts now use a mode-aware `_chartTextColor`
+  getter — warm cream `0xFFEFE7DC` on the dark HUD card in Night mode,
+  espresso in Day mode (the prior hardcoded `0xFF1A2421` espresso was
+  illegible on the dark chart surface).
+- **Tests**: `test/subscription_screen_test.dart` + `test/subscription_status_service_test.dart`
+  rewritten for Play Billing (purchase records, cancel-via-Play, promo
+  engine, pricing-product-id contract); the url_launcher channel is mocked
+  in the screen suite so the Play-manage deep link test is deterministic.
+  `flutter analyze`: 0 errors, 0 warnings. Run the SQLite-FFI integration
+  suites with `LD_LIBRARY_PATH="$HOME/libs"` (the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink is required).
+- Deploy reminder: clean any CI/CD envs that still reference PayFast;
+  Google Play Console must define the two subscription products
+  (`jagspoor_hunter_monthly` R19.99/mo, `jagspoor_outfitter_monthly`
+  R199.99/mo) with the 30-day free trial offer.
+- Files: deleted `payfast_service.dart`, `payfast_subscription.ts`,
+  `payfast_service_test.dart`, `payfast_itn_functions_contract_test.dart`;
+  new `subscription_pricing.dart`, `play_billing_service.dart`; updated the
+  subscription screen/service/dashboard imports, `functions/src/index.ts`,
+  `firestore`-none, `pubspec.yaml|lock` (`in_app_purchase`),
+  `android/app/build.gradle.kts`, `AndroidManifest.xml`,
+  `hunter_profile_screen.dart`, ballistic chart, AGENTS.md.
+
 ## Canonical project context (added 2026-08-12)
 
 - `context.md` is now the **single source of truth** for architecture, features,

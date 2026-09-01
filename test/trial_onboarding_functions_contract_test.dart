@@ -7,7 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// JVM), so these tests encode the trigger contract by parsing
 /// `functions/src/user_trial_onboarding.ts` + `functions/src/index.ts` —
 /// mirroring the project's established structural test pattern
-/// (`payfast_itn_functions_contract_test.dart`). The compiled pure helpers
+/// (the PayFast billing integration has been removed from the functions).
+/// The compiled pure helpers
 /// are additionally unit-tested in `functions/test/user_trial_onboarding.test.js`
 /// (run via `npm test` in `functions/`).
 void main() {

@@ -30,7 +30,7 @@ import '../admin/widgets/admin_mode_switcher.dart';
 import '../shared/widgets/hunter_media_card.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
-import '../subscription/services/payfast_service.dart';
+import '../subscription/services/subscription_pricing.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
 import 'widgets/dashboard_feature_folder.dart';

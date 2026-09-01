@@ -1,19 +1,27 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../auth/services/user_role_provider.dart';
-import 'services/payfast_service.dart';
+import 'services/play_billing_service.dart';
+import 'services/subscription_pricing.dart';
 import 'services/subscription_status_service.dart';
 
 /// Subscription checkout screen.
 ///
 /// Shows the user's trial / subscription status, the two tier prices
 /// (Hunter R19.99/month vs Outfitter R199.99/month), a promo-code input that
-/// adjusts the checkout total before the payment payload is generated, and a
-/// secure "Subscribe via PayFast" action button that launches the signed
-/// PayFast subscription checkout in the external browser.
+/// adjusts the displayed checkout total, and a primary action that invokes
+/// the native **Google Play Billing** subscription flow.
+///
+/// Recurring billing is handled entirely by Google Play (Play Console
+/// subscription products `jagspoor_hunter_monthly` /
+/// `jagspoor_outfitter_monthly`); cancellation and payment management happen
+/// inside the Play Store subscriptions center, which is the Play Payments
+/// policy-compliant path.
 class SubscriptionScreen extends StatefulWidget {
   final ThemeController theme;
 
@@ -33,15 +41,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   PromoCodeAdjustment? _appliedPromo;
   String? _promoError;
   bool _isLaunching = false;
-  bool _isCancelling = false;
+  bool _isOpeningPlayStore = false;
+  bool _billingSupported = true;
+  Map<SubscriptionTier, PlayProduct> _products = const {};
 
   SubscriptionTier get _tier =>
       widget.tier ??
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
 
-  double get _baseAmount => PayFastService.baseAmountFor(_tier);
+  double get _baseAmount =>
+      _tier == SubscriptionTier.outfitter ? 199.99 : 19.99;
   double get _checkoutAmount =>
-      PayFastService.resolveAmount(_tier, _appliedPromo);
+      _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
+
+  @override
+  void initState() {
+    super.initState();
+    _initBilling();
+    _listenForPurchases();
+  }
 
   @override
   void dispose() {
@@ -49,20 +67,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     super.dispose();
   }
 
-  String? get _userEmail {
-    try {
-      return FirebaseAuth.instance.currentUser?.email;
-    } catch (_) {
-      return null;
+  /// Resolves billing availability + the Play catalog so the UI can show the
+  /// real Play Console price and surface a graceful "billing unavailable"
+  /// state.
+  Future<void> _initBilling() async {
+    final supported = await PlayBillingService.instance.isBillingSupported();
+    Map<SubscriptionTier, PlayProduct> products = const {};
+    if (supported) {
+      try {
+        products = await PlayBillingService.instance.loadProducts();
+      } catch (e) {
+        debugPrint('SubscriptionScreen: loadProducts failed: $e');
+      }
     }
-  }
-
-  String? get _userName {
-    try {
-      return FirebaseAuth.instance.currentUser?.displayName;
-    } catch (_) {
-      return null;
-    }
+    if (!mounted) return;
+    setState(() {
+      _billingSupported = supported;
+      _products = products;
+    });
   }
 
   String? get _userId {
@@ -89,15 +111,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     });
   }
 
+  /// Launches the native Google Play Billing subscription flow for the
+  /// current tier.
+  ///
+  /// The purchase result arrives asynchronously through
+  /// [PlayBillingService.purchaseStream]; the screen listens there and
+  /// records the entitlement (see [_listenForPurchases]).
   Future<void> _subscribe() async {
     if (_isLaunching) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     final uid = _userId;
-    final email = _userEmail;
-    if (uid == null || email == null || email.isEmpty) {
+    if (uid == null) {
       messenger?.showSnackBar(
         const SnackBar(
-          content: Text('Please sign in with a valid email to subscribe.'),
+          content: Text('Please sign in to subscribe.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (!_billingSupported) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Google Play Billing is unavailable on this device. Please try again later.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -105,52 +143,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
     setState(() => _isLaunching = true);
     try {
-      final payload = PayFastService.buildCheckoutPayload(
-        tier: _tier,
-        userId: uid,
-        emailAddress: email,
-        userName: _userName,
-        promo: _appliedPromo,
-      );
-      final launched = await PayFastService.instance.launchCheckout(payload);
+      final launched = await PlayBillingService.instance.purchaseProduct(_tier);
       if (!mounted) return;
-      if (launched) {
-        // Record the trial window so the UI reflects the pending
-        // subscription immediately; the ITN webhook flips the status to
-        // `active` once PayFast confirms the subscription.
-        try {
-          await SubscriptionStatusService.instance.markTrialStarted(
-            tier: _tier,
-            promoCode: _appliedPromo?.code ?? '',
-          );
-        } catch (e) {
-          debugPrint('markTrialStarted failed (non-fatal): $e');
-        }
-        if (!mounted) return;
+      if (!launched) {
         messenger?.showSnackBar(
           const SnackBar(
             content: Text(
-              'PayFast checkout opened — complete the subscription in your browser. Your 30-day free trial has started.',
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 5),
-          ),
-        );
-      } else {
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Unable to open PayFast checkout — no browser app available. Please try again.',
+              'Unable to start the Google Play purchase — the subscription '
+              'product may not be configured yet. Please try again.',
             ),
             backgroundColor: Colors.red,
           ),
         );
       }
+      // When launched, the Play billing sheet is presented; the purchase
+      // stream will deliver the outcome.
     } catch (e) {
       if (!mounted) return;
       messenger?.showSnackBar(
         SnackBar(
-          content: Text('Subscription checkout failed: $e'),
+          content: Text('Subscription purchase failed: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -159,16 +171,97 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
-  /// Shows the cancellation confirmation dialog ("Manage Subscription"
-  /// option). Returns true when the user confirmed the cancellation.
-  Future<bool> _confirmCancellation() async {
+  /// Listens to the Play Billing purchase stream and mirrors completed
+  /// purchases onto `users/{uid}` so the UI + role gating update.
+  ///
+  /// Subscriptions are non-consumable; once a [PurchaseStatus.purchased] /
+  /// [PurchaseStatus.restored] event arrives the entitlement is recorded and
+  /// the transaction is finished.
+  void _listenForPurchases() {
+    PlayBillingService.instance.purchaseStream.listen((purchases) async {
+      for (final purchase in purchases) {
+        if (purchase.status == PurchaseStatus.purchased ||
+            purchase.status == PurchaseStatus.restored) {
+          final tier = SubscriptionTier.fromPlayProductId(purchase.productID);
+          try {
+            await SubscriptionStatusService.instance.recordPlayPurchase(
+              tier: tier,
+              purchaseToken:
+                  purchase.verificationData.serverVerificationData,
+            );
+          } catch (e) {
+            debugPrint('recordPlayPurchase failed (non-fatal): $e');
+          }
+          await PlayBillingService.instance.completePurchase(purchase);
+          if (!mounted) continue;
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          messenger?.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Subscription active — ${tier == SubscriptionTier.outfitter ? 'Outfitter' : 'Hunter'} '
+                'tier unlocked via Google Play.',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        } else if (purchase.status == PurchaseStatus.error) {
+          debugPrint('Play purchase error: ${purchase.error}');
+        }
+      }
+    });
+  }
+
+  /// Opens the Google Play Store subscriptions center so the user can manage
+  /// / pause / cancel their recurring billing (the policy-compliant path for
+  /// Play-billed subscriptions).
+  Future<void> _openPlaySubscriptionCenter() async {
+    if (_isOpeningPlayStore) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    setState(() => _isOpeningPlayStore = true);
+    final url = PlayBillingService.instance.subscriptionCenterUrlFor(_tier);
+    try {
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to open Google Play. You can manage your subscription '
+              'from the Play Store app.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Unable to open Google Play: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isOpeningPlayStore = false);
+    }
+  }
+
+  /// Shows a confirmation dialog explaining that cancellation is handled in
+  /// Google Play. Returns `true` when the user chooses to open the Play
+  /// subscription center.
+  Future<bool> _confirmOpenPlaySubscriptions() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel Subscription?'),
+        title: const Text('Manage Subscription'),
         content: const Text(
-          'This ends your recurring billing with PayFast. Your access stays '
-          'active until the end of the current billing period.',
+          'Your subscription is billed and managed by Google Play. To pause '
+          'or cancel it, you will be taken to your Google Play subscriptions '
+          'page.',
         ),
         actions: [
           TextButton(
@@ -177,12 +270,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           FilledButton(
             key: const ValueKey('confirmCancelButton'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-            ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('YES, CANCEL'),
+            child: const Text('OPEN GOOGLE PLAY'),
           ),
         ],
       ),
@@ -190,43 +279,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return confirmed ?? false;
   }
 
+  /// The "cancel" action for Play-billed subscriptions: routes the user to
+  /// Google Play's subscription management page (Play owns the recurring-
+  /// billing lifecycle).
   Future<void> _cancelSubscription() async {
-    if (_isCancelling) return;
-    final confirmed = await _confirmCancellation();
+    if (_isOpeningPlayStore) return;
+    final confirmed = await _confirmOpenPlaySubscriptions();
     if (!mounted || !confirmed) return;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    // Capture the subscribed tier for the confirmation message before any
-    // async gaps below.
-    setState(() => _isCancelling = true);
-    try {
-      await SubscriptionStatusService.instance.cancelSubscription();
-      if (!mounted) return;
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Subscription cancelled — your recurring billing has been '
-            'terminated.',
-          ),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 5),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Cancellation could not be confirmed. Your recurring billing is '
-            'unchanged — please try again.',
-          ),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 5),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isCancelling = false);
-    }
+    await _openPlaySubscriptionCenter();
   }
 
   @override
@@ -385,7 +445,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           theme,
           tier: _tier,
           title: isOutfitter ? 'Outfitter' : 'Hunter',
-          amount: PayFastService.baseAmountFor(_tier),
+          amount: _baseAmount,
+          playPrice: _products[_tier]?.price,
           perks: isOutfitter ? _outfitterPerks : _hunterPerks,
         ),
       ],
@@ -398,6 +459,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     required String title,
     required double amount,
     required List<String> perks,
+    String? playPrice,
   }) {
     final isCurrent = tier == _tier;
     return Container(
@@ -447,7 +509,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'R ${amount.toStringAsFixed(2)} / month',
+            playPrice ?? 'R ${amount.toStringAsFixed(2)} / month',
             style: TextStyle(
               color: theme.accentColor,
               fontWeight: FontWeight.w800,
@@ -456,7 +518,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'After a 30-day free trial',
+            'After a ${SubscriptionTrial.trialDays}-day free trial',
             style: TextStyle(color: theme.subtitleColor, fontSize: 12),
           ),
           const SizedBox(height: 10),
@@ -570,7 +632,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
       child: Column(
         children: [
-          _totalRow(theme, 'Free trial (first ${PayFastService.trialDays} days)', 'R 0.00'),
+          _totalRow(
+            theme,
+            'Free trial (first ${SubscriptionTrial.trialDays} days)',
+            'R 0.00',
+          ),
           const SizedBox(height: 8),
           _totalRow(
             theme,
@@ -620,22 +686,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Widget _buildSubscribeButton(ThemeController theme, UserSubscription sub) {
     // Active subscription / live free trial: the primary checkout button is
-    // replaced by the manage / cancel action, since re-subscribing while
-    // billed would create a duplicate recurring billing token.
+    // replaced by the manage-in-Google-Play action, since recurring billing
+    // is owned by Google Play.
     if (sub.hasSubscription) {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
           key: const ValueKey('cancelSubscriptionButton'),
-          onPressed: _isCancelling ? null : _cancelSubscription,
+          onPressed: _isOpeningPlayStore ? null : _cancelSubscription,
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.red.shade700,
             side: BorderSide(color: Colors.red.shade700, width: 1.6),
             disabledForegroundColor: theme.subtitleColor,
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
-          icon: _isCancelling
+          icon: _isOpeningPlayStore
               ? SizedBox(
                   width: 18,
                   height: 18,
@@ -644,10 +712,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     color: Colors.red.shade700,
                   ),
                 )
-              : Icon(Icons.cancel_outlined, color: Colors.red.shade700),
+              : Icon(Icons.settings_rounded, color: Colors.red.shade700),
           label: Text(
-            _isCancelling ? 'CANCELLING…' : 'CANCEL SUBSCRIPTION',
-            style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1),
+            _isOpeningPlayStore ? 'OPENING…' : 'MANAGE IN GOOGLE PLAY',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+            ),
           ),
         ),
       );
@@ -662,18 +733,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           foregroundColor: Colors.white,
           disabledBackgroundColor: theme.subtitleColor.withValues(alpha: 0.3),
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         icon: _isLaunching
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               )
-            : const Icon(Icons.lock_rounded),
+            : const Icon(Icons.play_circle_fill_rounded),
         label: Text(
-          _isLaunching ? 'OPENING PAYFAST…' : 'SUBSCRIBE VIA PAYFAST',
-          style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1),
+          _isLaunching ? 'CONTACTING GOOGLE PLAY…' : 'SUBSCRIBE VIA GOOGLE PLAY',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
         ),
       ),
     );

@@ -32,9 +32,12 @@ android {
         // The resolved Firebase plugins (firebase_analytics 12.x,
         // firebase_app_check, firebase_auth, ...) declare minSdk 23 in their
         // library manifests, so flutter.minSdkVersion (21 on the 3.29.1 pin)
-        // fails the manifest merger ("minSdkVersion 21 cannot be smaller
+        // would fail the manifest merger ("minSdkVersion 21 cannot be smaller
         // than version 23 declared in library [:firebase_analytics]").
-        minSdk = flutter.minSdkVersion
+        // 23 is also the Android-6-era platform floor Google Play enforces.
+        minSdk = 23
+        // Current Google Play requirement (as of Aug 31 2026) for new apps
+        // and updates: target Android 16 (API level 36). Already satisfied.
         targetSdk = 36
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName

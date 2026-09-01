@@ -1,8 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:jagspoor/features/subscription/services/payfast_service.dart';
+import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
 
 void main() {
@@ -130,58 +129,64 @@ void main() {
     });
   });
 
-  group('SubscriptionStatusService.cancelSubscription', () {
-    test('rejects an unauthenticated caller', () {
+  group('SubscriptionStatusService.recordPlayPurchase', () {
+    test('writes the active Play entitlement onto users/{uid}', () async {
+      final renewal = DateTime(2026, 10, 22);
+      await SubscriptionStatusService.instance.recordPlayPurchase(
+        tier: SubscriptionTier.hunter,
+        purchaseToken: 'token-abc',
+        renewalDate: renewal,
+      );
+      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
+      expect(data['subscriptionStatus'], 'active');
+      expect(data['subscriptionTier'], 'hunter');
+      expect(data['subscriptionProvider'], 'google_play_billing');
+      expect(data['subscriptionPlayPurchaseToken'], 'token-abc');
+      final storedRenewal = (data['subscriptionRenewalDate'] as Timestamp).toDate();
+      expect(storedRenewal.difference(renewal).inSeconds, 0);
+      expect(data.containsKey('subscriptionUpdatedAt'), isTrue);
+    });
+
+    test('recordPlayPurchase rejects an unauthenticated caller', () {
       SubscriptionStatusService.currentUserIdResolverForTesting = () => null;
       expect(
-        () => SubscriptionStatusService.instance.cancelSubscription(),
+        () => SubscriptionStatusService.instance.recordPlayPurchase(
+          tier: SubscriptionTier.outfitter,
+        ),
         throwsStateError,
       );
     });
 
-    test('invokes the endpoint with the current uid and returns true on 2xx',
-        () async {
-      String? seenUid;
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async {
-        seenUid = userId;
-        return http.Response('{"result": "success"}', 200);
-      };
-      final ok = await SubscriptionStatusService.instance.cancelSubscription();
-      expect(ok, isTrue);
-      expect(seenUid, 'uid-1');
+    test('recordPlayCancellation writes the cancelled state', () async {
+      await SubscriptionStatusService.instance.recordPlayCancellation();
+      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
+      expect(data['subscriptionStatus'], 'cancelled');
+      expect(data.containsKey('subscriptionCancelledAt'), isTrue);
     });
+  });
 
-    test('throws CancellationException when the endpoint rejects the request',
-        () async {
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async => http.Response('error', 502);
+  group('subscription pricing contract', () {
+    test('tiers map to the expected Play Billing product ids', () {
+      expect(SubscriptionTier.hunter.playProductId, 'jagspoor_hunter_monthly');
+      expect(SubscriptionTier.outfitter.playProductId, 'jagspoor_outfitter_monthly');
       expect(
-        () => SubscriptionStatusService.instance.cancelSubscription(),
-        throwsA(isA<CancellationException>()),
+        SubscriptionTier.fromPlayProductId('jagspoor_outfitter_monthly'),
+        SubscriptionTier.outfitter,
       );
-      // The subscription is NOT silently marked cancelled without the token
-      // being terminated.
-      final sub = await SubscriptionStatusService.instance.getMySubscription();
-      expect(sub.status, isNot(SubscriptionStatus.cancelled));
-    });
-
-    test('falls back to an owner write when the endpoint is unreachable',
-        () async {
-      SubscriptionStatusService.cancellationInvokerForTesting =
-          (userId, idToken) async => null;
-      final ok = await SubscriptionStatusService.instance.cancelSubscription();
-      expect(ok, isTrue);
-      final snap = await fake.collection('users').doc('uid-1').get();
-      expect(snap.data()!['subscriptionStatus'], 'cancelled');
-      expect(snap.data()!.containsKey('subscriptionCancelledAt'), isTrue);
-    });
-
-    test('cancelSubscriptionUrl targets the us-central1 function', () {
       expect(
-        SubscriptionStatusService.cancelSubscriptionUrl,
-        'https://us-central1-jagspoor.cloudfunctions.net/cancelSubscription',
+        SubscriptionTier.fromPlayProductId('jagspoor_hunter_monthly'),
+        SubscriptionTier.hunter,
       );
+    });
+
+    test('promo engine applies the catalog adjustments', () {
+      expect(PromoCodeEngine.normalize('  jagspoor10 '), 'JAGSPOOR10');
+      expect(PromoCodeEngine.isValid('jagspoor10'), isTrue);
+      final adj = PromoCodeEngine.validate('LAUNCH25');
+      expect(adj, isNotNull);
+      expect(adj!.code, 'LAUNCH25');
+      // 19.99 - 25% = 14.9925 (rounds to 14.99 for display).
+      expect(adj.apply(19.99), closeTo(14.99, 0.01));
     });
   });
 }

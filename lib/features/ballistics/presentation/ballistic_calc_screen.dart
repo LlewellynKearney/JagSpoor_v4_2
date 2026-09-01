@@ -1020,9 +1020,9 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'DROP & WINDAGE vs RANGE',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
+                style: TextStyle(color: _chartTextColor, fontSize: 12),
               ),
               Text(
                 firearmLabel,
@@ -1061,8 +1061,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       getTitlesWidget:
                           (value, meta) => Text(
                             value.toStringAsFixed(0),
-                            style: const TextStyle(
-                              color: Color(0xFF1A2421),
+                            style: TextStyle(
+                              // Mode-aware high-contrast axis labels: light
+                              // text on the dark HUD card, espresso in Day.
+                              color: _chartTextColor,
                               fontWeight: FontWeight.bold,
                               fontSize: 10,
                             ),
@@ -1076,8 +1078,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       getTitlesWidget:
                           (value, meta) => Text(
                             '${value.toInt()}m',
-                            style: const TextStyle(
-                              color: Color(0xFF1A2421),
+                            style: TextStyle(
+                              color: _chartTextColor,
                               fontWeight: FontWeight.bold,
                               fontSize: 10,
                             ),
@@ -1108,8 +1110,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       label: VerticalLineLabel(
                         show: true,
                         alignment: Alignment.topRight,
-                        style: const TextStyle(
-                          color: Color(0xFF1A2421),
+                        style: TextStyle(
+                          color: _chartTextColor,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1127,8 +1129,8 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
                       label: HorizontalLineLabel(
                         show: true,
                         alignment: Alignment.topLeft,
-                        style: const TextStyle(
-                          color: Color(0xFF1A2421),
+                        style: TextStyle(
+                          color: _chartTextColor,
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1252,13 +1254,35 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFF1A2421),
+          style: TextStyle(
+            color: _chartTextColor,
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
         ),
       ],
     );
+  }
+
+  /// Mode-aware high-contrast text color for the trajectory chart surface.
+  ///
+  /// The chart is drawn on the dark HUD card (`JagspoorTheme.hudCardBackground`),
+  /// so in dark mode axis labels, legends, and the target-range readouts must
+  /// use a light token (warm cream) instead of the espresso tone that remains
+  /// legible on a light surface. Falls back to the ambient `onSurface` color
+  /// when the inheriting theme exposes one.
+  Color get _chartTextColor {
+    final brightness = Theme.of(context).brightness;
+    if (brightness == Brightness.dark) {
+      return const Color(0xFFEFE7DC); // warm cream — high contrast on 0xFF1E1E1E
+    }
+    final ambientOnSurface = Theme.of(context).colorScheme.onSurface;
+    // In Day mode the HUD chart card is still dark; only fall through to the
+    // ambient onSurface when it is meaningfully lighter than the chart fill.
+    if (ambientOnSurface.computeLuminance() > JagspoorTheme.hudCardBackground
+        .computeLuminance()) {
+      return ambientOnSurface;
+    }
+    return const Color(0xFF1A2421);
   }
 }
