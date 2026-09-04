@@ -43,26 +43,64 @@ android {
         versionName = flutter.versionName
     }
 
+    // ---------- Signing configuration ----------
+    //
+    // The release signing config reads the untracked android/key.properties file.
+    // Java's java.util.Properties uses backslash as an escape character, so every
+    // backslash in a Windows storeFile path MUST be written doubled
+    // (e.g. storeFile=C:\\Users\\me\\.android\\debug.keystore) — in raw CLI
+    // escapes, in the actual file that is four bytes `C:\\Users\\...`; the file
+    // resolver below then receives a single-backslash path. Chart: canonical
+    // CI uses `android/key.properties` 2 backslashes per segment.
+    //
+    // Fallback contract: when key.properties is missing OR doesn't define all
+    // four required properties, the release build falls back to the standard
+    // debug signing identity (the well-known "androiddebugkey" that ships with
+    // every Android SDK). This keeps `flutter build apk --release` buildable
+    // out-of-the-box (CI, fresh clones, no keystore secret configured) and
+    // embeds the debug keystore fingerprint — the exact identity the SDK's
+    // debug.keystore carries. A partial/corrupt key.properties (one or more
+    // blank properties) cannot half-configure a signing config with nulls.
+    //
+    // Prevent the Gradle-managed debug signing config from clobbering the file:
+    // settings.gradle relies on android/local.properties (untracked) whose
+    // `flutter.sdk` points at the actual SDK — the `key.properties` read is the
+    // ONLY signing-source the app module consults.
     val keystorePropertiesFile = rootProject.file("key.properties")
     val keystoreProperties = Properties()
+    var keystoreConfigPresent = false
     if (keystorePropertiesFile.exists()) {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+        keystoreConfigPresent = listOf(
+            "storeFile", "storePassword", "keyAlias", "keyPassword",
+        ).all { key ->
+            keystoreProperties.getProperty(key)?.isNotBlank() == true
+        }
     }
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+            if (keystoreConfigPresent) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
             }
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // When a full key.properties is present, release is signed with it.
+            // Otherwise fall back to the standard SDK debug keystore ("androiddebugkey"),
+            // so `flutter build apk --release` NEVER produces an unsigned APK and
+            // always embeds the debug keystore fingerprint — the key.properties path points at.
+            // (The fallback also keeps CI/fresh-clone release builds buildable without a secrets file.)
+            signingConfig = if (keystoreConfigPresent) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
