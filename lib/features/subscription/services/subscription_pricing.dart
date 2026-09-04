@@ -37,6 +37,44 @@ enum SubscriptionTier {
           : SubscriptionTier.hunter;
 }
 
+/// How long the free trial granted to newly registered standard accounts
+/// lasts (30 days).
+const Duration trialDuration = Duration(days: 30);
+
+/// The canonical `users/{uid}.subscriptionStatus` string representing an
+/// active free trial. This is the value the automatic trial assignment writes
+/// (and the value the backend `initializeNewUserTrial` Auth trigger writes),
+/// so the client and the Cloud Function agree on a single trial status.
+const String subscriptionStatusTrial = 'trialing';
+
+/// Defines which newly registered accounts automatically receive a free
+/// trial. The admin account is excluded so that it keeps its fixed billing
+/// tiers rather than being rolled into the standard trial flow.
+class TrialAssignmentPolicy {
+  /// The platform admin email. Mirrors the allow-list used by
+  /// [UserRoleProvider] / [AdminAuthGuard] so the trial bypass agrees with
+  /// the rest of the app's admin detection.
+  static const String adminEmail = 'admin@jag-spoor.co.za';
+
+  /// The platform admin UID, when known. Left null by default; a deployment
+  /// that wants UID-based admin detection sets this to the admin account's
+  /// Firebase Auth uid. `null`/empty disables the UID check (email remains
+  /// authoritative).
+  static String? adminUid;
+
+  /// Whether [userId]/[email] belongs to the JagSpoor admin account.
+  ///
+  /// The email comparison is case-insensitive + trimmed. The UID check only
+  /// applies when [adminUid] has been configured.
+  static bool isAdmin(String? userId, String? email) {
+    final normalizedEmail = email?.toLowerCase().trim();
+    if (normalizedEmail == adminEmail) return true;
+    final uid = adminUid;
+    if (uid != null && uid.isNotEmpty && userId == uid) return true;
+    return false;
+  }
+}
+
 /// Lifecycle state of a user's subscription, as stored on `users/{uid}`.
 enum SubscriptionStatus {
   /// No subscription on record.
@@ -55,6 +93,7 @@ enum SubscriptionStatus {
   static SubscriptionStatus fromString(String? value) {
     switch (value) {
       case 'trial':
+      case 'trialing':
         return SubscriptionStatus.trial;
       case 'active':
         return SubscriptionStatus.active;

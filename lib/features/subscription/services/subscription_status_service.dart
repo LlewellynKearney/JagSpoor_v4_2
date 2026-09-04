@@ -139,6 +139,10 @@ class SubscriptionStatusService {
   /// this write records the trial window + tier on `users/{uid}` so the UI
   /// reflects the trial immediately after a successful Play purchase. The
   /// `users/{uid}` rules already allow owner writes.
+  ///
+  /// The trial status string is the canonical [subscriptionStatusTrial]
+  /// (`'trialing'`) shared with the backend `initializeNewUserTrial` Auth
+  /// trigger, so the client and the Cloud Function agree on a single status.
   Future<void> markTrialStarted({
     required SubscriptionTier tier,
     String promoCode = '',
@@ -148,10 +152,10 @@ class SubscriptionStatusService {
     if (uid == null) throw StateError('No signed-in user');
     final start = now ?? DateTime.now();
     await _db.collection('users').doc(uid).set({
-      'subscriptionStatus': SubscriptionStatus.trial.key,
+      'subscriptionStatus': subscriptionStatusTrial,
       'subscriptionTier': tier.key,
       'subscriptionTrialEndsAt': Timestamp.fromDate(
-        start.add(const Duration(days: SubscriptionTrial.trialDays)),
+        start.add(trialDuration),
       ),
       'subscriptionPromoCode': promoCode,
       'subscriptionProvider': 'google_play_billing',

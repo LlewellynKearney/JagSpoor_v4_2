@@ -71,3 +71,40 @@ test("no welcome-email or trial-abuse surface remains", () => {
   assert.doesNotMatch(compiled, /isTrialAbuseExempt/);
   assert.doesNotMatch(compiled, /trialBlockedReason/);
 });
+
+test("ADMIN_EMAIL is the platform admin email", () => {
+  assert.equal(onboarding.ADMIN_EMAIL, "admin@jag-spoor.co.za");
+});
+
+test("isAdminAccount excludes the admin email (case-insensitive)", () => {
+  assert.equal(
+    onboarding.isAdminAccount({ email: "admin@jag-spoor.co.za" }),
+    true
+  );
+  assert.equal(
+    onboarding.isAdminAccount({ email: "ADMIN@JAG-SPOOR.CO.ZA" }),
+    true
+  );
+  assert.equal(
+    onboarding.isAdminAccount({ email: "  admin@jag-spoor.co.za  " }),
+    true
+  );
+});
+
+test("isAdminAccount admits standard accounts", () => {
+  assert.equal(onboarding.isAdminAccount({ email: "hunter@example.com" }), false);
+  assert.equal(onboarding.isAdminAccount({ email: null }), false);
+  assert.equal(onboarding.isAdminAccount({ email: "" }), false);
+  assert.equal(onboarding.isAdminAccount({}), false);
+});
+
+test("the trigger bypasses trial assignment for the admin account", () => {
+  // Structural contract: the handler short-circuits (returns) before any
+  // trial write when the new user is the admin.
+  const compiled = fs.readFileSync(
+    __dirname + "/../lib/user_trial_onboarding.js",
+    "utf8"
+  );
+  assert.match(compiled, /isAdminAccount\(user\)/);
+  assert.match(compiled, /admin account excluded from trial/);
+});

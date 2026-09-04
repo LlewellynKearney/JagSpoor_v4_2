@@ -21,6 +21,25 @@ export const TRIAL_PERIOD_DAYS = 30;
 export const TRIAL_PERIOD_MS = TRIAL_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
 /**
+ * The platform admin email. Mirrors the client-side
+ * `TrialAssignmentPolicy.adminEmail` so the trial bypass agrees with the
+ * rest of the app's admin detection.
+ */
+export const ADMIN_EMAIL = "admin@jag-spoor.co.za";
+
+/**
+ * Whether a newly created Auth user belongs to the admin account. The admin
+ * is excluded from the automatic trial so it keeps its fixed billing tiers.
+ */
+export function isAdminAccount(user: {
+  uid?: string;
+  email?: string | null;
+}): boolean {
+  const email = (user.email ?? "").toString().trim().toLowerCase();
+  return email === ADMIN_EMAIL;
+}
+
+/**
  * Computes the trial expiration timestamp: exactly 30 days after `startedAt`.
  */
 export function trialEndsAtFrom(startedAt: Date): Date {
@@ -44,6 +63,17 @@ export const initializeNewUserTrial = functionsV1
   .auth.user()
   .onCreate(async (user) => {
     const uid = user.uid;
+
+    // Admin accounts are excluded from the automatic trial so the platform
+    // admin keeps its fixed billing tiers (mirrors the client-side
+    // `TrialAssignmentPolicy` bypass).
+    if (isAdminAccount(user)) {
+      logger.info("initializeNewUserTrial: admin account excluded from trial", {
+        uid,
+      });
+      return;
+    }
+
     const now = new Date();
     const trialEndsAt = trialEndsAtFrom(now);
 

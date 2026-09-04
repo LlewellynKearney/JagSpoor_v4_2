@@ -10,7 +10,9 @@ class PlayProduct {
   final String title;
   final String description;
   final String price; // Formatted, e.g. "R 19,99" per the Play locale.
+  final double rawPrice; // Unformatted catalog price (full currency units).
   final String currencyCode;
+  final String currencySymbol;
 
   const PlayProduct({
     required this.tier,
@@ -18,7 +20,9 @@ class PlayProduct {
     required this.title,
     required this.description,
     required this.price,
+    required this.rawPrice,
     required this.currencyCode,
+    this.currencySymbol = '',
   });
 
   static PlayProduct fromProductDetails(
@@ -31,7 +35,26 @@ class PlayProduct {
       title: details.title,
       description: details.description,
       price: details.price,
+      rawPrice: details.rawPrice,
       currencyCode: details.currencyCode,
+      currencySymbol: details.currencySymbol,
+    );
+  }
+
+  /// Reconstructs the authoritative [ProductDetails] this product was loaded
+  /// from, so the purchase flow hands Google Play Billing the real catalog
+  /// metadata (id, title, description, price, raw price, currency) instead of
+  /// a reconstructed copy. This is what keeps the app's purchase flow
+  /// synchronized with the Play Console.
+  ProductDetails toProductDetails() {
+    return ProductDetails(
+      id: productId,
+      title: title,
+      description: description,
+      price: price,
+      rawPrice: rawPrice,
+      currencyCode: currencyCode,
+      currencySymbol: currencySymbol,
     );
   }
 }
@@ -145,16 +168,12 @@ class PlayBillingService {
       return false;
     }
     try {
-      final details = ProductDetails(
-        id: product.productId,
-        title: product.title,
-        description: product.description,
-        price: product.price,
-        rawPrice: _rawAmountFor(tier),
-        currencyCode: product.currencyCode,
-      );
+      // Pass the REAL ProductDetails loaded from the Play catalog (not a
+      // reconstructed copy) so Google Play Billing receives the authoritative
+      // product metadata + pricing configured in the Play Console — this is
+      // what keeps the app's purchase flow synchronized with the store.
       return await _billing.buyNonConsumable(
-        purchaseParam: PurchaseParam(productDetails: details),
+        purchaseParam: PurchaseParam(productDetails: product.toProductDetails()),
       );
     } catch (e) {
       debugPrint('PlayBillingService.buyNonConsumable failed: $e');
@@ -181,11 +200,6 @@ class PlayBillingService {
       debugPrint('PlayBillingService.completePurchase failed: $e');
     }
   }
-
-  /// The ZAR fallback amount used when constructing a [ProductDetails] from a
-  /// catalog row whose numeric price couldn't be derived.
-  double _rawAmountFor(SubscriptionTier tier) =>
-      tier == SubscriptionTier.outfitter ? 199.99 : 19.99;
 
   /// Deep link URL for the user to manage / cancel their subscription inside
   /// Google Play (policy-compliant: Play handles recurring billing).

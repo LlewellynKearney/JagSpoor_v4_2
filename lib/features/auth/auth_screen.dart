@@ -15,6 +15,8 @@ import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
 import 'services/device_fingerprint_service.dart';
+import '../subscription/services/subscription_pricing.dart';
+import '../subscription/services/subscription_status_service.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -153,6 +155,33 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _stampDeviceFingerprint(User user) async {
     await DeviceFingerprintService.instance
         .stampDeviceFingerprint(user.uid);
+  }
+
+  /// Automatically assigns the 30-day free trial to a freshly registered
+  /// standard account, bypassing the admin account.
+  ///
+  /// The trial is written onto `users/{uid}` via
+  /// [SubscriptionStatusService.markTrialStarted] (the same status string the
+  /// backend `initializeNewUserTrial` Auth trigger writes, so the client and
+  /// the Cloud Function agree on the trial state). The admin account —
+  /// detected by the [TrialAssignmentPolicy] email/UID check — is excluded
+  /// and keeps its fixed billing tiers.
+  ///
+  /// Best-effort: a failure (offline / rules not yet deployed) is logged and
+  /// never blocks registration; the backend trigger remains the authoritative
+  /// trial assigner.
+  Future<void> _assignTrialOnRegistration(User user, String email) async {
+    if (TrialAssignmentPolicy.isAdmin(user.uid, email)) {
+      debugPrint('Trial assignment skipped for admin account: ${user.uid}');
+      return;
+    }
+    try {
+      await SubscriptionStatusService.instance.markTrialStarted(
+        tier: SubscriptionTier.fromAppRole(AppRole.unknown),
+      );
+    } catch (e) {
+      debugPrint('Trial assignment failed (non-fatal): $e');
+    }
   }
 
   /// Show 2FA Verification Bottom Sheet
@@ -372,6 +401,12 @@ class _AuthScreenState extends State<AuthScreen> {
             // Log Firestore error but don't block registration
             // User can still proceed, profile can be created later
           }
+
+          // Automatically assign the 30-day free trial to this new standard
+          // account (admin accounts are excluded). Best-effort: the backend
+          // `initializeNewUserTrial` Auth trigger is the authoritative
+          // assigner, so a client-side failure never blocks registration.
+          await _assignTrialOnRegistration(user, email);
         }
 
         setState(() => _isLoading = false);

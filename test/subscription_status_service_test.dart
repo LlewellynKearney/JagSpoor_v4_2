@@ -85,7 +85,7 @@ void main() {
       );
       final snap = await fake.collection('users').doc('uid-1').get();
       final data = snap.data()!;
-      expect(data['subscriptionStatus'], 'trial');
+      expect(data['subscriptionStatus'], subscriptionStatusTrial);
       expect(data['subscriptionTier'], 'outfitter');
       expect(data['subscriptionPromoCode'], 'LAUNCH25');
       final trialEnd = (data['subscriptionTrialEndsAt'] as Timestamp).toDate();
@@ -187,6 +187,62 @@ void main() {
       expect(adj!.code, 'LAUNCH25');
       // 19.99 - 25% = 14.9925 (rounds to 14.99 for display).
       expect(adj.apply(19.99), closeTo(14.99, 0.01));
+    });
+  });
+
+  group('TrialAssignmentPolicy', () {
+    test('grants a 30 day trial to standard accounts', () {
+      expect(trialDuration, const Duration(days: 30));
+      expect(
+        TrialAssignmentPolicy.isAdmin('uid-99', 'hunter@example.com'),
+        isFalse,
+      );
+    });
+
+    test('excludes the admin email from trial assignment', () {
+      expect(
+        TrialAssignmentPolicy.isAdmin('uid-admin', TrialAssignmentPolicy.adminEmail),
+        isTrue,
+      );
+    });
+
+    test('excludes a configured admin uid from trial assignment', () {
+      TrialAssignmentPolicy.adminUid = 'uid-admin';
+      addTearDown(() => TrialAssignmentPolicy.adminUid = null);
+      expect(
+        TrialAssignmentPolicy.isAdmin('uid-admin', 'admin@example.com'),
+        isTrue,
+      );
+      expect(
+        TrialAssignmentPolicy.isAdmin('uid-other', 'admin@example.com'),
+        isFalse,
+      );
+    });
+  });
+
+  group('SubscriptionStatus.fromString', () {
+    test('parses the backend legacy trialing status', () {
+      expect(SubscriptionStatus.fromString('trialing'), SubscriptionStatus.trial);
+      expect(SubscriptionStatus.fromString('trial'), SubscriptionStatus.trial);
+      expect(SubscriptionStatus.fromString('active'), SubscriptionStatus.active);
+      expect(SubscriptionStatus.fromString('cancelled'), SubscriptionStatus.cancelled);
+      expect(SubscriptionStatus.fromString('none'), SubscriptionStatus.none);
+      expect(SubscriptionStatus.fromString('unknown-value'), SubscriptionStatus.none);
+    });
+  });
+
+  group('markTrialStarted canonical status', () {
+    test('writes the canonical trialing status + 30 day window', () async {
+      final now = DateTime(2026, 8, 23, 10, 0);
+      await SubscriptionStatusService.instance.markTrialStarted(
+        tier: SubscriptionTier.hunter,
+        now: now,
+      );
+      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
+      expect(data['subscriptionStatus'], subscriptionStatusTrial);
+      expect(data['subscriptionStatus'], 'trialing');
+      final trialEnd = (data['subscriptionTrialEndsAt'] as Timestamp).toDate();
+      expect(trialEnd.difference(now).inDays, 30);
     });
   });
 }
