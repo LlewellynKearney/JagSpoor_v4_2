@@ -12261,3 +12261,102 @@ alongside the existing hunter content.
   pubspec / manifest changes (all seeded collections are covered by the
   existing owner-scoped `isSignedIn()` rules; the dual role is purely a
   client-side access grant).
+## Phase -- Outfitter-side Delete Account feature (GDPR) (added 2026-09-05)
+
+Added a "Delete Account" button + full GDPR-compliant deletion flow to the
+outfitter side, mirroring the hunter-side `AccountDeletionService` pattern.
+
+### Service -- `OutfitterAccountDeletionService`
+- NEW `lib/features/outfitter_mode/data/services/outfitter_account_deletion_service.dart`
+  (singleton `instance` + `forTesting` seam). `deleteOutfitterAndUserData()`
+  runs the cascade in the same order as the hunter side: (1) batch-delete the
+  shared `users/{uid}` profile + the canonical `outfitters/{uid}` enterprise
+  profile; (2) hard batch-delete every owner-scoped outfitter collection
+  (`farms`, `farm_managers`, `trophy_stock`, `packages`, `farm_pricelists`,
+  `farm_service_rates`, `scanned_pricelists`, `outfitter_venison_permits`,
+  `venison_permits`, `transport_permits`); (3) soft-mark (`deleted: true` +
+  `deletedAt` server timestamp) the two-party / admin-gated surfaces --
+  `hunter_venison_permits` (the hunter's copy is preserved), `optic_logs`
+  (ownerId alias), and `bookings` (delete is admin-only in `firestore.rules`;
+  the booking stays for the hunter's history but is flagged so the outfitter's
+  own lists can hide it); (4) commit the batch; (5) delete the Firebase Auth
+  credential LAST (`user.delete()`) so a mid-cascade failure never leaves an
+  orphaned-but-authenticated account (re-runnable). A
+  `FirebaseAuthException` with code `requires-recent-login` propagates to the
+  caller so the UI surfaces the standard re-authentication prompt.
+- **Injection pattern** (per the task): the service takes an injectable
+  `FirebaseFirestore` + a `String? Function() currentUserResolver` + an
+  injectable `Future<void> Function(String uid) credentialDeleter` via the
+  `forTesting` factory; the production singleton binds the real instances.
+  `_currentUid` = `uidResolver?.call() ?? _auth?.currentUser?.uid`; `_auth`
+  is nullable so tests never instantiate real Firebase. `requiresRecentLogin`
+  is true when no/empty uid resolves. Per-collection queries are wrapped in
+  try/catch so one failing collection (missing index / permissions /
+  offline) is logged + skipped, never aborting the cascade. The legacy
+  `outfitter/…` subcollection paths (`outfitter/bookings`, `outfitter/lodging`,
+  `outfitter/fleet`, `outfitter/carcass_records`) are even-segment collection
+  paths -- invalid collection references in the Firestore SDK -- so the
+  service tolerates them via the same per-collection error handling (they are
+  logged + skipped).
+- **Rules note**: no `firestore.rules` change was required -- the owner-scoped
+  reads + deletes the cascade performs are already granted by the existing
+  `isSignedIn()` / `ownerOrAdmin` / `isOwnerOf` grants; `bookings` delete
+  remains admin-only (soft-marked instead). A production-grade hard delete of
+  bookings belongs in a Cloud Function with Admin SDK privileges (documented
+  in the service doc comment).
+
+### UI -- Outfitter Dashboard settings sheet
+- `lib/features/outfitter_mode/outfitter_dashboard.dart`: the
+  `_showSettingsBottomSheet` gained a **DANGER ZONE** card (red warning-tinted
+  container + `Icons.warning_amber_rounded` header) with a destructive
+  `ElevatedButton.icon` "DELETE ACCOUNT & ALL DATA" (red.shade700 bg, white
+  fg, `Icons.delete_forever`), below the Change Password tile. The sheet is
+  now `isScrollControlled: true` + `SafeArea` + `SingleChildScrollView` so
+  the taller content scrolls cleanly.
+- `_showDeleteAccountDialog` (mirrors the hunter-side dialog): an
+  `AlertDialog` with a red border + warning icon, an IRREVERSIBLE warning,
+  a bullet list of exactly what gets wiped (profile, farms + managers, trophy
+  stock/packages/price lists, permits + bookings, the auth credential), an
+  info banner ("immediately logged out, cannot recover"), and CANCEL /
+  `DELETE FOREVER` actions. Confirming runs `_handleAccountDeletion`.
+- `_handleAccountDeletion`: captures `ScaffoldMessenger` + `Navigator`
+  BEFORE the async gap, runs the cascade (via `widget.accountDeletionRunner`
+  test seam, defaulting to `OutfitterAccountDeletionService.instance`), shows
+  an in-flight spinner (`_isDeletingAccount` -> "DELETING…" + disabled), then
+  `popUntil(isFirst)` to the splash/auth screen on success. A
+  `requires-recent-login` `FirebaseAuthException` surfaces the orange
+  "Security Verification Required: log out and sign back in" snackbar; other
+  failures surface a red snackbar + re-enable the button.
+- New `@visibleForTesting accountDeletionRunner` ctor seam on
+  `OutfitterDashboard` so widget tests never touch real Firebase.
+
+### Tests
+- `test/outfitter_account_deletion_service_test.dart` (NEW, 9 unit tests
+  against `FakeFirebaseFirestore` via the `forTesting` seam): unauthenticated
+  rejection + `requiresRecentLogin`; shared/canonical profile deletion;
+  owner-scoped enterprise hard-deletes; hunter-permit-partition soft-mark;
+  optic-log ownerId soft-mark; party-scoped bookings soft-mark; cross-owner
+  isolation (another outfitter's data untouched); credential deleted LAST
+  (asserts the injected deleter received the uid); per-collection failure
+  tolerance.
+- `test/outfitter_account_deletion_flow_test.dart` (NEW, 5 widget tests via
+  the `accountDeletionRunner` seam): danger zone renders in the settings
+  sheet; DELETE opens the confirmation dialog (IRREVERSIBLE + DELETE FOREVER +
+  CANCEL + destructive list); CANCEL does not run the cascade; DELETE FOREVER
+  runs the cascade; the button is styled red.shade700/white.
+- Verification: `flutter analyze` on the 4 changed/new files: **No issues
+  found** (0 errors, 0 warnings). `flutter test` (full suite): **All tests
+  passed** (was 1562; +14 new). No regressions.
+- Env note: re-installed Flutter 3.29.1 (CI pin) at `/opt/flutter` (the
+  SDK was absent); `flutter pub get` + the `~/libs/libsqlite3.so` symlink
+  (`LD_LIBRARY_PATH="$HOME/libs"`) for the sqflite-FFI suites; the pubspec
+  "Unexpected child config" warning is the documented pre-existing spurious
+  line.
+- Files: `lib/features/outfitter_mode/data/services/outfitter_account_deletion_service.dart`
+  (NEW), `lib/features/outfitter_mode/outfitter_dashboard.dart`
+  (settings-sheet danger zone + dialog + handler + seam),
+  `test/outfitter_account_deletion_service_test.dart` (NEW),
+  `test/outfitter_account_deletion_flow_test.dart` (NEW), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side deletion cascade + UI; the existing owner-scoped rules grant
+  everything the cascade performs).

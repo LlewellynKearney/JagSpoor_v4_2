@@ -27,9 +27,16 @@ import '../subscription/subscription_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import 'widgets/outfitter_scaffold.dart';
+import 'data/services/outfitter_account_deletion_service.dart';
 
 class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
+
+  /// Test seam: overrides the account-deletion cascade so widget tests never
+  /// touch real Firebase Auth / Firestore (mirrors the `demoSignInOverride` /
+  /// `googleSignInOverride` screen seams).
+  @visibleForTesting
+  final Future<void> Function()? accountDeletionRunner;
 
   /// Bushveld landscape shown full-screen behind the dashboard content.
   /// Alias of the shared [OutfitterBushveldBackground] constant, kept so any
@@ -42,7 +49,11 @@ class OutfitterDashboard extends StatefulWidget {
   static const String kBackgroundFallbackAsset =
       OutfitterBushveldBackground.kBackgroundFallbackAsset;
 
-  const OutfitterDashboard({super.key, required this.theme});
+  const OutfitterDashboard({
+    super.key,
+    required this.theme,
+    this.accountDeletionRunner,
+  });
 
   @override
   State<OutfitterDashboard> createState() => _OutfitterDashboardState();
@@ -54,6 +65,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   String? _assignedFarmId;
   bool _isLoading = true;
   bool _isAdmin = false;
+  bool _isDeletingAccount = false;
 
   @override
   void initState() {
@@ -627,15 +639,18 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
     showModalBottomSheet(
       context: context,
       backgroundColor: theme.cardColor,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder:
-          (context) => Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+          (context) => SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 Text(
                   _isManager ? 'FARM MANAGER SETTINGS' : 'OUTFITTER SETTINGS',
                   style: TextStyle(
@@ -675,11 +690,310 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   ),
                   onTap: () => ChangePasswordDialog.show(context),
                 ),
+                const SizedBox(height: 24),
+
+                // ── Delete Account (Danger Zone) ─────────────────────────
+                // Mirrors the hunter-side account-deletion surface: a red
+                // warning-tinted card + destructive button + irreversible
+                // confirmation dialog + cascading data cleanup.
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'DANGER ZONE',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red.shade700,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Permanently delete your account, farms, packages, '
+                        'trophy stock, price lists and all associated data '
+                        'from the JagSpoor ecosystem.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.isDarkMode
+                              ? theme.subtitleColor
+                              : OutfitterUi.lightBody,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isDeletingAccount
+                              ? null
+                              : () => _showDeleteAccountDialog(context, theme),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: _isDeletingAccount
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.delete_forever, size: 20),
+                          label: Text(
+                            _isDeletingAccount
+                                ? 'DELETING…'
+                                : 'DELETE ACCOUNT & ALL DATA',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 16),
                 const CopyrightFooter(),
               ],
             ),
           ),
+        ),
     );
+  }
+
+  /// Confirmation dialog for the irreversible outfitter account deletion.
+  /// Mirrors the hunter-side `_showDeleteAccountDialog`: warning-styled, lists
+  /// exactly what gets wiped, and requires an explicit "DELETE FOREVER".
+  Future<void> _showDeleteAccountDialog(
+    BuildContext context,
+    ThemeController theme,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: OutfitterUi.cardColor(theme),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: Colors.red.withValues(alpha: 0.5),
+            width: 2,
+          ),
+        ),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Delete Account',
+              style: TextStyle(
+                color: OutfitterUi.titleColor(theme),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This action is IRREVERSIBLE and will permanently wipe ALL of '
+              'your outfitter records from the system including:',
+              style: TextStyle(
+                color: OutfitterUi.titleColor(theme),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildDeleteBullet(theme, 'Your profile and contact information'),
+            _buildDeleteBullet(theme, 'Registered farms and farm managers'),
+            _buildDeleteBullet(
+              theme,
+              'Trophy stock, packages and price lists',
+            ),
+            _buildDeleteBullet(theme, 'Venison permits and booking records'),
+            _buildDeleteBullet(theme, 'Your authentication credential'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.red.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You will be immediately logged out and cannot recover '
+                      'your account or listings.',
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'CANCEL',
+              style: TextStyle(color: OutfitterUi.subtitleColor(theme)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text(
+              'DELETE FOREVER',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _handleAccountDeletion(this.context, theme);
+    }
+  }
+
+  Widget _buildDeleteBullet(ThemeController theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• ', style: TextStyle(color: Colors.red, fontSize: 14)),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: OutfitterUi.subtitleColor(theme),
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Runs the outfitter account-deletion cascade. On success signs out (the
+  /// service already removed the auth credential, so the navigation clears to
+  /// the auth screen); a `requires-recent-login` failure surfaces the standard
+  /// re-authentication prompt. Mirrors the hunter-side `_handleAccountDeletion`.
+  Future<void> _handleAccountDeletion(
+    BuildContext context,
+    ThemeController theme,
+  ) async {
+    setState(() => _isDeletingAccount = true);
+
+    // Capture the messenger + navigator BEFORE the async gap so an unmounted
+    // subtree never touches a deactivated BuildContext.
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final navigator = Navigator.of(context);
+
+    try {
+      final runner =
+          widget.accountDeletionRunner ??
+          () => OutfitterAccountDeletionService.instance
+              .deleteOutfitterAndUserData();
+      await runner();
+
+      // The auth credential is gone — close the settings sheet + any stacked
+      // routes and land on the splash/auth screen.
+      if (mounted) {
+        navigator.popUntil((route) => route.isFirst);
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() => _isDeletingAccount = false);
+
+      if (e.code == 'requires-recent-login') {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.lock_outline, color: Colors.white, size: 20),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Security Verification Required: Please log out and sign '
+                    'back in to complete account deletion.',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.orange.shade800,
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Deletion failed: ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('OutfitterDashboard: account deletion failed: $e');
+      if (mounted) setState(() => _isDeletingAccount = false);
+
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('An unexpected error occurred: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
