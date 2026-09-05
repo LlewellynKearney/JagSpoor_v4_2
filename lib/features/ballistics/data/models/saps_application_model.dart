@@ -12,6 +12,11 @@ class SapsApplication {
   final String currentStatus;
   final DateTime lastChecked;
 
+  /// Firearm make / brand (e.g. `TIKKA T3X`) extracted from a SAPS
+  /// notification SMS or entered manually. Empty when unknown / legacy doc /
+  /// a Competency Certificate application (which has no firearm attached).
+  final String firearmMake;
+
   /// Firearm calibre extracted from a SAPS notification SMS (e.g. `6MM
   /// MUSGRAVE`) or entered manually. Empty when unknown/legacy doc.
 
@@ -58,6 +63,7 @@ class SapsApplication {
     required this.applicationType,
     required this.currentStatus,
     required this.lastChecked,
+    this.firearmMake = '',
     this.calibre = '',
     this.serialNumber = '',
     this.statusMessage = '',
@@ -88,21 +94,17 @@ class SapsApplication {
   }
 
   /// Renders the multi-token display label for the tracked firearm,
-  /// e.g. "6MM MUSGRAVE • s/n OB14468". Falls back to '[Calibre] •
-  /// s/n [Serial]' with each present part omitted when empty, then
-  /// 'Firearm not specified' when neither calibre nor serial is known.
-
+  /// e.g. "TIKKA T3X • 6MM MUSGRAVE • s/n OB14468". Each present part
+  /// ([firearmMake] / [calibre] / [serialNumber]) is included in order and
+  /// omitted when empty, then 'Firearm not specified' when none is known.
   String get firearmLabel {
-    if (calibre.isNotEmpty && serialNumber.isNotEmpty) {
-      return '$calibre • s/n $serialNumber';
-    }
-    if (calibre.isNotEmpty) {
-      return calibre;
-    }
-    if (serialNumber.isNotEmpty) {
-      return 's/n $serialNumber';
-    }
-    return 'Firearm not specified';
+    final parts = <String>[
+      if (firearmMake.trim().isNotEmpty) firearmMake.trim(),
+      if (calibre.trim().isNotEmpty) calibre.trim(),
+      if (serialNumber.trim().isNotEmpty) 's/n ${serialNumber.trim()}',
+    ];
+    if (parts.isEmpty) return 'Firearm not specified';
+    return parts.join(' • ');
   }
 
   factory SapsApplication.fromJson(Map<String, dynamic> json, {String? id}) {
@@ -114,6 +116,10 @@ class SapsApplication {
       applicationType:
           (json['applicationType'] as String?) ?? 'Competency Certificate',
       currentStatus: (json['currentStatus'] as String?) ?? 'Pending',
+      firearmMake: (json['firearmMake'] as String?) ??
+          (json['make'] as String?) ??
+          (json['firearm_make'] as String?) ??
+          '',
       calibre: (json['calibre'] as String?) ?? '',
       serialNumber: (json['serialNumber'] as String?) ?? '',
       statusMessage: (json['statusMessage'] as String?) ?? '',
@@ -136,6 +142,11 @@ class SapsApplication {
         'idNumber': idNumber,
         'applicationType': applicationType,
         'currentStatus': currentStatus,
+        // Dual-stamp the make under both the canonical camelCase key and the
+        // shorter `make` alias so legacy / third-party readers that look up
+        // either spelling resolve the same firearm brand.
+        'firearmMake': firearmMake,
+        'make': firearmMake,
         'calibre': calibre,
         'serialNumber': serialNumber,
         'statusMessage': statusMessage,
@@ -182,6 +193,7 @@ class SapsApplication {
     String? applicationType,
     String? currentStatus,
     DateTime? lastChecked,
+    String? firearmMake,
     String? calibre,
     String? serialNumber,
     String? statusMessage,
@@ -202,6 +214,7 @@ class SapsApplication {
       idNumber: idNumber ?? this.idNumber,
       applicationType: applicationType ?? this.applicationType,
       currentStatus: currentStatus ?? this.currentStatus,
+      firearmMake: firearmMake ?? this.firearmMake,
       calibre: calibre ?? this.calibre,
       serialNumber: serialNumber ?? this.serialNumber,
       statusMessage: statusMessage ?? this.statusMessage,

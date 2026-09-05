@@ -23,11 +23,13 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
   final _idNumberController = TextEditingController();
   final _referenceController = TextEditingController();
   final _smsController = TextEditingController();
+  final _makeController = TextEditingController();
   final _calibreController = TextEditingController();
   final _serialNumberController = TextEditingController();
   String _selectedApplicationType = SapsApplication.applicationTypes.first;
   bool _isLoading = false;
   bool _isRefreshingAll = false;
+  bool _registerExpanded = false;
 
   final SapsTrackerService _trackerService = SapsTrackerService();
 
@@ -36,6 +38,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
     _idNumberController.dispose();
     _referenceController.dispose();
     _smsController.dispose();
+    _makeController.dispose();
     _calibreController.dispose();
     _serialNumberController.dispose();
     super.dispose();
@@ -80,6 +83,9 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
       if (result.applicationType != 'Competency Certificate') {
         _selectedApplicationType = result.applicationType;
       }
+      if (result.firearmMake.isNotEmpty) {
+        _makeController.text = result.firearmMake;
+      }
       if (result.calibre.isNotEmpty) {
         _calibreController.text = result.calibre;
       }
@@ -90,6 +96,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
 
     final details = <String>[
       if (result.hasReference) 'Reference: ${result.referenceNumber}',
+      if (result.firearmMake.isNotEmpty) 'Make: ${result.firearmMake}',
       if (result.calibre.isNotEmpty) 'Calibre: ${result.calibre}',
       if (result.serialNumber.isNotEmpty) 'S/N: ${result.serialNumber}',
       if (result.hasStatus) 'Status: ${result.statusMessage}',
@@ -117,6 +124,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
 
     final idNumber = _idNumberController.text.trim();
     final referenceNumber = _referenceController.text.trim();
+    final make = _makeController.text.trim();
     final calibre = _calibreController.text.trim();
     final serialNumber = _serialNumberController.text.trim();
 
@@ -141,6 +149,10 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
         'idNumber': idNumber,
         'applicationType': _selectedApplicationType,
         'currentStatus': 'Submitted',
+        // Dual-stamp the make under the canonical key + the `make` alias so
+        // legacy readers resolve it regardless of spelling.
+        'firearmMake': make,
+        'make': make,
         'calibre': calibre,
         'serialNumber': serialNumber,
         'submittedAt': now.toIso8601String(),
@@ -152,6 +164,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
         _idNumberController.clear();
         _referenceController.clear();
         _smsController.clear();
+        _makeController.clear();
         _calibreController.clear();
         _serialNumberController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -210,6 +223,276 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
     );
   }
 
+  /// Collapsible "Register New Application" accordion. Collapsed by default so
+  /// tracked applications dominate the screen; tapping the header expands the
+  /// full registration form (with the prominent SMS Quick Add box at the top).
+  Widget _buildRegisterAccordion(ThemeData theme, ThemeController hunterTheme) {
+    return Card(
+      color: HunterUi.cardColor(hunterTheme),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _registerExpanded = !_registerExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _registerExpanded
+                          ? Icons.expand_less
+                          : Icons.add_circle_outline,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Register New Application',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: HunterUi.titleColor(hunterTheme),
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _registerExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _registerExpanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: _buildRegisterForm(theme),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The full registration form body, headed by the prominent "Paste SAPS
+  /// SMS / Quick Add" box that instantly parses reference / calibre / serial
+  /// (and make when present) details into the fields below.
+  Widget _buildRegisterForm(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 24),
+        // Prominent Quick Add box.
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.bolt, size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Paste SAPS SMS / Quick Add',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _smsController,
+                maxLines: 3,
+                minLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Paste SAPS Notification SMS',
+                  hintText:
+                      'e.g., SAPS msg: Application Ref. 10470664 make TIKKA calibre 6MM MUSGRAVE s/n OB14468',
+                  alignLabelWithHint: true,
+                  filled: true,
+                  fillColor: HunterUi.cardColor(ThemeController.instance),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: const Icon(Icons.sms_outlined),
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _parseSmsMessage,
+                icon: const Icon(Icons.auto_fix_high, size: 18),
+                label: const Text(
+                  'Extract Details from SMS',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // ID Number Input
+        TextField(
+          controller: _idNumberController,
+          decoration: InputDecoration(
+            labelText: 'ID Number',
+            hintText: 'Enter your 13-digit SA ID',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.badge_outlined),
+          ),
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        // Reference Number Input
+        TextField(
+          controller: _referenceController,
+          decoration: InputDecoration(
+            labelText: 'Application Reference Code',
+            hintText: 'Parsed from SMS if available',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.tag),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Firearm Make Input (parsed from SMS or manual)
+        TextField(
+          controller: _makeController,
+          decoration: InputDecoration(
+            labelText: 'Firearm Make / Brand',
+            hintText: 'Parsed from SMS if available, e.g., TIKKA T3X',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Calibre Input (parsed from SMS or manual)
+        TextField(
+          controller: _calibreController,
+          decoration: InputDecoration(
+            labelText: 'Calibre',
+            hintText: 'Parsed from SMS, e.g., 6MM MUSGRAVE',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.gps_fixed),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Serial Number Input (parsed from SMS or manual)
+        TextField(
+          controller: _serialNumberController,
+          decoration: InputDecoration(
+            labelText: 'Serial Number',
+            hintText: 'Parsed from SMS, e.g., OB14468',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.numbers),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Application Type Dropdown
+        DropdownButtonFormField<String>(
+          value: _selectedApplicationType,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Application Type',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.category_outlined),
+          ),
+          items: SapsApplication.applicationTypes
+              .map(
+                (typeString) => DropdownMenuItem(
+                  value: typeString,
+                  child: Text(
+                    typeString,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedApplicationType = value);
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        // Register Button
+        ElevatedButton(
+          onPressed: _isLoading ? null : _registerApplication,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Register Application for Tracking',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -241,191 +524,10 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Input Block
+                    // Register New Application — collapsible accordion
                     Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Card(
-                        color: HunterUi.cardColor(hunterTheme),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(
-                            color: theme.colorScheme.primary
-                                .withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'REGISTER APPLICATION',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.primary,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              // SMS Paste Input
-                              TextField(
-                                controller: _smsController,
-                                maxLines: 3,
-                                minLines: 2,
-                                decoration: InputDecoration(
-                                  labelText: 'Paste SAPS Notification SMS',
-                                  hintText:
-                                      'e.g., SAPS msg: Application Ref. 10470664 for calibre 6MM MUSGRAVE s/n OB14468',
-                                  alignLabelWithHint: true,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: const Icon(Icons.sms_outlined),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Parse SMS Button
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _parseSmsMessage,
-                                  icon:
-                                      const Icon(Icons.auto_fix_high, size: 18),
-                                  label: const Text(
-                                    'Extract Details from SMS',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              // ID Number Input
-                              TextField(
-                                controller: _idNumberController,
-                                decoration: InputDecoration(
-                                  labelText: 'ID Number',
-                                  hintText: 'Enter your 13-digit SA ID',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: const Icon(Icons.badge_outlined),
-                                ),
-                                keyboardType: TextInputType.number,
-                              ),
-                              const SizedBox(height: 12),
-                              // Reference Number Input
-                              TextField(
-                                controller: _referenceController,
-                                decoration: InputDecoration(
-                                  labelText: 'Application Reference Code',
-                                  hintText: 'Parsed from SMS if available',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: const Icon(Icons.tag),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              // Calibre Input (parsed from SMS or manual)
-                              TextField(
-                                controller: _calibreController,
-                                decoration: InputDecoration(
-                                  labelText: 'Calibre',
-                                  hintText:
-                                      'Parsed from SMS, e.g., 6MM MUSGRAVE',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: const Icon(Icons.gps_fixed),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              // Serial Number Input (parsed from SMS or manual)
-                              TextField(
-                                controller: _serialNumberController,
-                                decoration: InputDecoration(
-                                  labelText: 'Serial Number',
-                                  hintText: 'Parsed from SMS, e.g., OB14468',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: const Icon(Icons.numbers),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              // Application Type Dropdown
-                              DropdownButtonFormField<String>(
-                                value: _selectedApplicationType,
-                                isExpanded: true,
-                                decoration: InputDecoration(
-                                  labelText: 'Application Type',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon:
-                                      const Icon(Icons.category_outlined),
-                                ),
-                                items: SapsApplication.applicationTypes
-                                    .map(
-                                      (typeString) => DropdownMenuItem(
-                                        value: typeString,
-                                        child: Text(
-                                          typeString,
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            color: theme.colorScheme.onSurface,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(
-                                        () => _selectedApplicationType = value);
-                                  }
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              // Register Button
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed:
-                                      _isLoading ? null : _registerApplication,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: theme.colorScheme.primary,
-                                    foregroundColor:
-                                        theme.colorScheme.onPrimary,
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  child: _isLoading
-                                      ? const SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Text(
-                                          'Register Application for Tracking',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: _buildRegisterAccordion(theme, hunterTheme),
                     ),
                     // Active Tracker Grid View
                     Padding(
@@ -720,6 +822,15 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
+                  if (application.firearmMake.trim().isNotEmpty)
+                    HunterDataPill(
+                      theme: hunterTheme,
+                      pill: HunterMediaPill(
+                        icon: Icons.precision_manufacturing_outlined,
+                        label: application.firearmMake.trim(),
+                        amber: true,
+                      ),
+                    ),
                   if (application.calibre.isNotEmpty)
                     HunterDataPill(
                       theme: hunterTheme,
@@ -848,27 +959,80 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
   /// status timeline, waiting-period estimates, batch details, and the current
   /// progress stage.
   Widget _buildExpandedDetails(ThemeData theme) {
-    if (!_detailsLoaded) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: SizedBox(
-            height: 22,
-            width: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+    // The firearm details section renders immediately (from the card's model)
+    // while the tracking details are still loading / unavailable, so the
+    // make / calibre / serial pills appear as soon as the card is expanded.
+    final firearmSection = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(theme, 'FIREARM DETAILS'),
+        const SizedBox(height: 8),
+        _detailRow(
+          theme,
+          Icons.gps_fixed,
+          application.firearmLabel,
+          null,
         ),
+        if (application.firearmMake.trim().isNotEmpty ||
+            application.calibre.isNotEmpty ||
+            application.serialNumber.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (application.firearmMake.trim().isNotEmpty)
+                  _expandedPill(
+                    theme,
+                    Icons.precision_manufacturing_outlined,
+                    application.firearmMake.trim(),
+                  ),
+                if (application.calibre.isNotEmpty)
+                  _expandedPill(theme, Icons.gps_fixed, application.calibre),
+                if (application.serialNumber.isNotEmpty)
+                  _expandedPill(
+                    theme,
+                    Icons.pin_outlined,
+                    's/n ${application.serialNumber}',
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+
+    if (!_detailsLoaded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 24),
+          firearmSection,
+          const SizedBox(height: 16),
+          const Center(
+            child: SizedBox(
+              height: 22,
+              width: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ],
       );
     }
 
     final details = _details;
     if (details == null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Text(
-          'Tracking details are not available for this application.',
-          style: TextStyle(fontSize: 12, color: theme.hintColor),
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 24),
+          firearmSection,
+          const SizedBox(height: 16),
+          Text(
+            'Tracking details are not available for this application.',
+            style: TextStyle(fontSize: 12, color: theme.hintColor),
+          ),
+        ],
       );
     }
 
@@ -876,6 +1040,8 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Divider(height: 24),
+        firearmSection,
+        const SizedBox(height: 16),
         _sectionTitle(theme, 'CURRENT PROGRESS'),
         const SizedBox(height: 8),
         _detailRow(
@@ -925,6 +1091,36 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
         fontWeight: FontWeight.bold,
         color: theme.colorScheme.secondary,
         letterSpacing: 1.1,
+      ),
+    );
+  }
+
+  /// Compact themed pill used inside the expanded details view (e.g. the
+  /// firearm make / calibre / serial chips under the FIREARM DETAILS section).
+  Widget _expandedPill(ThemeData theme, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
       ),
     );
   }

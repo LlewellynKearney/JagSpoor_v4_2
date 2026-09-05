@@ -527,6 +527,130 @@ void main() {
       expect(app('CFR').currentStatusEstimate, contains('CFR'));
       expect(app('Printed').currentStatusEstimate, contains('Printing'));
     });
+
+    test('should round-trip the firearm make through JSON', () {
+      final original = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'Provincial',
+        firearmMake: 'TIKKA T3X',
+        calibre: '6MM MUSGRAVE',
+        serialNumber: 'OB14468',
+        lastChecked: DateTime(2024, 7, 15, 10, 30),
+      );
+
+      final restored = SapsApplication.fromJson(original.toFirestore(),
+          id: original.id);
+
+      assert(restored.firearmMake == 'TIKKA T3X', 'firearmMake mismatch');
+      assert(restored.calibre == '6MM MUSGRAVE', 'calibre mismatch');
+      assert(restored.serialNumber == 'OB14468', 'serialNumber mismatch');
+    });
+
+    test('should tolerate the "make" and "firearm_make" aliases', () {
+      final legacy = SapsApplication.fromJson({
+        'id': 'x',
+        'hunterId': 'h',
+        'referenceNumber': 'r',
+        'idNumber': 'i',
+        'applicationType': 'Competency Certificate',
+        'currentStatus': 'Submitted',
+        'make': 'CZ 457',
+        'calibre': '.22 LR',
+        'serialNumber': 'XY753',
+        'lastChecked': '2024-07-15T10:30:00.000',
+      });
+      assert(legacy.firearmMake == 'CZ 457',
+          'make alias not resolved to firearmMake');
+
+      final snake = SapsApplication.fromJson({
+        'id': 'x',
+        'hunterId': 'h',
+        'referenceNumber': 'r',
+        'idNumber': 'i',
+        'applicationType': 'Competency Certificate',
+        'currentStatus': 'Submitted',
+        'firearm_make': 'HOWA',
+        'lastChecked': '2024-07-15T10:30:00.000',
+      });
+      assert(snake.firearmMake == 'HOWA',
+          'firearm_make alias not resolved to firearmMake');
+    });
+
+    test('should dual-stamp the make under both JSON keys', () {
+      final app = SapsApplication(
+        id: 'x',
+        hunterId: 'h',
+        referenceNumber: 'r',
+        idNumber: 'i',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        firearmMake: 'TIKKA',
+        lastChecked: DateTime(2024, 7, 15),
+      );
+
+      final json = app.toFirestore();
+      assert(json['firearmMake'] == 'TIKKA', 'firearmMake key missing');
+      assert(json['make'] == 'TIKKA', 'make alias key missing');
+    });
+
+    test('should compose the firearm label including make', () {
+      SapsApplication app({
+        String make = '',
+        String calibre = '',
+        String serial = '',
+      }) =>
+          SapsApplication(
+            id: 'x',
+            hunterId: 'h',
+            referenceNumber: 'r',
+            idNumber: 'i',
+            applicationType: 'Section 16 Dedicated Hunting',
+            currentStatus: 'Provincial',
+            firearmMake: make,
+            calibre: calibre,
+            serialNumber: serial,
+            lastChecked: DateTime(2024, 7, 15),
+          );
+
+      // Full triple -> make • calibre • s/n serial
+      assert(app(make: 'TIKKA T3X', calibre: '6MM MUSGRAVE', serial: 'OB14468')
+              .firearmLabel ==
+          'TIKKA T3X • 6MM MUSGRAVE • s/n OB14468');
+
+      // Make omitted -> calibre • s/n serial (legacy behaviour preserved)
+      assert(app(calibre: '6MM MUSGRAVE', serial: 'OB14468')
+              .firearmLabel ==
+          '6MM MUSGRAVE • s/n OB14468');
+
+      // Make + calibre only
+      assert(app(make: 'TIKKA', calibre: '308 WIN').firearmLabel ==
+          'TIKKA • 308 WIN');
+
+      // Serial only
+      assert(app(serial: 'OB14468').firearmLabel == 's/n OB14468');
+
+      // Nothing -> graceful fallback (Competency Certificate case)
+      assert(app().firearmLabel == 'Firearm not specified');
+    });
+
+    test('should copyWith the firearm make', () {
+      final base = SapsApplication(
+        id: 'x',
+        hunterId: 'h',
+        referenceNumber: 'r',
+        idNumber: 'i',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        lastChecked: DateTime(2024, 7, 15),
+      );
+      final updated = base.copyWith(firearmMake: 'HOWA 1500');
+      assert(updated.firearmMake == 'HOWA 1500', 'copyWith make mismatch');
+      assert(base.firearmMake == '', 'original must stay empty');
+    });
   });
 
   group('SapsScraperResult Tests', () {

@@ -11932,3 +11932,113 @@ operational meaning of the current stage in plain language.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side model + UI over the existing `license_applications` collection;
   the `createdAt` field is owner-written already).
+
+## Phase -- SAPS tracker registration UI redesign + firearm make capture & display (added 2026-09-05)
+
+Follow-on to the SMS-parsing + timeline-milestone + record-created SAPS
+enhancements. Adds true firearm **make/brand** capture to the model + parser +
+registration flow, surfaces make on both collapsed and expanded application
+cards, and redesigns the "Register Application" section into a clean
+collapsible accordion so tracked applications dominate the screen.
+
+### 1. `SapsApplication` -- firearm make field (`lib/features/ballistics/data/models/saps_application_model.dart`)
+- New `firearmMake` (`String`, default `''`) alongside `calibre` /
+  `serialNumber`; empty for Competency Certificate applications (no firearm
+  attached) / legacy docs.
+- `fromJson` resolves the make under THREE aliases in priority order:
+  `firearmMake` -> `make` -> `firearm_make`. `toJson`/`toFirestore`
+  dual-stamps BOTH `firearmMake` and `make` so legacy / third-party readers
+  resolve the same brand regardless of spelling (mirrors the venison-permit
+  `userId`/`hunterId` dual-stamp pattern).
+- `copyWith(firearmMake:)` supported.
+- `firearmLabel` getter rewritten to compose **make • calibre • s/n serial**
+  (e.g. `TIKKA T3X • 6MM MUSGRAVE • s/n OB14468`), each part omitted when
+  empty, falling back to `Firearm not specified` when all three are unknown.
+  The legacy "calibre • s/n serial" output is preserved exactly when make is
+  empty.
+
+### 2. `SapsSmsParser` -- best-effort make extraction (`lib/features/hunter_mode/services/saps_sms_parser.dart`)
+- New `_matchMake` + `SapsSmsParseResult.firearmMake` + `hasFirearmDetails`
+  now also checks `firearmMake`.
+- The make matcher recognises `make` / `firearm make` / `brand` keyword
+  forms (`make TIKKA T3X`, `firearm make: CZ`, `brand HOWA`), uppercases the
+  result to the canonical SAPS form, and stops at the next detail keyword
+  (`for`, `and`, `of`, `with`, `calibre`, `s/n`, `serial`, `ref`,
+  `application`, `status`, ...) via a negative-lookahead token loop — so it
+  NEVER swallows the calibre's model tokens (e.g. `MUSGRAVE` in
+  `6MM MUSGRAVE` stays part of the calibre; `make TIKKA T3X for calibre 6MM
+  MUSGRAVE` yields make `TIKKA T3X` and calibre `6MM MUSGRAVE`).
+- The common SAPS message that identifies the firearm by cartridge alone
+  (`... for calibre 6MM MUSGRAVE s/n OB14468`, no make token) leaves
+  `firearmMake` empty — the cards fall back to calibre + serial pills, and
+  `hasFirearmDetails` stays true via calibre/serial.
+
+### 3. Registration UI redesign (`lib/features/hunter_mode/presentation/saps_tracker_screen.dart`)
+- The always-visible "REGISTER APPLICATION" card was replaced with a
+  **collapsible "Register New Application" accordion** (`_buildRegisterAccordion`):
+  - Collapsed by default (header row with an add icon + AnimatedRotation
+    chevron) so tracked applications occupy the screen.
+  - Expanding CONDITIONALLY MOUNTS the form inside an `AnimatedSize` (NOT an
+    `AnimatedCrossFade` — the cross-fade keeps both children in the widget
+    tree, so collapsed-body assertions would find the form; the conditional
+    mount actually frees real estate + makes the collapsed state testable).
+  - The form body (`_buildRegisterForm`) is headed by a prominent
+    **"Paste SAPS SMS / Quick Add"** box (bolt icon + tinted container) with
+    the multi-line SMS paste `TextField` + "Extract Details from SMS"
+    button, followed by the ID / reference / make / calibre / serial /
+    application-type fields + the register CTA.
+- New **"Firearm Make / Brand"** `TextField` (`_makeController`,
+  `Icons.precision_manufacturing_outlined`, hint "Parsed from SMS if
+  available, e.g., TIKKA T3X") between Reference and Calibre. Optional for
+  Competency applications.
+- `_parseSmsMessage` pre-fills `_makeController` from `result.firearmMake`
+  and includes `Make: ...` in the confirmation snackbar summary.
+- `_registerApplication` reads + trims the make and dual-stamps
+  `firearmMake` + `make` on the Firestore `license_applications` write.
+
+### 4. Card display (collapsed + expanded)
+- **Collapsed pill band**: a new `HunterDataPill` for the make
+  (`Icons.precision_manufacturing_outlined`, amber) is rendered FIRST, then
+  the existing calibre + serial pills — the clean pill layout from the
+  reference designs. Each pill is suppressed when its field is empty.
+- **Expanded details**: a new **FIREARM DETAILS** section is rendered as the
+  FIRST section of `_buildExpandedDetails`, INDEPENDENT of tracking-details
+  loading state (it reads the card model directly):
+  - a `_detailRow` with the composed `firearmLabel`;
+  - individual make / calibre / serial `_expandedPill` chips (themed
+    `Container`s) when any firearm field is present.
+  - The CURRENT PROGRESS / TIMELINE / ESTIMATES / BATCH sections follow
+    unchanged (still gated on loaded tracking details). This restructure
+    guarantees the firearm details always appear on expansion even when
+    `fetchTrackingDetails` returns null (offline / missing doc).
+
+### 5. Verification
+- `flutter analyze` (Flutter 3.29.1, CI pin): **0 errors, 0 warnings** on
+  all changed/new files; the project-wide 277 issues remain the documented
+  pre-existing `info` baseline.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1534
+  tests passed**, zero failures. Env note: Flutter 3.29.1 stable was
+  re-installed at `/home/openhands/flutter` + the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink (run the sqflite-FFI integration suites with
+  `LD_LIBRARY_PATH="$HOME/libs"`); the pubspec "Unexpected child config"
+  warning is the documented pre-existing spurious line.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side model + parser + UI; `license_applications` create is
+  owner-scoped `hunterId`, already covered by rules).
+- Files: `lib/features/ballistics/data/models/saps_application_model.dart`
+  (`firearmMake` + triple-alias read + dual-stamp write + `firearmLabel`
+  make composition + copyWith),
+  `lib/features/hunter_mode/services/saps_sms_parser.dart`
+  (`_matchMake` + `firearmMake`/`hasFirearmDetails` on the result),
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`
+  (accordion + Quick Add box + make field + card make pill + FIREARM DETAILS
+  expanded section + `_expandedPill`),
+  `test/saps_sms_parser_test.dart` (+5 firearm-make extraction tests),
+  `test/saps_application_card_widget_test.dart` (make pill + expanded
+  FIREARM DETAILS + graceful fallback `Firearm not specified` tests),
+  `test/saps_tracker_screen_widget_test.dart` (accordion-collapsed-by-default
+  + Quick Add + make pre-fill + blank-SMS + make-field tests),
+  `test/features/hunter_mode/saps_tracker_test.dart` (+6 model tests:
+  make round-trip, aliases, dual-stamp, `firearmLabel` composition, copyWith),
+  `AGENTS.md`.

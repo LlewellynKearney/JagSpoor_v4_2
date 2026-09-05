@@ -3,6 +3,7 @@ import 'saps_tracker_service.dart';
 /// Structured result extracted from a raw SAPS notification SMS.
 class SapsSmsParseResult {
   final String referenceNumber;
+  final String firearmMake;
   final String calibre;
   final String serialNumber;
   final String statusMessage;
@@ -12,6 +13,7 @@ class SapsSmsParseResult {
 
   const SapsSmsParseResult({
     this.referenceNumber = '',
+    this.firearmMake = '',
     this.calibre = '',
     this.serialNumber = '',
     this.statusMessage = '',
@@ -22,7 +24,9 @@ class SapsSmsParseResult {
 
   bool get hasReference => referenceNumber.trim().isNotEmpty;
   bool get hasFirearmDetails =>
-      calibre.trim().isNotEmpty || serialNumber.trim().isNotEmpty;
+      firearmMake.trim().isNotEmpty ||
+      calibre.trim().isNotEmpty ||
+      serialNumber.trim().isNotEmpty;
   bool get hasStatus => statusMessage.trim().isNotEmpty;
 
   bool get isEmpty => !hasReference && !hasFirearmDetails && !hasStatus;
@@ -55,6 +59,7 @@ class SapsSmsParser {
     final normalized = _normalize(raw);
 
     final reference = _matchReference(normalized);
+    final firearmMake = _matchMake(normalized);
     final calibre = _matchCalibre(normalized);
     final serial = _matchSerialNumber(normalized);
     final status = _matchStatus(normalized);
@@ -63,6 +68,7 @@ class SapsSmsParser {
 
     return SapsSmsParseResult(
       referenceNumber: reference,
+      firearmMake: firearmMake,
       calibre: calibre,
       serialNumber: serial,
       statusMessage: status,
@@ -90,6 +96,35 @@ class SapsSmsParser {
     };
 
     return _firstGroupMatch(normalized, patterns);
+  }
+
+  /// Extracts an explicit firearm make / brand token immediately following
+  /// `make` / `brand` (with or without a colon/equals), e.g. `make TIKKA T3X`,
+  /// `firearm make: CZ`, `brand HOWA`. The value stops at the next recognised
+  /// detail keyword (`calibre`, `s/n`, `serial`, `ref`, `application`,
+  /// `status`) or end-of-line so it never swallows the calibre's model tokens
+  /// (e.g. `MUSGRAVE` in `6MM MUSGRAVE` stays part of the calibre). The result
+  /// is uppercased to the canonical SAPS form. Empty when the SMS does not
+  /// carry an explicit make token (the common case — the cartridge/calibre
+  /// alone identifies the firearm).
+  static String _matchMake(String normalized) {
+    const patterns = <String, String>{
+      r'(?:^|\s)(?:firearm\s+)?make\s*[:\-=]?\s+'
+          r'([A-Za-z0-9][A-Za-z0-9.\/-]*'
+          r'(?:\s+(?!(?:for\b|and\b|of\b|with\b|cal(?:ibre|iber|\.)?\b|'
+          r's/n\b|serial\b|snr\b|ref(?:erence)?\b|application\b|status\b|'
+          r'licence\b|license\b|collected\b|approved\b))'
+          r'[A-Za-z0-9][A-Za-z0-9.\/-]*)*)': 'make',
+      r'(?:^|\s)(?:firearm\s+)?brand\s*[:\-=]?\s+'
+          r'([A-Za-z0-9][A-Za-z0-9.\/-]*'
+          r'(?:\s+(?!(?:for\b|and\b|of\b|with\b|cal(?:ibre|iber|\.)?\b|'
+          r's/n\b|serial\b|snr\b|ref(?:erence)?\b|application\b|status\b|'
+          r'licence\b|license\b|collected\b|approved\b))'
+          r'[A-Za-z0-9][A-Za-z0-9.\/-]*)*)': 'brand',
+    };
+
+    final raw = _firstGroupMatch(normalized, patterns);
+    return raw.trim().toUpperCase();
   }
 
   /// Extracts the calibre token immediately following `calibre`/`cal` (with

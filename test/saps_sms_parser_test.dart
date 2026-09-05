@@ -61,6 +61,53 @@ void main() {
     });
   });
 
+  group('SapsSmsParser.parse — firearm make extraction', () {
+    test('extracts an explicit make token before the calibre', () {
+      final result = SapsSmsParser.parse(
+        'SAPS msg: Application Ref. 10470664 make TIKKA T3X calibre 6MM '
+        'MUSGRAVE s/n OB14468',
+      );
+      expect(result.firearmMake, 'TIKKA T3X');
+      // The make capture must not swallow the calibre model token.
+      expect(result.calibre, '6MM MUSGRAVE');
+      expect(result.serialNumber, 'OB14468');
+    });
+
+    test('extracts a make from "firearm make:" notation', () {
+      final result = SapsSmsParser.parse(
+        'Ref 50712 firearm make: CZ serial XY753 serial',
+      );
+      expect(result.firearmMake, 'CZ');
+      expect(result.serialNumber, 'XY753');
+    });
+
+    test('extracts a single-token make from "brand"', () {
+      final result = SapsSmsParser.parse(
+        'Ref 50712 brand HOWA calibre 308 WIN serial XY753',
+      );
+      expect(result.firearmMake, 'HOWA');
+      expect(result.calibre, '308 WIN');
+    });
+
+    test('returns empty make when the SMS has no make/brand token', () {
+      // The common SAPS message identifies the firearm by calibre only; make
+      // must stay empty (the card falls back to calibre / serial pills).
+      final result = SapsSmsParser.parse(
+        'SAPS msg: Application Ref. 10470664 for calibre 6MM MUSGRAVE '
+        's/n OB14468',
+      );
+      expect(result.firearmMake, '');
+      expect(result.hasFirearmDetails, isTrue); // calibre + serial carry it
+    });
+
+    test('make is case-insensitive and uppercased', () {
+      final result = SapsSmsParser.parse(
+        'Ref 1 make tikka t3x calibre 308 win serial abc123',
+      );
+      expect(result.firearmMake, 'TIKKA T3X');
+    });
+  });
+
   group('SapsSmsParser.parse — calibre extraction', () {
     test('extracts a calibre with a model name', () {
       final result = SapsSmsParser.parse(
