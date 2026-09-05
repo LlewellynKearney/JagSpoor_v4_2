@@ -11,6 +11,8 @@ import 'screens/privacy_policy_screen.dart';
 import '../hunter_mode/hunter_profile_screen.dart';
 import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
+import 'services/demo_reviewer_config.dart';
+import 'services/demo_reviewer_service.dart';
 import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
@@ -27,10 +29,16 @@ class AuthScreen extends StatefulWidget {
   @visibleForTesting
   final Future<GoogleSignInResult> Function()? googleSignInOverride;
 
+  /// Test seam: overrides the demo-reviewer sign-in invocation so widget
+  /// tests can verify the "Demo Reviewer Login" flow without a Firebase app.
+  @visibleForTesting
+  final Future<DemoSignInResult> Function()? demoSignInOverride;
+
   const AuthScreen({
     super.key,
     required this.themedata,
     this.googleSignInOverride,
+    this.demoSignInOverride,
   });
 
   @override
@@ -136,6 +144,61 @@ class _AuthScreenState extends State<AuthScreen> {
         SnackBar(
           content: Text('Google Sign-In failed: $e'),
           backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Handle the "Demo Reviewer Login" quick-tap — for Google Play reviewers.
+  ///
+  /// Signs into the dedicated review account (see [DemoReviewerConfig]),
+  /// seeds a representative demo dataset (SAPS applications, firearm
+  /// inventory, trophy room, offline harvest logs) so every restricted
+  /// feature is instantly showcaseable, then routes the reviewer onto the
+  /// hunter dashboard via the normal post-auth routing.
+  ///
+  /// Best-effort + failure-tolerant: a sign-in failure surfaces a clear
+  /// snackbar (never a silent no-op); a Firestore seed failure is logged
+  /// inside the service and does not block the reviewer from entering the
+  /// demo (the screens degrade to their handled empty states).
+  Future<void> _handleDemoSignIn() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    try {
+      final override = widget.demoSignInOverride;
+      final result = override != null
+          ? await override()
+          : await DemoReviewerService.instance.signInDemoReviewer();
+
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        // The demo account is a complete hunter (role + profile stamped by the
+        // seeder), so the normal post-auth routing lands on the dashboard.
+        await _routeAfterAuth();
+        return;
+      }
+
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.errorMessage ?? 'Demo reviewer sign-in failed.',
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Demo reviewer sign-in failed: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
@@ -795,7 +858,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     
                     // Google Sign-In Button
                     _buildGoogleSignInButton(),
-                    
+
+                    if (DemoReviewerConfig.enabled) ...[
+                      const SizedBox(height: 12.0),
+                      _buildDemoReviewerButton(),
+                    ],
+
                     const SizedBox(height: 16.0),
                     TextButton(
                       onPressed:
@@ -819,6 +887,38 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Subtle, quick-tap "Demo Reviewer Login" affordance for Google Play
+  /// reviewers. One tap signs into the dedicated review account (see
+  /// [DemoReviewerConfig]) and seeds a showcase dataset — reviewers never
+  /// have to set up an account manually. Rendered below the Google button so
+  /// it is discoverable but deliberately understated (text button, not a
+  /// primary CTA).
+  Widget _buildDemoReviewerButton() {
+    final theme = Theme.of(context);
+    return TextButton.icon(
+      key: const ValueKey('demoReviewerLoginButton'),
+      onPressed: _isLoading ? null : _handleDemoSignIn,
+      icon: Icon(
+        Icons.science_rounded,
+        size: 16,
+        color: theme.colorScheme.primary,
+      ),
+      label: Text(
+        'DEMO REVIEWER LOGIN',
+        style: TextStyle(
+          color: theme.colorScheme.primary,
+          fontFamily: 'Mono',
+          fontSize: 11.0,
+          letterSpacing: 0.6,
+        ),
+      ),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }

@@ -12042,3 +12042,99 @@ collapsible accordion so tracked applications dominate the screen.
   `test/features/hunter_mode/saps_tracker_test.dart` (+6 model tests:
   make round-trip, aliases, dual-stamp, `firearmLabel` composition, copyWith),
   `AGENTS.md`.
+
+## Phase -- Demo Reviewer Login for Google Play reviews (added 2026-09-05)
+
+Added a dedicated "Demo Reviewer Login" quick-tap on the authentication
+screen so Google Play reviewers can instantly access every restricted
+hunting / tracking feature (SAPS Tracker, firearm inventory, Digital Trophy
+Room, offline harvest logs) without manual account setup.
+
+### Demo reviewer account (REVIEW-ONLY credentials)
+- The review account is `demo@jagspoor.co.za`, password
+  `JagSpoorDemo2026!`, display name "Demo Reviewer" — all centralised in
+  `lib/features/auth/services/demo_reviewer_config.dart`
+  (`DemoReviewerConfig.email/password/displayName/role`). These are NOT
+  secrets: the account is a dedicated review-only hunter (no admin claims,
+  no financial/merchant surface). Rotate by updating the constants + the
+  Firebase Console copy in one place.
+- Role: `hunter` (exposes SAPS tracker, firearm safe + ammo, ballistics,
+  trophy room, carcass matrix, off-grid map, shot-group analyzer, etc.).
+  The demo account is provisioned in the Firebase Console / Play internal
+  test track ahead of submission (see Deploy reminder).
+- `DemoReviewerConfig.enabled` (bool) gates the in-app entry; flip to
+  `false` to remove the button in a production roll-out.
+
+### Demo sign-in service + seeded mock data
+- `lib/features/auth/services/demo_reviewer_service.dart`
+  (`DemoReviewerService.instance`):
+  - `signInDemoReviewer()` — signs into the review account
+    (`signInWithEmailAndPassword` with the config credentials; if a session
+    is already active it is reused), caches the resolved role as hunter via
+    `UserRoleProvider.setRole(AppRole.hunter)`, seeds the demo dataset
+    (best-effort), and returns a `DemoSignInResult` (success / failure with
+    a review-actionable message).
+  - `seedDemoData(uid)` writes a representative dataset under the reviewer's
+    uid (all writes best-effort + failure-tolerant so an offline / sandboxed
+    Firestore never blocks entry);
+    - `users/{uid}`: complete hunter profile (`firstName` Demo, `lastName`
+      Reviewer, `phone`, `email`, `role: 'hunter'`), `outfitterId` self-link,
+      and an ACTIVE subscription entitlement
+      (`subscriptionStatus: 'active'`, tier hunter, provider
+      google_play_billing, renewal +30d) so the reviewer bypasses both the
+      mandatory-profile gate and any paywall surface;
+    - `license_applications`: 4 SAPS applications across the workflow
+      (Submitted / Provincial / CFR / Printed) incl. a Competency Certificate
+      (no firearm) to showcase the make/calibre/serial fallback, plus
+      `firearmMake`+`make` dual-stamped for the card pills;
+    - `firearms` (+ nested `ammunition` load profiles): Tikka T3x (.308 Win,
+      168gr + 150gr), CZ 457 (.22 LR), Glock 19 Gen5 (9mm) — feeds the
+      Digital Firearm Safe, ballistic calculator + shot-group analyzer;
+    - `trophies`: Greater Kudu / Blesbok / Impala entries with realistic
+      horn/weight + `tags` for the Digital Trophy Room;
+    - `carcass_logs`: a 'Hanging' chiller entry for the Slaughterhouse
+      matrix / offline harvest logs.
+  - Test seams (`injectForTesting` / `resetForTesting`): injectable
+    `FirebaseAuth` / `FirebaseFirestore` / sign-in closure / `enabled` flag
+    so the flow is unit-testable without a live Firebase app.
+
+### Auth screen UI
+- `lib/features/auth/auth_screen.dart`: a subtle, quick-tap
+  **"DEMO REVIEWER LOGIN"** `TextButton.icon` (`ValueKey('demoReviewerLoginButton')`,
+  science icon, colocated below the Google sign-in button) is rendered when
+  `DemoReviewerConfig.enabled`. `_handleDemoSignIn()` runs the service
+  sign-in + seed, then routes via the existing post-auth routing
+  (`_routeAfterAuth`) — the demo reviewer lands on the hunter dashboard
+  directly. A failure surfaces a red snackbar with the specific reason
+  (never silent). `@visibleForTesting demoSignInOverride` seam mirrors the
+  existing `googleSignInOverride` pattern.
+
+### Tests (12 new, all pass)
+- `test/demo_reviewer_service_test.dart` (10): config contract; profile/role/
+  subscription stamp; SAPS stages + make-bearing doc; firearm + nested ammo
+  seed; trophies + carcass seed; idempotency; `isEnabled` default + disable
+  override via `FakeFirebaseFirestore` + the injection seam.
+- `test/demo_reviewer_login_test.dart` (4 widget tests): the subtle button
+  renders; a successful demo sign-in invokes the override without crashing
+  when routing is unavailable (test env); a failed sign-in surfaces the
+  exact error snackbar; the config-enable contract.
+- Environment note: re-installed Flutter 3.29.1 (CI pin) at
+  `$HOME/flutter`; the pubspec "Unexpected child config" line is the
+  documented pre-existing spurious warning; run the SQLite-FFI suites with
+  `LD_LIBRARY_PATH="$HOME/libs"` + the `~/libs/libsqlite3.so` symlink.
+
+### Verification
+- `flutter analyze` on the changed files: 0 issues. Full-repo analyzer: 0
+  errors, 0 warnings (277 pre-existing infos, unchanged baseline).
+- `flutter test` (full suite): **All 1546 tests passed** (was 1534; +12 new).
+- Files: `lib/features/auth/services/demo_reviewer_config.dart` (NEW),
+  `lib/features/auth/services/demo_reviewer_service.dart` (NEW),
+  `lib/features/auth/auth_screen.dart` (button + `_handleDemoSignIn` +
+  `demoSignInOverride` seam),
+  `test/demo_reviewer_service_test.dart` (NEW),
+  `test/demo_reviewer_login_test.dart` (NEW), `AGENTS.md`.
+- Deploy reminder: provision the `demo@jagspoor.co.za` review account in the
+  Firebase Console + include it in the Google Play internal-test track
+  before submission. No Firestore rules / index / Storage / pubspec /
+  manifest changes (the reviewer's seeded collections are all covered by the
+  existing owner-scoped `isSignedIn()` rules).
