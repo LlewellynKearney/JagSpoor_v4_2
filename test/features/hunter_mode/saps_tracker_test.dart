@@ -264,6 +264,112 @@ void main() {
       assert(restored.applicationType == original.applicationType, 'applicationType mismatch');
       assert(restored.currentStatus == original.currentStatus, 'currentStatus mismatch');
     });
+
+    test('should round-trip the provincial DFO milestone through JSON', () {
+      final original = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'Provincial',
+        submittedAt: DateTime(2024, 6, 3),
+        provincialDfoReceivedAt: DateTime(2024, 7, 15),
+        lastChecked: DateTime(2024, 7, 15, 10, 30),
+      );
+
+      final restored = SapsApplication.fromJson(original.toFirestore(),
+          id: original.id);
+
+      assert(restored.submittedAt == original.submittedAt,
+          'submittedAt mismatch');
+      assert(restored.provincialDfoReceivedAt == original.provincialDfoReceivedAt,
+          'provincialDfoReceivedAt mismatch');
+    });
+
+    test('should tolerate the dfoReceivedAt alias for the provincial milestone',
+        () {
+      final restored = SapsApplication.fromJson({
+        'id': 'x',
+        'hunterId': 'h',
+        'referenceNumber': 'r',
+        'idNumber': 'i',
+        'applicationType': 'Competency Certificate',
+        'currentStatus': 'Provincial',
+        'dfoReceivedAt': '2024-07-15T00:00:00.000',
+        'lastChecked': '2024-07-15T10:30:00.000',
+      });
+
+      assert(restored.provincialDfoReceivedAt == DateTime(2024, 7, 15),
+          'dfoReceivedAt alias not resolved');
+    });
+
+    test('should compute working days since the submitted milestone', () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        submittedAt: DateTime(2026, 9, 7), // Monday
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      // Mon 7 Sep -> Fri 11 Sep 2026 = 5 working days (incl. submission day).
+      assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == 5,
+          'Expected 5 working days since submission');
+    });
+
+    test('should compute working days since the provincial DFO milestone', () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'Provincial',
+        provincialDfoReceivedAt: DateTime(2026, 9, 7), // Monday
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      assert(app.workingDaysSinceProvincialDfo(DateTime(2026, 9, 11)) == 5,
+          'Expected 5 working days since provincial DFO');
+    });
+
+    test('should return null working days when a milestone is unknown', () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == null,
+          'Expected null without a submission date');
+      assert(app.workingDaysSinceProvincialDfo(DateTime(2026, 9, 11)) == null,
+          'Expected null without a provincial DFO date');
+    });
+
+    test('should return null working days when a milestone is in the future',
+        () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        submittedAt: DateTime(2026, 9, 14),
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == null,
+          'Expected null for a future submission date');
+    });
   });
 
   group('SapsScraperResult Tests', () {

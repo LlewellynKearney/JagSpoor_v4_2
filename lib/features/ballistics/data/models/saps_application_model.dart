@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../../../hunter_mode/services/sa_working_days.dart';
 
 /// Tracks SAPS firearm license and competency application status.
 class SapsApplication {
@@ -34,6 +35,11 @@ class SapsApplication {
   /// creation window).
   final DateTime? submittedAt;
 
+  /// Time the application was received at the provincial DFO (the second
+  /// milestone). Null when the tracking system has not yet recorded it or
+  /// the application is still at the district office.
+  final DateTime? provincialDfoReceivedAt;
+
   /// Time the status was last updated by the tracking system (distinct
   /// from [lastChecked], which is when the app looked). Null for legacy docs.
 
@@ -52,6 +58,7 @@ class SapsApplication {
     this.statusMessage = '',
     this.batchNumber = '',
     this.submittedAt,
+    this.provincialDfoReceivedAt,
     this.statusUpdatedAt,
   });
 
@@ -106,6 +113,9 @@ class SapsApplication {
       statusMessage: (json['statusMessage'] as String?) ?? '',
       batchNumber: (json['batchNumber'] as String?) ?? '',
       submittedAt: _dateTimeOrNull(json['submittedAt']),
+      provincialDfoReceivedAt: _dateTimeOrNull(
+        json['provincialDfoReceivedAt'] ?? json['dfoReceivedAt'],
+      ),
       statusUpdatedAt: _dateTimeOrNull(json['statusUpdatedAt']),
       lastChecked: _dateTimeOrDefault(json['lastChecked']),
     );
@@ -123,6 +133,8 @@ class SapsApplication {
         'statusMessage': statusMessage,
         'batchNumber': batchNumber,
         if (submittedAt != null) 'submittedAt': submittedAt!.toIso8601String(),
+        if (provincialDfoReceivedAt != null)
+          'provincialDfoReceivedAt': provincialDfoReceivedAt!.toIso8601String(),
         if (statusUpdatedAt != null)
           'statusUpdatedAt': statusUpdatedAt!.toIso8601String(),
         'lastChecked': lastChecked.toIso8601String(),
@@ -166,8 +178,10 @@ class SapsApplication {
     String? statusMessage,
     String? batchNumber,
     DateTime? submittedAt,
+    DateTime? provincialDfoReceivedAt,
     DateTime? statusUpdatedAt,
     bool clearSubmittedAt = false,
+    bool clearProvincialDfoReceivedAt = false,
     bool clearStatusUpdatedAt = false,
   }) {
     return SapsApplication(
@@ -182,6 +196,9 @@ class SapsApplication {
       statusMessage: statusMessage ?? this.statusMessage,
       batchNumber: batchNumber ?? this.batchNumber,
       submittedAt: clearSubmittedAt ? null : (submittedAt ?? this.submittedAt),
+      provincialDfoReceivedAt: clearProvincialDfoReceivedAt
+          ? null
+          : (provincialDfoReceivedAt ?? this.provincialDfoReceivedAt),
       statusUpdatedAt: clearStatusUpdatedAt
           ? null
           : (statusUpdatedAt ?? this.statusUpdatedAt),
@@ -209,6 +226,20 @@ class SapsApplication {
       default:
         return 0;
     }
+  }
+
+  /// Working days (weekends + SA public holidays excluded) elapsed since the
+  /// application was [submittedAt]. Returns `null` when the submission date
+  /// is unknown or still in the future.
+  int? workingDaysSinceSubmitted(DateTime now) {
+    return SaWorkingDays.workingDaysSince(submittedAt, now);
+  }
+
+  /// Working days elapsed since the application was received at the
+  /// provincial DFO ([provincialDfoReceivedAt]). Returns `null` when that
+  /// milestone is unknown or still in the future.
+  int? workingDaysSinceProvincialDfo(DateTime now) {
+    return SaWorkingDays.workingDaysSince(provincialDfoReceivedAt, now);
   }
 
   /// Application type options for the dropdown selector.

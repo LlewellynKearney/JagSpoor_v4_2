@@ -11745,4 +11745,110 @@ auto-registration, a manual refresh button, and an expandable detailed view.
   `test/saps_tracker_screen_widget_test.dart` (NEW), `AGENTS.md`.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side feature over the existing `license_applications` collection;
-  registration writes are owner-scoped `hunterId`, already covered by rules).
+  registration writes are owner-scoped `hunterId`, already covered by rules).## Phase -- SAPS tracker timeline milestones & firearm detail pills (added 2026-09-05)
+
+Follow-on to the SMS-parsing enhancement: application cards now carry
+prominent submission-date + working-day tallies from the two key milestones,
+and explicit firearm calibre/serial pills on the collapsed card.
+
+### 1. `SaWorkingDays` utility (NEW, `lib/features/hunter_mode/services/sa_working_days.dart`)
+- Pure static South African working-day arithmetic, dependency-free and fully
+  unit-testable:
+  - `isPublicHoliday(DateTime)` -- the SA public-holiday act list:
+    fixed dates (1/1, 3/21, 4/27, 5/1, 6/16, 8/9, 9/24,
+    12/16, 12/25, 12/26), plus Easter-based (Good Friday = Easter-2,
+    Family Day = Easter+1; Anonymous Gregorian Easter algorithm, valid for
+    1900-2099), plus the Sunday-shift rule (a holiday falling on a Sunday is
+    observed the following Monday -- Public Holidays Act), so the shifted
+    Monday is excluded as well. 2 Jan is NOT treated as an automatic
+    holiday (it is only impacted when a fixed holiday falls on a Sunday).
+  - `isWorkingDay(DateTime)` -- not a weekend (Sat/Sun) and not a public holiday.
+
+  - `workingDaysBetween(start,end)` -- half-open interval `[start,end)`,
+    dates normalised to midnight local (time components never skew the
+    tally), inclusive of [start], exclusive of [end]. Returns `null` when
+    end is on or before start (milestone not yet elapsed -> UI dash).
+  - `workingDaysSince(start, now)` -- inclusive convenience: counts
+    `[start, now+1)` so the milestone day itself counts as the first working
+    day. Returns `null` for a null/future start.
+
+### 2. `SapsApplication` milestone fields (model)
+- New `provincialDfoReceivedAt` (`DateTime?`) persisted in
+  `toJson`/`fromJson`/`copyWith` (read alias `dfoReceivedAt` tolerated
+  for backward-compat; `clearProvincialDfoReceivedAt` supported on copyWith.
+
+- Two new milestone getters:
+  - `workingDaysSinceSubmitted(DateTime now)` -> `int?` via
+    `SaWorkingDays.workingDaysSince(submittedAt, now)`.
+  - `workingDaysSinceProvincialDfo(DateTime now)` -> `int?` via
+    `SaWorkingDays.workingDaysSince(provincialDfoReceivedAt, now)`.
+  Each returns null when the milestone date is unknown / still in the future
+  (the card omits the pill, keeping the collapsed card clean).
+- `_registerApplication` (screen) now stamps `submittedAt: now` on
+  the Firestore write, so every newly-registered application carries a
+  submission milestone (legacy docs fall back to "Submitted: not recorded").
+
+### 3. `SapsApplicationCard` card UI (renamed from `_ApplicationCard`; public now)
+- Prominent submission-date row right under the application-type header:
+  `Submitted: 12 Mar 2026` (`_formatDateOnly`, e.g. `12 Mar 2026`) or
+  `Submitted: not recorded` when unknown.
+- Explicit firearm details as amber `HunterDataPill` chips on the collapsed
+  card: calibre (`Icons.gps_fixed`, amber accent) and `s/n <serial>`
+  (`Icons.pin_outlined`), each omitted when its text is empty. The old
+  lower-fidelity `firearmLabel` text row was replaced (the `firearmLabel`
+  getter remains for other consumers / tests).
+- Working-day tally pills (computed against `DateTime.now()` at build):
+  - `N workdays since submission` (`Icons.work_outline`, amber) when
+    `workingDaysSinceSubmitted(now) != null`.
+  - `N workdays at provincial DFO` (`Icons.account_balance_outlined`) when
+    `workingDaysSinceProvincialDfo(now) != null`.
+  A `Wrap(spacing: 8, runSpacing: 6)` keeps the chip band tidy on
+  narrow devices.
+ (`kHunterMediaAmber` palette via `HunterDataPill`/
+  `HunterMediaPill` from the shared `hunter_media_card.dart`.)
+- The card class was renamed `_ApplicationCard` -> `SapsApplicationCard` and
+  made public with a `super.key`, so widget tests can pump it directly with
+  injectable applications (the tracker screen call site updated accordingly).
+
+### 4. Tests (+23 net)
+- `test/sa_working_days_test.dart` (NEW, 13): isWorkingDay (weekday,
+  weekend, all fixed holidays, Easter Good Friday + Family Day 2026,
+  Sunday-shift 2023 New Year's observed Mon, non-shift 2022 Mon after a Sat
+  New Year's => working; 2 Jan non-holiday); workingDaysBetween (plain week,
+  half-open exclusivity, time-component invariance, Heritage-Day-in-range
+  exclusion = 4 across 23-30 Sep 2026); workingDaysSince (null/future null,
+  inclusive-first-day, weekend/public-holiday exclusion).
+- `test/features/hunter_mode/saps_tracker_test.dart` +6 model tests:
+
+  provincial-DFO round-trip through toFirestore/fromJson; `dfoReceivedAt`
+  alias tolerance; 5 workdays since submitted Mon-Fri; 5 workdays since
+  provincial DFO; null without a milestone; null for a future milestone.
+
+- `test/saps_application_card_widget_test.dart` (NEW, 4 widget tests via
+  `SapsTrackerService.forTesting(FakeFirebaseFirestore())` + a public card):
+  submission date renders; calibre + serial pills render; working-day
+  tally pills render for in-the-past milestones (deterministic vs
+  `DateTime.now()`); pills hidden when calibre + serial are empty.
+
+### Verification
+- `flutter analyze`:**0 errors, 0 warnings** (277 pre-existing infos;
+  all changed/new files "No issues found").
+- `flutter test` (full suite): **All 1509 tests passed**, zero failures
+  (was 1486; +23 net: 13 working-days + 6 model milestone +
+  4 card widget). The pre-existing status-conversion suites
+  (`saps_tracker_test.dart`) remain green unchanged.
+
+- Env: same sandbox pattern (Flutter CI pin, `LD_LIBRARY_PATH="$HOME/libs"`
+  sqflite symlink; the pre-existing "Unexpected child config" pubspec
+  warning is the documented spurious line).
+- Files: `lib/features/hunter_mode/services/sa_working_days.dart` (NEW),
+  `lib/features/ballistics/data/models/saps_application_model.dart`
+  (provincialDfoReceivedAt + milestone getters + import),
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`
+  (milestone row, firearm + tally pills, `SapsApplicationCard` rename,
+  `_registerApplication` stamps submittedAt),
+  `test/sa_working_days_test.dart` (NEW),
+  `test/saps_application_card_widget_test.dart` (NEW),
+  `test/features/hunter_mode/saps_tracker_test.dart` (+6), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side feature over the existing `license_applications` collection).

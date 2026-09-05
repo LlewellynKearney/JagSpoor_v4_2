@@ -7,6 +7,7 @@ import '../../hunter_mode/services/saps_sms_parser.dart';
 import '../../hunter_mode/services/saps_tracker_service.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 
 /// SAPS License & Competency Application Tracker Screen.
 /// Provides a dashboard for registering and monitoring firearm license
@@ -133,6 +134,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
 
     try {
       final firestore = FirebaseFirestore.instance;
+      final now = DateTime.now();
       final docRef = await firestore.collection('license_applications').add({
         'hunterId': _currentUserId,
         'referenceNumber': referenceNumber,
@@ -141,7 +143,8 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
         'currentStatus': 'Submitted',
         'calibre': calibre,
         'serialNumber': serialNumber,
-        'lastChecked': DateTime.now().toIso8601String(),
+        'submittedAt': now.toIso8601String(),
+        'lastChecked': now.toIso8601String(),
       });
 
       if (mounted) {
@@ -536,7 +539,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                             );
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
-                              child: _ApplicationCard(
+                              child: SapsApplicationCard(
                                 application: app,
                                 trackerService: _trackerService,
                               ),
@@ -555,20 +558,21 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
 
 /// Card widget displaying a single tracked application with stage progress
 /// bar and an expandable detailed view.
-class _ApplicationCard extends StatefulWidget {
+class SapsApplicationCard extends StatefulWidget {
   final SapsApplication application;
   final SapsTrackerService trackerService;
 
-  const _ApplicationCard({
+  const SapsApplicationCard({
+    super.key,
     required this.application,
     required this.trackerService,
   });
 
   @override
-  State<_ApplicationCard> createState() => _ApplicationCardState();
+  State<SapsApplicationCard> createState() => _ApplicationCardState();
 }
 
-class _ApplicationCardState extends State<_ApplicationCard> {
+class _ApplicationCardState extends State<SapsApplicationCard> {
   bool _expanded = false;
   bool _refreshing = false;
   SapsTrackingDetails? _details;
@@ -630,6 +634,7 @@ class _ApplicationCardState extends State<_ApplicationCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hunterTheme = ThemeController.instance;
+    final now = DateTime.now();
 
     return Card(
       color: HunterUi.cardColor(hunterTheme),
@@ -679,33 +684,79 @@ class _ApplicationCardState extends State<_ApplicationCard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
+              // Prominent submission date milestone.
+              Row(
+                children: [
+                  Icon(
+                    Icons.event_available,
+                    size: 15,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      application.submittedAt != null
+                          ? 'Submitted: ${_formatDateOnly(application.submittedAt!)}'
+                          : 'Submitted: not recorded',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
               Text(
                 'Ref: ${application.referenceNumber}',
                 style: TextStyle(fontSize: 12, color: theme.hintColor),
               ),
-              if (application.firearmLabel != 'Firearm not specified') ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.gps_fixed,
-                      size: 14,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        application.firearmLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurface,
-                        ),
+              const SizedBox(height: 10),
+              // Firearm details + working-day milestone tallies as pills.
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (application.calibre.isNotEmpty)
+                    HunterDataPill(
+                      theme: hunterTheme,
+                      pill: HunterMediaPill(
+                        icon: Icons.gps_fixed,
+                        label: application.calibre,
+                        amber: true,
                       ),
                     ),
-                  ],
-                ),
-              ],
+                  if (application.serialNumber.isNotEmpty)
+                    HunterDataPill(
+                      theme: hunterTheme,
+                      pill: HunterMediaPill(
+                        icon: Icons.pin_outlined,
+                        label: 's/n ${application.serialNumber}',
+                      ),
+                    ),
+                  if (application.workingDaysSinceSubmitted(now) != null)
+                    HunterDataPill(
+                      theme: hunterTheme,
+                      pill: HunterMediaPill(
+                        icon: Icons.work_outline,
+                        label:
+                            '${application.workingDaysSinceSubmitted(now)} workdays since submission',
+                        amber: true,
+                      ),
+                    ),
+                  if (application.workingDaysSinceProvincialDfo(now) != null)
+                    HunterDataPill(
+                      theme: hunterTheme,
+                      pill: HunterMediaPill(
+                        icon: Icons.account_balance_outlined,
+                        label:
+                            '${application.workingDaysSinceProvincialDfo(now)} workdays at provincial DFO',
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               // Stage Progress Tracker Bar
               _StageProgressBar(
@@ -981,6 +1032,26 @@ class _ApplicationCardState extends State<_ApplicationCard> {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Compact date-only formatter (e.g. `12 Mar 2026`) for the prominent
+  /// submission-date milestone on the collapsed card.
+  String _formatDateOnly(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 }
 
