@@ -1,13 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../models/saps_tracking_details.dart';
 
 /// Cloud bridge service for SAPS License Tracker.
 /// Handles communication with Apify scraper API and status mapping.
 class SapsTrackerService {
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _injectedFirestore;
 
   SapsTrackerService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _injectedFirestore = firestore;
+
+  /// Lazily resolves the Firestore instance so constructing the service
+  /// before `Firebase.initializeApp()` (cold-launch race / widget-test env)
+  /// does not throw `[core/no-app]`.
+  FirebaseFirestore get _firestore =>
+      _injectedFirestore ?? FirebaseFirestore.instance;
+
+  /// Test seam: builds a service backed by an injected [FirebaseFirestore]
+  /// (e.g. `FakeFirebaseFirestore`) so the refresh / tracking-details flow can
+  /// be unit-tested without a live Firebase app.
+  @visibleForTesting
+  factory SapsTrackerService.forTesting(FirebaseFirestore firestore) {
+    return SapsTrackerService(firestore: firestore);
+  }
 
   /// Triggers a remote scraper check via Apify API webhook.
   ///
@@ -20,11 +35,10 @@ class SapsTrackerService {
   ) async {
     try {
       // Fetch the application document to get details
-      final docSnapshot =
-          await _firestore
-              .collection('license_applications')
-              .doc(applicationId)
-              .get();
+      final docSnapshot = await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .get();
 
       if (!docSnapshot.exists) {
         debugPrint('SapsTrackerService: Application $applicationId not found');
@@ -221,10 +235,10 @@ class SapsTrackerService {
           .collection('license_applications')
           .doc(applicationId)
           .update({
-            'currentStatus': newStatus,
-            'lastChecked': lastChecked.toIso8601String(),
-            'statusCode': convertRawStatusToStage(newStatus),
-          });
+        'currentStatus': newStatus,
+        'lastChecked': lastChecked.toIso8601String(),
+        'statusCode': convertRawStatusToStage(newStatus),
+      });
       return true;
     } catch (e) {
       debugPrint('SapsTrackerService: Failed to update application status: $e');
@@ -257,6 +271,133 @@ class SapsTrackerService {
 
     return updatedCount;
   }
+
+  /// Refreshes a single application's status (used by the manual refresh
+  /// button). Returns a [SapsRefreshResult] describing what the refresh did.
+  Future<SapsRefreshResult> refreshApplication(String applicationId) async {
+    try {
+      final result = await triggerRemoteScraperCheck(applicationId);
+      if (result == null || !result.success) {
+        return SapsRefreshResult(
+          applicationId: applicationId,
+          success: false,
+          message: result?.error ?? 'No result from tracking service',
+        );
+      }
+
+      final updated = await updateApplicationStatus(
+        applicationId,
+        result.status,
+        result.lastChecked,
+      );
+      if (!updated) {
+        return SapsRefreshResult(
+          applicationId: applicationId,
+          success: false,
+          message: 'Failed to persist the refreshed status',
+        );
+      }
+
+      return SapsRefreshResult(
+        applicationId: applicationId,
+        success: true,
+        message: 'Status refreshed: ${result.status}',
+        statusMessage: result.status,
+        statusStage: result.statusCode,
+        lastChecked: result.lastChecked,
+      );
+    } catch (e) {
+      debugPrint('SapsTrackerService: Refresh failed for $applicationId: $e');
+      return SapsRefreshResult(
+        applicationId: applicationId,
+        success: false,
+        message: 'Refresh failed: $e',
+      );
+    }
+  }
+
+  /// Fetches comprehensive tracking details (status timeline, waiting-period
+  /// estimates, batch details, current progress stage) for an application.
+  ///
+  /// The application document may store a structured `trackingDetails` map
+  /// (written by the backend tracking system). When it is absent the returned
+  /// details are synthesized from the application's card-level fields via
+  /// [SapsTrackingDetailsFactory.fromApplicationFields], so the expandable
+  /// detail view always has a defined renderable payload.
+  Future<SapsTrackingDetails?> fetchTrackingDetails(
+      String applicationId) async {
+    try {
+      final docSnapshot = await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .get();
+
+      if (!docSnapshot.exists) {
+        debugPrint('SapsTrackerService: Application $applicationId not found');
+        return null;
+      }
+
+      final data = docSnapshot.data() ?? const <String, dynamic>{};
+
+      final stored = data['trackingDetails'];
+      if (stored is Map) {
+        final details = SapsTrackingDetails.fromJson(
+          Map<String, dynamic>.from(stored),
+          applicationId: applicationId,
+        );
+        if (details.timeline.isNotEmpty ||
+            details.waitingEstimates.isNotEmpty ||
+            details.batches.isNotEmpty ||
+            details.currentProgressLabel != null) {
+          return details;
+        }
+      }
+
+      return SapsTrackingDetailsFactory.fromApplicationFields(
+        applicationId: applicationId,
+        currentStatus: data['currentStatus'] as String?,
+        statusMessage: data['statusMessage'] as String?,
+        batchNumber: data['batchNumber'] as String?,
+        submittedAt: _dateTimeOrNull(data['submittedAt']),
+        statusUpdatedAt: _dateTimeOrNull(data['statusUpdatedAt']),
+        refreshedAt: DateTime.now(),
+      );
+    } catch (e) {
+      debugPrint('SapsTrackerService: Fetch tracking details failed: $e');
+      return null;
+    }
+  }
+
+  static DateTime? _dateTimeOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return DateTime.tryParse(trimmed);
+    }
+    return null;
+  }
+}
+
+/// Result of a per-application manual status refresh.
+class SapsRefreshResult {
+  final String applicationId;
+  final bool success;
+  final String message;
+  final String? statusMessage;
+  final int? statusStage;
+  final DateTime? lastChecked;
+
+  const SapsRefreshResult({
+    required this.applicationId,
+    required this.success,
+    required this.message,
+    this.statusMessage,
+    this.statusStage,
+    this.lastChecked,
+  });
 }
 
 /// Represents the result from a SAPS scraper check.
@@ -282,22 +423,20 @@ class SapsScraperResult {
       applicationId: json['applicationId'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusCode: json['statusCode'] as int? ?? 0,
-      lastChecked:
-          json['lastChecked'] != null
-              ? DateTime.tryParse(json['lastChecked'] as String) ??
-                  DateTime.now()
-              : DateTime.now(),
+      lastChecked: json['lastChecked'] != null
+          ? DateTime.tryParse(json['lastChecked'] as String) ?? DateTime.now()
+          : DateTime.now(),
       success: json['success'] as bool? ?? false,
       error: json['error'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'applicationId': applicationId,
-    'status': status,
-    'statusCode': statusCode,
-    'lastChecked': lastChecked.toIso8601String(),
-    'success': success,
-    if (error != null) 'error': error,
-  };
+        'applicationId': applicationId,
+        'status': status,
+        'statusCode': statusCode,
+        'lastChecked': lastChecked.toIso8601String(),
+        'success': success,
+        if (error != null) 'error': error,
+      };
 }

@@ -11,6 +11,34 @@ class SapsApplication {
   final String currentStatus;
   final DateTime lastChecked;
 
+  /// Firearm calibre extracted from a SAPS notification SMS (e.g. `6MM
+  /// MUSGRAVE`) or entered manually. Empty when unknown/legacy doc.
+
+  final String calibre;
+
+  /// Firearm serial number extracted from a SAPS notification SMS
+  /// (e.g. `OB14468`) or entered manually. Empty when unknown/legacy doc.
+  final String serialNumber;
+
+  /// Raw status message / SMS status-type text the last update surfaced
+  /// (e.g. `licence collection notice`, `Application received at DFO`).
+  final String statusMessage;
+
+  /// Optional batch identifier when the tracking system groups
+  /// applications into a submission batch. Empty when unknown.
+
+  final String batchNumber;
+
+  /// Time the application was first registered / submitted. Null when the
+  /// legacy or external doc did not record it (UI falls back to the card's
+  /// creation window).
+  final DateTime? submittedAt;
+
+  /// Time the status was last updated by the tracking system (distinct
+  /// from [lastChecked], which is when the app looked). Null for legacy docs.
+
+  final DateTime? statusUpdatedAt;
+
   const SapsApplication({
     required this.id,
     required this.hunterId,
@@ -19,6 +47,12 @@ class SapsApplication {
     required this.applicationType,
     required this.currentStatus,
     required this.lastChecked,
+    this.calibre = '',
+    this.serialNumber = '',
+    this.statusMessage = '',
+    this.batchNumber = '',
+    this.submittedAt,
+    this.statusUpdatedAt,
   });
 
   factory SapsApplication.fromFirestore(
@@ -40,6 +74,24 @@ class SapsApplication {
     return SapsApplication.fromJson(data, id: doc.id);
   }
 
+  /// Renders the multi-token display label for the tracked firearm,
+  /// e.g. "6MM MUSGRAVE • s/n OB14468". Falls back to '[Calibre] •
+  /// s/n [Serial]' with each present part omitted when empty, then
+  /// 'Firearm not specified' when neither calibre nor serial is known.
+
+  String get firearmLabel {
+    if (calibre.isNotEmpty && serialNumber.isNotEmpty) {
+      return '$calibre • s/n $serialNumber';
+    }
+    if (calibre.isNotEmpty) {
+      return calibre;
+    }
+    if (serialNumber.isNotEmpty) {
+      return 's/n $serialNumber';
+    }
+    return 'Firearm not specified';
+  }
+
   factory SapsApplication.fromJson(Map<String, dynamic> json, {String? id}) {
     return SapsApplication(
       id: id ?? (json['id'] as String?) ?? '',
@@ -49,19 +101,32 @@ class SapsApplication {
       applicationType:
           (json['applicationType'] as String?) ?? 'Competency Certificate',
       currentStatus: (json['currentStatus'] as String?) ?? 'Pending',
+      calibre: (json['calibre'] as String?) ?? '',
+      serialNumber: (json['serialNumber'] as String?) ?? '',
+      statusMessage: (json['statusMessage'] as String?) ?? '',
+      batchNumber: (json['batchNumber'] as String?) ?? '',
+      submittedAt: _dateTimeOrNull(json['submittedAt']),
+      statusUpdatedAt: _dateTimeOrNull(json['statusUpdatedAt']),
       lastChecked: _dateTimeOrDefault(json['lastChecked']),
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'hunterId': hunterId,
-    'referenceNumber': referenceNumber,
-    'idNumber': idNumber,
-    'applicationType': applicationType,
-    'currentStatus': currentStatus,
-    'lastChecked': lastChecked.toIso8601String(),
-  };
+        'id': id,
+        'hunterId': hunterId,
+        'referenceNumber': referenceNumber,
+        'idNumber': idNumber,
+        'applicationType': applicationType,
+        'currentStatus': currentStatus,
+        'calibre': calibre,
+        'serialNumber': serialNumber,
+        'statusMessage': statusMessage,
+        'batchNumber': batchNumber,
+        if (submittedAt != null) 'submittedAt': submittedAt!.toIso8601String(),
+        if (statusUpdatedAt != null)
+          'statusUpdatedAt': statusUpdatedAt!.toIso8601String(),
+        'lastChecked': lastChecked.toIso8601String(),
+      };
 
   Map<String, dynamic> toFirestore() => toJson();
 
@@ -73,6 +138,21 @@ class SapsApplication {
     return DateTime.now();
   }
 
+  /// Parses a nullable Firestore date value into a `DateTime`, returning
+  /// null for a missing/blank/unparseable value (the expanded detail fields
+  /// are optional).
+  static DateTime? _dateTimeOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return DateTime.tryParse(trimmed);
+    }
+    return null;
+  }
+
   SapsApplication copyWith({
     String? id,
     String? hunterId,
@@ -81,6 +161,14 @@ class SapsApplication {
     String? applicationType,
     String? currentStatus,
     DateTime? lastChecked,
+    String? calibre,
+    String? serialNumber,
+    String? statusMessage,
+    String? batchNumber,
+    DateTime? submittedAt,
+    DateTime? statusUpdatedAt,
+    bool clearSubmittedAt = false,
+    bool clearStatusUpdatedAt = false,
   }) {
     return SapsApplication(
       id: id ?? this.id,
@@ -89,6 +177,14 @@ class SapsApplication {
       idNumber: idNumber ?? this.idNumber,
       applicationType: applicationType ?? this.applicationType,
       currentStatus: currentStatus ?? this.currentStatus,
+      calibre: calibre ?? this.calibre,
+      serialNumber: serialNumber ?? this.serialNumber,
+      statusMessage: statusMessage ?? this.statusMessage,
+      batchNumber: batchNumber ?? this.batchNumber,
+      submittedAt: clearSubmittedAt ? null : (submittedAt ?? this.submittedAt),
+      statusUpdatedAt: clearStatusUpdatedAt
+          ? null
+          : (statusUpdatedAt ?? this.statusUpdatedAt),
       lastChecked: lastChecked ?? this.lastChecked,
     );
   }

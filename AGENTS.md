@@ -11620,3 +11620,129 @@ Two coordinated features delivered as one unit.
   `test/venison_permit_partitioned_test.dart` (NEW),
   `test/venison_permit_manager_test.dart`,
   `test/firestore_rules_seeding_test.dart`, `AGENTS.md`.
+## Phase -- SAPS Tracker enhancement: SMS parsing, manual refresh & expandable tracking details (added 2026-09-05)
+
+Enhanced the hunter-side SAPS License & Competency Tracker with SMS
+auto-registration, a manual refresh button, and an expandable detailed view.
+
+### 1. `SapsApplication` SMS fields (`lib/features/ballistics/data/models/saps_application_model.dart`)
+- New fields: `calibre`, `serialNumber`, `statusMessage`, `batchNumber`,
+  `submittedAt` (DateTime?), `statusUpdatedAt` (DateTime?).
+- `fromJson`/`toJson`/`copyWith` extended; new pure `firearmLabel` getter
+  renders `"6MM MUSGRAVE • s/n OB14468"` (each part omitted when empty;
+  `'Firearm not specified'` when neither known).
+- New `_dateTimeOrNull` parses Timestamp/DateTime/ISO-string into a nullable
+  DateTime for the optional detail fields.
+
+### 2. `SapsSmsParser` (NEW, `lib/features/hunter_mode/services/saps_sms_parser.dart`)
+- Pure static `parse(String?)` -> `SapsSmsParseResult{referenceNumber,
+  calibre, serialNumber, statusMessage, statusStage, applicationType}`.
+- **Reference extraction**: ordered regex map — `application reference\b`,
+  `application ref\b`, `reference\b`, `ref\b(?: no)?`, URL query params.
+  The `\b` word boundary after `ref` is CRITICAL: without it the bare `ref`
+  pattern swallows the tail of "Reference" (the `erence` bug).
+- **Calibre extraction**: `calibre|caliber|cal` + value: optional leading
+  dot + digits + optional decimal + optional unit (`mm|cm|in|cal|mag`),
+  followed by zero+ model tokens terminated by a negative lookahead over SAPS
+  stop words (`s/n`, `serial`, `snr`, `for`, `and`, `of`, ...). Result
+  uppercased (`6mm musgrave` -> `6MM MUSGRAVE`). The stop-word guard is what
+  keeps `6MM MUSGRAVE` from swallowing the trailing `s` of `s/n`.
+- **Serial extraction**: `s/n`, `serial`, `serial number|nr|no`, URL param;
+  uppercased (`ob14468` -> `OB14468`).
+- **Status detection**: longest-match-wins over normalized (lowercased)
+  phrase keys -> a human status message + `statusStage` (0 DFO / 1 Provincial
+  / 2 CFR / 3 Printed-or-collection). Matching is on the LOWERCASED text.
+- **Application type inference**: keywords for Section 13 / 15 / 16 with
+  `Competency Certificate` as the default fallback.
+- `_normalize` collapses ALL whitespace runs (incl. NBSP/tab/newline) to a
+  single ASCII space - case-insensitivity + whitespace tolerance are baked in.
+
+### 3. `SapsTrackingDetails` model (NEW, `lib/features/hunter_mode/models/saps_tracking_details.dart`)
+- `SapsStatusTimelineEntry{label, timestamp?, detail?}`,
+  `SapsWaitingEstimate{stageLabel, estimate}`,
+  `SapsBatchDetail{batchNumber, submittedAt?, applicationCount?, status?}`.
+- `SapsTrackingDetails{applicationId, timeline, waitingEstimates, batches,
+  currentProgressLabel?, currentProgressDetail?, refreshedAt?}` with
+  `fromJson`/`toJson`.
+- `SapsTrackingDetailsFactory.fromApplicationFields` synthesizes a
+  renderable payload from the application's card fields (submission timeline
+  entry + status entry, standard waiting-period estimates, batch row) when
+  the backend has not stored a structured `trackingDetails` map.
+
+### 4. `SapsTrackerService` refresh + fetch-details (`lib/features/hunter_mode/services/saps_tracker_service.dart`)
+- `refreshApplication(applicationId)` -> `SapsRefreshResult` (per-card manual
+  refresh): triggers the scraper check, persists the scraper status via
+  `updateApplicationStatus`, fails soft with a message (never throws).
+- `fetchTrackingDetails(applicationId)` -> `SapsTrackingDetails?`: reads a
+  stored `trackingDetails` map on the `license_applications` doc, falling
+  back to synthesis from card fields. Never throws (returns null on a missing
+  doc / Firestore error).
+- New `SapsRefreshResult` class (applicationId / success / message /
+  statusMessage / statusStage / lastChecked).
+- `_firestore` is now a LAZY getter (`_injectedFirestore ??
+  FirebaseFirestore.instance`) so constructing the service before
+  `Firebase.initializeApp()` (cold-launch race / widget-test env) does not
+  throw `[core/no-app]`. Test seam: `SapsTrackerService.forTesting(...)`.
+
+### 5. `SapsTrackerScreen` rewrite (`lib/features/hunter_mode/presentation/saps_tracker_screen.dart`)
+- **SMS paste block** at the top of REGISTER APPLICATION: multi-line
+  `TextField` + "Extract Details from SMS" button. `_parseSmsMessage`
+  populates the reference / calibre / serial fields + infers the application
+  type, then shows a green confirmation snackbar listing the parsed fields.
+- **Calibre + Serial Number** manual `TextField`s (also parsed from SMS).
+- **Manual refresh**: header refresh `IconButton` that calls
+  `refreshAllApplications` (spinner while running, green/orange result
+  snackbar). Each card also has a per-application refresh icon calling
+  `refreshApplication` + re-fetching the expanded details.
+- **Expandable cards** (`_ApplicationCard` is now a StatefulWidget): tapping
+  a card expands an `AnimatedCrossFade` detail section that shows CURRENT
+  PROGRESS, a STATUS TIMELINE, ESTIMATED WAITING PERIODS, and BATCH DETAILS
+  pulled from `fetchTrackingDetails`, with a loading state and a "not
+  available" fallback. The card header also renders `firearmLabel`.
+- Theme: preserves the shared HunterScaffold / HunterUi casing (cardColor,
+  titleColor, status-stack AppBar).
+- `_currentUserId` getter + the top input section are hardened: the getter
+  try/catches `FirebaseAuth.instance` (null for cold-launch / tests); the
+  register card is wrapped in a scrollable `Flexible(SingleChildScrollView)`
+  so the tall form scrolls on short screens instead of overflowing.
+
+### 6. Tests (48 + 3 widget, all pass)
+- `test/saps_sms_parser_test.dart` (33): reference shapes + the `erence`
+  boundary regression guard; calibre (incl. calibre+model, bare, decimal,
+  stop-word guard); serial (s/n + serial + serial-number + hyphens +
+  uppercasing); status stage + type inference; NBSP / case / multi-space
+  tolerance; `isEmpty`/`has*` getters.
+- `test/saps_tracking_details_test.dart` (15): timeline/estimate/batch
+  round-trips + missing-field tolerance + Firestore Timestamp acceptance;
+  factory synthesis; `fromJson`/`toJson` round-trip; `fetchTrackingDetails`
+  (missing doc -> null, stored map, card-field synthesis); `refreshApplication`
+  (status propagated onto the doc, missing app -> failure result) via
+  `SapsTrackerService.forTesting(FakeFirebaseFirestore())`.
+- `test/saps_tracker_screen_widget_test.dart` (3): SMS block + refresh button
+  render; pasted SMS pre-populates the reference/calibre/serial fields +
+  confirmation snackbar; blank SMS -> error snackbar. Uses a plain
+  `MaterialApp(home: SapsTrackerScreen())` - no Firebase init required
+  thanks to the lazy service getter + null-uid guard.
+- Existing `test/features/hunter_mode/saps_tracker_test.dart` (42) unchanged
+  and still passing (status-conversion contracts preserved).
+
+### Verification
+- `flutter analyze`: 0 errors, 0 warnings (277 pre-existing infos; changed
+  files "No issues found").
+- `flutter test` (full suite): **All 1486 tests passed** (run with
+  `LD_LIBRARY_PATH="$HOME/libs"` + the `~/libs/libsqlite3.so` symlink for the
+  sqflite-FFI suites; the pre-existing "Unexpected child config" pubspec
+  warning is the documented spurious line).
+- Env: rebuilt the `~/libs` symlink
+  (`ln -sf /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/libs/libsqlite3.so`).
+- Files: `lib/features/ballistics/data/models/saps_application_model.dart`,
+  `lib/features/hunter_mode/services/saps_sms_parser.dart` (NEW),
+  `lib/features/hunter_mode/models/saps_tracking_details.dart` (NEW),
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `test/saps_sms_parser_test.dart` (NEW),
+  `test/saps_tracking_details_test.dart` (NEW),
+  `test/saps_tracker_screen_widget_test.dart` (NEW), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side feature over the existing `license_applications` collection;
+  registration writes are owner-scoped `hunterId`, already covered by rules).
