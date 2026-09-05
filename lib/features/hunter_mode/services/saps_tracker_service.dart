@@ -359,6 +359,7 @@ class SapsTrackerService {
         statusMessage: data['statusMessage'] as String?,
         batchNumber: data['batchNumber'] as String?,
         submittedAt: _dateTimeOrNull(data['submittedAt']),
+        createdAt: _dateTimeOrNull(data['createdAt']),
         statusUpdatedAt: _dateTimeOrNull(data['statusUpdatedAt']),
         refreshedAt: DateTime.now(),
       );

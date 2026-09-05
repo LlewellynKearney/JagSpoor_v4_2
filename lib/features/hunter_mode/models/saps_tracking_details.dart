@@ -206,16 +206,24 @@ class SapsTrackingDetailsFactory {
     String? currentStatus,
     String? statusMessage,
     DateTime? submittedAt,
+    DateTime? createdAt,
     DateTime? statusUpdatedAt,
     DateTime? refreshedAt,
     String? batchNumber,
   }) {
     final timeline = <SapsStatusTimelineEntry>[];
 
-    if (submittedAt != null) {
+    // Effective submission date: the official submittedAt wins; the record's
+    // createdAt timestamp is the fallback so the timeline + tallies always
+    // have a defined submission milestone.
+    final effectiveSubmittedAt = submittedAt ?? createdAt;
+
+    if (effectiveSubmittedAt != null) {
       timeline.add(SapsStatusTimelineEntry(
-        label: 'Application submitted',
-        timestamp: submittedAt,
+        label: submittedAt != null
+            ? 'Application submitted'
+            : 'Application record created',
+        timestamp: effectiveSubmittedAt,
       ));
     }
     if (statusUpdatedAt != null ||
@@ -253,7 +261,7 @@ class SapsTrackingDetailsFactory {
           ? [
               SapsBatchDetail(
                 batchNumber: batchNumber,
-                submittedAt: submittedAt,
+                submittedAt: effectiveSubmittedAt,
                 status: currentStatus,
               ),
             ]

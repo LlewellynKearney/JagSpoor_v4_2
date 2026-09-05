@@ -11,6 +11,7 @@ void main() {
 
   SapsApplication buildApp({
     DateTime? submittedAt,
+    DateTime? createdAt,
     DateTime? provincialDfoReceivedAt,
     String calibre = '6MM MUSGRAVE',
     String serialNumber = 'OB14468',
@@ -26,6 +27,7 @@ void main() {
       calibre: calibre,
       serialNumber: serialNumber,
       submittedAt: submittedAt,
+      createdAt: createdAt,
       provincialDfoReceivedAt: provincialDfoReceivedAt,
       lastChecked: DateTime(2026, 9, 5, 10, 30),
     );
@@ -50,6 +52,36 @@ void main() {
     );
 
     expect(find.text('Submitted: 1 Sep 2026'), findsOneWidget);
+  });
+
+  testWidgets('falls back to the record creation date when submittedAt is '
+      'missing', (tester) async {
+    await tester.pumpWidget(
+      wrap(buildApp(createdAt: DateTime(2026, 8, 20))),
+    );
+
+    expect(find.text('Submitted: 20 Aug 2026 (record created)'),
+        findsOneWidget);
+  });
+
+  testWidgets('shows the next anticipated status indicator', (tester) async {
+    await tester.pumpWidget(
+      wrap(buildApp(status: 'Provincial')),
+    );
+
+    expect(find.text('Next: CFR'), findsOneWidget);
+  });
+
+  testWidgets('shows the plain-language current status description',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(buildApp(status: 'Provincial')),
+    );
+
+    expect(
+      find.textContaining('Provincial Firearms Office'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows firearm calibre + serial pills on the collapsed card',

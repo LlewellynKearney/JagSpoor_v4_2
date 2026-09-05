@@ -11852,3 +11852,83 @@ and explicit firearm calibre/serial pills on the collapsed card.
   `test/features/hunter_mode/saps_tracker_test.dart` (+6), `AGENTS.md`.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side feature over the existing `license_applications` collection).
+
+## Phase -- SAPS tracker: record-created fallback, next-status indicator & current-status descriptions (added 2026-09-05)
+
+Follow-on to the SMS-parsing + timeline-milestone enhancements: the application
+cards + models now guarantee the working-day tally always renders (createdAt
+fallback), surface the next anticipated SAPS workflow status, and explain the
+operational meaning of the current stage in plain language.
+
+### 1. Record-created fallback for the submission milestone
+- `SapsApplication` (`lib/features/ballistics/data/models/saps_application_model.dart`)
+  gained a `createdAt` (`DateTime?`) field: parsed from `createdAt` (camelCase)
+  with a `created_at` snake_case alias, serialized in `toJson`/`toFirestore`,
+  round-tripped through `copyWith` (with a `clearCreatedAt` guard).
+- New `effectiveSubmissionDate` getter returns `submittedAt ?? createdAt` —
+  the official submission date wins; the record's creation timestamp is the
+  automatic fallback. `workingDaysSinceSubmitted` now tallies against the
+  EFFECTIVE date, so a legacy / external doc without an official `submittedAt`
+  still renders the "N workdays since submission" pill.
+- `_registerApplication` (`saps_tracker_screen.dart`) now stamps both
+  `submittedAt` + `createdAt` (identical now) so the fallback field always
+  exists on newly-created records.
+- `SapsTrackingDetailsFactory.fromApplicationFields` (`saps_tracking_details.dart`)
+  accepts `createdAt` and builds the timeline's first entry from the effective
+  date — labelled "Application submitted" when the official date exists, or
+  "Application record created" when it came from the fallback. The batch detail
+  row's `submittedAt` uses the effective date too.
+- The card's prominent submission-date row uses a new `_submissionDateLabel`
+  helper: `Submitted: 20 Aug 2026` (official), `Submitted: 20 Aug 2026
+  (record created)` (fallback), or `Submitted: not recorded` only when the
+  record has NEITHER timestamp.
+
+### 2. Next-status indicator + current-status descriptions
+- New `SapsApplication.nextStatusLabel` getter — the next anticipated state in
+  the SAPS licensing sequence: Submitted/DFO -> `Provincial`; Provincial ->
+  `CFR`; CFR -> `Printed / Ready for Collection`; Printed/ready/completed/
+  approved -> `Licence Collected`; unknown defaults to `Provincial`. Uses
+  tolerant substring matching (like `convertRawStatusToStage`) so realistic
+  scraper statuses ("Application received at DFO", "CFR Processing") resolve.
+- New `SapsApplication.currentStatusDescription` getter — plain-language copy
+  per stage explaining what happens operationally (e.g. the Provincial office
+  runs background + reference checks before forwarding to the CFR), with the
+  same substring-tolerant stage resolution.
+- New `SapsApplication.currentStatusEstimate` getter — stage-appropriate
+  waiting-period estimate (DFO 2–4 weeks / Provincial 6–10 weeks / CFR 8–16
+  weeks / printing 1–2 weeks) for future detail-view context cards.
+- The card (`SapsApplicationCard`) renders a "Next: <label>" row (arrow icon)
+  above the stage progress bar and the current-status description text below
+  it, so the workflow direction + operational meaning are visible on the
+  collapsed card.
+
+### 3. Tests + verification
+- `test/features/hunter_mode/saps_tracker_test.dart` +7 model tests: createdAt
+  fallback working-day tally; submittedAt-wins-over-createdAt precedence;
+  createdAt JSON round-trip; `created_at` alias; `nextStatusLabel` across all
+  stages + realistic scraper substrings; `currentStatusDescription` content
+  per stage + realistic substrings; `currentStatusEstimate` stage mapping.
+- `test/saps_tracking_details_test.dart` +2 factory tests: timeline falls back
+  to createdAt ("Application record created" label + batch submittedAt); official
+  submittedAt precedence in the timeline.
+- `test/saps_application_card_widget_test.dart` +3 widget tests: createdAt
+  fallback renders "Submitted: 20 Aug 2026 (record created)"; "Next: CFR"
+  indicator renders; status description text renders.
+- `flutter analyze` (Flutter 3.29.1, CI pin): 0 errors, 0 warnings. `flutter
+  test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1521 tests passed**.
+- Env note: Flutter 3.29.1 re-installed at `/home/openhands/flutter`; the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink is required for the sqflite-FFI integration suites; the pubspec
+  "Unexpected child config" warning is the documented pre-existing spurious
+  line.
+- Files: `lib/features/ballistics/data/models/saps_application_model.dart`,
+  `lib/features/hunter_mode/models/saps_tracking_details.dart`,
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`
+  (`fetchTrackingDetails` passes `createdAt` through),
+  `test/features/hunter_mode/saps_tracker_test.dart`,
+  `test/saps_tracking_details_test.dart`,
+  `test/saps_application_card_widget_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side model + UI over the existing `license_applications` collection;
+  the `createdAt` field is owner-written already).

@@ -116,6 +116,33 @@ void main() {
       expect(details.waitingEstimates, hasLength(4));
       expect(details.currentProgressLabel, isNull);
     });
+
+    test('falls back to createdAt in the timeline when submittedAt is missing',
+        () {
+      final details = SapsTrackingDetailsFactory.fromApplicationFields(
+        applicationId: 'app-3',
+        currentStatus: 'Submitted',
+        createdAt: DateTime(2026, 9, 7),
+        batchNumber: 'B-3',
+      );
+
+      expect(details.timeline, hasLength(2));
+      expect(details.timeline.first.label, 'Application record created');
+      expect(details.timeline.first.timestamp, DateTime(2026, 9, 7));
+      expect(details.batches.single.submittedAt, DateTime(2026, 9, 7));
+    });
+
+    test('prefers submittedAt over createdAt in the timeline', () {
+      final details = SapsTrackingDetailsFactory.fromApplicationFields(
+        applicationId: 'app-4',
+        currentStatus: 'Submitted',
+        submittedAt: DateTime(2026, 8, 1),
+        createdAt: DateTime(2026, 8, 1).add(const Duration(days: 1)),
+      );
+
+      expect(details.timeline.first.label, 'Application submitted');
+      expect(details.timeline.first.timestamp, DateTime(2026, 8, 1));
+    });
   });
 
   group('SapsTrackingDetails.fromJson', () {

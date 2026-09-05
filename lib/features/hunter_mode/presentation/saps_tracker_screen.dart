@@ -144,6 +144,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
         'calibre': calibre,
         'serialNumber': serialNumber,
         'submittedAt': now.toIso8601String(),
+        'createdAt': now.toIso8601String(),
         'lastChecked': now.toIso8601String(),
       });
 
@@ -685,7 +686,9 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                 ],
               ),
               const SizedBox(height: 10),
-              // Prominent submission date milestone.
+              // Prominent submission date milestone. Falls back to the record's
+              // creation timestamp (createdAt) when the official submittedAt is
+              // missing / unrecorded so the tally + this row always render.
               Row(
                 children: [
                   Icon(
@@ -696,9 +699,7 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      application.submittedAt != null
-                          ? 'Submitted: ${_formatDateOnly(application.submittedAt!)}'
-                          : 'Submitted: not recorded',
+                      _submissionDateLabel(),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -756,6 +757,34 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                       ),
                     ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              // Next anticipated status indicator.
+              Row(
+                children: [
+                  Icon(
+                    Icons.arrow_forward,
+                    size: 15,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Next: ${application.nextStatusLabel}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Current status stage description.
+              Text(
+                application.currentStatusDescription,
+                style: TextStyle(fontSize: 12, color: theme.hintColor),
               ),
               const SizedBox(height: 12),
               // Stage Progress Tracker Bar
@@ -1032,6 +1061,21 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Labels the prominent submission-date row: prefers the official
+  /// [SapsApplication.submittedAt], falling back to the record's creation
+  /// timestamp ([SapsApplication.createdAt]) when the official date is
+  /// missing / unrecorded. Renders a muted "not recorded" only when the
+  /// record has neither timestamp.
+  String _submissionDateLabel() {
+    final effective = application.effectiveSubmissionDate;
+    if (effective != null) {
+      final fromFallback = application.submittedAt == null;
+      final suffix = fromFallback ? ' (record created)' : '';
+      return 'Submitted: ${_formatDateOnly(effective)}$suffix';
+    }
+    return 'Submitted: not recorded';
   }
 
   /// Compact date-only formatter (e.g. `12 Mar 2026`) for the prominent

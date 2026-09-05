@@ -31,9 +31,14 @@ class SapsApplication {
   final String batchNumber;
 
   /// Time the application was first registered / submitted. Null when the
-  /// legacy or external doc did not record it (UI falls back to the card's
-  /// creation window).
+  /// legacy or external doc did not record it (the UI falls back to the
+  /// record's [createdAt] timestamp).
   final DateTime? submittedAt;
+
+  /// Time the application document was created. Used as the fallback for the
+  /// submission milestone when [submittedAt] is missing / unrecorded, so
+  /// the working-day tally is always computable and displayed.
+  final DateTime? createdAt;
 
   /// Time the application was received at the provincial DFO (the second
   /// milestone). Null when the tracking system has not yet recorded it or
@@ -58,6 +63,7 @@ class SapsApplication {
     this.statusMessage = '',
     this.batchNumber = '',
     this.submittedAt,
+    this.createdAt,
     this.provincialDfoReceivedAt,
     this.statusUpdatedAt,
   });
@@ -113,6 +119,8 @@ class SapsApplication {
       statusMessage: (json['statusMessage'] as String?) ?? '',
       batchNumber: (json['batchNumber'] as String?) ?? '',
       submittedAt: _dateTimeOrNull(json['submittedAt']),
+      createdAt: _dateTimeOrNull(json['createdAt']) ??
+          _dateTimeOrNull(json['created_at']),
       provincialDfoReceivedAt: _dateTimeOrNull(
         json['provincialDfoReceivedAt'] ?? json['dfoReceivedAt'],
       ),
@@ -133,6 +141,7 @@ class SapsApplication {
         'statusMessage': statusMessage,
         'batchNumber': batchNumber,
         if (submittedAt != null) 'submittedAt': submittedAt!.toIso8601String(),
+        if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
         if (provincialDfoReceivedAt != null)
           'provincialDfoReceivedAt': provincialDfoReceivedAt!.toIso8601String(),
         if (statusUpdatedAt != null)
@@ -178,9 +187,11 @@ class SapsApplication {
     String? statusMessage,
     String? batchNumber,
     DateTime? submittedAt,
+    DateTime? createdAt,
     DateTime? provincialDfoReceivedAt,
     DateTime? statusUpdatedAt,
     bool clearSubmittedAt = false,
+    bool clearCreatedAt = false,
     bool clearProvincialDfoReceivedAt = false,
     bool clearStatusUpdatedAt = false,
   }) {
@@ -196,6 +207,7 @@ class SapsApplication {
       statusMessage: statusMessage ?? this.statusMessage,
       batchNumber: batchNumber ?? this.batchNumber,
       submittedAt: clearSubmittedAt ? null : (submittedAt ?? this.submittedAt),
+      createdAt: clearCreatedAt ? null : (createdAt ?? this.createdAt),
       provincialDfoReceivedAt: clearProvincialDfoReceivedAt
           ? null
           : (provincialDfoReceivedAt ?? this.provincialDfoReceivedAt),
@@ -228,11 +240,104 @@ class SapsApplication {
     }
   }
 
+  /// Effective submission date: prefers the official [submittedAt], falling
+  /// back to the record's [createdAt] timestamp when the official submission
+  /// date is missing or recorded as unrecorded. This guarantees the working-
+  /// day tally is always computable and displayed for every application.
+
+  DateTime? get effectiveSubmissionDate => submittedAt ?? createdAt;
+
   /// Working days (weekends + SA public holidays excluded) elapsed since the
-  /// application was [submittedAt]. Returns `null` when the submission date
-  /// is unknown or still in the future.
+  /// application's [effectiveSubmissionDate]. Returns `null` when the effective
+  /// submission date is unknown or still in the future.
   int? workingDaysSinceSubmitted(DateTime now) {
-    return SaWorkingDays.workingDaysSince(submittedAt, now);
+    return SaWorkingDays.workingDaysSince(effectiveSubmissionDate, now);
+  }
+
+  /// The next anticipated status label in the SAPS licensing workflow sequence
+  /// (e.g. moving from Local DFO to Provincial, or Provincial to Central
+  /// Firearms Register / CFR). Uses the same tolerant substring matching as
+  /// `convertRawStatusToStage` so realistic status strings like
+  /// "Application received at DFO" or "CFR Processing" resolve correctly.
+  String get nextStatusLabel {
+    final normalized = currentStatus.toLowerCase();
+    if (normalized.contains('provincial') ||
+        normalized.contains('province')) {
+      return 'CFR';
+    }
+    if (normalized.contains('cfr') ||
+        normalized.contains('registry') ||
+        normalized.contains('central firearms')) {
+      return 'Printed / Ready for Collection';
+    }
+    if (normalized.contains('printed') ||
+        normalized.contains('ready') ||
+        normalized.contains('approved') ||
+        normalized.contains('completed')) {
+      return 'Licence Collected';
+    }
+    // Any submitted / received / DFO / pending state -> Provincial.
+    return 'Provincial';
+  }
+
+  /// Plain-language description of what happens operationally during the
+  /// application's current [currentStatus] stage. Designed to be displayed
+  /// directly on the card / detail panel.
+  String get currentStatusDescription {
+    final normalized = currentStatus.toLowerCase();
+    if (normalized.contains('provincial') ||
+        normalized.contains('province')) {
+      return 'The Provincial Firearms Office is reviewing your application, '
+          'running background and reference checks and verifying that all '
+          'supporting documents are in order before forwarding it to the '
+          'Central Firearms Registry (CFR).';
+    }
+    if (normalized.contains('cfr') ||
+        normalized.contains('registry') ||
+        normalized.contains('central firearms')) {
+      return 'The Central Firearms Registry (CFR) is the final decision-making '
+          'authority. It performs the final vetting, criminal-record checks, '
+          'and approval/refusal determination. Once approved, your licence '
+          'is printed and sent to your designated police station for '
+          'collection.';
+    }
+    if (normalized.contains('printed') ||
+        normalized.contains('ready') ||
+        normalized.contains('approved') ||
+        normalized.contains('completed')) {
+      return 'Your licence card has been printed and is ready (or has been '
+          'collected) at your designated police station. Bring your ID '
+          'document and the notification SMS when collecting.';
+    }
+    if (normalized.contains('submitted') ||
+        normalized.contains('received') ||
+        normalized.contains('dfo') ||
+        normalized.contains('district firearms') ||
+        normalized.contains('pending')) {
+      return 'Your application has been captured and is being vetted at your '
+          'local District Firearms Office (DFO). Officials check your ID, '
+          'competency certificate and references before forwarding it to '
+          'the provincial office.';
+    }
+    return 'Your application is progressing through the SAPS licensing '
+        'workflow. Officials at the current office are reviewing it before '
+        'forwarding it to the next authority.';
+  }
+
+  /// Suggested waiting-period estimate for the current status stage (used
+  /// by the detail view context card).
+  String get currentStatusEstimate {
+    switch (stageIndex) {
+      case 0:
+        return 'DFO processing typically takes 2–4 weeks.';
+      case 1:
+        return 'Provincial processing typically takes 6–10 weeks.';
+      case 2:
+        return 'CFR processing typically takes 8–16 weeks.';
+      default:
+        return 'Printing and collection typically takes 1–2 weeks after '
+            'approval.';
+    }
   }
 
   /// Working days elapsed since the application was received at the

@@ -370,6 +370,163 @@ void main() {
       assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == null,
           'Expected null for a future submission date');
     });
+
+    test('should fall back to createdAt when submittedAt is missing', () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        createdAt: DateTime(2026, 9, 7), // Monday
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      assert(app.submittedAt == null, 'Expected no official submission date');
+      assert(app.effectiveSubmissionDate == DateTime(2026, 9, 7),
+          'Expected createdAt to be the effective submission date');
+      assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == 5,
+          'Expected 5 working days via the createdAt fallback');
+    });
+
+    test('should prefer submittedAt over createdAt for the effective date',
+        () {
+      final app = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        submittedAt: DateTime(2026, 9, 7), // Monday
+        createdAt: DateTime(2026, 9, 1),
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      assert(app.effectiveSubmissionDate == DateTime(2026, 9, 7),
+          'Expected submittedAt to win over createdAt');
+      assert(app.workingDaysSinceSubmitted(DateTime(2026, 9, 11)) == 5,
+          'Expected 5 working days from the official submission date');
+    });
+
+    test('should round-trip the createdAt fallback through JSON', () {
+      final original = SapsApplication(
+        id: 'test-id',
+        hunterId: 'hunter-123',
+        referenceNumber: 'SAPS-2024-12345',
+        idNumber: '9001015009087',
+        applicationType: 'Competency Certificate',
+        currentStatus: 'Submitted',
+        createdAt: DateTime(2026, 9, 7),
+        lastChecked: DateTime(2026, 9, 11),
+      );
+
+      final restored = SapsApplication.fromJson(original.toFirestore(),
+          id: original.id);
+      assert(restored.createdAt == original.createdAt,
+          'createdAt mismatch after round-trip');
+      assert(restored.effectiveSubmissionDate == original.createdAt,
+          'effectiveSubmissionDate should resolve from createdAt');
+    });
+
+    test('should tolerate the created_at snake_case alias', () {
+      final restored = SapsApplication.fromJson({
+        'id': 'x',
+        'hunterId': 'h',
+        'referenceNumber': 'r',
+        'idNumber': 'i',
+        'applicationType': 'Competency Certificate',
+        'currentStatus': 'Submitted',
+        'created_at': '2026-09-07T00:00:00.000',
+        'lastChecked': '2026-09-11T10:30:00.000',
+      });
+      assert(restored.createdAt == DateTime(2026, 9, 7),
+          'created_at alias not resolved');
+    });
+
+    test('should expose the next anticipated status label', () {
+      SapsApplication app(String status) => SapsApplication(
+            id: 'x',
+            hunterId: 'h',
+            referenceNumber: 'r',
+            idNumber: 'i',
+            applicationType: 'Competency Certificate',
+            currentStatus: status,
+            lastChecked: DateTime(2026, 9, 11),
+          );
+
+      assert(app('Submitted').nextStatusLabel == 'Provincial',
+          'DFO -> Provincial expected');
+      assert(app('Provincial').nextStatusLabel == 'CFR',
+          'Provincial -> CFR expected');
+      assert(app('CFR').nextStatusLabel == 'Printed / Ready for Collection',
+          'CFR -> Printed expected');
+      assert(app('Printed').nextStatusLabel == 'Licence Collected',
+          'Printed -> Collected expected');
+      assert(app('ready_for_collection').nextStatusLabel == 'Licence Collected',
+          'ready_for_collection -> Collected expected');
+      // Tolerant substring matching so realistic scraper status strings
+      // resolve correctly too.
+      assert(app('Application received at DFO').nextStatusLabel == 'Provincial',
+          'DFO substring -> Provincial expected');
+      assert(app('Under review at Provincial').nextStatusLabel == 'CFR',
+          'Provincial substring -> CFR expected');
+      assert(app('CFR Processing').nextStatusLabel ==
+          'Printed / Ready for Collection',
+          'CFR substring -> Printed expected');
+      assert(app('Licence approved and printed').nextStatusLabel ==
+          'Licence Collected',
+          'printed substring -> Collected expected');
+    });
+
+    test('should expose a plain-language current status description', () {
+      SapsApplication app(String status) => SapsApplication(
+            id: 'x',
+            hunterId: 'h',
+            referenceNumber: 'r',
+            idNumber: 'i',
+            applicationType: 'Competency Certificate',
+            currentStatus: status,
+            lastChecked: DateTime(2026, 9, 11),
+          );
+
+      expect(app('Submitted').currentStatusDescription,
+          contains('District Firearms Office'));
+      expect(app('Provincial').currentStatusDescription,
+          contains('Provincial Firearms Office'));
+      expect(app('CFR').currentStatusDescription,
+          contains('Central Firearms Registry'));
+      expect(app('Printed').currentStatusDescription, contains('printed'));
+      expect(app('Unknown status').currentStatusDescription,
+          contains('progressing'));
+      // Tolerant substring matching for realistic scraper status strings.
+      expect(app('Application received at DFO').currentStatusDescription,
+          contains('District Firearms Office'));
+      expect(app('Under review at Provincial').currentStatusDescription,
+          contains('Provincial Firearms Office'));
+      expect(app('CFR Processing').currentStatusDescription,
+          contains('Central Firearms Registry'));
+      expect(app('Licence approved and printed').currentStatusDescription,
+          contains('printed'));
+    });
+
+    test('should expose a stage-appropriate waiting estimate', () {
+      SapsApplication app(String status) => SapsApplication(
+            id: 'x',
+            hunterId: 'h',
+            referenceNumber: 'r',
+            idNumber: 'i',
+            applicationType: 'Competency Certificate',
+            currentStatus: status,
+            lastChecked: DateTime(2026, 9, 11),
+          );
+
+      expect(app('Submitted').currentStatusEstimate, contains('DFO'));
+      expect(app('Provincial').currentStatusEstimate, contains('Provincial'));
+      expect(app('CFR').currentStatusEstimate, contains('CFR'));
+      expect(app('Printed').currentStatusEstimate, contains('Printing'));
+    });
   });
 
   group('SapsScraperResult Tests', () {
