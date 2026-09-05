@@ -12,6 +12,7 @@
 // covered by AppRole.fromString's round-trip tests below the guard tests.
 // ============================================================================
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:jagspoor/features/auth/services/role_guard.dart';
 import 'package:jagspoor/features/auth/services/user_role_provider.dart';
 
@@ -31,6 +32,9 @@ void main() {
       expect(UserRoleProvider.instance.isAdmin, isFalse);
       expect(UserRoleProvider.instance.isOutfitter, isFalse);
       expect(UserRoleProvider.instance.isHunter, isFalse);
+      expect(UserRoleProvider.instance.isDual, isFalse);
+      expect(UserRoleProvider.instance.hasOutfitterAccess, isFalse);
+      expect(UserRoleProvider.instance.hasHunterAccess, isFalse);
     });
   });
 
@@ -53,6 +57,18 @@ void main() {
       UserRoleProvider.instance.setRole(AppRole.hunter);
       expect(UserRoleProvider.instance.isHunter, isTrue);
     });
+
+    test('caches dual and flips BOTH access getters', () {
+      UserRoleProvider.instance.setRole(AppRole.dual);
+      expect(UserRoleProvider.instance.role, AppRole.dual);
+      expect(UserRoleProvider.instance.isDual, isTrue);
+      expect(UserRoleProvider.instance.isAdmin, isFalse);
+      expect(UserRoleProvider.instance.hasOutfitterAccess, isTrue);
+      expect(UserRoleProvider.instance.hasHunterAccess, isTrue);
+      // Dual is a non-admin — the access getters are the admission knobs.
+      expect(UserRoleProvider.instance.isOutfitter, isFalse);
+      expect(UserRoleProvider.instance.isHunter, isFalse);
+    });
   });
 
   group('UserRoleProvider.resolveRole — cache contract', () {
@@ -68,6 +84,76 @@ void main() {
       UserRoleProvider.instance.setRole(AppRole.admin);
       expect(await UserRoleProvider.instance.resolveRole(), AppRole.admin);
       expect(RoleGuard.canSwitchModes(UserRoleProvider.instance.role), isTrue);
+    });
+  });
+
+  group('UserRoleProvider.resolveRole — Firestore dual-role detection', () {
+    test('resolves AppRole.dual from the seeded isDualRole flag', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('users').doc('demo-uid').set({
+        'role': 'dual',
+        'isDualRole': true,
+        'roles': ['hunter', 'outfitter'],
+      });
+      UserRoleProvider.instance.injectForTesting(
+        db: db,
+        testUid: 'demo-uid',
+        testEmail: 'demo@jagspoor.co.za',
+      );
+      final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+      expect(role, AppRole.dual);
+      expect(UserRoleProvider.instance.hasOutfitterAccess, isTrue);
+      expect(UserRoleProvider.instance.hasHunterAccess, isTrue);
+      expect(RoleGuard.canSwitchModes(role), isTrue);
+    });
+
+    test('resolves AppRole.dual from a roles-list without the flag', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('users').doc('demo-uid').set({
+        'role': 'hunter',
+        'roles': ['outfitter', 'hunter'],
+      });
+      UserRoleProvider.instance.injectForTesting(
+        db: db,
+        testUid: 'demo-uid',
+        testEmail: 'demo@jagspoor.co.za',
+      );
+      expect(
+        await UserRoleProvider.instance.resolveRole(forceRefresh: true),
+        AppRole.dual,
+      );
+    });
+
+    test('resolves AppRole.dual from the plain role: "dual" shorthand', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('users').doc('demo-uid').set({
+        'role': 'dual',
+      });
+      UserRoleProvider.instance.injectForTesting(
+        db: db,
+        testUid: 'demo-uid',
+        testEmail: 'demo@jagspoor.co.za',
+      );
+      expect(
+        await UserRoleProvider.instance.resolveRole(forceRefresh: true),
+        AppRole.dual,
+      );
+    });
+
+    test('does NOT emit dual for a single-role users doc', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('users').doc('demo-uid').set({
+        'role': 'outfitter',
+      });
+      UserRoleProvider.instance.injectForTesting(
+        db: db,
+        testUid: 'demo-uid',
+        testEmail: 'demo@jagspoor.co.za',
+      );
+      final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+      expect(role, AppRole.outfitter);
+      expect(UserRoleProvider.instance.hasOutfitterAccess, isTrue);
+      expect(UserRoleProvider.instance.hasHunterAccess, isFalse);
     });
   });
 

@@ -31,6 +31,8 @@ class RoleGuard {
   ///     first so an admin can never trigger an Access Denied banner.
   ///   - Admin-only routes (e.g. `/admin_dashboard`) deny every non-admin.
   ///   - The Hunter / Outfitter dashboards require the matching non-admin role.
+  ///     **Dual-role accounts are admitted to BOTH** dashboards so the demo
+  ///     reviewer can showcase the hunter + outfitter features seamlessly.
   ///   - Every other route (forms, detail screens, license scanner, etc.) is
   ///     not role-scoped at this layer and defaults to allowed.
   static bool canAccess(AppRole role, String route) {
@@ -42,10 +44,10 @@ class RoleGuard {
       return false;
     }
     if (route == '/hunter_dashboard') {
-      return role == AppRole.hunter;
+      return role == AppRole.hunter || role == AppRole.dual;
     }
     if (route == '/outfitter_dashboard') {
-      return role == AppRole.outfitter;
+      return role == AppRole.outfitter || role == AppRole.dual;
     }
     return true;
   }
@@ -53,14 +55,19 @@ class RoleGuard {
   /// The default landing route for [role] — where an unauthorized user is
   /// bounced back to. [AppRole.unknown] routes to role selection so a user
   /// whose role couldn't be resolved is not silently dropped on a dashboard
-  /// they may not access.
+  /// they may not access. [AppRole.dual] lands on the Hunter dashboard (the
+  /// most feature-rich starting point); the mode switcher lets the reviewer
+  /// jump to Outfitter Mode instantly.
   static String defaultHomeFor(AppRole role) {
+    if (role == AppRole.dual) return '/hunter_dashboard';
     return roleHomeRoutes[role] ?? '/role_selection';
   }
 
-  /// Only admins may use the instant mode switcher (Hunter ↔ Outfitter ↔
-  /// Admin). Hunters and outfitters are single-role and locked to their mode.
-  static bool canSwitchModes(AppRole role) => role == AppRole.admin;
+  /// Only admins and dual-role accounts may use the instant mode switcher
+  /// (Hunter ↔ Outfitter ↔ Admin). Regular hunters and outfitters are
+  /// single-role and locked to their mode.
+  static bool canSwitchModes(AppRole role) =>
+      role == AppRole.admin || role == AppRole.dual;
 
   /// The notice shown in the access-denied SnackBar for [route]. Tailored per
   /// route so the message is actionable.

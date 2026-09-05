@@ -12138,3 +12138,126 @@ Room, offline harvest logs) without manual account setup.
   before submission. No Firestore rules / index / Storage / pubspec /
   manifest changes (the reviewer's seeded collections are all covered by the
   existing owner-scoped `isSignedIn()` rules).
+## Phase -- Demo Reviewer dual-role (hunter + outfitter) access + outfitter showcase seeds (added 2026-09-05)
+
+Extends the Google Play demo-reviewer login (previous phase) so the demo
+account (`demo@jagspoor.co.za`) is assigned BOTH hunter and outfitter
+roles/permissions on sign-in, can toggle seamlessly between the two
+dashboards, and is seeded with a full outfitter enterprise so a reviewer
+can showcase the restricted outfitter features (Farm Control Panel, Package
+Publisher, Price List, Trophy Stock, Incoming Booking Requests, Revenue BI)
+alongside the existing hunter content.
+
+### Role model — `AppRole.dual`
+- **`lib/features/auth/services/user_role_provider.dart`**: new
+  `AppRole.dual` (hunter + outfitter). `AppRole.fromString` maps `'dual'`.
+  `UserRoleProvider.resolveRole` detects the dual profile from the
+  `users/{uid}` doc via ANY of: `isDualRole == true`, a `roles` array
+  containing BOTH `'hunter'` + `'outfitter'`, or the shorthand
+  `role: 'dual'`. New access getters: `isDual`, `hasOutfitterAccess`,
+  `hasHunterAccess` (the last two are the admission knobs the dashboards /
+  self-heal logic use).
+- **`lib/features/auth/services/role_guard.dart`**: `canAccess` admits
+  `AppRole.dual` to BOTH `/hunter_dashboard` and `/outfitter_dashboard`
+  (still DENIED the admin portal). `defaultHomeFor(dual)` → `/hunter_dashboard`
+  (feature-rich starting point). `canSwitchModes(dual)` → `true` (the demo
+  reviewer gets the instant mode switcher; regular single-role accounts do
+  not).
+- **Routing** (`auth_screen.dart` `_routeAfterAuth` + `splash_screen.dart`
+  `_navigateToNextScreen`): a `dual` case routes to `/hunter_dashboard`; the
+  outfitter self-heal (`_ensureOutfitterSelfLink`) and the hunter
+  mandatory-onboarding gate now also apply to dual accounts (so the demo
+  reviewer always carries `outfitterId` + a complete profile).
+
+### Dashboards — mode switcher for dual accounts
+- `hunter_dashboard.dart`: `_resolveAdmin` now ALSO sets `_isDual` from
+  `UserRoleProvider.instance.role == AppRole.dual` (skipping the admin-claim
+  check for dual). The AppBar renders `AdminModeSwitcherButton` when
+  `_isAdmin || _isDual`.
+- `outfitter_dashboard.dart`: `_resolveUserRole` resolves `_isDual` the same
+  way; the outfitter AppBar renders the switcher when `_isAdmin || _isDual`.
+- `lib/features/admin/widgets/admin_mode_switcher.dart`:
+  `AdminModeSwitcher` gained an `allowedModes` param; the bottom sheet
+  (`AdminModeSwitcherButton._showSheet`) passes Hunter+Outfitter-only for
+  dual reviewers (no dead Admin segment) and all three for admins. The
+  badge label reads "Dual Profile" for dual / "Superuser" for admin.
+  `_switchTo` still re-checks `RoleGuard.canSwitchModes` (defense-in-depth).
+
+### Demo config/service — dual stamping
+- `demo_reviewer_config.dart`: `role` is now `'dual'`, plus
+  `roles = ['hunter','outfitter']` + `subscriptionTier = 'hunter'` (the
+  demo has an ACTIVE entitlement so neither subscription paywall blocks).
+- `demo_reviewer_service.dart`:
+  - `signInDemoReviewer` caches `AppRole.dual` via
+    `UserRoleProvider.setRole(AppRole.dual)` before seeding.
+  - `seedDemoData` stamps the `users/{uid}` profile with
+    `role: 'dual'`, `isDualRole: true`, `roles: ['hunter','outfitter']`,
+    `outfitterId` self-link, active subscription — so a fresh sign-in
+    resolves to `AppRole.dual` and both dashboards + the switcher admit it.
+  - NEW **outfitter showcase seeds** (every write owner-scoped on the
+    reviewer's uid, covered by the existing `firestore.rules`
+    `isSignedIn()`/owner-scoped grants — no rules change):
+    - `outfitters/{uid}`: canonical enterprise profile (name, province,
+      verified, role outfitter);
+    - `farms`: "Bosveld Demo Ranch" (Waterberg, Limpopo, 5200 ha, active);
+    - `farm_service_rates/{farmId}`: configured Bakkie (R1450/vehicle/day),
+      Hunter Daily (R850), Overnight (R950/night), Coldroom (R350), Big
+      Slaughtering (R1800) — renders the full Price List rate grid;
+    - `trophy_stock`: Greater Kudu (54", R18 500), Cape Buffalo (42",
+      R125 000), Blesbok, Impala — the Trophy Registry + Stock Inventory;
+    - `packages`: "Waterberg Kudu Trophy Hunt (3 Nights)" (R24 500, 4 slots,
+      all-inclusive mode, 30-day hunt window, 3-night availability,
+      speciesItems) — bookable in the Marketplace;
+    - `farm_pricelists`: Blesbok / Impala / Common Duiker / Greater Kudu
+      entries (gender + horn-length, qty, price) for the Custom Package
+      Builder + farm-selection screens;
+    - `bookings`: 3 client bookings (Pending Approval custom package /
+      Awaiting Payment kudu / Confirmed blesbok) owned by the reviewer as
+      outfitter + a distinct client hunter uid (so the outfitter queries
+      `outfitterId == uid` and the `isBookingOutfitter` read rule admit
+      them). `demoSeedVersion` bumped to 2.
+
+### Tests (all pass; full suite **1562 passed**)
+- `test/demo_reviewer_service_test.dart` (+6): config now asserts `role:
+  'dual'` + `roles` list; profile stamping asserts `isDualRole` + `roles`;
+  new groups assert the outfitters/{uid} profile, farm, service-rate card,
+  trophy-stock+package+price-list seeds, and the 3 client bookings incl.
+  the workflow statuses + distinct client-hunter ownership.
+- `test/user_role_provider_test.dart` (+4): `isDual` / `hasOutfitterAccess` /
+  `hasHunterAccess` getters; `AppRole.dual` setRole cache; Firestore-backed
+  `resolveRole` dual detection from `isDualRole` / `roles`-list / `role:
+  'dual'` shorthand + the inverse (single `role: 'outfitter'` stays
+  single-role).
+- `test/role_guard_test.dart` (+5): `AppRole.fromString('dual')`; dual
+  accesses both dashboards; dual denied admin portal; dual default home =
+  hunter dashboard; dual `canSwitchModes`. The post-auth routing contract
+  now includes `dual → /hunter_dashboard`.
+- Existing `demo_reviewer_login_test.dart` (4) unchanged + green (role-
+  agnostic widget tests via the override seam).
+
+### Verification
+- `flutter analyze`: 0 errors, 0 warnings (277 pre-existing infos,
+  unchanged baseline).
+- `flutter test` (full suite): **All 1562 tests passed** (was 1546; +16 net
+  new: 6 demo service + 4 provider + 5 guard + 1 routing-contract
+  adjustment). No regressions.
+- Env note: Flutter 3.29.1 (CI pin) + `LD_LIBRARY_PATH="$HOME/libs"` +
+  the `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites; the
+  pubspec "Unexpected child config" warning is the documented pre-existing
+  spurious line.
+- Files: `lib/features/auth/services/user_role_provider.dart`,
+  `lib/features/auth/services/role_guard.dart`,
+  `lib/features/auth/services/demo_reviewer_config.dart`,
+  `lib/features/auth/services/demo_reviewer_service.dart`,
+  `lib/features/auth/auth_screen.dart`, `lib/core/splash_screen.dart`,
+  `lib/features/admin/widgets/admin_mode_switcher.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `test/demo_reviewer_service_test.dart`, `test/user_role_provider_test.dart`,
+  `test/role_guard_test.dart`, `AGENTS.md`.
+- Deploy reminder: provision the `demo@jagspoor.co.za` review account in
+  the Firebase Console (hunter + outfitter demo access) + include it in the
+  Google Play internal-test track. No Firestore rules / index / Storage /
+  pubspec / manifest changes (all seeded collections are covered by the
+  existing owner-scoped `isSignedIn()` rules; the dual role is purely a
+  client-side access grant).

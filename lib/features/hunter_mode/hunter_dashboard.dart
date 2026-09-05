@@ -27,6 +27,7 @@ import 'screens/custom_package_farm_selection_screen.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import '../auth/services/user_role_provider.dart';
 import '../shared/widgets/hunter_media_card.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
@@ -47,6 +48,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
   static const _favoritePrefKey = 'favorited_dashboard_features';
   final List<String> favoriteIds = [];
   bool _isAdmin = false;
+  bool _isDual = false;
 
   @override
   void initState() {
@@ -87,18 +89,31 @@ class _HunterDashboardState extends State<HunterDashboard> {
     }
   }
 
-  /// Resolves admin flag; wrapped in try/catch so an unavailable
-  /// auth/Firestore (offline or test env) never hangs or crashes the
-  /// dashboard — it simply renders with a non-admin flag.
+  /// Resolves the "can switch modes" flag (admin OR dual-role). This drives
+  /// the instant mode switcher on the dashboard AppBar — admins (full access)
+  /// and dual-role demo reviewers (hunter + outfitter) can toggle between the
+  /// Hunter / Outfitter dashboards without signing out. Wrapped in try/catch
+  /// so an unavailable auth/Firestore (offline or test env) never hangs or
+  /// crashes the dashboard — it simply renders without the switcher.
   Future<void> _resolveAdmin() async {
     bool admin = false;
-    try {
-      admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-    } catch (_) {
+    final role = UserRoleProvider.instance.role;
+    if (role != AppRole.dual) {
+      try {
+        admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+      } catch (_) {
+        admin = false;
+      }
+    } else {
+      // Dual-role demo reviewer: a non-admin with cross-dashboard access.
       admin = false;
+      _isDual = true;
     }
     if (!mounted) return;
-    setState(() => _isAdmin = admin);
+    setState(() {
+      _isAdmin = admin;
+      _isDual = role == AppRole.dual || _isDual;
+    });
   }
 
   Future<void> _loadFavoriteIds() async {
@@ -485,7 +500,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
           appBar: JagSpoorDashboardHeader(
             modeBadgeText: 'HUNTER MODE',
             actionButtons: [
-              if (_isAdmin) ...[
+              if (_isAdmin || _isDual) ...[
                 AdminModeSwitcherButton(
                   theme: theme,
                   activeMode: AdminMode.hunter,

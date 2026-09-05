@@ -18,6 +18,13 @@ enum AppRole {
   /// Outfitter Management functions.
   hunter,
 
+  /// Dual-role (hunter + outfitter) account. Admitted to BOTH the Hunter and
+  /// Outfitter dashboards (and the mode switcher that toggles between them)
+  /// but NOT the Admin Portal. Used by the Google Play demo-reviewer account
+  /// so a reviewer can showcase the restricted hunting + outfitter features
+  /// without manual account setup.
+  dual,
+
   /// Role not yet resolved (pre-login, in-flight resolution, or fetch error).
   unknown;
 
@@ -32,6 +39,8 @@ enum AppRole {
         return AppRole.outfitter;
       case 'hunter':
         return AppRole.hunter;
+      case 'dual':
+        return AppRole.dual;
       default:
         return AppRole.unknown;
     }
@@ -75,6 +84,16 @@ class UserRoleProvider {
   bool get isAdmin => _role == AppRole.admin;
   bool get isOutfitter => _role == AppRole.outfitter;
   bool get isHunter => _role == AppRole.hunter;
+  bool get isDual => _role == AppRole.dual;
+
+  /// Whether the user may operate the outfitter profile — a plain outfitter
+  /// OR a dual-role account. Used to self-heal the `outfitterId` self-link and
+  /// to decide outfitter access in dashboards / guards.
+  bool get hasOutfitterAccess => _role == AppRole.outfitter || _role == AppRole.dual;
+
+  /// Whether the user may operate the hunter profile — a plain hunter OR a
+  /// dual-role account.
+  bool get hasHunterAccess => _role == AppRole.hunter || _role == AppRole.dual;
 
   /// The admin email allow-list mirrors [AdminAuthGuard] so a bootstrap admin
   /// is detected here too without a custom-claim round-trip.
@@ -133,8 +152,21 @@ class UserRoleProvider {
     // 4. Firestore users/{uid}.role.
     try {
       final doc = await _db.collection('users').doc(uid).get();
-      final stored = doc.data()?['role'] as String?;
-      _role = AppRole.fromString(stored);
+      final data = doc.data() ?? const <String, dynamic>{};
+      final stored = data['role'] as String?;
+
+      // Dual-role detection: the demo-reviewer account (and any future
+      // dual-profile account) is stamped with `isDualRole: true` + a
+      // `roles: ['hunter','outfitter']` array (or the shorthand `role:
+      // 'dual'`). Any of these signals resolves to [AppRole.dual] so the
+      // account is admitted to BOTH dashboards.
+      final isDualRole =
+          data['isDualRole'] == true ||
+          (data['roles'] is List && (data['roles'] as List).contains('outfitter') &&
+              (data['roles'] as List).contains('hunter')) ||
+          stored == 'dual';
+
+      _role = isDualRole ? AppRole.dual : AppRole.fromString(stored);
     } catch (_) {
       _role = AppRole.unknown;
     }

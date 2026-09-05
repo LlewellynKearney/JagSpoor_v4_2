@@ -22,13 +22,20 @@ class AdminModeSwitcher extends StatelessWidget {
     super.key,
     required this.theme,
     this.activeMode = AdminMode.admin,
+    this.allowedModes = const [AdminMode.hunter, AdminMode.outfitter, AdminMode.admin],
   });
 
   final ThemeController theme;
   final AdminMode activeMode;
 
+  /// The segments rendered. Admins see all three (Hunter / Outfitter /
+  /// Admin); dual-role demo reviewers see only Hunter + Outfitter (they have
+  /// no Admin portal access) so the switcher never offers a dead segment.
+  final List<AdminMode> allowedModes;
+
   @override
   Widget build(BuildContext context) {
+    final showAdmin = allowedModes.contains(AdminMode.admin);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -58,7 +65,7 @@ class AdminModeSwitcher extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  'Superuser',
+                  showAdmin ? 'Superuser' : 'Dual Profile',
                   style: TextStyle(
                     color: theme.subtitleColor,
                     fontSize: 10,
@@ -86,14 +93,15 @@ class AdminModeSwitcher extends StatelessWidget {
                   label: 'Outfitter',
                 ),
               ),
-              Expanded(
-                child: _segment(
-                  context,
-                  mode: AdminMode.admin,
-                  icon: Icons.admin_panel_settings_sharp,
-                  label: 'Admin',
+              if (showAdmin)
+                Expanded(
+                  child: _segment(
+                    context,
+                    mode: AdminMode.admin,
+                    icon: Icons.admin_panel_settings_sharp,
+                    label: 'Admin',
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -220,6 +228,12 @@ class AdminModeSwitcherButton extends StatelessWidget {
   }
 
   void _showSheet(BuildContext context) {
+    // Dual-role demo reviewers get a Hunter + Outfitter-only switcher (they
+    // cannot access the Admin portal). Admins see all three segments.
+    final isDual = UserRoleProvider.instance.role == AppRole.dual;
+    final allowedModes = isDual
+        ? const [AdminMode.hunter, AdminMode.outfitter]
+        : const [AdminMode.hunter, AdminMode.outfitter, AdminMode.admin];
     showModalBottomSheet(
       context: context,
       backgroundColor: theme.cardColor,
@@ -246,7 +260,11 @@ class AdminModeSwitcherButton extends StatelessWidget {
               style: TextStyle(color: theme.subtitleColor, fontSize: 12),
             ),
             const SizedBox(height: 16),
-            AdminModeSwitcher(theme: theme, activeMode: activeMode),
+            AdminModeSwitcher(
+              theme: theme,
+              activeMode: activeMode,
+              allowedModes: allowedModes,
+            ),
           ],
         ),
       ),

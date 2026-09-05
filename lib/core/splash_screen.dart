@@ -81,8 +81,9 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,
-    // scanned_pricelists…) don't crash on a missing parameter.
-    if (role == AppRole.outfitter) {
+    // scanned_pricelists…) don't crash on a missing parameter. Applies to
+    // outfitters AND dual-role accounts (the demo reviewer).
+    if (role == AppRole.outfitter || role == AppRole.dual) {
       await _ensureOutfitterSelfLink();
     }
 
@@ -90,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
     // contact detail are not yet saved to Firestore is redirected to the
     // Hunter Profile screen to complete onboarding before reaching the
     // dashboard. Admins and outfitters are not gated by this check.
-    if (role == AppRole.hunter) {
+    if (role == AppRole.hunter || role == AppRole.dual) {
       final status =
           await HunterProfileCompleteness.instance.statusFor(user.uid);
       if (!status.isComplete && mounted) {
@@ -114,6 +115,11 @@ class _SplashScreenState extends State<SplashScreen>
         break;
       case AppRole.outfitter:
         Navigator.pushReplacementNamed(context, '/outfitter_dashboard');
+        break;
+      case AppRole.dual:
+        // Dual-role (demo reviewer) — land on the Hunter dashboard; the mode
+        // switcher lets the reviewer toggle to Outfitter Mode instantly.
+        Navigator.pushReplacementNamed(context, '/hunter_dashboard');
         break;
       case AppRole.unknown:
         // No role assigned yet / fetch error — let the user select their

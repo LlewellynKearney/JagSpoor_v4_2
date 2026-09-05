@@ -22,6 +22,7 @@ import '../hunter_mode/presentation/feature_suggestion_modal.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
+import '../auth/services/user_role_provider.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
@@ -49,6 +50,7 @@ class OutfitterDashboard extends StatefulWidget {
 
 class _OutfitterDashboardState extends State<OutfitterDashboard> {
   bool _isManager = false;
+  bool _isDual = false;
   String? _assignedFarmId;
   bool _isLoading = true;
   bool _isAdmin = false;
@@ -66,12 +68,20 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
-        final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
+        // A dual-role (demo reviewer) account also gets the mode switcher;
+        // admins do as well. AdminAuthGuard covers the admin path; the
+        // dual-role signal is cached on the role provider by the demo
+        // sign-in / splash resolution.
+        final role = UserRoleProvider.instance.role;
+        final isDual = role == AppRole.dual;
+        final admin =
+            isDual ? false : await AdminAuthGuard.instance.isCurrentUserAdmin();
         if (!mounted) return;
         setState(() {
           _isManager = UserRoleResolver.instance.isManager;
           _assignedFarmId = UserRoleResolver.instance.assignedFarmId;
           _isAdmin = admin;
+          _isDual = isDual;
           _isLoading = false;
         });
       } else {
@@ -433,7 +443,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         onPressed: () =>
             showAppInfoModal(context, AppScreenHelpScripts.outfitterDashboard),
       ),
-      if (_isAdmin) ...[
+      if (_isAdmin || _isDual) ...[
         const SizedBox(width: 8),
         AdminModeSwitcherButton(
           theme: theme,

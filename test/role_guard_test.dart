@@ -16,6 +16,7 @@ void main() {
       expect(AppRole.fromString('admin'), AppRole.admin);
       expect(AppRole.fromString('outfitter'), AppRole.outfitter);
       expect(AppRole.fromString('hunter'), AppRole.hunter);
+      expect(AppRole.fromString('dual'), AppRole.dual);
     });
 
     test('collapses null / unknown / empty to unknown', () {
@@ -107,6 +108,28 @@ void main() {
     });
   });
 
+  group('RoleGuard.canAccess — dual-role (hunter + outfitter)', () {
+    test('dual may access the hunter dashboard', () {
+      expect(RoleGuard.canAccess(AppRole.dual, '/hunter_dashboard'), isTrue);
+    });
+
+    test('dual may access the outfitter dashboard', () {
+      expect(
+          RoleGuard.canAccess(AppRole.dual, '/outfitter_dashboard'), isTrue);
+    });
+
+    test('dual is denied the admin portal', () {
+      for (final route in RoleGuard.adminOnlyRoutes) {
+        expect(RoleGuard.canAccess(AppRole.dual, route), isFalse);
+      }
+    });
+
+    test('dual may open non-restricted routes (forms, scanner)', () {
+      expect(RoleGuard.canAccess(AppRole.dual, '/scan_license'), isTrue);
+      expect(RoleGuard.canAccess(AppRole.dual, '/add_trophy'), isTrue);
+    });
+  });
+
   group('RoleGuard.canAccess — non-restricted routes', () {
     test('every role may open forms / detail screens', () {
       for (final role in AppRole.values) {
@@ -133,11 +156,17 @@ void main() {
     test('unknown → role selection (never dropped on a dashboard)', () {
       expect(RoleGuard.defaultHomeFor(AppRole.unknown), '/role_selection');
     });
+
+    test('dual → hunter dashboard (feature-rich starting point)', () {
+      expect(RoleGuard.defaultHomeFor(AppRole.dual), '/hunter_dashboard');
+    });
   });
 
   group('RoleGuard.canSwitchModes', () {
-    test('only admins may use the instant mode switcher', () {
+    test('only admins + dual-role accounts may use the instant mode switcher',
+        () {
       expect(RoleGuard.canSwitchModes(AppRole.admin), isTrue);
+      expect(RoleGuard.canSwitchModes(AppRole.dual), isTrue);
       expect(RoleGuard.canSwitchModes(AppRole.outfitter), isFalse);
       expect(RoleGuard.canSwitchModes(AppRole.hunter), isFalse);
       expect(RoleGuard.canSwitchModes(AppRole.unknown), isFalse);
@@ -195,14 +224,16 @@ void main() {
       AppRole.admin: '/admin_dashboard',
       AppRole.hunter: '/hunter_dashboard',
       AppRole.outfitter: '/outfitter_dashboard',
+      AppRole.dual: '/hunter_dashboard',
     };
 
-    test('each permanent single role routes to exactly one dashboard', () {
-      // The mapping is exhaustive over the three permanent roles.
-      expect(roleRoutes.length, 3);
+    test('each permanent role routes to exactly one dashboard', () {
+      // The mapping is exhaustive over the permanent roles (incl. dual).
+      expect(roleRoutes.length, 4);
       expect(roleRoutes[AppRole.admin], '/admin_dashboard');
       expect(roleRoutes[AppRole.hunter], '/hunter_dashboard');
       expect(roleRoutes[AppRole.outfitter], '/outfitter_dashboard');
+      expect(roleRoutes[AppRole.dual], '/hunter_dashboard');
     });
 
     test('routed role is admitted by the route guard (no access-denied loop)',
@@ -230,10 +261,9 @@ void main() {
       // bypass branch fires.
       expect(AppRole.fromString('outfitter'), AppRole.outfitter);
       expect(AppRole.fromString('hunter'), AppRole.hunter);
-      // Anything else (including 'unassigned' / 'dual') must fall through to
-      // role selection, not a dashboard.
+      // Anything else must fall through to role selection, not a dashboard.
       expect(AppRole.fromString('unassigned'), AppRole.unknown);
-      expect(AppRole.fromString('dual'), AppRole.unknown);
+      expect(AppRole.fromString('superuser'), AppRole.unknown);
     });
   });
 }
