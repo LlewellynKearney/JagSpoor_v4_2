@@ -298,4 +298,73 @@ void main() {
       expect(config.amountFor(ReferralSubscriptionTier.outfitter), 250.0);
     });
   });
+
+  group('ReferralRepository — getOrCreateMyReferralProfile', () {
+    late FakeFirebaseFirestore firestore;
+    late ReferralRepository repo;
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      repo = ReferralRepository.forTesting(
+        firestore: firestore,
+        currentUserIdResolver: () => 'uid-1',
+        random: dart_math.Random(11),
+      );
+    });
+
+    test('returns the existing profile when a code is already stored',
+        () async {
+      await firestore.collection('referral_profiles').doc('uid-1').set({
+        'userId': 'uid-1',
+        'referralCode': 'EXISTING1',
+        'bankingDetailsProvided': false,
+      });
+
+      final profile = await repo.getOrCreateMyReferralProfile();
+      expect(profile, isNotNull);
+      expect(profile!.referralCode, 'EXISTING1');
+      // No new code was generated — the stored one is reused.
+      final snap = await firestore
+          .collection('referral_profiles')
+          .doc('uid-1')
+          .get();
+      expect((snap.data()! as Map)['referralCode'], 'EXISTING1');
+    });
+
+    test('auto-generates + persists a code when the profile is absent',
+        () async {
+      final profile = await repo.getOrCreateMyReferralProfile();
+      expect(profile, isNotNull);
+      expect(profile!.referralCode, isNotEmpty);
+      expect(profile.referralCode.length, 8);
+
+      final snap = await firestore
+          .collection('referral_profiles')
+          .doc('uid-1')
+          .get();
+      expect(snap.exists, isTrue);
+      expect((snap.data()! as Map)['referralCode'], profile.referralCode);
+    });
+
+    test('generates a fresh code when the stored profile has an empty code',
+        () async {
+      await firestore.collection('referral_profiles').doc('uid-1').set({
+        'userId': 'uid-1',
+        'referralCode': '',
+        'bankingDetailsProvided': false,
+      });
+
+      final profile = await repo.getOrCreateMyReferralProfile();
+      expect(profile, isNotNull);
+      expect(profile!.referralCode, isNotEmpty);
+    });
+
+    test('returns null for an unauthenticated caller', () async {
+      final unauth = ReferralRepository.forTesting(
+        firestore: firestore,
+        currentUserIdResolver: () => null,
+      );
+      expect(await unauth.getOrCreateMyReferralProfile(), isNull);
+    });
+  });
 }

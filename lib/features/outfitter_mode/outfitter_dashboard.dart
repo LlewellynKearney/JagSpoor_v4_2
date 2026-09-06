@@ -24,6 +24,7 @@ import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../auth/services/user_role_provider.dart';
+import '../referral/widgets/referral_share_widget.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
@@ -693,6 +694,12 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   ),
                   onTap: () => ChangePasswordDialog.show(context),
                 ),
+                const SizedBox(height: 24),
+
+                // ── Refer & Earn ─────────────────────────────────────────
+                // Auto-generates (or loads) the outfit owner's unique
+                // referral code with Copy Link / WhatsApp / native share.
+                ReferralShareWidget(theme: theme),
                 const SizedBox(height: 24),
 
                 // ── Delete Account (Danger Zone) ─────────────────────────

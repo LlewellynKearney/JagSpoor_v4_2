@@ -164,6 +164,27 @@ class ReferralRepository {
     );
   }
 
+  /// Loads the current user's referral profile, generating + persisting a
+  /// unique code when none exists yet (the Phase-3 "auto-generate or load"
+  /// contract used by the share widgets).
+  ///
+  /// Returns the existing profile when one is present; otherwise
+  /// [createMyReferralProfile] is invoked (idempotent merge) and the freshly
+  /// generated profile is returned. Returns null when the caller is
+  /// unauthenticated or the Firestore read/write fails (never throws).
+  Future<ReferralProfile?> getOrCreateMyReferralProfile() async {
+    final existing = await getMyReferralProfile();
+    if (existing != null && existing.referralCode.isNotEmpty) {
+      return existing;
+    }
+    try {
+      return await createMyReferralProfile();
+    } catch (e) {
+      debugPrint('ReferralRepository.getOrCreateMyReferralProfile: $e');
+      return null;
+    }
+  }
+
   /// Updates the current user's banking payout details on their profile
   /// (merge-write). Passing an empty field clears it (stored as `null` via
   /// `FieldValue.delete` so a later `bankingDetailsProvided` read stays

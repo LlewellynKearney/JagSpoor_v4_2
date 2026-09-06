@@ -716,17 +716,22 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     const SizedBox(height: 12.0),
-                    CheckboxListTile(
-                      title: const Text(
-                        'KEEP ME SIGNED IN',
-                        style: TextStyle(fontFamily: 'Mono', fontSize: 12.0),
+                    // The tile is wrapped in its own `Material` so its
+                    // background + ink splashes paint onto a Material
+                    // ancestor (the surrounding DecoratedBox carries a
+                    // background color, which would otherwise hide them).
+                    Material(
+                      child: CheckboxListTile(
+                        title: const Text(
+                          'KEEP ME SIGNED IN',
+                          style: TextStyle(fontFamily: 'Mono', fontSize: 12.0),
+                        ),
+                        value: _keepMeSignedIn,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (val) =>
+                            setState(() => _keepMeSignedIn = val ?? false),
                       ),
-                      value: _keepMeSignedIn,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      onChanged:
-                          (val) =>
-                              setState(() => _keepMeSignedIn = val ?? false),
                     ),
                     // POPIA Compliance: Privacy Policy acceptance checkbox (registration only)
                     if (!_isLoginMode) ...[

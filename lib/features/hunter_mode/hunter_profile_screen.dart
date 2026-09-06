@@ -12,6 +12,7 @@ import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
 import '../auth/screens/privacy_policy_screen.dart';
 import '../authentication/services/auth_gate_service.dart';
+import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
@@ -970,6 +971,14 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 32),
+
+                  // Refer & Earn - the referral link generator. Auto-generates
+                  // (or loads) the user's unique referral code and exposes
+                  // Copy Link / Share via WhatsApp / native share.
+                  _buildSectionHeader('REFER & EARN'),
+                  const SizedBox(height: 12),
+                  ReferralShareWidget(theme: widget.theme),
                   const SizedBox(height: 32),
 
                   // Privacy & Data - Google Play policy compliance. Exposes
