@@ -39,8 +39,10 @@ android {
         // Current Google Play requirement (as of Aug 31 2026) for new apps
         // and updates: target Android 16 (API level 36). Already satisfied.
         targetSdk = 36
-        versionCode = flutter.versionCode.toInt()
-        versionName = flutter.versionName
+        // Version code 2: the Play Console rejected version code 1, so the
+        // re-uploaded AAB needs a strictly higher integer for acceptance.
+        versionCode = 2
+        versionName = "1.102"
     }
 
     // ---------- Signing configuration ----------

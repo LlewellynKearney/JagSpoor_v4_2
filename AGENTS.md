@@ -1,6 +1,23 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Android version code 2 / version name 1.102 (Play Console re-upload) (added 2026-09-06)
+
+- `android/app/build.gradle.kts` `defaultConfig`: replaced the computed
+  `versionCode = flutter.versionCode.toInt()` / `versionName =
+  flutter.versionName` with hardcoded `versionCode = 2` and
+  `versionName = "1.102"` (with an explanatory comment). The Play Console
+  rejected version code 1; the re-uploaded AAB needs a strictly higher
+  integer.
+- KEPT as-is: `minSdk = 23` and `targetSdk = 36` (they intentionally do NOT
+  track `flutter.minSdkVersion` / `flutter.targetSdkVersion` — see the
+  documented Firebase-manifest + Google Play target-API rationale inline).
+- No other file references versionCode/versionName (pubspec version is
+  independent; no contract test parses build.gradle.kts).
+- Build note: `flutter build appbundle/build apk` cannot run in this
+  sandbox (no Android SDK); CI (`Build Android APK`) will emit the new
+  version in the generated output.
+
 ## Phase -- Play Billing Library 7.1.1 -> 8.0.0 (Play Console rejection) (added 2026-09-06)
 
 Google Play Console rejected version code 1: "Your app currently uses Play
