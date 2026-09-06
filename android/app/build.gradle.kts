@@ -35,7 +35,7 @@ android {
         // would fail the manifest merger ("minSdkVersion 21 cannot be smaller
         // than version 23 declared in library [:firebase_analytics]").
         // 23 is also the Android-6-era platform floor Google Play enforces.
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         // Current Google Play requirement (as of Aug 31 2026) for new apps
         // and updates: target Android 16 (API level 36). Already satisfied.
         targetSdk = 36
