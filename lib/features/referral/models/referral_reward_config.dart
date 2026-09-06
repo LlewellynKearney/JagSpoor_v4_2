@@ -60,3 +60,45 @@ class ReferralRewardConfig {
     return parsed < 0 ? 0.0 : parsed;
   }
 }
+
+/// Pure validation for the admin reward-amount inputs.
+///
+/// Mirrors [FarmGamePriceValidator] / the subscription-config clamping
+/// contract: blank input is rejected, a non-numeric value is rejected, and a
+/// negative amount is rejected — the Admin Portal can never persist an
+/// invalid (negative or unparseable) ZAR reward.
+class ReferralRewardValidator {
+  ReferralRewardValidator._();
+
+  /// Strips an optional `R` / `r` currency prefix + internal spaces from raw
+  /// input (the dashboard field is prefixed with `R `).
+  static String _sanitize(String? text) {
+    if (text == null) return '';
+    return text.trim().replaceAll(RegExp(r'[Rr]'), '').trim();
+  }
+
+  /// Parses a ZAR amount: null/blank -> null; otherwise the sanitized value's
+  /// `double.tryParse` result (null when unparseable).
+  static double? tryParseZar(String? text) {
+    final cleaned = _sanitize(text);
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  /// Returns an error message for an invalid reward amount, else null.
+  /// Negative amounts are always rejected; zero is permitted (an admin can
+  /// intentionally set a R0.00 reward, e.g. while pausing the programme).
+  static String? validateZar(String? text) {
+    if (text == null || text.trim().isEmpty) {
+      return 'Reward amount is required.';
+    }
+    final parsed = double.tryParse(_sanitize(text));
+    if (parsed == null) {
+      return 'Enter a valid ZAR amount, e.g. 19.99.';
+    }
+    if (parsed < 0) {
+      return 'Reward amount cannot be negative.';
+    }
+    return null;
+  }
+}

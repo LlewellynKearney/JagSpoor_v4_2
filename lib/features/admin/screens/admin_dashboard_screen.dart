@@ -8,6 +8,7 @@ import '../services/subscription_config_service.dart';
 import '../services/usage_analytics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
 import '../widgets/media_storage_charts.dart';
+import '../widgets/referral_rewards_admin_card.dart';
 import 'create_user_screen.dart';
 import 'bulk_csv_import_screen.dart';
 
@@ -200,6 +201,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           _buildSectionHeader('Subscription Revenue (ZAR)'),
                           _buildSubscriptionConfigCard(),
                           _buildSubscriptionRevenueCard(),
+                          const SizedBox(height: 24),
+                          _buildSectionHeader('Referral Rewards (ZAR)'),
+                          ReferralRewardsAdminCard(
+                            theme: widget.theme,
+                            isAdmin: _authorized,
+                          ),
                           const SizedBox(height: 24),
                           _buildSectionHeader('Feature Usage by Role'),
                           _buildFeatureUsageSection(),

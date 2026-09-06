@@ -1,6 +1,100 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Referral system Phase 2: Admin Portal reward settings card (added 2026-09-06)
+
+Built the Admin Portal settings interface for the referral rewards on top of
+the Phase-1 `admin_config/referral_rewards` model: a self-contained
+`ReferralRewardsAdminCard` widget on the admin dashboard that views + edits
+the DYNAMIC hunter vs. outfitter reward amounts, with strict ZAR input
+validation and repository persistence.
+
+### 1. Pure validation — `ReferralRewardValidator`
+- Added to `lib/features/referral/models/referral_reward_config.dart`:
+  - `validateZar(String?)` -> error message or null: blank input is rejected
+    ("Reward amount is required."), non-numeric rejected ("Enter a valid ZAR
+    amount, e.g. 19.99."), NEGATIVE rejected ("Reward amount cannot be
+    negative."). Zero is permitted (an admin may intentionally set R0.00,
+    e.g. while pausing the programme).
+  - `tryParseZar(String?)` -> `double?` (null for blank/unparseable).
+  - `_sanitize` strips an optional `R`/`r` prefix + spaces (the dashboard
+    field is prefixed `R `). Mirrors `FarmGamePriceValidator` /
+    `SubscriptionConfigService.saveConfig` clamping.
+
+### 2. Repository persistence — `ReferralRepository.saveRewardConfig`
+- `lib/features/referral/services/referral_repository.dart` gained
+  `saveRewardConfig(ReferralRewardConfig)` — merge-writes
+  `admin_config/referral_rewards` (`SetOptions(merge: true)` so unrelated
+  admin_config fields survive) and clamps negative amounts to zero (the same
+  belt-and-braces as `fromMap` / `SubscriptionConfigService.saveConfig`).
+  Admin-write per `firestore.rules` (`admin_config` write is admin-only).
+
+### 3. Admin Portal card — `ReferralRewardsAdminCard`
+- NEW `lib/features/admin/widgets/referral_rewards_admin_card.dart`:
+  self-contained StatefulWidget mirroring the existing "Subscription Revenue
+  (ZAR)" manual-input card. Self-loads the live config in `initState`
+  (via `ReferralRepository.loadRewardConfig`, defaulting to the documented
+  values when the doc is absent), pre-fills the two ZAR fields, and renders:
+  - a `ContextualInfoIcon` explainer (what the rewards are / how tiers map);
+  - a read-only/`isAdmin` note line ("Stored at
+    admin_config/referral_rewards (signed-in read, admin write)." vs
+    "Admin-only. You are viewing the configured amounts.");
+  - two `TextFormField`s (`ValueKey('referralHunterRewardField')` /
+    `referralOutfitterRewardField`) with `keyboardType: numberWithOptions
+    (decimal)` + the inline `validator: ReferralRewardValidator.validateZar`;
+  - a SAVE `FilledButton.icon` with a saving spinner; validations are
+    re-checked in `_save` (Form.validate + `tryParseZar` guards) and the
+    result persists via `saveRewardConfig` (green "Referral rewards saved
+    (hunter R x.xx / outfitter R y.yy)." snackbar; red on failure).
+  - Injectability: `repository` ctor param (defaults to the singleton via a
+    `repo` getter) + `isAdmin` flag — a non-admin sees the amounts but the
+    button is disabled (defense-in-depth beyond the admin-only rules).
+  Widget ports: `ReferralRewardsAdminCard(theme: widget.theme,
+  isAdmin: _authorized)`.
+- Wired into the Admin Dashboard
+  (`lib/features/admin/screens/admin_dashboard_screen.dart`) as a new
+  "Referral Rewards (ZAR)" section between the Subscription Revenue cards
+  and the Feature Usage section.
+
+### 4. Tests (18 new — referral Phase-1 47 + phase-2 18 = 65 total)
+- `test/referral_reward_admin_config_test.dart` (11): validator accept
+  (positive/whole/R-prefix/zero), reject (blank/non-numeric/negative);
+  `tryParseZar`; `saveRewardConfig` persistence, merge-preservation, negative
+  clamp, save->load round-trip.
+- `test/referral_rewards_admin_card_test.dart` (7 widget): live-config
+  pre-fill; defaults when absent; negative/blank/non-numeric blocked by the
+  inline validator (nothing persisted); valid amounts save to
+  `admin_config/referral_rewards` + success snackbar; non-admin sees the
+  amounts but SAVE is disabled.
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9): **0 errors, 0 warnings** (314
+  pre-existing infos — identical to the Phase-1 baseline).
+- `flutter test` full suite: **1664 passed, 11 failed**. The 11 failures
+  remain the DOCUMENTED PRE-EXISTING AuthScreen widget tests
+  (`google_sign_in_flow_test` 3, `login_autofill_test` 4,
+  `demo_reviewer_login_test` 4) tripped by the NEW Material framework
+  assertion in Flutter >=3.44 (`ListTile ... may be invisible`) — see the
+  Play Billing 8.0.0 phase + Phase-1 entry. They are unrelated to this
+  change (no touched file is involved; the referral suites themselves pass
+  65/65).
+- `functions` `npm test`: 19/19 pass (functions backend untouched by Phase 2).
+- Env: Flutter 3.44.9 at `/home/openhands/flutter`; the
+  `~/libs/libsqlite3.so` symlink + `LD_LIBRARY_PATH="$HOME/libs"` for the
+  sqflite-FFI suites.
+- Files: `lib/features/referral/models/referral_reward_config.dart`
+  (ReferralRewardValidator),
+  `lib/features/referral/services/referral_repository.dart`
+  (saveRewardConfig),
+  `lib/features/admin/widgets/referral_rewards_admin_card.dart` (NEW),
+  `lib/features/admin/screens/admin_dashboard_screen.dart` (new section),
+  `test/referral_reward_admin_config_test.dart` (NEW),
+  `test/referral_rewards_admin_card_test.dart` (NEW), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest / functions
+  changes (the `admin_config` rules + indexes from Phase 1 already cover the
+  card; the merge write + read are within the existing grants).
+
+
 ## Phase -- Referral system Phase 1: models, collections, security rules, repositories (added 2026-09-06)
 
 Implemented Phase 1 of the JagSpoor referral system: the Firestore data

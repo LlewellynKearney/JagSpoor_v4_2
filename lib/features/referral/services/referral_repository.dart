@@ -301,6 +301,28 @@ class ReferralRepository {
     }
   }
 
+  /// Persists the dynamic admin reward configuration to
+  /// `admin_config/referral_rewards` (merge, so other `admin_config`
+  /// fields are preserved). Negative amounts are clamped to zero so a
+  /// misconfiguration can never persist a negative reward — the same
+  /// sanitisation contract as [ReferralRewardConfig.fromMap] /
+  /// `SubscriptionConfigService.saveConfig`. Admin-write per
+  /// `firestore.rules` (`admin_config` write is admin-only).
+  Future<void> saveRewardConfig(ReferralRewardConfig config) async {
+    final sanitized = ReferralRewardConfig(
+      hunterRewardZAR: config.hunterRewardZAR < 0
+          ? 0.0
+          : config.hunterRewardZAR,
+      outfitterRewardZAR: config.outfitterRewardZAR < 0
+          ? 0.0
+          : config.outfitterRewardZAR,
+    );
+    await _firestore
+        .collection(kAdminConfigCollection)
+        .doc(ReferralRewards.adminConfigDocId)
+        .set(sanitized.toMap(), SetOptions(merge: true));
+  }
+
   static void _putStringOrDelete(
     Map<String, dynamic> updates,
     String field,
