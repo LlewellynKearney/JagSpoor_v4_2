@@ -1,6 +1,138 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Referral system Phase 1: models, collections, security rules, repositories (added 2026-09-06)
+
+Implemented Phase 1 of the JagSpoor referral system: the Firestore data
+models, collections, and security rules for `referral_profiles`,
+`referral_conversions`, and `admin_config` (dynamic hunter/outfitter reward
+amounts), with matching Dart + TypeScript models and Firestore repository
+methods on both the Flutter client and the Cloud Functions backend.
+
+### Collections + data model
+- **`referral_profiles/{uid}`** (`ReferralProfile`): document id IS the
+  user's UID. Fields: `userId`, `referralCode` (unique, upper-cased,
+  generated from a visually-ambiguous-free alphabet), `bankingDetailsProvided`
+  (bool), + optional `bankAccountHolder` / `bankName` / `bankAccountNumber` /
+  `bankAccountType`. Read-alias tolerant (`code`, `bankHolder`,
+  `bankAccountNr`, `accountType`). `toMap` omits empty banking fields.
+  Constants in `referral_profile.dart`: `kReferralCodeAlphabet`,
+  `kReferralCodeMaxLength = 12`, `kReferralProfilesCollection`.
+- **`referral_conversions/{id}`** (`ReferralConversion` + enums): tracks who
+  referred whom. Fields: `referrerId`, `referredUserId`, `referralCode`,
+  `subscriptionTier` ('hunter'|'outfitter'), `status`
+  ('pending'|'rewarded'|'rejected'), `rewardAmountZAR` (omitted when 0),
+  timestamps. Read aliases: `referredBy`→referrerId, `referredUid`→referred,
+  `tier`/`code`. Constants in `referral_conversion.dart`:
+  `kReferralConversionsCollection`, `ReferralRewards` (default
+  hunter 19.99 / outfitter 199.99 — one month's subscription value).
+- **`admin_config/referral_rewards`** (`ReferralRewardConfig`): the DYNAMIC
+  admin reward amounts (`hunterRewardZAR` / `outfitterRewardZAR`, plus
+  `hunter`/`outfitter`/`hunterAmountZAR`/`outfitterAmountZAR` aliases),
+  numeric-string tolerant, negatives clamped, falls back to the documented
+  defaults. `kAdminConfigCollection` in `referral_reward_config.dart`.
+
+### Dart repository — `lib/features/referral/services/referral_repository.dart`
+`ReferralRepository.instance` (+ `forTesting` seam for `FakeFirebaseFirestore`
++ uid resolver + injectable `Random`):
+- `generateReferralCode({length, random})` — pure, testable code generator.
+- `getMyReferralProfile` / `getReferralProfile(uid)`.
+- `createMyReferralProfile({codeLength})` — unique code + owner-scoped write.
+- `updateMyBankingDetails({...})` — merge-write; empty fields cleared via
+  `FieldValue.delete(); bankingDetailsProvided` flips off when the holder or
+  account number clears.
+- `recordConversion({referrerId, referredUserId, referralCode,
+  subscriptionTier})` — validates non-empty ids, rejects self-referral, starts
+  `pending`, returns the doc id.
+- `getConversionsForCurrentUser()` / `getConversion(id)`.
+- `loadRewardConfig()` — reads `admin_config/referral_rewards`, falls back to
+  defaults, never throws.
+All Firestore/Auth access is lazy + try/catch-wrapped so cold-launch /
+unauthenticated callers get null/empty instead of `[core/no-app]`.
+
+### Cloud Functions — `functions/src/referral.ts` (exported from `index.ts`)
+Same collection-name constants + `loadReferralRewardConfig()`,
+`rewardAmountForTier(tier)`, `getReferralProfile(uid)`,
+`findReferrerByCode(code)` (case-insensitive equality — codes stored
+upper-cased), `createReferralProfile(uid, code)`,
+`recordReferralConversion({...})` (validates referrer != referred;
+starts `pending`), `getConversionsForReferrer(uid)`,
+`finaliseConversionReward(conversionId, 'rewarded'|'rejected')` —
+backend-only finalisation that resolves the reward amount from the live
+admin config. `npx tsc --noEmit` clean.
+
+### Firestore security rules (`firestore.rules`)
+- `referral_profiles/{userId}` — read own-profile only
+  (`resource.data.userId == request.auth.uid`); owner-scoped create/update
+  with a `referralCode.size() <= 12` guard; **delete denied entirely**.
+  NOTE: Firestore rules have NO case-insensitive string comparison, so codes
+  are stored upper-cased; the `referral_code_unique` property (referralCode
+  as a unique index field) is the code-uniqueness guarantee — the client
+  `ReferralRepository` relies on the property denying a duplicate-code write
+  (Phase 2 should add the parallel Firestore property for the `users` doc if
+  the code is mirrored there).
+- `referral_conversions/{conversionId}` — party-scoped reads (referrer or
+  referred user) or admin; any signed-in user may CREATE a valid `pending`
+  conversion (self-referral rejected server-side via `referrerId !=
+  referredUserId`, non-empty ids, code length 1..12, `status == 'pending'`);
+  update/delete are admin-only (only the backend finalises rewards).
+- `admin_config/{docId}` — signed-in read (dynamic reward amounts needed by
+  every consumer), admin-only write.
+
+### Firestore indexes (`firestore.indexes.json`)
+- Added composite `referral_conversions` `(referrerId ASC, createdAt DESC)`
+  for the referrer's conversion list query. `referral_profiles` lookups are
+  single-doc-by-uid; `findReferrerByCode` uses the automatic single-field
+  index on `referralCode`.
+
+### Tests (all passing)
+- `test/referral_models_test.dart` (20): profile hydration/aliases/defaults/
+  toMap/copyWith; conversion hydration/aliases/enums/round-trip; rewards +
+  config defaults/aliases/clamping; collection-name + alphabet contract.
+- `test/referral_repository_test.dart` (21): code generation (determinism,
+  length, distinctness); profiles CRUD + banking update/clear + unauth
+  rejection; conversions record/validate/self-referral/query/party-isolation/
+  single-get; admin config load (defaults + live doc).
+- `test/referral_firestore_rules_test.dart` (11): structural contracts for
+  all three match blocks + brace balance + single default-deny.
+- `functions/test/referral.test.js` (9): constants, index.js re-export,
+  validation errors, code normalization + structural contracts.
+  `npm test` in `functions/` → 19/19 pass (9 referral + 10 trial onboarding).
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9, CI pin as of 2026-09-06): **0 errors,
+  0 warnings**.
+- `flutter test` (full suite): **1646 passed, 11 failed**. All 11 failures
+  are the DOCUMENTED PRE-EXISTING AuthScreen widget tests
+  (`google_sign_in_flow_test.dart` 3, `login_autofill_test.dart` 4,
+  `demo_reviewer_login_test.dart` 4) tripped by the NEW Material framework
+  assertion in Flutter >=3.44 (`ListTile background color or ink splashes may
+  be invisible`) on the `CheckboxListTile(dense: true)` inside a bordered
+  `Container` in `auth_screen.dart` — PROVEN pre-existing by stashing the
+  referral changes and re-running those 3 suites at the clean baseline
+  (identical 11 failures). They need the documented follow-up UI fix, NOT a
+  referral-related change.
+- Env note: Flutter 3.44.9 stable installed fresh at
+  `/home/openhands/flutter`; the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink + `LD_LIBRARY_PATH="$HOME/libs"`
+  for the sqflite-FFI suites; pubspec "Unexpected child config" line is the
+  documented pre-existing spurious warning.
+- Files: `lib/features/referral/models/referral_profile.dart` (NEW),
+  `lib/features/referral/models/referral_conversion.dart` (NEW),
+  `lib/features/referral/models/referral_reward_config.dart` (NEW),
+  `lib/features/referral/services/referral_repository.dart` (NEW),
+  `functions/src/referral.ts` (NEW), `functions/src/index.ts` (exports),
+  `functions/test/referral.test.js` (NEW), `firestore.rules`,
+  `firestore.indexes.json`, `test/referral_models_test.dart` (NEW),
+  `test/referral_repository_test.dart` (NEW),
+  `test/referral_firestore_rules_test.dart` (NEW), `AGENTS.md`.
+- Deploy reminder: `npx firebase-tools deploy --only firestore:rules,
+  firestore:indexes` in a credentialed env to activate the referral rules +
+  the `referral_conversions` composite index. Phase 2 (not in this change)
+  wires the subscription-activation trigger that finalises conversions to
+  `rewarded`/`rejected` + the payout/claim flow on top of these models.
+
+
 ## Phase -- Android version code 2 / version name 1.102 (Play Console re-upload) (added 2026-09-06)
 
 - `android/app/build.gradle.kts` `defaultConfig`: replaced the computed

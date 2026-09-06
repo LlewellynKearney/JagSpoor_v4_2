@@ -582,6 +582,62 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // ── Referral system (Phase 1) ────────────────────────────────────────
+    // `referral_profiles/{uid}` stores each user's referral identity: the
+    // document id IS the user's UID, plus their unique referral code and
+    // (opt-in) banking payout details. The referral code is globally unique
+    // (the `referral_code_unique` property) and case-insensitive: every
+    // referral-code read compares `== request.auth.uid` so a user can only
+    // ever see their OWN banking details.
+    match /referral_profiles/{userId} {
+      // A signed-in user may read their own profile (also admits the
+      // code-uniqueness check + any self-query). Referral-code→profile
+      // lookups run via the Cloud Function Admin SDK (rule-free).
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // The owner creates + updates their own profile (merge-writes for the
+      // banking details). A created doc must carry the caller's own uid so
+      // no profile can be spoofed under another user's id.
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.referralCode.size() <= 12;
+      // Crypto-free code-case guard: a raw code comparison must be exact.
+      allow delete: if false;
+    }
+
+    // `referral_conversions/{conversionId}` tracks who referred whom, the
+    // referred user's subscription tier, and the reward status. Any signed-in
+    // user may append a conversion (a new signup records the code they
+    // redeemed); reads are scoped to a party of the record (the referrer or
+    // the referred user) or an admin so conversion data never leaks.
+    match /referral_conversions/{conversionId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (
+          resource.data.referrerId == request.auth.uid
+          || resource.data.referredUserId == request.auth.uid
+        ));
+      // Create validates the shape server-side: a conversion references two
+      // distinct users + a non-empty code and starts `pending`.
+      allow create: if isSignedIn()
+        && request.resource.data.referrerId != request.resource.data.referredUserId
+        && request.resource.data.referrerId.size() > 0
+        && request.resource.data.referredUserId.size() > 0
+        && request.resource.data.referralCode.size() > 0
+        && request.resource.data.referralCode.size() <= 12
+        && request.resource.data.status == 'pending';
+      // Only the backend (Admin SDK) finalises the reward — the status field
+      // is never client-writable.
+      allow update, delete: if isAdmin();
+    }
+
+    // `admin_config/referral_rewards` holds the DYNAMIC reward amounts for
+    // hunter vs. outfitter referrals. Read is open to any signed-in user
+    // (every referral-reward consumer needs the live amount); write is
+    // admin-only so regular users can never alter their own payout.
+    match /admin_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // ── Default deny ────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

@@ -18,6 +18,31 @@ import { firestore, auth, getAdmin } from "./firebase";
 // (see user_trial_onboarding.ts).
 export { initializeNewUserTrial } from "./user_trial_onboarding";
 
+// Referral system Phase 1 — Firestore repository methods + reward config
+// helpers (see referral.ts). The models/collections are shared with the
+// Flutter client `ReferralRepository`.
+export {
+  REFERRAL_PROFILES_COLLECTION,
+  REFERRAL_CONVERSIONS_COLLECTION,
+  ADMIN_CONFIG_COLLECTION,
+  REFERRAL_REWARDS_DOC_ID,
+  DEFAULT_HUNTER_REWARD_ZAR,
+  DEFAULT_OUTFITTER_REWARD_ZAR,
+  REFERRAL_STATUS_PENDING,
+  REFERRAL_STATUS_REWARDED,
+  REFERRAL_STATUS_REJECTED,
+  REFERRAL_TIER_HUNTER,
+  REFERRAL_TIER_OUTFITTER,
+  loadReferralRewardConfig,
+  rewardAmountForTier,
+  getReferralProfile,
+  findReferrerByCode,
+  createReferralProfile,
+  recordReferralConversion,
+  getConversionsForReferrer,
+  finaliseConversionReward,
+} from "./referral";
+
 // ────────────────────────────────────────────────────────────────────────────
 // 1. Admin: create outfitter account + document + custom claims
 // ────────────────────────────────────────────────────────────────────────────
