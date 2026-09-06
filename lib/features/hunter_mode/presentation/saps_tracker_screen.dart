@@ -8,6 +8,7 @@ import '../../hunter_mode/services/saps_tracker_service.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
+import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
 
 /// SAPS License & Competency Application Tracker Screen.
 /// Provides a dashboard for registering and monitoring firearm license
@@ -514,145 +515,146 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
         elevation: 0,
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Scrollable top section (register form + tracked header) so the input
-            // card scrolls on short screens instead of overflowing the body.
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Register New Application — collapsible accordion
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                      child: _buildRegisterAccordion(theme, hunterTheme),
-                    ),
-                    // Active Tracker Grid View
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'TRACKED APPLICATIONS',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.secondary,
-                                letterSpacing: 1.2,
-                              ),
+        child: ListView.builder(
+          padding: EdgeInsets.only(bottom: SafeBottomInset.of(context)),
+          itemCount: 2,
+          itemBuilder: (context, index) {
+            // Item 0 is always the register accordion + tracked header so the
+            // whole page scrolls as ONE unit -- no hidden double scroll, no
+            // wasted vertical space, and no content clipped by a nested
+            // Expanded on small screens / large text scales.
+            if (index == 0) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Register New Application — collapsible accordion
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _buildRegisterAccordion(theme, hunterTheme),
+                  ),
+                  // Active Tracker header + manual refresh button
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'TRACKED APPLICATIONS',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.secondary,
+                              letterSpacing: 1.2,
                             ),
                           ),
-                          // Manual Refresh Button
-                          IconButton(
-                            tooltip: 'Refresh all statuses',
-                            onPressed: _isRefreshingAll ? null : _manualRefresh,
-                            icon: _isRefreshingAll
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : Icon(
-                                    Icons.refresh,
-                                    color: theme.colorScheme.primary,
+                        ),
+                        IconButton(
+                          tooltip: 'Refresh all statuses',
+                          onPressed: _isRefreshingAll ? null : _manualRefresh,
+                          icon: _isRefreshingAll
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
-                          ),
-                        ],
-                      ),
+                                )
+                              : Icon(
+                                  Icons.refresh,
+                                  color: theme.colorScheme.primary,
+                                ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              );
+            }
+
+            // Item 1 is the tracked-applications section (auth-gated).
+            if (_currentUserId == null) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Please log in to view tracked applications',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: theme.hintColor),
                 ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            // StreamBuilder for active applications
-            Expanded(
-              child: _currentUserId == null
-                  ? Center(
-                      child: Text(
-                        'Please log in to view tracked applications',
-                        style: TextStyle(color: theme.hintColor),
-                      ),
-                    )
-                  : StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('license_applications')
-                          .where('hunterId', isEqualTo: _currentUserId)
-                          .orderBy('lastChecked', descending: true)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
+              );
+            }
 
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error loading applications: ${snapshot.error}',
-                              style: TextStyle(
-                                color: theme.colorScheme.error,
-                              ),
-                            ),
-                          );
-                        }
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('license_applications')
+                  .where('hunterId', isEqualTo: _currentUserId)
+                  .orderBy('lastChecked', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
 
-                        final docs = snapshot.data?.docs ?? [];
-                        if (docs.isEmpty) {
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.inbox_outlined,
-                                  size: 64,
-                                  color: theme.hintColor,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No applications tracked yet',
-                                  style: TextStyle(color: theme.hintColor),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Register your first application above',
-                                  style: TextStyle(
-                                    color: theme.hintColor,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
-                            final app = SapsApplication.fromFirestore(
-                              docs[index]
-                                  as DocumentSnapshot<Map<String, dynamic>>,
-                            );
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: SapsApplicationCard(
-                                application: app,
-                                trackerService: _trackerService,
-                              ),
-                            );
-                          },
-                        );
-                      },
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Error loading applications: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: theme.colorScheme.error),
                     ),
-            ),
-          ],
+                  );
+                }
+
+                final docs = snapshot.data?.docs ?? const [];
+                if (docs.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          size: 64,
+                          color: theme.hintColor,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No applications tracked yet',
+                          style: TextStyle(color: theme.hintColor),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Register your first application above',
+                          style: TextStyle(
+                            color: theme.hintColor,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    for (final doc in docs)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: SapsApplicationCard(
+                          application: SapsApplication.fromFirestore(
+                            doc as DocumentSnapshot<Map<String, dynamic>>,
+                          ),
+                          trackerService: _trackerService,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -755,33 +757,49 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Header row. The application type is Expanded and the status
+              // badge is Flexible so a long status string (e.g. the real CFR
+              // phrase "Application received at DFO") can never overflow the
+              // card width at large text scales -- the badge shrinks and
+              // ellipsizes instead of pushing a yellow RenderFlex stripe.
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Text(
                       application.applicationType,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      application.currentStatus,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            theme.colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        application.currentStatus,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
                     ),
                   ),

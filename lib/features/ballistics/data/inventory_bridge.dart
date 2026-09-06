@@ -11,10 +11,24 @@ import 'models/rifle_profile.dart';
 class InventoryBridge {
   final FirebaseFirestore _firestore;
 
+  /// Test seam: overrides the signed-in user id resolution so the Firestore
+  /// write path can be unit-tested against `FakeFirebaseFirestore` without a
+  /// live Firebase Auth app.
+  @visibleForTesting
+  String? Function()? currentUserIdResolverForTesting;
+
   InventoryBridge({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
+  String? get _currentUserId {
+    final override = currentUserIdResolverForTesting;
+    if (override != null) return override();
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Returns a fallback list of common caliber ammunition records
   /// for offline mode when Firestore queries fail (e.g., DEVELOPER_ERROR).
@@ -163,6 +177,35 @@ class InventoryBridge {
     } catch (e) {
       debugPrint('InventoryBridge: Error fetching ammunition: $e');
       return _getFallbackLocalAmmunition();
+    }
+  }
+
+  /// Updates a firearm's core details (make / model / caliber / serial
+  /// number / name / scope click value) in place, preserving the document id
+  /// and owner. Returns true on success.
+  ///
+  /// The Firestore write uses [SetOptions.merge] so any extra fields already
+  /// on the firearm document (round counts, maintenance log, photos, licence
+  /// metadata) are preserved untouched.
+  Future<bool> updateRifleProfile(String firearmId, RifleProfile updated) async {
+    try {
+      if (_currentUserId == null) {
+        debugPrint('InventoryBridge: Cannot update rifle - not authenticated');
+        return false;
+      }
+      if (firearmId.isEmpty) {
+        debugPrint('InventoryBridge: Cannot update rifle - empty firearmId');
+        return false;
+      }
+      await _firestore
+          .collection('firearms')
+          .doc(firearmId)
+          .set(updated.toFirestore()..['id'] = firearmId, SetOptions(merge: true));
+      debugPrint('InventoryBridge: Updated rifle $firearmId');
+      return true;
+    } catch (e) {
+      debugPrint('InventoryBridge: Error updating rifle: $e');
+      return false;
     }
   }
 

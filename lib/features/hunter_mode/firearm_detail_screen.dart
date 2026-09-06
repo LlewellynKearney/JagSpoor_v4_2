@@ -11,6 +11,7 @@ import 'add_firearm_manual_form.dart';
 import 'firearm_maintenance_screen.dart';
 import 'maintenance.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/firearm_quick_edit_sheet.dart';
 
 // ---- Shared firearm calculations (used by the safe card and the detail view) ----
 
@@ -218,6 +219,39 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
     };
     setState(() => _firearm = merged);
     widget.onUpdated(_firearm);
+  }
+
+  /// Quick-edit the firearm's core details (make / model / caliber / serial)
+  /// directly from the detail screen, preserving every tracking field (round
+  /// count, maintenance log, photos, licence metadata) and persisting via the
+  /// same [onUpdated] callback the safe uses.
+  Future<void> _quickEditDetails() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await FirearmQuickEditSheet.show(
+      context,
+      theme: widget.theme,
+      firearm: _firearm,
+      title: 'Edit Firearm Details',
+    );
+    if (result == null || !mounted) return;
+
+    final merged = <String, String>{
+      ..._firearm,
+      'make': result.make,
+      'model': result.model,
+      'caliber': result.caliber,
+      'serial': result.serial,
+    };
+    setState(() => _firearm = merged);
+    widget.onUpdated(merged);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Firearm details updated'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
   }
 
   Future<void> _delete() async {
@@ -467,6 +501,23 @@ class _FirearmDetailScreenState extends State<FirearmDetailScreen> {
             _row(theme, 'Serial Number', f['serial']),
             _row(theme, 'Firearm Type', f['firearmType']),
             _row(theme, 'Manufacturer', f['manufacturer']),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('detailQuickEditButton'),
+                onPressed: _quickEditDetails,
+                icon: Icon(Icons.edit_rounded, size: 16, color: theme.accentColor),
+                label: Text(
+                  'Edit Make / Model / Caliber / Serial',
+                  style: TextStyle(
+                    color: theme.accentColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
           ]),
           _group(theme, 'SPECIFICATIONS', [
             _row(theme, 'Barrel Length',

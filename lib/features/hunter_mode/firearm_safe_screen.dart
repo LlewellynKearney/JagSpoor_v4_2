@@ -13,6 +13,7 @@ import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
 import 'package:jagspoor/features/shared/widgets/hunter_grid_container.dart';
 import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
+import 'package:jagspoor/features/hunter_mode/widgets/firearm_quick_edit_sheet.dart';
 
 class FirearmSafeScreen extends StatefulWidget {
   final ThemeController theme;
@@ -41,6 +42,70 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
           .collection('firearms')
           .doc(docId)
           .update(updatedFirearm);
+    }
+  }
+
+  /// Opens the quick-edit sheet for a firearm's core details (make / model /
+  /// caliber / serial) and persists the edited values directly to the
+  /// `firearms/{docId}` document.
+  Future<void> _quickEdit(Map<String, String> firearm) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await FirearmQuickEditSheet.show(
+      context,
+      theme: widget.theme,
+      firearm: firearm,
+    );
+    if (result == null || !mounted) return;
+
+    final docId = firearm['docId'];
+    // Firestore documents are maps of dynamic values; the safe's in-memory
+    // representation is `Map<String, String>`, but the write must match the
+    // document's existing field types (numerics stay numerics).
+    final updated = <String, dynamic>{
+      'make': result.make,
+      'model': result.model,
+      'caliber': result.caliber,
+      'serial': result.serial,
+      // Dual-stamp the Firestore camelCase aliases used by the ballistic
+      // calculator / optic-link dropdown so the edited details are readable
+      // under every schema the app consumes.
+      'name': [result.make, result.model]
+          .where((s) => s.isNotEmpty)
+          .join(' '),
+      'calibre': result.caliber,
+      'serialNumber': result.serial,
+      'manufacturer': result.make,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    try {
+      if (docId != null) {
+        await FirebaseFirestore.instance
+            .collection('firearms')
+            .doc(docId)
+            .update(updated);
+      }
+      if (mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: const Text('Firearm details updated'),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Failed to update firearm: $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+      }
     }
   }
 
@@ -385,6 +450,13 @@ class _FirearmSafeScreenState extends State<FirearmSafeScreen> {
         accentColor: expired ? Colors.redAccent : null,
       ),
       topRightActions: [
+        HunterFrostedCircleButton(
+          icon: Icons.edit_rounded,
+          iconColor: const Color(0xFFF5F1E8),
+          tooltip: 'Edit details (make/model/caliber/serial)',
+          onPressed: () => _quickEdit(firearm),
+        ),
+        const SizedBox(width: 6),
         HunterFrostedCircleButton(
           icon: Icons.add_circle_outline,
           iconColor: const Color(0xFFF5F1E8),

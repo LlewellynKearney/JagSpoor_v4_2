@@ -1,14 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/saps_tracking_details.dart';
+import 'saps_cfr_scraper_client.dart';
+import 'saps_status_classifier.dart';
 
 /// Cloud bridge service for SAPS License Tracker.
-/// Handles communication with Apify scraper API and status mapping.
+/// Handles communication with the CFR status webhook (Apify / Cloud
+/// Function) and hardened status mapping.
 class SapsTrackerService {
   final FirebaseFirestore? _injectedFirestore;
+  final SapsCfrScraperClient? _scraper;
 
-  SapsTrackerService({FirebaseFirestore? firestore})
-      : _injectedFirestore = firestore;
+  SapsTrackerService({FirebaseFirestore? firestore, SapsCfrScraperClient? scraper})
+      : _injectedFirestore = firestore,
+        _scraper = scraper;
 
   /// Lazily resolves the Firestore instance so constructing the service
   /// before `Firebase.initializeApp()` (cold-launch race / widget-test env)
@@ -18,23 +23,31 @@ class SapsTrackerService {
 
   /// Test seam: builds a service backed by an injected [FirebaseFirestore]
   /// (e.g. `FakeFirebaseFirestore`) so the refresh / tracking-details flow can
-  /// be unit-tested without a live Firebase app.
+  /// be unit-tested without a live Firebase app. An optional [SapsCfrScraperClient]
+  /// (with a mocked transport) can be supplied to exercise the real webhook
+  /// code path.
   @visibleForTesting
-  factory SapsTrackerService.forTesting(FirebaseFirestore firestore) {
-    return SapsTrackerService(firestore: firestore);
+  factory SapsTrackerService.forTesting(
+    FirebaseFirestore firestore, {
+    SapsCfrScraperClient? scraper,
+  }) {
+    return SapsTrackerService(firestore: firestore, scraper: scraper);
   }
 
-  /// Triggers a remote scraper check via Apify API webhook.
+  /// Triggers a remote CFR status check.
   ///
-  /// In production, this sends a POST request to the configured Apify Actor webhook URL.
-  /// Currently implemented as a mock for offline development.
+  /// When a [SapsCfrScraperClient] is configured (the deployed Apify Actor /
+  /// Cloud Function webhook), the raw status is fetched from the official
+  /// Central Firearms Register enquiry portal and mapped via the hardened
+  /// [SapsStatusClassifier]. When no webhook is configured (offline dev /
+  /// test env), a clearly-labelled deterministic mock status is used so the
+  /// flow stays exercisable end-to-end.
   ///
-  /// Returns the scraped status response or null on failure.
+  /// Returns the scraped status result or null on failure.
   Future<SapsScraperResult?> triggerRemoteScraperCheck(
     String applicationId,
   ) async {
     try {
-      // Fetch the application document to get details
       final docSnapshot = await _firestore
           .collection('license_applications')
           .doc(applicationId)
@@ -46,23 +59,39 @@ class SapsTrackerService {
       }
 
       final data = docSnapshot.data()!;
-      // Reserved for the production Apify webhook call (currently mocked below).
-      // Read here so the production migration is a one-line swap, not a schema dig.
-      // ignore: unused_local_variable
       final idNumber = data['idNumber'] as String? ?? '';
-      // ignore: unused_local_variable
       final referenceNumber = data['referenceNumber'] as String? ?? '';
 
-      // Mock response for offline development
-      // In production, replace with actual Apify API call:
-      // final response = await _callApifyWebhook(applicationId, idNumber, referenceNumber);
+      final scraper = _scraper;
+      if (scraper != null && scraper.isConfigured) {
+        final cfr = await scraper.fetchStatus(
+          referenceNumber: referenceNumber,
+          idNumber: idNumber,
+        );
+        if (cfr == null) {
+          debugPrint(
+            'SapsTrackerService: CFR webhook returned no status for $applicationId',
+          );
+          return null;
+        }
+        final stage = SapsStatusClassifier.classify(cfr.rawStatus);
+        return SapsScraperResult(
+          applicationId: applicationId,
+          status: cfr.rawStatus,
+          statusCode: stage,
+          lastChecked: DateTime.now(),
+          success: true,
+          error: cfr.statusMessage.isEmpty ? null : cfr.statusMessage,
+        );
+      }
 
+      // No webhook configured -> deterministic offline mock (dev/test only).
       final mockStatus = _generateMockStatus();
 
       return SapsScraperResult(
         applicationId: applicationId,
         status: mockStatus,
-        statusCode: convertRawStatusToStage(mockStatus),
+        statusCode: SapsStatusClassifier.classify(mockStatus),
         lastChecked: DateTime.now(),
         success: true,
       );
@@ -101,82 +130,12 @@ class SapsTrackerService {
   /// - -1: Not Found / Error
   ///
   /// Returns 0 (Submitted) as default for null or unrecognized inputs.
+  ///
+  /// Delegates to the hardened [SapsStatusClassifier] (longest-match-wins
+  /// over the full CFR enquiry vocabulary), so the legacy public API stays
+  /// stable while the classification logic is centralized + unit-tested.
   static int convertRawStatusToStage(String? rawStatus) {
-    if (rawStatus == null || rawStatus.trim().isEmpty) {
-      return 0; // Default to Submitted
-    }
-
-    final normalizedStatus = rawStatus.toLowerCase().trim();
-
-    // Stage -> patterns. Evaluated as a group so the LONGEST matching pattern
-    // across ALL stages wins (most-specific match), which prevents a short
-    // Stage-0 pattern like 'submitted' from shadowing a more-specific
-    // Stage-1 pattern like 'submitted to provincial' (the v4.5 audit bug).
-    const stagePatterns = <int, List<String>>{
-      0: [
-        'submitted',
-        'received',
-        'received at dfo',
-        'application received',
-        'district firearms',
-        'pending',
-        'pending review',
-      ],
-      1: [
-        'provincial',
-        'province',
-        'provincial office',
-        'at provincial',
-        'submitted to provincial',
-        'forwarded to provincial',
-      ],
-      2: [
-        'cfr',
-        'central firearms registry',
-        'registry',
-        'at cfr',
-        'forwarded to cfr',
-        'forwarded to registry',
-      ],
-      3: [
-        'printed',
-        'ready for collection',
-        'ready',
-        'approved',
-        'completed',
-        'licence printed',
-        'license printed',
-      ],
-      -1: [
-        'not found in system',
-        'not found',
-        'no record',
-        'unable to locate',
-        'invalid',
-        'error',
-      ],
-    };
-
-    int bestStage = 0; // default Submitted; overwritten if a pattern matches
-    int bestLen = -1;
-    stagePatterns.forEach((stage, patterns) {
-      for (final pattern in patterns) {
-        if (normalizedStatus.contains(pattern) && pattern.length > bestLen) {
-          bestStage = stage;
-          bestLen = pattern.length;
-        }
-      }
-    });
-
-    if (bestLen >= 0) {
-      return bestStage;
-    }
-
-    // Default to Submitted (0) for any unrecognized status
-    debugPrint(
-      'SapsTrackerService: Unrecognized status "$rawStatus", defaulting to Submitted',
-    );
-    return 0;
+    return SapsStatusClassifier.classify(rawStatus);
   }
 
   /// Maps raw status string to a display-friendly status label.
@@ -184,44 +143,7 @@ class SapsTrackerService {
   /// Returns 'Pending Review' for null, empty, or unrecognized inputs
   /// to ensure safe display without runtime crashes.
   static String convertRawStatusToDisplay(String? rawStatus) {
-    if (rawStatus == null || rawStatus.trim().isEmpty) {
-      return 'Pending Review';
-    }
-
-    final normalizedStatus = rawStatus.toLowerCase().trim();
-
-    // Already at a known stage
-    if (normalizedStatus.contains('submitted') ||
-        normalizedStatus.contains('received') ||
-        normalizedStatus.contains('dfos')) {
-      return 'Submitted to DFO';
-    }
-
-    if (normalizedStatus.contains('provincial')) {
-      return 'At Provincial Office';
-    }
-
-    if (normalizedStatus.contains('cfr') ||
-        normalizedStatus.contains('registry') ||
-        normalizedStatus.contains('central firearms')) {
-      return 'At Central Registry';
-    }
-
-    if (normalizedStatus.contains('printed') ||
-        normalizedStatus.contains('ready') ||
-        normalizedStatus.contains('approved') ||
-        normalizedStatus.contains('completed')) {
-      return 'Ready for Collection';
-    }
-
-    if (normalizedStatus.contains('not found') ||
-        normalizedStatus.contains('invalid') ||
-        normalizedStatus.contains('error')) {
-      return 'Status Unavailable';
-    }
-
-    // Default fallback for any unrecognized input
-    return 'Pending Review';
+    return SapsStatusClassifier.displayLabel(rawStatus);
   }
 
   /// Updates an application's status in Firestore after a scraper check.

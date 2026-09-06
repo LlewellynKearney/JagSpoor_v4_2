@@ -1,6 +1,136 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SAPS Tracker UI overflow fix + firearm detail editing + CFR status classifier hardening (added 2026-09-06)
+
+Three coordinated changes delivered as one unit.
+
+### 1. SAPS Tracker UI layout fix (bottom/horizontal overflow)
+- **Root cause**: the application card header `Row`
+  (`lib/features/hunter_mode/presentation/saps_tracker_screen.dart`) had an
+  unconstrained status badge `Container` next to the application-type `Text`.
+  With a long real CFR phrase (e.g. "Application received at DFO") + a long
+  application type at narrow widths / 1.3x text scale, the Row overflowed
+  horizontally by 164 px (RenderFlex yellow stripe).
+- **Fix**: the type `Text` is now `Expanded` (maxLines 2 + ellipsis) and the
+  status badge is `Flexible(fit: FlexFit.loose)` (maxLines 2 + ellipsis +
+  right-aligned), so a long status can never push the card past its width.
+- **Body restructure**: the old `Column[Flexible(SingleChildScrollView),
+  Expanded(StreamBuilder)]` layout (which clipped content / wasted vertical
+  space on small screens) was replaced with a single `ListView.builder`
+  (itemCount 2) whose item 0 is the register accordion + "TRACKED
+  APPLICATIONS" header and item 1 is the auth-gated tracked-applications
+  section. The whole page now scrolls as ONE unit with a trailing
+  `SafeBottomInset.of(context)` so the last card clears the Android
+  3-button / iOS gesture bar. The register accordion always renders (even
+  signed-out) so the existing widget tests that tap "Register New
+  Application" keep passing; only the tracked-list section is auth-gated.
+
+### 2. Firearm detail editing from the safe / detail screen
+- NEW `lib/features/hunter_mode/widgets/firearm_quick_edit_sheet.dart`
+  (`FirearmQuickEditSheet` + `FirearmQuickEditResult`): a modal bottom sheet
+  that edits Make / Model / Caliber / Serial directly (pre-filled from the
+  safe's `Map<String, String>` firearm representation, tolerating the
+  `calibre` alias for pre-fill). Returns the edited values via
+  `Navigator.pop`; `FirearmQuickEditSheet.show(...)` is the launcher.
+- `firearm_safe_screen.dart`: each firearm card's top-right frosted action
+  group gained an EDIT button (`Icons.edit_rounded`, tooltip "Edit details
+  (make/model/caliber/serial)") wired to `_quickEdit`. The handler persists
+  the edited values to `firearms/{docId}` with a `FieldValue.serverTimestamp`
+  `updatedAt` and dual-stamps the Firestore camelCase aliases (`name`,
+  `calibre`, `serialNumber`, `manufacturer`) so the ballistic calculator /
+  optic-link dropdown read the edited details under every schema.
+- `firearm_detail_screen.dart`: the FIREARM group gained an inline
+  "Edit Make / Model / Caliber / Serial" `OutlinedButton`
+  (`ValueKey('detailQuickEditButton')`) wired to `_quickEditDetails`, which
+  merges the edited values into the in-memory map + fires the existing
+  `onUpdated` callback (preserving tracking fields like round count /
+  maintenance log).
+- `inventory_bridge.dart`: NEW `updateRifleProfile(firearmId, RifleProfile)`
+  — a merge-write (`SetOptions.merge`) that updates make/model/caliber/
+  serial in place while preserving every other field on the firearm doc.
+  Added a `currentUserIdResolverForTesting` seam so the write path is
+  unit-testable against `FakeFirebaseFirestore` without a live Auth app.
+
+### 3. SAPS data accuracy & CFR status classifier hardening
+- NEW `lib/features/hunter_mode/services/saps_status_classifier.dart`
+  (`SapsStatusClassifier`): the single source of truth for mapping the raw
+  Central Firearms Register (CFR) enquiry status phrases to the app's 4
+  stages (DFO / Provincial / CFR / Printed) + Not Found. **Longest-match-wins**
+  over a stage-priority phrase table covering the real portal vocabulary
+  ("Application received at DFO", "The application was send to the Provincial
+  DFO by the DFO and being processed", "For consideration by the Commissioner",
+  "Received at Licensing Section", "Approved", "Ready for Collection",
+  "Not found in system", "Facility not operational", ...). `normalize`
+  collapses whitespace/NBSP + trims punctuation; `displayLabel` maps each
+  stage to a friendly badge label. Unknown / null defaults to DFO (safe).
+  `SapsTrackerService.convertRawStatusToStage` / `convertRawStatusToDisplay`
+  now delegate to the classifier (legacy API preserved; the v4.5
+  "submitted to provincial" shadowing bug class is structurally prevented).
+- NEW `lib/features/hunter_mode/services/saps_cfr_scraper_client.dart`
+  (`SapsCfrScraperClient` + `SapsCfrStatus`): a production HTTP client that
+  POSTs `{referenceNumber, idNumber}` to the deployed CFR webhook (Apify
+  Actor / Cloud Function) and parses the raw status + optional
+  message/batch/timestamps. Injectable `http.Client` for tests; never
+  throws (null on transport/HTTP/parse failure). `isConfigured` gates it.
+- `saps_tracker_service.dart`: `triggerRemoteScraperCheck` now uses the
+  configured `SapsCfrScraperClient` (raw status -> `SapsStatusClassifier`
+  stage) and only falls back to the deterministic offline mock when no
+  webhook is configured. `SapsTrackerService.forTesting(firestore, scraper:)`
+  accepts a scraper for the webhook code path.
+- **Accuracy note**: the exact CFR portal status strings are not publicly
+  documented (the saps.gov.za FLASH enquiry is a form POST behind the portal);
+  the vocabulary above is the community-documented + app-known phrase set,
+  and the longest-match-wins classifier is deliberately robust to phrase
+  drift. The deployed webhook (Apify Actor / Cloud Function) must be
+  configured via the scraper's `webhookUrl` for live scraping; until then the
+  offline mock keeps the flow exercisable.
+
+### Tests (30 new, full suite 1606 pass)
+- `test/saps_tracker_layout_test.dart` (4 widget tests, was the temporary
+  repro): card with long labels expanded at narrow width; the root-cause
+  header regression guard (long status + long type, 320px + 1.3x, no
+  overflow); register accordion expanded at 1.6x text scale; register
+  expanded on a 320x480 screen.
+- `test/saps_status_classifier_test.dart` (13): normalize (whitespace/NBSP/
+  punctuation/null); stage mapping for every real CFR phrase; longest-match-
+  wins; null/blank/unrecognized default; display labels; legacy service
+  delegation.
+- `test/saps_cfr_scraper_client_test.dart` (8): isConfigured; POST body +
+  parse; non-200 -> null; unparseable -> null; not-configured -> null; service
+  webhook path (CFR stage, not mock); offline-mock fallback; failing webhook
+  -> null (never throws).
+- `test/firearm_quick_edit_sheet_test.dart` (4): pre-filled fields; edit +
+  save returns values; dismiss -> null; empty-Make validator blocks.
+- `test/firearm_detail_editing_test.dart` (5): `updateRifleProfile` merge
+  preserves tracking fields; unauth rejection; empty-id rejection;
+  `RifleProfile` serial/calibre alias resolution; `copyWith` edit fields.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (277 pre-existing infos,
+  unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1606
+  tests passed**, zero failures (was 1576; +30 new).
+- Env note: Flutter 3.29.1 (CI pin) at `/home/openhands/flutter`; the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink is required for the sqflite-FFI integration suites; the pubspec
+  "Unexpected child config" warning is the documented pre-existing spurious
+  line.
+- Files: `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `lib/features/hunter_mode/widgets/firearm_quick_edit_sheet.dart` (NEW),
+  `lib/features/hunter_mode/firearm_safe_screen.dart`,
+  `lib/features/hunter_mode/firearm_detail_screen.dart`,
+  `lib/features/ballistics/data/inventory_bridge.dart`,
+  `lib/features/hunter_mode/services/saps_status_classifier.dart` (NEW),
+  `lib/features/hunter_mode/services/saps_cfr_scraper_client.dart` (NEW),
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  5 new test files, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (pure
+  client-side UI + classifier + webhook client; the `firearms` owner-write
+  rule already covers the quick-edit update, and `license_applications`
+  create is owner-scoped `hunterId`).
+
+
 ## Phase -- Welcome email + device-fingerprint trial-abuse check removed from Cloud Functions (added 2026-08-26)
 
 - **Change** (`functions/src/user_trial_onboarding.ts`, rewritten): the
