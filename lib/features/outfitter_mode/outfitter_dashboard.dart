@@ -342,7 +342,8 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             icon: Icons.workspace_premium_rounded,
                             title: 'Subscription',
                             description:
-                                'Manage your plan — 30-day free trial, then R199.99/month.',
+                                'Manage your plan — 30-day free trial, then '
+                                'R${outfitterMonthlyPriceZAR.toStringAsFixed(2)}/month.',
                             theme: widget.theme,
                             onTap: () {
                               Navigator.push(

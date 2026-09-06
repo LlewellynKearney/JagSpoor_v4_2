@@ -369,7 +369,8 @@ class _HunterDashboardState extends State<HunterDashboard> {
         icon: Icons.workspace_premium_rounded,
         title: '💎 Subscription',
         description:
-            'Manage your plan — 30-day free trial, then R19.99/month.',
+            'Manage your plan — 30-day free trial, then '
+            'R${hunterMonthlyPriceZAR.toStringAsFixed(2)}/month.',
         onTap:
             (context, theme) => Navigator.push(
               context,

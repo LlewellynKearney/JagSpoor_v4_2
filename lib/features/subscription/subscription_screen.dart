@@ -49,8 +49,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       widget.tier ??
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
 
+  /// The recurring monthly amount for the current tier.
+  ///
+  /// Prefers the LIVE Google Play Billing catalog price (`rawPrice` from
+  /// [PlayBillingService.loadProducts]) so the checkout summary, promo
+  /// calculations, and the tier-card fallback all stay consistent with the
+  /// Play Console catalog. Falls back to the documented static prices only
+  /// when the catalog has not loaded (billing unsupported / products absent).
   double get _baseAmount =>
-      _tier == SubscriptionTier.outfitter ? 199.99 : 19.99;
+      _products[_tier]?.rawPrice ??
+      (_tier == SubscriptionTier.outfitter
+          ? outfitterMonthlyPriceZAR
+          : hunterMonthlyPriceZAR);
   double get _checkoutAmount =>
       _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
 

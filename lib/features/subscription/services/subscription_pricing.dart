@@ -41,6 +41,19 @@ enum SubscriptionTier {
 /// lasts (30 days).
 const Duration trialDuration = Duration(days: 30);
 
+/// Static fallback monthly prices (ZAR) for the two billing tiers.
+///
+/// These are the DOCUMENTED launch prices mirrored from the Google Play
+/// Console subscription products (`jagspoor_hunter_monthly` /
+/// `jagspoor_outfitter_monthly`). They are used ONLY as a display/list
+/// fallback when the live Play Billing catalog has not loaded (billing
+/// unsupported / product absent); the authoritative, store-driven price is
+/// [PlayBillingService.loadProducts] → `PlayProduct.rawPrice`. Keeping the
+/// fallback amounts in one place prevents the checkout + dashboard copy from
+/// drifting apart from each other and from the Play Console catalog.
+const double hunterMonthlyPriceZAR = 19.99;
+const double outfitterMonthlyPriceZAR = 199.99;
+
 /// The canonical `users/{uid}.subscriptionStatus` string representing an
 /// active free trial. This is the value the automatic trial assignment writes
 /// (and the value the backend `initializeNewUserTrial` Auth trigger writes),
