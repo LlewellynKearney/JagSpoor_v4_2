@@ -9,7 +9,7 @@ import java.io.FileInputStream
 import java.util.Properties
 
 android {
-    namespace = "com.example.jagspoor"
+    namespace = "za.co.jagspoor.app"
     compileSdk = 36
     // Pin the NDK to the version the resolved Flutter plugins depend on
     // (camera_android, cloud_firestore, firebase_*, mobile_scanner, ... all
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.jagspoor"
+        applicationId = "za.co.jagspoor.app"
         // The resolved Firebase plugins (firebase_analytics 12.x,
         // firebase_app_check, firebase_auth, ...) declare minSdk 23 in their
         // library manifests, so flutter.minSdkVersion (21 on the 3.29.1 pin)

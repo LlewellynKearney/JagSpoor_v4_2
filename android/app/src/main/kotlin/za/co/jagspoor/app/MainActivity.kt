@@ -1,4 +1,4 @@
-package com.example.jagspoor
+package za.co.jagspoor.app
 
 import io.flutter.embedding.android.FlutterActivity
 

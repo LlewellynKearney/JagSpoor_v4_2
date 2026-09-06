@@ -1,6 +1,81 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Android application id migrated to za.co.jagspoor.app (added 2026-09-06)
+
+The Android package id was migrated from `com.example.jagspoor` (the Flutter
+template default) to the production **`za.co.jagspoor.app`**. All Android
+native + Firebase config + Dart package-id references were updated in sync
+so the app builds, signs, and talks to Firebase under the new id.
+
+### What changed (9 files)
+- `android/app/build.gradle.kts`: `namespace` AND `defaultConfig.applicationId`
+  both `com.example.jagspoor` -> `za.co.jagspoor.app`. (With AGP 8.x these two
+  are now independent: `namespace` is the build-time Kotlin/R-package,
+  `applicationId` is the publish id; both must change together.)
+- `android/app/src/main/AndroidManifest.xml`: removed the `package=
+  "com.example.jagspoor"` attribute from the `<manifest>` root. AGP 8.x
+  ERRORS on a `package` attribute in the manifest ("package does not belong
+  to the namespace") -- the namespace now comes solely from `build.gradle.kts`.
+  (`android/app/src/debug` + `src/profile` manifests already had no `package`
+  attribute.)
+- `android/app/src/main/kotlin/za/co/jagspoor/app/MainActivity.kt`: MOVED
+  from `android/app/src/main/kotlin/com/example/jagspoor/` + package changed
+  to `package za.co.jagspoor.app`. The Kotlin source package MUST equal the
+  `namespace` (AGP uses it to locate the R class + the launch Activity via
+  `<activity android:name=".MainActivity">`).
+- `android/app/google-services.json`: BOTH Android `package_name` fields -->
+  `za.co.jagspoor.app` -- the `client_info.android_client_info.package_name`
+  (the Firebase app registration) AND the oauth client type-1
+  `android_info.package_name` (Google Sign-In). The iOS `ios_info.bundle_id`
+  stays `com.example.jagspoor` (out of scope; iOS keeps the old bundle).
+  Until the google-services.json package name matches the applicationId, the
+  Google-services plugin MISMATCHES the app and Firebase init fails.
+- Dart consumers that hardcode the Play Store / Firebase Android id:
+  `lib/features/auth/services/password_reset_action_code_settings.dart`
+  (`androidPackageName`, drives the `ActionCodeSettings` deep link),
+  `lib/features/subscription/services/play_billing_service.dart`
+  (Play Store app page URL + subscription-center `&package=` param),
+  `.../scription_pricing.dart` (doc comment).
+- Tests updated to match: `test/password_reset_action_code_settings_test.dart` +
+  `test/adaptive_image_pipeline_test.dart` (path examples).
+
+### Deliberately NOT changed
+- iOS/macOS `PRODUCT_BUNDLE_IDENTIFIER = com.example.jagspoorV42`
+  (`ios/Runner.xcodeproj/project.pbxproj`, `macos`...) -- iOS bundle id is a
+  separate concern; if the iOS bundle ever needs renaming, a matching pass is
+  required (bundle id is NOT derived from the Android applicationId).
+- `lib/firebase_options.dart`: `FirebaseOptions.android` has no package-name
+  field (matches by app id on init); the two `iosBundleId` fields there stay
+  `com.example.jagspoor` (iOS-side; note they ALREADY differ from the
+  pbxproj `...V42` -- a pre-existing iOS inconsistency, documented in
+  AGENTS.md Phase 33, not touched here).
+
+### Verification
+- `flutter pub get`: clean. `flutter analyze`: 0 errors, 0 warnings (277
+  pre-existing infos, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1606
+  tests passed**, zero failures (the 3 touched suites -
+  password-reset/adaptive-image/subscription - re-run green).
+- Manifest XML validated (python xml.dom.minidom); `google-services.json`
+  re-serialized valid JSON.
+- Android Gradle build NOT runnable in this sandbox (no Android SDK / no
+  `android/local.properties` sdk.dir); a CI `flutter build apk` run in a
+  credentialed env is the definitive build check.
+- Env note: Flutter 3.29.1 (CI pin) re-installed at `/home/openhands/flutter`
+  (SDK was absent this session); the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink + `LD_LIBRARY_PATH`
+  for the sqflite-FFI suites.
+- Files: listed above (9 changed/renamed), `AGENTS.md`.
+- Deploy reminder: the Firebase console Android app is registered under
+  `com.example.jagspoor`; the google-services.json was edited locally, but a
+  clean re-generate from the console under the NEW url (`Firebase Console ->
+  Project jagspoor -> App settings -> Android app za.co.jagspoor.app`) + the
+  new SHA-1/256 are REQUIRED for production Google Sign-In / Firebase. Also
+  re-verify the password-reset authorized-domain deep link + Play Console app
+  listing (package id) before release.
+
+
 ## Phase -- SAPS Tracker UI overflow fix + firearm detail editing + CFR status classifier hardening (added 2026-09-06)
 
 Three coordinated changes delivered as one unit.

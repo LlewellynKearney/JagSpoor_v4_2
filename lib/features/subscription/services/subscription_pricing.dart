@@ -23,7 +23,7 @@ enum SubscriptionTier {
   /// The Google Play Billing product id backing this tier.
   ///
   /// These SkuDetails ids must be created in the Google Play Console under
-  /// the same application id (`com.example.jagspoor`), configured as
+  /// the same application id (`za.co.jagspoor.app`), configured as
   /// *Subscriptions* with the sale price below (R 19.99 / R 199.99 per month).
   String get playProductId => switch (this) {
         SubscriptionTier.hunter => 'jagspoor_hunter_monthly',

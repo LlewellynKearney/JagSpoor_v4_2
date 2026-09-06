@@ -101,7 +101,7 @@ class PlayBillingService {
   static const String playStoreSubscriptionsBase =
       'https://play.google.com/store/account/subscriptions?sku=';
   static const String playStoreAppPageUrl =
-      'https://play.google.com/store/apps/details?id=com.example.jagspoor';
+      'https://play.google.com/store/apps/details?id=za.co.jagspoor.app';
 
   @visibleForTesting
   static void resetTestSeams() {
@@ -204,5 +204,5 @@ class PlayBillingService {
   /// Deep link URL for the user to manage / cancel their subscription inside
   /// Google Play (policy-compliant: Play handles recurring billing).
   String subscriptionCenterUrlFor(SubscriptionTier tier) =>
-      '$playStoreSubscriptionsBase${tier.playProductId}&package=com.example.jagspoor';
+      '$playStoreSubscriptionsBase${tier.playProductId}&package=za.co.jagspoor.app';
 }

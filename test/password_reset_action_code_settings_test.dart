@@ -17,7 +17,7 @@ void main() {
     });
 
     test('pins the active Android package name', () {
-      expect(settings.androidPackageName, 'com.example.jagspoor');
+      expect(settings.androidPackageName, 'za.co.jagspoor.app');
     });
 
     test('requests app install when not present (androidInstallApp: true)', () {
@@ -39,7 +39,7 @@ void main() {
       );
       expect(
         PasswordResetActionCodeSettings.androidPackageName,
-        'com.example.jagspoor',
+        'za.co.jagspoor.app',
       );
       expect(
         PasswordResetActionCodeSettings.iOSBundleId,
@@ -63,7 +63,7 @@ void main() {
       expect(map['iOS'], {'bundleId': 'com.example.jagspoorV42'});
       expect(map['android'], isA<Map>());
       final android = map['android'] as Map;
-      expect(android['packageName'], 'com.example.jagspoor');
+      expect(android['packageName'], 'za.co.jagspoor.app');
       expect(android['installApp'], isTrue);
       expect(android['minimumVersion'], '1');
     });

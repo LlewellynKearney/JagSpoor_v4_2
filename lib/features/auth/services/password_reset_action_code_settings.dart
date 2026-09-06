@@ -32,7 +32,7 @@ class PasswordResetActionCodeSettings {
       'https://jagspoor.page.link/reset-password';
 
   /// Active Android application id (from `android/app/build.gradle.kts`).
-  static const String androidPackageName = 'com.example.jagspoor';
+  static const String androidPackageName = 'za.co.jagspoor.app';
 
   /// Active iOS bundle id (from `ios/Runner.xcodeproj/project.pbxproj`).
   static const String iOSBundleId = 'com.example.jagspoorV42';

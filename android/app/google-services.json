@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:475471855344:android:b74bed5488b2440b620c35",
         "android_client_info": {
-          "package_name": "com.example.jagspoor"
+          "package_name": "za.co.jagspoor.app"
         }
       },
       "oauth_client": [
@@ -17,7 +17,7 @@
           "client_id": "475471855344-89nc8lvtb5su643rnb6a2ft7p30g741h.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.example.jagspoor",
+            "package_name": "za.co.jagspoor.app",
             "certificate_hash": "9d2d67a688eb3bb8744cb4e4f48215b5fe38f1ab"
           }
         },

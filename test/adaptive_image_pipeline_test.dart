@@ -162,7 +162,7 @@ void main() {
   // real image decode is flaky in a headless test sandbox.
   group('isLocalImagePath (instruction 1 — local path detection)', () {
     test('/data/ prefix is local', () {
-      expect(isLocalImagePath('/data/user/0/com.example.jagspoor/files/x.png'),
+      expect(isLocalImagePath('/data/user/0/za.co.jagspoor.app/files/x.png'),
           isTrue);
     });
     test('/storage/ prefix is local', () {
@@ -217,7 +217,7 @@ void main() {
       expect(result.replaceAll(r'\', '/'), '/tmp/a/b/c.jpg');
     });
     test('plain filesystem path is returned unchanged', () {
-      const plain = '/data/user/0/com.example.jagspoor/files/photo.png';
+      const plain = '/data/user/0/za.co.jagspoor.app/files/photo.png';
       expect(normalizeLocalImagePath(plain), plain);
     });
     test('non-file:// path (http URL) is returned unchanged', () {
