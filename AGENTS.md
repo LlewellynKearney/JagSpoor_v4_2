@@ -1,6 +1,89 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Play Billing Library 7.1.1 -> 8.0.0 (Play Console rejection) (added 2026-09-06)
+
+Google Play Console rejected version code 1: "Your app currently uses Play
+Billing Library version 7.1.1 and must update to at least version 8.0.0 to
+make use of the latest monetization features on Google Play." Fix: bumped the
+`in_app_purchase` Flutter aggregator so the underlying Android Billing client
+lands on 8.0.0. Forcing 8.0.0 via a Gradle resolution strategy was NOT viable:
+`in_app_purchase_android` 0.4.0+5 (the 7.1.1 carrier) calls the removed
+`BillingClient.queryPurchaseHistoryAsync` API, so it does not compile against
+the 8.x library.
+
+### What changed (4 files)
+- `pubspec.yaml`: `in_app_purchase: ^3.2.3` -> `^3.3.0` (with a comment
+  documenting the Billing 8 requirement + the new SDK floor).
+- `pubspec.lock` (re-resolved under the new floor):
+  - `in_app_purchase` 3.2.3 -> 3.3.0.
+  - `in_app_purchase_android` 0.4.0+5 -> 0.5.3 (its `android/build.gradle.kts`
+    declares `com.android.billingclient:billing:8.0.0` -- verified in the pub
+    cache).
+  - `in_app_purchase_platform_interface` -> 1.4.0, `in_app_purchase_storekit`
+    -> 0.4.4.
+  - `sdks:` block: `dart >=3.7.0 / flutter >=3.29.0` ->
+    `dart >=3.12.0 / flutter >=3.44.0`.
+  - `build_runner` + its transitive graph (a now-orphaned transitive group
+    that was never a declared dep) was dropped from the lock by the
+    re-resolution; `build_runner` is absent from `pubspec.yaml`, so nothing
+    relied on it.
+- `.github/workflows/build-and-deploy.yml`: all three `subosito/flutter-action`
+  `flutter-version` pins `'3.29.1'` -> `'3.44.9'` (the earliest stable that
+  satisfies the plugin's `sdk: ^3.12.0` / `flutter: >=3.44.0` floor; verified
+  resolution + tests under exactly 3.44.9 / Dart 3.12.2).
+- `AGENTS.md` (this entry).
+
+### Dart API compatibility
+- `in_app_purchase` 3.3.0 vs 3.2.3 is formatting-only: NO changes needed to
+  `lib/features/subscription/services/play_billing_service.dart`,
+  `subscription_screen.dart`, or `subscription_status_service.dart`. The
+  aggregator's `InAppPurchase`/`ProductDetails`/`PurchaseDetails` surface is
+  unchanged. `play_billing_service.dart` was left as-is (verified via
+  `flutter analyze`).
+
+### Verification
+- `flutter pub get` clean under Flutter 3.47.2 (local) AND the CI-pinned
+  3.44.9 (Dart 3.12.2) at `/home/openhands/flutter-3.44.9`; lock resolves
+  `in_app_purchase_android` 0.5.3 -> `billing:8.0.0`.
+- `flutter analyze` under 3.44.9: **0 errors, 0 warnings** (312 pre-existing
+  infos, all style/`avoid_print`/`deprecated_member_use` -- no billing-file
+  hits).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink) under 3.44.9: **1595 passing, 11 failing**.
+  The 11 failures are PRE-EXISTING and unrelated to billing: identical failures
+  appear with the billing change stashed (baseline pubspec ^3.2.3) under the
+  same SDK. All are AuthScreen widget tests
+  (`google_sign_in_flow_test.dart` 3, `demo_reviewer_login_test.dart` 4,
+  `login_autofill_test.dart` 4) tripped by a NEW Material framework assertion
+  in Flutter >=3.44 -- `ListTile background color or ink splashes may be
+  invisible` -- fired by the `CheckboxListTile(dense: true)` inside a
+  bordered `Container` in `auth_screen.dart`. These need a follow-up UI fix
+  (wrap the tile in its own `Material` or drop the DecoratedBox background),
+  NOT a billing-related change. The billing suites
+  (`subscription_screen_test.dart` + `subscription_status_service_test.dart`)
+  pass 36/36.
+- Android APK build still requires an Android SDK (not present in this
+  sandbox); the Gradle-visible Billing version was verified at the plugin
+  source level (0.5.3 -> `billing:8.0.0`).
+
+### Env notes (this sandbox)
+- Flutter 3.47.2 at `/opt/flutter` + CI-pinned 3.44.9 at
+  `/home/openhands/flutter-3.44.9` (Dart 3.13.2 / 3.12.2); a python-based
+  `unzip` shim at `~/bin/unzip` (the engine-artifact bootstrap uses
+  `print`-only output; chmod +x it and keep it on PATH for artifact cache
+  downloads).
+- Reverted the auto-generated `analysis_options.yaml` additions ("exclude
+  build and platform directories") after each `pub get` -- the repo tracks it
+  without that block.
+- Deploy reminder: the Play Console rejected FLUTTER, so the re-built APK/AAB
+  must be re-uploaded. The AAB must be built from this branch with the new
+  CI pin (3.44.9) or an equivalent local SDK >=3.44; a `flutter build appbundle
+  --release` in a credentialed env is the definitive verification that
+  Play extracts Billing 8.0.0 from the manifest.
+- Files: `pubspec.yaml`, `pubspec.lock`, `.github/workflows/build-and-deploy.yml`,
+  `AGENTS.md`. No Dart `lib/` changes were required.
+
 ## Phase -- Android application id migrated to za.co.jagspoor.app (added 2026-09-06)
 
 The Android package id was migrated from `com.example.jagspoor` (the Flutter

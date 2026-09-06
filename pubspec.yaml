@@ -107,7 +107,11 @@ dependencies:
   firebase_app_check: ^0.4.6
 
   # Google Play Billing subscriptions (Hunter / Outfitter monthly tiers)
-  in_app_purchase: ^3.2.3
+  # ^3.3.0 resolves in_app_purchase_android 0.5.x, which bundles Google Play
+  # Billing Library 8.0.0 (the Play Console requirement as of 2026-09-06).
+  # NOTE: 3.3.0 / 0.5.x require Dart >=3.12 / Flutter >=3.44 — the CI pin must
+  # move off 3.29.1 (Dart 3.7) to build this.
+  in_app_purchase: ^3.3.0
 
 dev_dependencies:
   flutter_test:
