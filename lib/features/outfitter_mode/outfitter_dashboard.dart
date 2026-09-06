@@ -4,6 +4,7 @@ import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
+import '../../core/widgets/version_info.dart';
 import '../shared/widgets/hunter_media_card.dart';
 import '../auth/auth_screen.dart';
 import '../auth/change_password_dialog.dart';
@@ -26,6 +27,7 @@ import '../auth/services/user_role_provider.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
+import '../shared/widgets/facebook_link_tile.dart';
 import 'widgets/outfitter_scaffold.dart';
 import 'data/services/outfitter_account_deletion_service.dart';
 
@@ -780,6 +782,16 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                const FacebookLinkTile(
+                  title: 'Follow Us on Facebook',
+                  subtitle:
+                      'Connect with the JagSpoor community for tips, hunting '
+                      'news and updates.',
+                ),
+                const SizedBox(height: 16),
+                const VersionInfoCaption(),
                 const CopyrightFooter(),
               ],
             ),

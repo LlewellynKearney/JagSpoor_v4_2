@@ -6,11 +6,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
+import '../../core/widgets/version_info.dart';
 import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
 import '../auth/screens/privacy_policy_screen.dart';
 import '../authentication/services/auth_gate_service.dart';
+import '../shared/widgets/facebook_link_tile.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
 import 'widgets/hunter_scaffold.dart';
@@ -1044,6 +1046,13 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           ),
                           onTap: _showDeleteAccountDialog,
                         ),
+                        const Divider(height: 1),
+                        const FacebookLinkTile(
+                          title: 'Follow Us on Facebook',
+                          subtitle:
+                              'Connect with the JagSpoor community for tips, '
+                              'hunting news and updates.',
+                        ),
                       ],
                     ),
                   ),
@@ -1115,6 +1124,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ],
                     ),
                   ),
+                  const VersionInfoCaption(),
                   const CopyrightFooter(),
                 ],
               ),

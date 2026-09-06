@@ -2,7 +2,7 @@ name: jagspoor
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.103.0+3
 
 environment:
   sdk: ^3.6.0
@@ -112,6 +112,7 @@ dependencies:
   # NOTE: 3.3.0 / 0.5.x require Dart >=3.12 / Flutter >=3.44 — the CI pin must
   # move off 3.29.1 (Dart 3.7) to build this.
   in_app_purchase: ^3.3.0
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:
