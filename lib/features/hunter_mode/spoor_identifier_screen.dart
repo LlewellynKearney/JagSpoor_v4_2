@@ -30,6 +30,10 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
   double? _latitude;
   double? _longitude;
   String? _confidenceWarning;
+
+  /// Validation note from the morphology cross-check (e.g. "top match failed
+  /// morphological validation — showing X instead").
+  String? _validationNote;
   bool _isAIInitialized = false;
 
   /// Pre-selected morphological track category (null = unfiltered).
@@ -130,7 +134,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       });
 
       final nativeResult = await SpoorIdentifierService.instance
-          .classifySpoorTrack(
+          .classifySpoorTrackValidated(
         capturedImage,
         category: _selectedCategory,
         scaleReferenceMm: _scaleReferenceMm,
@@ -147,6 +151,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
               .toList() ??
           const <SpoorPrediction>[];
       final metrics = nativeResult['metrics'];
+      final validation = nativeResult['validation'];
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -155,10 +160,14 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       setState(() {
         _isScanning = false;
         _showResults = true;
+        final validationNote = validation is Map
+            ? (validation['note'] as String?)
+            : null;
         _matchedAnimal =
             '$trackingResult (${(confidence * 100).toStringAsFixed(1)}%)';
         _topPredictions = top;
         _lastMetrics = metrics;
+        _validationNote = validationNote;
         _scanTimestamp = DateTime.now().toIso8601String();
         _latitude = position.latitude;
         _longitude = position.longitude;
@@ -214,6 +223,7 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
       _latitude = null;
       _longitude = null;
       _confidenceWarning = null;
+      _validationNote = null;
       _topPredictions = const [];
     });
   }
@@ -667,6 +677,39 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
                     color: Colors.orange,
                     fontWeight: FontWeight.bold,
                   ),
+                ),
+              ),
+            ],
+            if (_validationNote != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: widget.theme.accentColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: widget.theme.accentColor.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.fact_check_outlined,
+                      size: 18,
+                      color: widget.theme.accentColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _validationNote!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: widget.theme.textColor,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

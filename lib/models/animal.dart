@@ -60,6 +60,16 @@ class Animal {
   final int? longevityYears;
   final int? shoulderHeightMm;
 
+  /// Morphological spoor attributes used by the Spoor Identifier validation
+  /// layer to cross-check camera classifications. All optional — legacy /
+  /// unpopulated documents resolve to null (validators fall back to the
+  /// built-in attribute table).
+  final int? toeCount;
+  final double? trackLengthMinMm;
+  final double? trackLengthMaxMm;
+  final double? trackWidthMinMm;
+  final double? trackWidthMaxMm;
+
   const Animal({
     required this.id,
     required this.name,
@@ -94,6 +104,11 @@ class Animal {
     this.socialStructure,
     this.longevityYears,
     this.shoulderHeightMm,
+    this.toeCount,
+    this.trackLengthMinMm,
+    this.trackLengthMaxMm,
+    this.trackWidthMinMm,
+    this.trackWidthMaxMm,
   });
 
   factory Animal.fromJson(Map<String, dynamic> json, {String? id}) {
@@ -146,6 +161,29 @@ class Animal {
       socialStructure: json['socialStructure'] as String?,
       longevityYears: _intOrNull(json['longevityYears']),
       shoulderHeightMm: _intOrNull(json['shoulderHeightMm']),
+      toeCount: _intOrNull(
+        json['toeCount'] ?? json['toe_count'] ?? json['hoofCount'],
+      ),
+      trackLengthMinMm: _doubleOrNull(
+        json['trackLengthMinMm'] ??
+            json['track_length_min_mm'] ??
+            json['printLengthMinMm'],
+      ),
+      trackLengthMaxMm: _doubleOrNull(
+        json['trackLengthMaxMm'] ??
+            json['track_length_max_mm'] ??
+            json['printLengthMaxMm'],
+      ),
+      trackWidthMinMm: _doubleOrNull(
+        json['trackWidthMinMm'] ??
+            json['track_width_min_mm'] ??
+            json['printWidthMinMm'],
+      ),
+      trackWidthMaxMm: _doubleOrNull(
+        json['trackWidthMaxMm'] ??
+            json['track_width_max_mm'] ??
+            json['printWidthMaxMm'],
+      ),
     );
   }
 
@@ -221,6 +259,19 @@ class Animal {
     if (socialStructure != null) 'socialStructure': socialStructure,
     if (longevityYears != null) 'longevityYears': longevityYears,
     if (shoulderHeightMm != null) 'shoulderHeightMm': shoulderHeightMm,
+    if (toeCount != null) 'toeCount': toeCount,
+    // Dual-stamp camelCase + snake_case so legacy / third-party readers
+    // resolve the same morphometry regardless of spelling (mirrors the
+    // venison-permit dual-stamp pattern).
+    if (toeCount != null) 'toe_count': toeCount,
+    if (trackLengthMinMm != null) 'trackLengthMinMm': trackLengthMinMm,
+    if (trackLengthMinMm != null) 'track_length_min_mm': trackLengthMinMm,
+    if (trackLengthMaxMm != null) 'trackLengthMaxMm': trackLengthMaxMm,
+    if (trackLengthMaxMm != null) 'track_length_max_mm': trackLengthMaxMm,
+    if (trackWidthMinMm != null) 'trackWidthMinMm': trackWidthMinMm,
+    if (trackWidthMinMm != null) 'track_width_min_mm': trackWidthMinMm,
+    if (trackWidthMaxMm != null) 'trackWidthMaxMm': trackWidthMaxMm,
+    if (trackWidthMaxMm != null) 'track_width_max_mm': trackWidthMaxMm,
   };
 
   /// Typical live weight range for display, e.g. "40–65 kg".
