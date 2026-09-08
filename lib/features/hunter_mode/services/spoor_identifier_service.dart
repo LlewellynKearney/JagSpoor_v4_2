@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import '../../track/data/services/spoor_validation_layer.dart';
 import '../../track/data/track_taxonomy.dart';
 
 /// Geometric track metrics profile extracted during visual analysis pass.
@@ -27,6 +28,14 @@ class SpoorGeometricMetrics {
   /// Contour area in pixels (count of dark track pixels).
   final int contourAreaPx;
 
+  /// Estimated toe/cleave count resolved from the dominant dark component
+  /// (lobe detection). 0 = could not be resolved (lighting/occlusion).
+  final int estimatedToeCount;
+
+  /// Lighting-robustness signal: was the adaptive (Otsu) threshold able to
+  /// separate a well-formed track component from the background?
+  final bool segmentationReliable;
+
   const SpoorGeometricMetrics({
     required this.printLengthMm,
     required this.printWidthMm,
@@ -37,13 +46,16 @@ class SpoorGeometricMetrics {
     this.circularity = 0.0,
     this.contourPerimeterPx = 0.0,
     this.contourAreaPx = 0,
+    this.estimatedToeCount = 0,
+    this.segmentationReliable = false,
   });
 
   @override
   String toString() =>
       'Length: ${printLengthMm.toStringAsFixed(1)}mm, Width: ${printWidthMm.toStringAsFixed(1)}mm, '
       'ToeAngle: ${toeAlignmentAngle.toStringAsFixed(1)}°, ClawDelta: ${clawDeltaProfile.toStringAsFixed(2)}, '
-      'Aspect: ${aspectRatio.toStringAsFixed(2)}, Circ: ${circularity.toStringAsFixed(2)}';
+      'Aspect: ${aspectRatio.toStringAsFixed(2)}, Circ: ${circularity.toStringAsFixed(2)}, '
+      'Toes: $estimatedToeCount';
 }
 
 /// Native Track (Spoor) Satellite AI Classification Service.
@@ -279,6 +291,69 @@ class SpoorIdentifierService {
     }
   }
 
+  /// Runs the full camera pipeline and then cross-checks the raw
+  /// classification against the Firestore spoor database via the structured
+  /// [SpoorValidationLayer].
+  ///
+  /// Returns everything [classifySpoorTrack] does, plus:
+  ///   - `validation`: the [SpoorValidationOutcome] (re-ranked top species,
+  ///     per-candidate matches, human note).
+  ///   - `species`/`trackingResult` reflect the VALIDATED top candidate when
+  ///     the raw top was rejected, so the UI never shows an anatomically
+  ///     impossible match.
+  Future<Map<String, dynamic>> classifySpoorTrackValidated(
+    XFile imageFile, {
+    TrackCategory? category,
+    double? scaleReferenceMm,
+  }) async {
+    final raw = await classifySpoorTrack(
+      imageFile,
+      category: category,
+      scaleReferenceMm: scaleReferenceMm,
+    );
+    if (raw['success'] != true || raw['topPredictions'] is! List) {
+      return raw;
+    }
+
+    final predictions =
+        (raw['topPredictions'] as List).whereType<SpoorPrediction>().toList();
+    final metrics = raw['metrics'] as SpoorGeometricMetrics?;
+    final estimatedToeCount = metrics?.estimatedToeCount ?? 0;
+
+    final validation = await SpoorValidationLayer.instance.validatePredictions(
+      predictions: predictions,
+      estimatedToeCount: estimatedToeCount,
+      printLengthMm: metrics?.printLengthMm,
+      printWidthMm: metrics?.printWidthMm,
+    );
+
+    final validatedTop = validation.validatedTopSpecies;
+    final sig = _signatureForSpecies(validatedTop);
+    final demographic = sig?['demographic'] as String? ?? 'Adult';
+    final validatedConfidence = validation.reranked
+        ? _confidenceForSpecies(predictions, validatedTop)
+        : (raw['confidence'] as num?)?.toDouble() ?? 0.0;
+
+    return {
+      ...raw,
+      'species': validatedTop,
+      'demographic': demographic,
+      'trackingResult': 'Identified Spoor: $validatedTop ($demographic)',
+      'confidence': validatedConfidence,
+      'validation': validation,
+    };
+  }
+
+  double _confidenceForSpecies(
+    List<SpoorPrediction> predictions,
+    String species,
+  ) {
+    for (final p in predictions) {
+      if (p.species == species) return p.confidence;
+    }
+    return 0.0;
+  }
+
   Map<String, dynamic>? _signatureForSpecies(String species) {
     for (final s in _speciesSignatures) {
       if (s['species'] == species) return s;
@@ -301,35 +376,56 @@ class SpoorIdentifierService {
     final int imgWidth = image.width;
     final int imgHeight = image.height;
 
-    // Mark dark (track) pixels on a sample grid and accumulate color stats.
+    // --- Adaptive (Otsu) thresholding ------------------------------------
+    // The legacy fixed `luminance < 140` filter collapsed under variable
+    // lighting: bright sand pushed track pixels above the threshold (no track
+    // found → degenerate 50x60 fallback box), while dark/muddy soil pulled
+    // the whole background below it (the "track" became the full frame). Otsu
+    // finds the luminance cut that maximises between-class variance, so the
+    // track/background split adapts to the actual scene illumination.
     const sampleStep = 4;
-    final grid = <List<bool>>[];
-    int totalR = 0, totalB = 0;
-    int pixelCount = 0;
-    int minX = imgWidth, maxX = 0, minY = imgHeight, maxY = 0;
+    final threshold = _otsuThreshold(image);
 
+    // --- Sampling pass: mark candidate track pixels -----------------------
+    final grid = <List<bool>>[];
     for (int y = 0; y < imgHeight; y += sampleStep) {
       final row = <bool>[];
       for (int x = 0; x < imgWidth; x += sampleStep) {
-        final pixel = image.getPixelSafe(x, y);
-        final r = pixel.r.toInt();
-        final g = pixel.g.toInt();
-        final b = pixel.b.toInt();
-        final luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-        final isDark = luminance < 140;
-        row.add(isDark);
-        if (isDark) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-          totalR += r;
-          totalB += b;
-          pixelCount++;
-        }
+        row.add(_luminanceAt(image, x, y) < threshold);
       }
       grid.add(row);
     }
+
+    // --- Largest connected component (speckle/shadow rejection) -----------
+    // Soil texture, pebbles, grass and shadows form small disconnected dark
+    // blobs. The actual track is almost always the largest connected region,
+    // so we keep ONLY that component for the bounding box + contour geometry.
+    // This anchors the metrics to the real print instead of background noise.
+    final gridW = grid.isNotEmpty ? grid.first.length : 0;
+    final gridH = grid.length;
+    final keepMask = _largestComponentMask(grid, gridW, gridH);
+
+    // --- Accumulate stats over the kept component -------------------------
+    int minX = imgWidth, maxX = 0, minY = imgHeight, maxY = 0;
+    int pixelCount = 0;
+    int totalR = 0, totalB = 0;
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!keepMask[gy][gx]) continue;
+        final x = gx * sampleStep;
+        final y = gy * sampleStep;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        final pixel = image.getPixelSafe(x, y);
+        totalR += pixel.r.toInt();
+        totalB += pixel.b.toInt();
+        pixelCount++;
+      }
+    }
+
+    final bool segmentationReliable = pixelCount > 12;
 
     final double rawWidthPixels =
         (maxX > minX ? (maxX - minX) : 50).toDouble();
@@ -356,19 +452,16 @@ class SpoorIdentifierService {
         .clamp(0.0, 15.0);
 
     // --- True contour geometry: perimeter (boundary length) + area (fill) ---
-    int area = 0; // count of dark cells
-    int perimeter = 0; // count of dark cells with at least one light/neighbour
-    final gridW = grid.isNotEmpty ? grid.first.length : 0;
-    final gridH = grid.length;
+    int area = 0; // count of kept dark cells
+    int perimeter = 0; // count of kept dark cells with a light 4-neighbour
     for (int gy = 0; gy < gridH; gy++) {
       for (int gx = 0; gx < gridW; gx++) {
-        if (!grid[gy][gx]) continue;
+        if (!keepMask[gy][gx]) continue;
         area++;
-        // A dark cell is on the contour if any 4-neighbour is light or edge.
-        final left = gx == 0 ? false : grid[gy][gx - 1];
-        final right = gx == gridW - 1 ? false : grid[gy][gx + 1];
-        final up = gy == 0 ? false : grid[gy - 1][gx];
-        final down = gy == gridH - 1 ? false : grid[gy + 1][gx];
+        final left = gx == 0 ? false : keepMask[gy][gx - 1];
+        final right = gx == gridW - 1 ? false : keepMask[gy][gx + 1];
+        final up = gy == 0 ? false : keepMask[gy - 1][gx];
+        final down = gy == gridH - 1 ? false : keepMask[gy + 1][gx];
         if (!left || !right || !up || !down) {
           perimeter++;
         }
@@ -395,6 +488,17 @@ class SpoorIdentifierService {
         ((rawWidthPixels + rawHeightPixels) * 2.0) /
         (rawWidthPixels * rawHeightPixels + 1.0);
 
+    // --- Toe / cleave lobe estimation -------------------------------------
+    // Column-count profile: the track's dark columns, projected onto the
+    // primary axis, form distinct clusters where the toes/cleaves press the
+    // ground. A 2-cleaved hoof shows two lobes, a 1-wall equine one broad
+    // lobe, a 4-toed paw up to 4. Only used when the segmentation was
+    // reliable — otherwise 0 (unknown) so the validation layer falls back to
+    // the category prior.
+    final int estimatedToeCount = segmentationReliable
+        ? _estimateToeLobes(keepMask, gridW, gridH)
+        : 0;
+
     return SpoorGeometricMetrics(
       printLengthMm: printLengthMm,
       printWidthMm: printWidthMm,
@@ -405,7 +509,185 @@ class SpoorIdentifierService {
       circularity: circularity,
       contourPerimeterPx: contourPerimeterPx,
       contourAreaPx: contourAreaPx,
+      estimatedToeCount: estimatedToeCount,
+      segmentationReliable: segmentationReliable,
     );
+  }
+
+  double _luminanceAt(img.Image image, int x, int y) {
+    final pixel = image.getPixelSafe(x, y);
+    return 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+  }
+
+  /// Otsu's method: returns the luminance threshold that maximises the
+  /// between-class variance of dark (track) vs light (background) pixels.
+  /// Falls back to 140 (the legacy constant) when the image is degenerate
+  /// (fewer than two distinct luminance levels, or NaN pixels).
+  double _otsuThreshold(img.Image image) {
+    // 256-bin histogram over the sampled grid.
+    const bins = 256;
+    final hist = List<int>.filled(bins, 0);
+    for (int y = 0; y < image.height; y += 4) {
+      for (int x = 0; x < image.width; x += 4) {
+        final l = _luminanceAt(image, x, y);
+        if (l.isNaN) continue;
+        hist[l.round().clamp(0, bins - 1)]++;
+      }
+    }
+    var total = 0;
+    for (final h in hist) {
+      total += h;
+    }
+    if (total == 0) return 140.0;
+
+    double sumAll = 0.0;
+    for (int i = 0; i < bins; i++) {
+      sumAll += i * hist[i];
+    }
+
+    double sumB = 0.0;
+    int wB = 0;
+    var best = 140.0;
+    double bestVar = 0.0;
+    for (int t = 0; t < bins; t++) {
+      wB += hist[t];
+      if (wB == 0) continue;
+      final wF = total - wB;
+      if (wF == 0) break;
+      sumB += t * hist[t];
+      final mB = sumB / wB;
+      final mF = (sumAll - sumB) / wF;
+      final diff = mB - mF;
+      final between = wB.toDouble() * wF.toDouble() * diff * diff;
+      if (between > bestVar) {
+        bestVar = between;
+        best = t.toDouble();
+      }
+    }
+    return best;
+  }
+
+  /// Flood-fill labelling over the sampled grid; returns a mask keeping only
+  /// the largest connected region (4-connectivity). Returns an all-false mask
+  /// when no region is found.
+  List<List<bool>> _largestComponentMask(
+    List<List<bool>> grid,
+    int gridW,
+    int gridH,
+  ) {
+    final label = [
+      for (int gy = 0; gy < gridH; gy++) List<int>.filled(gridW, 0),
+    ];
+    final sizes = <int>[];
+    var nextLabel = 0;
+
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!grid[gy][gx] || label[gy][gx] != 0) continue;
+        nextLabel++;
+        final stack = <(int, int)>[(gx, gy)];
+        label[gy][gx] = nextLabel;
+        var size = 0;
+        while (stack.isNotEmpty) {
+          final (cx, cy) = stack.removeLast();
+          size++;
+          for (final (nx, ny) in _fourNeighbours(cx, cy, gridW, gridH)) {
+            if (grid[ny][nx] && label[ny][nx] == 0) {
+              label[ny][nx] = nextLabel;
+              stack.add((nx, ny));
+            }
+          }
+        }
+        sizes.add(size);
+      }
+    }
+
+    if (sizes.isEmpty) {
+      return [
+        for (int gy = 0; gy < gridH; gy++) List<bool>.filled(gridW, false),
+      ];
+    }
+
+    // Largest component (tie → the last one found, deterministic).
+    var bestLabel = 1;
+    var bestSize = sizes.first;
+    for (int i = 1; i < sizes.length; i++) {
+      if (sizes[i] > bestSize) {
+        bestSize = sizes[i];
+        bestLabel = i + 1;
+      }
+    }
+
+    final kept = <List<bool>>[];
+    for (int gy = 0; gy < gridH; gy++) {
+      final row = <bool>[];
+      for (int gx = 0; gx < gridW; gx++) {
+        row.add(label[gy][gx] == bestLabel);
+      }
+      kept.add(row);
+    }
+    return kept;
+  }
+
+  List<(int, int)> _fourNeighbours(int x, int y, int w, int h) {
+    final out = <(int, int)>[];
+    if (x > 0) out.add((x - 1, y));
+    if (x < w - 1) out.add((x + 1, y));
+    if (y > 0) out.add((x, y - 1));
+    if (y < h - 1) out.add((x, y + 1));
+    return out;
+  }
+
+  /// Estimates the toe/cleave count by clustering the kept component's dark
+  /// columns along its primary (longer) axis.
+  ///
+  /// Projection: count dark cells per column band along the primary axis.
+  /// Adjacent bands with counts above a fraction of the max form one lobe.
+  /// Lobe count is clamped to [1, 5] (4 main toes + the margin).
+  int _estimateToeLobes(List<List<bool>> mask, int gridW, int gridH) {
+    // Determine the primary axis by the bounding box.
+    int minX = gridW, maxX = 0, minY = gridH, maxY = 0;
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!mask[gy][gx]) continue;
+        if (gx < minX) minX = gx;
+        if (gx > maxX) maxX = gx;
+        if (gy < minY) minY = gy;
+        if (gy > maxY) maxY = gy;
+      }
+    }
+    if (maxY - minY <= 0 && maxX - minX <= 0) return 0;
+
+    final horizontal = (maxX - minX) >= (maxY - minY);
+
+    // Column/row profile.
+    final int span = horizontal ? (maxX - minX + 1) : (maxY - minY + 1);
+    var maxCount = 0;
+    final counts = List<int>.filled(span, 0);
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!mask[gy][gx]) continue;
+        final idx = horizontal ? (gx - minX) : (gy - minY);
+        counts[idx]++;
+        if (counts[idx] > maxCount) maxCount = counts[idx];
+      }
+    }
+    if (maxCount <= 0) return 0;
+
+    // Merge consecutive bands whose count ≥ 30% of the max into lobes.
+    const threshold = 0.30;
+    var lobes = 0;
+    var inLobe = false;
+    for (int i = 0; i < span; i++) {
+      final active = counts[i] >= maxCount * threshold;
+      if (active && !inLobe) {
+        lobes++;
+        inLobe = true;
+      } else if (!active) {
+        inLobe = false;
+      }
+    }
+    return lobes.clamp(1, 5);
   }
 
   /// Running model processor pass: scores each in-category species signature
