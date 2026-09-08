@@ -19,6 +19,7 @@ import 'services/autofill_credential_prompter.dart';
 import 'services/device_fingerprint_service.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../subscription/services/subscription_status_service.dart';
+import '../referral/services/referral_repository.dart';
 
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
@@ -50,6 +51,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
+  final _referralCodeController = TextEditingController();
 
   // Lazy: `AuthGateService` eagerly resolves `FirebaseAuth.instance`, which
   // throws `[core/no-app]` before Firebase initializes (cold-launch race /
@@ -77,6 +79,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _otpController.dispose();
+    _referralCodeController.dispose();
     super.dispose();
   }
 
@@ -476,6 +479,23 @@ class _AuthScreenState extends State<AuthScreen> {
           // `initializeNewUserTrial` Auth trigger is the authoritative
           // assigner, so a client-side failure never blocks registration.
           await _assignTrialOnRegistration(user, email);
+
+          // Redeem the optional referral code (Phase 4). Best-effort: a
+          // blank / invalid / self-referral code is logged and skipped —
+          // registration always proceeds normally. Defense-in-depth: the
+          // redemption is also isolated in its own try/catch so a
+          // never-expected failure can never abort the signup flow.
+          final referralCode = _referralCodeController.text.trim();
+          if (referralCode.isNotEmpty) {
+            try {
+              await ReferralRepository.instance.redeemReferralCode(
+                referredUserId: user.uid,
+                referralCode: referralCode,
+              );
+            } catch (e) {
+              debugPrint('AuthScreen: referral redemption failed: $e');
+            }
+          }
         }
 
         setState(() => _isLoading = false);
@@ -715,6 +735,27 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                       ),
+                    // Optional Referral Code — registration only. Displayed as
+                    // a clean, uncompressed input so a newer user can attribute
+                    // their signup to a referrer; blank submissions are the
+                    // common case and take the fast path (no conversion).
+                    if (!_isLoginMode) ...[
+                      const SizedBox(height: 16.0),
+                      TextFormField(
+                        key: const ValueKey('registrationReferralCodeField'),
+                        controller: _referralCodeController,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Referral Code (optional)',
+                          hintText: 'Have a referral code? Enter it here',
+                          border: OutlineInputBorder(),
+                        ),
+                        // Invalid but non-empty codes simply fail
+                        // redemption (logged) — the field never blocks
+                        // registration.
+                        validator: null,
+                      ),
+                    ],
                     const SizedBox(height: 12.0),
                     // The tile is wrapped in its own `Material` so its
                     // background + ink splashes paint onto a Material

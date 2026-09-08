@@ -8,6 +8,29 @@ import '../models/referral_conversion.dart';
 import '../models/referral_profile.dart';
 import '../models/referral_reward_config.dart';
 
+/// Outcome of a referral-code redemption during signup.
+///
+/// * [recorded] — a valid, non-self referral code was redeemed and a
+///   `pending` conversion was written to `referral_conversions`;
+///   [conversionId] carries the new document id.
+/// * [skipped] — no conversion was written (blank / invalid / non-existent
+///   code, a self-referral, or a Firestore failure). [message] explains why.
+///   A skip NEVER blocks registration — the new account proceeds normally.
+class ReferralRedemptionResult {
+  final bool recorded;
+  final String? conversionId;
+  final String? message;
+
+  const ReferralRedemptionResult._(this.recorded, this.conversionId, this.message);
+
+  const ReferralRedemptionResult.recorded(String id)
+      : this._(true, id, null);
+  const ReferralRedemptionResult.skipped(String message)
+      : this._(false, null, message);
+
+  bool get isRecorded => recorded;
+}
+
 /// Firestore repository for the JagSpoor referral system.
 ///
 /// Owns every read/write against the three Phase-1 collections:
@@ -125,6 +148,32 @@ class ReferralRepository {
     }
   }
 
+  /// Resolves the referrer whose referral code matches [code]
+  /// case-insensitively (codes are stored upper-cased, so the input is
+  /// trimmed + upper-cased before the query). Used when a new signup redeems
+  /// a code: the returned profile's `userId` is the referrer's UID.
+  ///
+  /// Returns null when [code] is blank or no `referral_profiles` document
+  /// carries the code (never throws — a Firestore error is logged and
+  /// degrades to null so registration can proceed).
+  Future<ReferralProfile?> findReferrerByCode(String code) async {
+    final normalized = code.trim().toUpperCase();
+    if (normalized.isEmpty) return null;
+    try {
+      final snap = await _firestore
+          .collection(kReferralProfilesCollection)
+          .where('referralCode', isEqualTo: normalized)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final doc = snap.docs.first;
+      return ReferralProfile.fromMap(doc.data(), id: doc.id);
+    } catch (e) {
+      debugPrint('ReferralRepository.findReferrerByCode: $e');
+      return null;
+    }
+  }
+
   /// Creates the current user's referral profile.
   ///
   /// Generates a unique code ([generateReferralCode], 8 chars by default)
@@ -233,6 +282,7 @@ class ReferralRepository {
     required String referralCode,
     ReferralSubscriptionTier subscriptionTier =
         ReferralSubscriptionTier.hunter,
+    double rewardAmountZAR = 0.0,
   }) async {
     final uid = _currentUserId;
     if (uid == null || uid.isEmpty) {
@@ -259,9 +309,73 @@ class ReferralRepository {
       'referralCode': code,
       'subscriptionTier': subscriptionTier.key,
       'status': ReferralConversionStatus.pending.key,
+      if (rewardAmountZAR > 0) 'rewardAmountZAR': rewardAmountZAR,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return doc.id;
+  }
+
+  /// Redeems a referral code on behalf of a freshly-registered account
+  /// ([referredUserId]) against the provided [referralCode].
+  ///
+  /// This is the Phase-4 signup hook. Flow:
+  ///   1. Blank code → skipped (no referral was supplied).
+  ///   2. [findReferrerByCode] validates the code and resolves the referrer's
+  ///      UID. Non-existent / invalid → skipped.
+  ///   3. Self-referral (the referrer is the new account) → skipped.
+  ///   4. Otherwise a `pending` conversion is written to
+  ///      `referral_conversions` with `referrerId`, `referredUserId`, the
+  ///      upper-cased `referralCode`, `subscriptionTier`, and the reward
+  ///      amount resolved from the live admin config for that tier
+  ///      ([loadRewardConfig] → [ReferralRewardConfig.amountFor]).
+  ///
+  /// NEVER throws: every failure path (Firestore read/write error, no code,
+  /// invalid code, self-referral) is caught and returns a
+  /// [ReferralRedemptionResult.skipped] so registration always proceeds
+  /// normally.
+  Future<ReferralRedemptionResult> redeemReferralCode({
+    required String referredUserId,
+    String? referralCode,
+    ReferralSubscriptionTier subscriptionTier =
+        ReferralSubscriptionTier.hunter,
+  }) async {
+    final code = (referralCode ?? '').trim().toUpperCase();
+    if (code.isEmpty) {
+      return const ReferralRedemptionResult.skipped(
+        'No referral code supplied.',
+      );
+    }
+    try {
+      final referrer = await findReferrerByCode(code);
+      if (referrer == null) {
+        return ReferralRedemptionResult.skipped(
+          'Referral code "$code" does not match any referrer.',
+        );
+      }
+      if (referrer.userId == referredUserId) {
+        return const ReferralRedemptionResult.skipped(
+          'A user cannot refer themself.',
+        );
+      }
+      // Resolve the reward amount from the dynamic admin config so the
+      // pending conversion carries the correct tier-appropriate amount.
+      final config = await loadRewardConfig();
+      final reward = config.amountFor(subscriptionTier);
+      final conversionId = await recordConversion(
+        referrerId: referrer.userId,
+        referredUserId: referredUserId,
+        referralCode: code,
+        subscriptionTier: subscriptionTier,
+        rewardAmountZAR: reward,
+      );
+      return ReferralRedemptionResult.recorded(conversionId);
+    } catch (e) {
+      debugPrint('ReferralRepository.redeemReferralCode: $e');
+      return ReferralRedemptionResult.skipped(
+        'Referral redemption failed; registration proceeded normally. '
+        '($e)',
+      );
+    }
   }
 
   /// Fetches every conversion where the current user is the referrer
