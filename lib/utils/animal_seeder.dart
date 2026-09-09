@@ -19,6 +19,231 @@ class RolandWardMetrics {
   });
 }
 
+/// Canonical track-morphology attributes for a species, used to expand the
+/// Firestore `animals` dataset with spoor-validation fields.
+///
+/// [toeCount] is the number of toes the track leaves (4 = paw carnivores,
+/// 2 = cloven-hoofed ungulates / suids / giraffids, 1 = solid-hoofed
+/// equines). [trackLengthMm] / [trackWidthMm] are the typical fore-print
+/// dimensions in millimetres (a single histogram value from the local spoor
+/// signature table; stored as min == max until a wider field-measured range
+/// is validated). All fields are nullable so a species with no recorded
+/// track data (birds, reptiles, rodents, ...) simply omits them.
+class TrackMorphology {
+  final int? toeCount;
+  final double? trackLengthMm;
+  final double? trackWidthMm;
+
+  const TrackMorphology({
+    this.toeCount,
+    this.trackLengthMm,
+    this.trackWidthMm,
+  });
+}
+
+/// Canonical track-morphology dataset for the SA game-guide species.
+///
+/// Keyed by the same lowercased common-name variants used by
+/// [_rolandWardMetrics] / [_scientificNames] (space-keyed CSV common name +
+/// underscore alias) so a single lookup resolves the spoor fields. The
+/// established toe counts follow `lib/features/track/data/track_taxonomy.dart`
+/// morphology (paw carnivores = 4, cloven-hoof ungulates = 2, solid-hoof
+/// equines = 1); the length/width values are the established histogram
+/// values from `spoor_identifier_service.dart` `_speciesSignatures` where
+/// present, otherwise placeholders to be validated against field data.
+const _trackMorphology = <String, TrackMorphology>{
+  // === Paw carnivores (4 toes) — established from spoor signatures ===
+  'leopard': TrackMorphology(toeCount: 4, trackLengthMm: 95.0, trackWidthMm: 90.0),
+  'leopard (southern african)': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 95.0,
+    trackWidthMm: 90.0,
+  ),
+  'lion': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 135.0,
+    trackWidthMm: 125.0,
+  ),
+  'lion (african)': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 135.0,
+    trackWidthMm: 125.0,
+  ),
+  'cheetah': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 82.0,
+    trackWidthMm: 70.0,
+  ),
+  'caracal': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 58.0,
+    trackWidthMm: 52.0,
+  ),
+  'serval': TrackMorphology(toeCount: 4),
+  'african wildcat': TrackMorphology(
+    toeCount: 4,
+    trackLengthMm: 38.0,
+    trackWidthMm: 34.0,
+  ),
+  'black-footed cat': TrackMorphology(toeCount: 4),
+  'spotted hyaena': TrackMorphology(toeCount: 4),
+  'brown hyaena': TrackMorphology(toeCount: 4),
+  'aardwolf': TrackMorphology(toeCount: 4),
+  'black-backed jackal': TrackMorphology(toeCount: 4),
+  'side-striped jackal': TrackMorphology(toeCount: 4),
+  'cape fox': TrackMorphology(toeCount: 4),
+  'bat-eared fox': TrackMorphology(toeCount: 4),
+  'african civet': TrackMorphology(toeCount: 4),
+  'small-spotted genet': TrackMorphology(toeCount: 4),
+  'rusty-spotted genet': TrackMorphology(toeCount: 4),
+  'cape genet': TrackMorphology(toeCount: 4),
+  'yellow mongoose': TrackMorphology(toeCount: 4),
+  'slender mongoose': TrackMorphology(toeCount: 4),
+  'banded mongoose': TrackMorphology(toeCount: 4),
+  'dwarf mongoose': TrackMorphology(toeCount: 4),
+  'water mongoose': TrackMorphology(toeCount: 4),
+  'white-tailed mongoose': TrackMorphology(toeCount: 4),
+  "selous' mongoose": TrackMorphology(toeCount: 4),
+  'suricate (meerkat)': TrackMorphology(toeCount: 4),
+  'striped polecat': TrackMorphology(toeCount: 4),
+  'african striped weasel': TrackMorphology(toeCount: 4),
+  'honey badger': TrackMorphology(toeCount: 4),
+
+  // === Cloven-hoofed ungulates / suids / giraffids (2 toes) ===
+  'kudu': TrackMorphology(toeCount: 2, trackLengthMm: 90.0, trackWidthMm: 60.0),
+  'greater_kudu': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 90.0,
+    trackWidthMm: 60.0,
+  ),
+  'greater kudu': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 90.0,
+    trackWidthMm: 60.0,
+  ),
+  'kudu (eastern cape)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 90.0,
+    trackWidthMm: 60.0,
+  ),
+  'kudu (southern greater)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 90.0,
+    trackWidthMm: 60.0,
+  ),
+  'impala': TrackMorphology(toeCount: 2, trackLengthMm: 55.0, trackWidthMm: 38.0),
+  'impala (southern)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 55.0,
+    trackWidthMm: 38.0,
+  ),
+  'gemsbok (oryx)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 85.0,
+    trackWidthMm: 60.0,
+  ),
+  'gemsbok': TrackMorphology(toeCount: 2, trackLengthMm: 85.0, trackWidthMm: 60.0),
+  'eland': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 130.0,
+    trackWidthMm: 100.0,
+  ),
+  'cape eland': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 130.0,
+    trackWidthMm: 100.0,
+  ),
+  'eland (cape)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 130.0,
+    trackWidthMm: 100.0,
+  ),
+  'common warthog': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 70.0,
+    trackWidthMm: 50.0,
+  ),
+  'warthog': TrackMorphology(toeCount: 2, trackLengthMm: 70.0, trackWidthMm: 50.0),
+  'bushpig': TrackMorphology(toeCount: 2),
+  'bush pig': TrackMorphology(toeCount: 2),
+  'nyala': TrackMorphology(toeCount: 2),
+  'blue wildebeest': TrackMorphology(toeCount: 2),
+  'blue_wildebeest': TrackMorphology(toeCount: 2),
+  'black wildebeest': TrackMorphology(toeCount: 2),
+  'black_wildebeest': TrackMorphology(toeCount: 2),
+  'springbok': TrackMorphology(toeCount: 2),
+  'springbok (cape)': TrackMorphology(toeCount: 2),
+  'springbok (kalahari)': TrackMorphology(toeCount: 2),
+  'blesbok': TrackMorphology(toeCount: 2),
+  'bontebok': TrackMorphology(toeCount: 2),
+  'bontebok (purebred)': TrackMorphology(toeCount: 2),
+  'southern bushbuck': TrackMorphology(toeCount: 2),
+  'bushbuck (southern african)': TrackMorphology(toeCount: 2),
+  'bushbuck (chobe)': TrackMorphology(toeCount: 2),
+  'common waterbuck': TrackMorphology(toeCount: 2),
+  'waterbuck': TrackMorphology(toeCount: 2),
+  'waterbuck (common)': TrackMorphology(toeCount: 2),
+  'red hartebeest': TrackMorphology(toeCount: 2),
+  'red_hartebeest': TrackMorphology(toeCount: 2),
+  'hartebeest (cape/red)': TrackMorphology(toeCount: 2),
+  'hartebeest (lichtensteins)': TrackMorphology(toeCount: 2),
+  'tsessebe': TrackMorphology(toeCount: 2),
+  'sable antelope': TrackMorphology(toeCount: 2),
+  'sable': TrackMorphology(toeCount: 2),
+  'roan antelope': TrackMorphology(toeCount: 2),
+  'common duiker': TrackMorphology(toeCount: 2),
+  'blue duiker': TrackMorphology(toeCount: 2),
+  'natal red duiker': TrackMorphology(toeCount: 2),
+  'red duiker': TrackMorphology(toeCount: 2),
+  'steenbok': TrackMorphology(toeCount: 2),
+  'cape grysbok': TrackMorphology(toeCount: 2),
+  'grysbok (cape)': TrackMorphology(toeCount: 2),
+  "sharpe's grysbok": TrackMorphology(toeCount: 2),
+  'oribi': TrackMorphology(toeCount: 2),
+  'mountain reedbuck': TrackMorphology(toeCount: 2),
+  'southern reedbuck': TrackMorphology(toeCount: 2),
+  'suni': TrackMorphology(toeCount: 2),
+  'suni (moschatus)': TrackMorphology(toeCount: 2),
+  "suni (livingstone's)": TrackMorphology(toeCount: 2),
+  'klipspringer': TrackMorphology(toeCount: 2),
+  'giraffe': TrackMorphology(toeCount: 2),
+  'dik-dik (damaraland)': TrackMorphology(toeCount: 2),
+
+  // === Solid-hoofed equines (1 toe) ===
+  'plains zebra': TrackMorphology(
+    toeCount: 1,
+    trackLengthMm: 110.0,
+    trackWidthMm: 100.0,
+  ),
+  'zebra': TrackMorphology(toeCount: 1, trackLengthMm: 110.0, trackWidthMm: 100.0),
+  'cape mountain zebra': TrackMorphology(toeCount: 1),
+  "hartmann's mountain zebra": TrackMorphology(toeCount: 1),
+  'donkey': TrackMorphology(toeCount: 1, trackLengthMm: 95.0, trackWidthMm: 85.0),
+  'horse': TrackMorphology(toeCount: 1),
+
+  // === Dangerous game / megafauna (cloven, 2 toes) ===
+  'cape buffalo': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 150.0,
+    trackWidthMm: 140.0,
+  ),
+  'cape_buffalo': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 150.0,
+    trackWidthMm: 140.0,
+  ),
+  'buffalo (southern african)': TrackMorphology(
+    toeCount: 2,
+    trackLengthMm: 150.0,
+    trackWidthMm: 140.0,
+  ),
+  'african elephant': TrackMorphology(toeCount: 4),
+  'elephant (african)': TrackMorphology(toeCount: 4),
+  'black rhinoceros': TrackMorphology(toeCount: 3),
+  'southern white rhinoceros': TrackMorphology(toeCount: 3),
+  'hippopotamus': TrackMorphology(toeCount: 4),
+};
+
 const _rolandWardMetrics = <String, RolandWardMetrics>{
   // Spiral Curve Method (Method 8) — official SA Rowland Ward minimum 53 7/8".
   'kudu': RolandWardMetrics(
@@ -391,6 +616,7 @@ const _scientificNames = <String, String>{
   'suni': 'Neotragus moschatus',
   'suni (moschatus)': 'Neotragus moschatus',
   "suni (livingstone's)": 'Neotragus livingstonianus',
+  'klipspringer': 'Oreotragus oreotragus',
   'hartebeest (lichtensteins)': 'Alcelaphus lichtensteinii',
 };
 
@@ -411,7 +637,12 @@ String? getScientificNameForSpecies(String speciesName) {
 /// `merge: true` write overwrites those stale fields with the full benchmark
 /// data (official RW minimum + measurement method + horn description +
 /// scientific name).
-const String gameGuideSeedVersion = 'game_guide_seed_v2';
+///
+/// v3 (spoor morphology): adds the canonical track-morphology fields
+/// (`toeCount`, `trackLengthMinMm`, `trackLengthMaxMm`, `trackWidthMinMm`,
+/// `trackWidthMaxMm`) to every `animals` doc from the `_trackMorphology`
+/// dataset, so the Spoor Validation database can expand systematically.
+const String gameGuideSeedVersion = 'game_guide_seed_v4';
 
 String? getRolandWardMinimumForSpecies(String speciesName) {
   final normalizedName = speciesName.trim().toLowerCase();
@@ -470,6 +701,22 @@ RolandWardMetrics? getRolandWardMetricsForSpecies(String speciesName) {
 double? getEarLengthForSpecies(String speciesName) {
   final normalizedName = speciesName.trim().toLowerCase();
   return _rolandWardMetrics[normalizedName]?.earLength;
+}
+
+/// Resolves the canonical track-morphology attributes (toe count + typical
+/// track length/width in mm) for a South African game species by its common
+/// name (case-insensitive, trimmed). Returns null when the species has no
+/// recorded track data (birds, reptiles, rodents, ...).
+TrackMorphology? getTrackMorphologyForSpecies(String speciesName) {
+  final normalizedName = speciesName.trim().toLowerCase();
+  return _trackMorphology[normalizedName];
+}
+
+/// Resolves the number of toes a species' track leaves (4 = paw carnivores,
+/// 2 = cloven-hoofed ungulates / suids / giraffids, 1 = solid-hoofed
+/// equines). Returns null for species with no recorded track data.
+int? getToeCountForSpecies(String speciesName) {
+  return getTrackMorphologyForSpecies(speciesName)?.toeCount;
 }
 
 /// Seeds the Firestore 'animals' collection from the CSV file at assets/data/animals_seed.csv
@@ -560,6 +807,13 @@ Future<void> seedAnimalsFromCSV() async {
     final rwMinimum = rwMetrics?.rwMinimum ?? getRolandWardMinimumForSpecies(commonName);
     final scientificName = getScientificNameForSpecies(commonName) ?? '';
 
+    // Resolve the canonical track-morphology attributes (toe count + typical
+    // track length/width in mm) for this species. A single histogram value
+    // from the spoor signature table is stored as min == max until a wider
+    // field-measured range is validated; species without track data (birds,
+    // reptiles, rodents, ...) simply omit all five fields.
+    final trackMorphology = getTrackMorphologyForSpecies(commonName);
+
     // Create Animal object
     final animal = Animal(
       id: docId,
@@ -579,6 +833,11 @@ Future<void> seedAnimalsFromCSV() async {
       earLength: rwMetrics?.earLength ?? getEarLengthForSpecies(commonName),
       rwMeasurementMethod: rwMetrics?.measurementMethod,
       rwHornDescription: rwMetrics?.hornDescription,
+      toeCount: trackMorphology?.toeCount,
+      trackLengthMinMm: trackMorphology?.trackLengthMm,
+      trackLengthMaxMm: trackMorphology?.trackLengthMm,
+      trackWidthMinMm: trackMorphology?.trackWidthMm,
+      trackWidthMaxMm: trackMorphology?.trackWidthMm,
       imageUrl: imageUrl,
       searchKeywords: [
         commonName.toLowerCase(),

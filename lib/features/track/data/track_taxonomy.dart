@@ -35,42 +35,92 @@ class SpoorPrediction {
 /// Any label emitted by the classifier that is not listed here is treated as
 /// `clovenHoofUngulate` by default (the most common track type in the region).
 const Map<String, TrackCategory> speciesCategoryMap = {
-  // Paw / carnivores
+  // Paw / carnivores (4 toes)
   'Leopard': TrackCategory.pawCarnivore,
   'Lion': TrackCategory.pawCarnivore,
   'Cheetah': TrackCategory.pawCarnivore,
   'Caracal': TrackCategory.pawCarnivore,
   'Wild Cat': TrackCategory.pawCarnivore,
-  'Hyena': TrackCategory.pawCarnivore,
-  'Jackal': TrackCategory.pawCarnivore,
-  'Serval': TrackCategory.pawCarnivore,
   'Wildcat': TrackCategory.pawCarnivore,
+  'Hyena': TrackCategory.pawCarnivore,
+  'Spotted Hyaena': TrackCategory.pawCarnivore,
+  'Brown Hyaena': TrackCategory.pawCarnivore,
+  'Jackal': TrackCategory.pawCarnivore,
+  'Black-backed Jackal': TrackCategory.pawCarnivore,
+  'Side-striped Jackal': TrackCategory.pawCarnivore,
+  'Serval': TrackCategory.pawCarnivore,
+  'African Wildcat': TrackCategory.pawCarnivore,
+  'Black-footed Cat': TrackCategory.pawCarnivore,
+  'Aardwolf': TrackCategory.pawCarnivore,
+  'Cape Fox': TrackCategory.pawCarnivore,
+  'Bat-eared Fox': TrackCategory.pawCarnivore,
+  'African Civet': TrackCategory.pawCarnivore,
+  'Small-spotted Genet': TrackCategory.pawCarnivore,
+  'Rusty-spotted Genet': TrackCategory.pawCarnivore,
+  'Cape Genet': TrackCategory.pawCarnivore,
+  'Yellow Mongoose': TrackCategory.pawCarnivore,
+  'Slender Mongoose': TrackCategory.pawCarnivore,
+  'Banded Mongoose': TrackCategory.pawCarnivore,
+  'Dwarf Mongoose': TrackCategory.pawCarnivore,
+  'Water Mongoose': TrackCategory.pawCarnivore,
+  'White-tailed Mongoose': TrackCategory.pawCarnivore,
+  "Selous' Mongoose": TrackCategory.pawCarnivore,
+  'Suricate': TrackCategory.pawCarnivore,
+  'Striped Polecat': TrackCategory.pawCarnivore,
+  'African Striped Weasel': TrackCategory.pawCarnivore,
+  'Honey Badger': TrackCategory.pawCarnivore,
+  'African Elephant': TrackCategory.pawCarnivore,
+  'Hippopotamus': TrackCategory.pawCarnivore,
 
-  // Cloven-hoofed / ungulates
+  // Cloven-hoofed / ungulates (2 toes)
   'Kudu': TrackCategory.clovenHoofUngulate,
+  'Greater Kudu': TrackCategory.clovenHoofUngulate,
   'Impala': TrackCategory.clovenHoofUngulate,
   'Gemsbok': TrackCategory.clovenHoofUngulate,
   'Eland': TrackCategory.clovenHoofUngulate,
+  'Cape Eland': TrackCategory.clovenHoofUngulate,
   'Warthog': TrackCategory.clovenHoofUngulate,
+  'Common Warthog': TrackCategory.clovenHoofUngulate,
+  'Bushpig': TrackCategory.clovenHoofUngulate,
   'Nyala': TrackCategory.clovenHoofUngulate,
   'Springbok': TrackCategory.clovenHoofUngulate,
   'Blesbok': TrackCategory.clovenHoofUngulate,
+  'Bontebok': TrackCategory.clovenHoofUngulate,
   'Hartebeest': TrackCategory.clovenHoofUngulate,
   'Red Hartebeest': TrackCategory.clovenHoofUngulate,
   'Blue Wildebeest': TrackCategory.clovenHoofUngulate,
+  'Black Wildebeest': TrackCategory.clovenHoofUngulate,
   'Wildebeest': TrackCategory.clovenHoofUngulate,
   'Roan Antelope': TrackCategory.clovenHoofUngulate,
   'Sable Antelope': TrackCategory.clovenHoofUngulate,
   'Bushbuck': TrackCategory.clovenHoofUngulate,
+  'Southern Bushbuck': TrackCategory.clovenHoofUngulate,
   'Duiker': TrackCategory.clovenHoofUngulate,
+  'Common Duiker': TrackCategory.clovenHoofUngulate,
+  'Blue Duiker': TrackCategory.clovenHoofUngulate,
+  'Natal Red Duiker': TrackCategory.clovenHoofUngulate,
   'Steenbok': TrackCategory.clovenHoofUngulate,
+  'Cape Grysbok': TrackCategory.clovenHoofUngulate,
+  "Sharpe's Grysbok": TrackCategory.clovenHoofUngulate,
   'Oribi': TrackCategory.clovenHoofUngulate,
+  'Mountain Reedbuck': TrackCategory.clovenHoofUngulate,
+  'Southern Reedbuck': TrackCategory.clovenHoofUngulate,
+  'Suni': TrackCategory.clovenHoofUngulate,
+  'Tsessebe': TrackCategory.clovenHoofUngulate,
+  'Common Waterbuck': TrackCategory.clovenHoofUngulate,
   'Giraffe': TrackCategory.clovenHoofUngulate,
+  'Dik-dik': TrackCategory.clovenHoofUngulate,
+  'Klipspringer': TrackCategory.clovenHoofUngulate,
   'Cape Buffalo': TrackCategory.clovenHoofUngulate,
   'Buffalo': TrackCategory.clovenHoofUngulate,
+  'Black Rhinoceros': TrackCategory.clovenHoofUngulate,
+  'Southern White Rhinoceros': TrackCategory.clovenHoofUngulate,
 
-  // Solid hoof / equines
+  // Solid hoof / equines (1 toe)
   'Zebra': TrackCategory.solidHoofEquine,
+  'Plains Zebra': TrackCategory.solidHoofEquine,
+  'Cape Mountain Zebra': TrackCategory.solidHoofEquine,
+  "Hartmann's Mountain Zebra": TrackCategory.solidHoofEquine,
   'Donkey': TrackCategory.solidHoofEquine,
   'Horse': TrackCategory.solidHoofEquine,
 };
@@ -85,6 +135,24 @@ TrackCategory categoryForSpecies(String species) {
     if (entry.key.toLowerCase() == lower) return entry.value;
   }
   return TrackCategory.clovenHoofUngulate;
+}
+
+/// Canonical number of toes a track in the given category leaves.
+///
+/// Paw carnivores (felids, canids, hyaenids, viverrids, herpestids,
+/// mustelids) leave 4 toes; cloven-hoofed ungulates / suids / giraffids
+/// leave 2; solid-hoofed equines leave 1. This is the single source of
+/// truth the seeder's `_trackMorphology` dataset mirrors, so the Firestore
+/// `animals.toeCount` field and the spoor classifier always agree.
+int toeCountForCategory(TrackCategory c) {
+  switch (c) {
+    case TrackCategory.pawCarnivore:
+      return 4;
+    case TrackCategory.clovenHoofUngulate:
+      return 2;
+    case TrackCategory.solidHoofEquine:
+      return 1;
+  }
 }
 
 /// Human-readable label for a category, shown in the selector UI.
