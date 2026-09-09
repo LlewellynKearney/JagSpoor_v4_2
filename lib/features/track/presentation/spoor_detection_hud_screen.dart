@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/track_taxonomy.dart';
+import '../data/spoor_track_attributes.dart';
+import '../data/spoor_validation_layer.dart';
 import '../data/services/spoor_ai_service.dart';
 import 'classification_result_widget.dart';
 
@@ -28,6 +30,10 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
   String? _latitude;
   String? _longitude;
   Map<String, dynamic>? _predictionResult;
+
+  /// Morphological validation output computed from the captured frame's
+  /// track geometry. Null until a scan has been validated.
+  SpoorValidationResult? _validationResult;
 
   /// Pre-selected morphological track category. When set, candidate species
   /// are restricted to this category to prevent cross-type misclassification.
@@ -195,6 +201,7 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
     setState(() {
       _isScanning = true;
       _predictionResult = null;
+      _validationResult = null;
     });
 
     try {
@@ -205,10 +212,27 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
         scaleReferenceMm: _scaleReferenceMm,
       );
 
+      // Morphological validation: derive track geometry from the captured
+      // frame's bounding box and re-rank the raw AI predictions against it.
+      final attributes = await SpoorTrackAttributes.fromXFile(
+        image,
+        scaleReferenceMm: _scaleReferenceMm,
+      );
+      final rawPredictions =
+          (result['topPredictions'] as List?)
+              ?.whereType<SpoorPrediction>()
+              .toList() ??
+          const <SpoorPrediction>[];
+      final validation = SpoorValidationLayer.classifySpoorTrackValidated(
+        rawPredictions: rawPredictions,
+        attributes: attributes,
+      );
+
       if (mounted) {
         setState(() {
           _isScanning = false;
           _predictionResult = result;
+          _validationResult = validation;
         });
       }
     } catch (e) {
@@ -223,6 +247,68 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
         );
       }
     }
+  }
+
+  /// Builds a subtle HUD badge indicating the raw AI prediction was
+  /// corrected or re-ranked by the morphological validation layer, with the
+  /// human-readable validation note. Only rendered when the validation layer
+  /// actually changed the ranking.
+  Widget _buildValidationBadge(Color accent) {
+    final validation = _validationResult;
+    if (validation == null ||
+        (!validation.wasCorrected && !validation.wasReRanked)) {
+      return const SizedBox.shrink();
+    }
+    final label = validation.wasCorrected
+        ? 'MORPHOLOGY CORRECTED'
+        : 'MORPHOLOGY RE-RANKED';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(Icons.track_changes, size: 14, color: accent),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                if (validation.note.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    validation.note,
+                    style: TextStyle(
+                      color: accent.withValues(alpha: 0.85),
+                      fontSize: 10,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -360,30 +446,52 @@ class _SpoorDetectionHudScreenState extends State<SpoorDetectionHudScreen>
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (_predictionResult != null) ...[
+                              // Validated top match: the morphological
+                              // validation layer's re-ranked top-1 wins over the
+                              // raw AI top-1 (falls back to the raw result when
+                              // no re-ranked list is available).
                               ClassificationResultWidget(
                                 speciesName:
-                                    _predictionResult!['species'] ?? 'Unknown',
+                                    _validationResult?.topSpecies.isNotEmpty ==
+                                            true
+                                        ? _validationResult!.topSpecies
+                                        : _predictionResult!['species'] ??
+                                              'Unknown',
                                 confidence:
-                                    (_predictionResult!['confidence'] as num?)
-                                        ?.toDouble() ??
-                                    0.0,
+                                    (_validationResult?.topConfidence ?? 0) > 0
+                                        ? _validationResult!.topConfidence
+                                        : (_predictionResult!['confidence']
+                                                    as num?)
+                                                ?.toDouble() ??
+                                            0.0,
                                 theme: widget.theme,
                                 gpsCoordinates:
                                     _latitude != null && _longitude != null
                                         ? '$_latitude, $_longitude'
                                         : null,
                                 topPredictions:
-                                    (_predictionResult!['topPredictions']
-                                            as List?)
-                                        ?.whereType<SpoorPrediction>()
-                                        .toList(),
+                                    _validationResult?.reRankedPredictions
+                                            .isNotEmpty ==
+                                            true
+                                        ? _validationResult!.reRankedPredictions
+                                        : (_predictionResult!['topPredictions']
+                                                    as List?)
+                                                ?.whereType<SpoorPrediction>()
+                                                .toList(),
                                 category: _predictionResult!['category']
                                     as TrackCategory?,
                               ),
+                              if (_validationResult != null) ...[
+                                const SizedBox(height: 12),
+                                _buildValidationBadge(scanColor),
+                              ],
                               const SizedBox(height: 16),
                               ElevatedButton(
                                 onPressed: () {
-                                  setState(() => _predictionResult = null);
+                                  setState(() {
+                                    _predictionResult = null;
+                                    _validationResult = null;
+                                  });
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.black87,
