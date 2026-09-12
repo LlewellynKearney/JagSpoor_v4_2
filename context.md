@@ -1,6 +1,6 @@
-# JagSpoor v4.2 — Project Context & Architecture
+# JagSpoor v4.3 — Project Context & Architecture
 
-> **Version:** 4.2 | **Platform:** Flutter / Firebase | **Currency:** ZAR (South African Rand)
+> **Version:** 4.3 | **Platform:** Flutter / Firebase | **Currency:** ZAR (South African Rand)
 > **Last Updated:** 2026-08-12
 
 This document is the single source of truth for the current state of the JagSpoor
@@ -1227,4 +1227,4 @@ firebase.json            # firestore + storage + functions (nodejs22) config
 
 ---
 
-*Reconciled against source: 2026-08-12 | JagSpoor v4.2*
+*Reconciled against source: 2026-08-12 | JagSpoor v4.3*

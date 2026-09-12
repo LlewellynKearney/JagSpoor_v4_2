@@ -1,6 +1,56 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- App version + version name bumped to 4.3 (added 2026-09-12)
+
+Single coordinated version bump across the Flutter project: the app's
+product version advanced from v4.2 to **v4.3** (Android `versionName`
+`1.103` -> `4.3`, `versionCode` 3 -> 4; pubspec `1.103.0+4` -> `4.3.0+5`).
+
+### What changed (4 files)
+- `pubspec.yaml`: `version: 1.103.0+4` -> `version: 4.3.0+5`. This is the
+  single source of truth for iOS/macOS (`$(FLUTTER_BUILD_NAME)` ->
+  `"4.3.0"`, `$(FLUTTER_BUILD_NUMBER)` -> `5` -- the `ios/Runner/Info.plist`
+  + `macos/Runner/Info.plist` + `ios/Runner.xcodeproj/project.pbxproj`
+  `CURRENT_PROJECT_VERSION` entries are all parameterized off these Flutter
+  build vars, so NO native iOS/macOS edit was required/possible). The
+  `ios/Flutter/AppFrameworkInfo.plist` `1.0` entries are the framework
+  plist (template default, untouched).
+- `android/app/build.gradle.kts`: `defaultConfig` `versionCode = 3` ->
+  `versionCode = 4`, `versionName = "1.103"` -> `versionName = "4.3"`
+  (comment updated: each Play Console re-upload needs a strictly higher
+  version-code integer than the last accepted AAB; v4.2/code 3 -> v4.3/code
+  4). The historical chain is 1 -> 2 -> 3 -> 4 with versionNames
+  `1.101` -> `1.102` -> `1.103` -> `4.3`.
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode` `'3'` -> `'4'`,
+  `fallbackVersionName` `'1.103'` -> `'4.3'` (the headless/test fallback
+  that mirrors the Android Play build) + the two doc-comment examples.
+- `test/version_info_and_facebook_test.dart`: fallback-contract test
+  expectations updated to `'4.3'` / `'4'`.
+
+### Docs (headers/footers only)
+- `context.md` + `PROJECT_CONTEXT.md`: product-version branding
+  `v4.2` -> `v4.3` in the title + `**Version:**` line + footer.
+  Section-number headings (e.g. `### 4.2 Subscription Screen`,
+  `### 4.3 Free Trial`) are document-internal numbering and were
+  deliberately NOT touched.
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9, CI-flow local): 0 errors, 0 warnings
+  (314 pre-existing infos baseline, unchanged).
+- `flutter test` full suite (`LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink): **1735 passed, 2 failed** -- the 2
+  failures are the DOCUMENTED PRE-EXISTING `gameGuideSeedVersion` spoor-
+  morphology seed-tag tests (`animal_track_morphology_test` +
+  `game_guide_rowland_ward_test`), verified identical at the clean baseline
+  (stashed); unrelated to this version bump. The
+  `version_info_and_facebook_test` suite is green with the new fallback
+  constants.
+- Android APK build still requires an Android SDK (not in this sandbox); the
+  Gradle `versionCode`/`versionName` were verified at the source level.
+- Commit pushed to `origin/main` (working tree clean after).
+
+
 ## Phase -- Referral system Phase 2: Admin Portal reward settings card (added 2026-09-06)
 
 Built the Admin Portal settings interface for the referral rewards on top of
