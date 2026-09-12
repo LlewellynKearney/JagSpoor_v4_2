@@ -10,6 +10,11 @@ import java.util.Properties
 
 android {
     namespace = "za.co.jagspoor.app"
+    // compileSdk 36 (Android 16) satisfies the Google Play target-API
+    // requirement AND the 16 KB page-size build requirements of the resolved
+    // plugins (tflite_flutter 0.12.1 / LiteRT 1.4.0 declares compileSdk 36).
+    // AGP >= 8.5.1 (declared in settings.gradle.kts: 8.11.1) automatically
+    // aligns + packages native libraries for 16 KB page-size devices.
     compileSdk = 36
     // Pin the NDK to the version the resolved Flutter plugins depend on
     // (camera_android, cloud_firestore, firebase_*, mobile_scanner, ... all
@@ -17,6 +22,23 @@ android {
     // 3.29.1 pin) triggers a plugin-NDK-mismatch warning on every build.
     // NDK releases are backward compatible, so the highest version wins.
     ndkVersion = "27.0.12077973"
+
+    // Google Play 16 KB page-size support: AGP >= 8.5.1 automatically aligns
+    // native libraries for 16 KB page-size devices. `useLegacyPackaging =
+    // true` stores the .so files UNCOMPRESSED in the APK/AAB so they can be
+    // memory-mapped page-aligned (compressed libraries cannot be aligned).
+    // tflite_flutter 0.12.1 / LiteRT 1.4.0 ships 16 KB-aligned binaries
+    // (libtensorflowlite_gpu_jni.so et al); this block guarantees they are
+    // packaged uncompressed + aligned. `pickFirst` resolves duplicate
+    // libc++_shared.so across plugins (camera, mobile_scanner, tflite, ...).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        resources {
+            pickFirsts += "**/libc++_shared.so"
+        }
+    }
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

@@ -12941,3 +12941,63 @@ outfitter side, mirroring the hunter-side `AccountDeletionService` pattern.
 - No Firestore rules / index / Storage / pubspec / manifest changes (pure
   client-side deletion cascade + UI; the existing owner-scoped rules grant
   everything the cascade performs).
+
+## Phase -- Google Play 16 KB page size support: tflite_flutter 0.12.1 + edge-to-edge Android config (added 2026-09-12)
+
+Fixed the Google Play Console 16 KB page-size warning + Android edge-to-edge
+config (Android 15/API 35+ apps default to edge-to-edge; Android 16 removes
+the opt-out). Verified with a REAL Android debug APK build in this sandbox
+(usually impossible -- no Android SDK/Java; I installed OpenJDK 21 + the
+Android cmdline-tools/SDK 36/NDK 27.0.12077973 for the build below).
+
+### What changed (5 files)
+- `pubspec.yaml`: `tflite_flutter: ^0.11.0` -> **`^0.12.1`** (with an
+  explanatory comment). 0.12.1 migrates off TensorFlow Lite 2.12.0 onto
+  Google AI Edge **LiteRT 1.4.0**, whose native libs (incl.
+  `libtensorflowlite_gpu_jni.so` from `com.google.ai.edge.litert:litert-gpu`)
+  are **16 KB page-aligned** (`PT_LOAD Align 0x4000`). 0.12.0 claimed 16 KB
+  support but still shipped the TFLite 2.12.0 binaries (incompatible).
+  `pubspec.lock`: tflite_flutter 0.11.0 -> 0.12.1 (only dependency change).
+- `android/app/build.gradle.kts`: `compileSdk` was already 36 (Android 16,
+  satisfies the Play target-API + 16 KB build requirement). NEW `packaging`
+  block: `jniLibs.useLegacyPackaging = true` (stores .so UNCOMPRESSED so they
+  can be memory-mapped page-aligned -- compressed libs cannot be aligned) +
+  `resources.pickFirsts += "**/libc++_shared.so"` (duplicate across the
+  camera/mobile_scanner/tflite plugins). `ndkVersion` stayed pinned
+  `27.0.12077973`.
+- `android/settings.gradle.kts`: annotated that **AGP 8.11.1** (>= the 8.5.1
+  floor) automatically aligns native libraries for 16 KB page-size devices.
+- `android/app/src/main/kotlin/za/co/jagspoor/app/MainActivity.kt`: added
+  `override fun onCreate` calling **`enableEdgeToEdge()`** BEFORE
+  `super.onCreate`. NOTE: `enableEdgeToEdge()` is an androidx.activity
+  extension defined ONLY on `ComponentActivity` -- `FlutterActivity` extends
+  plain `android.app.Activity`, so it does NOT compile on FlutterActivity
+  ("receiver type mismatch", verified via the real Kotlin build). The app's
+  MainActivity now extends **`FlutterFragmentActivity`** (extends
+  FragmentActivity -> ComponentActivity; a first-class Flutter embedding
+  class with identical behaviour; requires androidx.fragment 1.7.1, already
+  transitively resolved by flutter_embedding). This is the only way to honor
+  the "use enableEdgeToEdge()" requirement on a Flutter embedding host.
+
+### Verification
+- Full `flutter pub get`: clean; only tflite_flutter changed in the lockfile.
+- `flutter analyze`: 0 errors, 0 warnings, 314 pre-existing info-level issues.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **1735 passed,
+  2 failed** -- the 2 failures are the DOCUMENTED PRE-EXISTING
+  `gameGuideSeedVersion` spoor-morphology seed-tag tests
+  (`animal_track_morphology_test` + `game_guide_rowland_ward_test`),
+  verified identical on the clean baseline via `git stash`; unrelated to
+  this change.
+- **Android debug APK builds successfully**: `flutter build apk --debug` ->
+  `build/app/outputs/flutter-apk/app-debug.apk` (~143 MB). Extracted the APK
+  and verified with `readelf -l` that `lib/{x86_64,arm64-v8a,armeabi-v7a}/
+  libtensorflowlite_gpu_jni.so` all carry PT_LOAD **`Align 0x4000`** (16 KB)
+  -- the 16 KB page-aligned LiteRT binaries are actually packaged.
+- Env note: installed OpenJDK 21 (`openjdk-21-jdk-headless`; the apt repos
+  have no 17), Android cmdline-tools + platform-tools + `platforms;android-36`
+  + `build-tools;36.0.0` + `ndk;27.0.12077973` under `/opt/android-sdk`
+  (`local.properties` has `sdk.dir=/opt/android-sdk`; gitignored). Build took
+  ~2-6 min after warm Gradle caches.
+- Files: `pubspec.yaml`, `pubspec.lock`, `android/app/build.gradle.kts`,
+  `android/settings.gradle.kts`, `MainActivity.kt`, `AGENTS.md`.
+- Uncommitted in working tree (commit/push left to the requester unless asked).

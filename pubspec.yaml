@@ -21,9 +21,15 @@ dependencies:
   # Camera access for spoor identifier
   camera: ^0.10.5+5
 
-  # TensorFlow Lite for on-device AI image classification
-  tflite_flutter: ^0.11.0
-  
+  # TensorFlow Lite / LiteRT for on-device AI image classification
+  # ^0.12.1 (2025-10-28) properly implements Android 16 KB page size support:
+  # it migrates off TensorFlow Lite 2.12.0 onto Google AI Edge LiteRT 1.4.0,
+  # whose native libraries (incl. `libtensorflowlite_gpu_jni.so` from
+  # `com.google.ai.edge.litert:litert-gpu`) are 16 KB page-aligned as required
+  # by Google Play's 16 KB page-size requirement. (0.12.0 claimed 16 KB
+  # support but still shipped TFLite 2.12.0, which is incompatible.)
+  tflite_flutter: ^0.12.1
+
   # Image processing for model input preparation
   image: ^4.1.3
 
