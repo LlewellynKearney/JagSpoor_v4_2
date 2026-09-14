@@ -9,16 +9,40 @@
       "client_info": {
         "mobilesdk_app_id": "1:475471855344:android:b74bed5488b2440b620c35",
         "android_client_info": {
-          "package_name": "za.co.jagspoor.app"
+          "package_name": "com.example.jagspoor"
         }
       },
       "oauth_client": [
         {
+          "client_id": "475471855344-6lv2r36vinnv4v0pfg51gg5sdgt1qgh6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.jagspoor",
+            "certificate_hash": "8f5275c35c07c29785b6804ba98a2474c0e64c31"
+          }
+        },
+        {
           "client_id": "475471855344-89nc8lvtb5su643rnb6a2ft7p30g741h.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "za.co.jagspoor.app",
+            "package_name": "com.example.jagspoor",
             "certificate_hash": "9d2d67a688eb3bb8744cb4e4f48215b5fe38f1ab"
+          }
+        },
+        {
+          "client_id": "475471855344-pg0glob2b6gmfv17pkn8bk34fhr8dsej.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.jagspoor",
+            "certificate_hash": "d20c146d8b7b2e0460564922f2a0788c627ec250"
+          }
+        },
+        {
+          "client_id": "475471855344-ve88226j7aauruacfn5kec13hhr5m39c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.jagspoor",
+            "certificate_hash": "622c2e3c351e1a8ef24f0f172783951b9b90f9cb"
           }
         },
         {
