@@ -31,7 +31,9 @@ import '../auth/services/user_role_provider.dart';
 import '../shared/widgets/hunter_media_card.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
+import '../subscription/paywall_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
+import '../../services/entitlement_service.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
 import 'widgets/dashboard_feature_folder.dart';
@@ -542,6 +544,24 @@ class _HunterDashboardState extends State<HunterDashboard> {
               16 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
+              // 🌟 Trial status banner (active trial only).
+              StreamBuilder<UserEntitlement>(
+                stream: EntitlementService.instance.watchMyEntitlement(),
+                builder: (context, snapshot) {
+                  final ent = snapshot.data ?? const UserEntitlement();
+                  if (ent.isPremiumActive(DateTime.now())) {
+                    return const SizedBox.shrink();
+                  }
+                  if (ent.isTrialActive(DateTime.now())) {
+                    return TrialBanner(
+                      theme: theme,
+                      daysRemaining: ent.trialDaysRemaining(DateTime.now()),
+                      trialEnd: ent.trialEnd,
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               // 🎯 Network Diagnostic HUD Status Bar
               const NetworkDiagnosticHud(),
               const SizedBox(height: 16),

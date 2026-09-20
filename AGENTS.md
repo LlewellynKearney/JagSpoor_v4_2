@@ -1,6 +1,164 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Billing & entitlement hardening: server-authoritative isPremium + premiumExpiry (added 2026-09-13)
+
+Goal: move premium entitlement state (`isPremium`, `premiumExpiry`,
+`subscriptionSource`) to a SECURE, server-authoritative model on
+`users/{uid}` + a mirrored `entitlements/{uid}` document. The Flutter app
+NEVER writes these fields; only Cloud Functions do. Google Play purchases
+are verified server-side against the Play Developer API; the website-only
+PayFast ITN webhook (no app-side PayFast) grants entitlement for
+website-priced subscriptions.
+
+### 1. Cloud Functions (`functions/src/entitlement.ts`, NEW)
+- `writeEntitlement(uid, fields)` — the ONLY writer of the entitlement
+  fields. Merge-writes `users/{uid}` (`isPremium`, `premiumExpiry`,
+  `subscriptionSource`, `subscriptionProduct`,
+  `subscriptionPlayPurchaseToken`, `payfastPaymentId`, `subscriptionStatus`,
+  `subscriptionTier`, `subscriptionRenewalDate`, `entitlementUpdatedAt`) AND
+  mirrors the subset onto `entitlements/{uid}`. `ENTITLEMENTS_COLLECTION`,
+  `SUBSCRIPTION_SOURCE_*` constants, `PACKAGE_NAME`, `GOOGLE_PLAY_PRODUCTS`
+  (jagspoor_hunter_monthly / jagspoor_outfitter_monthly) exported.
+- `validateGooglePlayPurchase` (HTTPS onCall, us-central1) — invoked by the
+  app after a Play purchase with `{purchaseToken, productId}`. Resolves the
+  caller uid from the Firebase ID token, queries the androidpublisher v3
+  `purchases.subscriptionsv2.get`, rejects fake/unknown product ids +
+  expired/cancelled states, and writes a 1-month premium entitlement (tier
+  derived from product id). Uses `googleapis` `google.auth.GoogleAuth`
+  (default SA; optional `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` base64 override).
+- `onGooglePlayRTDN` (Pub/Sub `onMessagePublished`) — Real-Time Developer
+  Notifications from the Play Console. Revokes entitlement on revocation
+  types 12 (REVOKED/refund), 13 (EXPIRED), 9 (PRODUCT_NOT_AVAILABLE); type 3
+  (CANCELED) keeps paid-through access (premiumExpiry stays). Resolves the
+  user by `subscriptionPlayPurchaseToken`. Topic `jagspoor-play-rtdn`.
+- `payfastITN` (HTTPS onRequest) — website-only webhook. Verifies the PayFast
+  MD5 signature (sorted params + passphrase), accepts only `payment_status ==
+  COMPLETE`, validates `amount_gross` against `PAYFAST_PLANS` (monthly 199 /
+  yearly 399), finds `users` by billing email, and grants the entitlement.
+  No app-side PayFast — the Flutter app only opens
+  https://jagspoor.co.za/pricing to subscribe via the website.
+- `functions/src/index.ts` re-exports all entitlement functions;
+  `functions/.env.example` documents the new env vars
+  (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, `PAYFAST_PASSPHRASE`).
+
+- `functions/src/user_trial_onboarding.ts`: the trial trigger now ALSO writes
+  `trialStart`/`trialEnd` (`isPremium: false`,
+  `subscriptionSource: 'trial'`, `entitlementUpdatedAt` server timestamp)
+  so a fresh account carries the full entitlement shape.
+
+### 2. Firestore rules (`firestore.rules`)
+- `users/{userId}` `allow write` now additionally requires that the write
+  does NOT touch any server-owned field: `!('isPremium' in
+  request.resource.data)`, `premiumExpiry`, `subscriptionSource`,
+  `subscriptionProduct`, `subscriptionPlayPurchaseToken`, `payfastPaymentId`,
+  `entitlementUpdatedAt` — a client can never fabricate / extend its own
+  premium state.
+- NEW `match /entitlements/{entitlementId}`: authenticated read of the
+  caller's own doc only; `allow write: if false` (Admin SDK writes bypass
+  rules).
+
+### 3. Flutter client
+- NEW `lib/services/entitlement_service.dart`:
+  - `UserEntitlement` model + `fromMap` (isPremium / premiumExpiry /
+    subscriptionSource / subscriptionProduct / trialStart / trialEnd).
+    `isPremiumActive(now)`, `isTrialActive(now)`, `canAccessPremium(now)`,
+    `trialDaysRemaining(now)`.
+  - `EntitlementService.instance` — reactive `watchMyEntitlement()` +
+    one-shot `getMyEntitlement()` reading ONLY `users/{uid}` (server-owned
+    write enforcement is in the rules). `verifyGooglePlayPurchase(...)` —
+    calls the callable over HTTPS (raw `http` POST to
+    https://us-central1-jagspoor.cloudfunctions.net/validateGooglePlayPurchase
+    with `Authorization: Bearer <idToken>`, body `{"data":{...}}`). NO extra
+    platform plugin (the `firebase_functions` pub package is the NEW
+    Dart-server Functions SDK, NOT the client callable SDK — do NOT add it;
+    direct-HTTP is the dependency-free path used here). Test seams:
+    `firestoreForTesting`, `currentUserIdResolverForTesting`,
+    `idTokenResolverForTesting`, `projectIdForTesting`, `resetTestSeams()`.
+- NEW `lib/features/subscription/paywall_screen.dart`: `PaywallScreen`
+  (Subscribe via Google Play → `PlayBillingService.instance.purchaseProduct`;
+  Manage subscription on website → url https://jagspoor.co.za/pricing) +
+  `TrialBanner` (days-remaining pill, hidden when premium/expired).
+- `lib/features/auth/widgets/role_guarded_route.dart`: now also gates on
+  entitlement — when `requiresPremium` (default true) + role != admin, the
+  route awaits `EntitlementService.getMyEntitlement()` and shows the
+  `PaywallScreen` instead of the screen when
+  `!it.canAccessPremium(now)`. Dashboards are paywalled after trial
+  expiry.
+- `lib/features/subscription/subscription_screen.dart`:
+  `_listenForPurchases` no longer writes the entitlement client-side; it now
+  calls `EntitlementService.verifyGooglePlayPurchase(...)` after a
+  Play purchase/restore, surfaces the server result, and only then
+  `completePurchase`.
+- `lib/features/subscription/services/subscription_status_service.dart`:
+ `recordPlayPurchase`/`recordPlayCancellation` REMOVED (server-owned fields).
+  `markTrialStarted` retained (client-owned status only; the server trigger
+  owns the trial entitlement fields).
+- Hunter + Outfitter dashboards render the `TrialBanner` via
+  `StreamBuilder<UserEntitlement>` when a trial is active (hidden when
+  premium active or no active trial).
+
+### 4. Audit fixes bundled in the same pass
+- **iOS/macOS bundle id** aligned to the production
+  `za.co.jagspoor.app` (`ios` + `macos` project.pbxproj,
+  `macos/Runner/Configs/AppInfo.xcconfig`, `lib/firebase_options.dart`
+  `iosBundleId`) — removes the pre-existing iOS `com.example.jagspoorV42`
+  inconsistency.
+- **App Check** production providers: `main.dart` now activates
+  `PlayIntegrity` (Android) + `AppAttest` (iOS/macOS) for release /
+  `dart.vm.product` builds and the debug provider only for debug builds.
+- **Seed gating**: `main.dart` no longer force re-seeds on EVERY launch;
+  ballistics + game-guide seeds are version-gated (bump `ballisticsSeedVersion`
+  / `gameGuideSeedVersion` to force). Removes the per-launch write storm.
+- **Spoor mock fallback** audited + verified: `_modelScoresFor` /
+  `_mockScoresFor` handle a placeholder model cleanly (no crash), so the
+  Spoor Identifier continues to work even if the on-device model asset is
+  absent.
+
+### Tests
+- NEW `functions/test/entitlement.test.js` (12): entitlement constants,
+  Play product ids, `writeEntitlement` empty-uid rejection, `playStateError`,
+  RTDN revocation set, `parseRtdnMessage` decode + garbage, PayFast
+  signature validate/tamper, `paymentPlanFrom`, `payfastPaymentIdFor`
+  stability, index entry re-exports. `npm test`: 31/31 pass.
+- `test/subscription_status_service_test.dart` — replaced the
+  client-writes-premium groups with a "server-authoritative entitlement
+  (EntitlementService)" group (3 tests via `FakeFirebaseFirestore` + the
+  entitlement seams). 23/23 pass.
+- `flutter analyze`: 0 errors, 0 warnings (~320 pre-existing infos).
+- `flutter test` (full suite, Flutter 3.44.9 + sqflite FFI): 1738 passed,
+  2 failed — the SAME 2 documented pre-existing `gameGuideSeedVersion`
+  spoor-morphology seed-tag tests (`animal_track_morphology_test` +
+  `game_guide_rowland_ward_test`, constant is v4 / tests expect v3,
+  pre-existing at HEAD `b36072a`); unrelated to this change.
+
+### Deploy requirements
+- `npx firebase-tools deploy --only functions,firestore:rules` in a
+  credentialed env.
+- Google Play Developer API: enable in GCP; grant the Functions SA the
+  Android Publisher role (or set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`).
+- Pub/Sub topic `jagspoor-play-rtdn` + Play Console RTDN configuration
+  (Monetization → Real-time developer notifications).
+- Website pricing page (Afrihost) must POST PayFast ITN to
+  https://us-central1-jagspoor.cloudfunctions.net/payfastITN with
+  `PAYFAST_PASSPHRASE` set.
+- Files: `functions/src/entitlement.ts` (NEW), `functions/src/index.ts`,
+  `functions/src/user_trial_onboarding.ts`, `functions/.env.example`,
+  `firestore.rules`, `lib/services/entitlement_service.dart` (NEW),
+  `lib/features/subscription/paywall_screen.dart` (NEW),
+  `lib/features/auth/widgets/role_guarded_route.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/services/subscription_status_service.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/main.dart`, `lib/firebase_options.dart`,
+  `ios/Runner.xcodeproj/project.pbxproj`,
+  `macos/Runner.xcodeproj/project.pbxproj`,
+  `macos/Runner/Configs/AppInfo.xcconfig`,
+  `functions/test/entitlement.test.js` (NEW),
+  `test/subscription_status_service_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- App version + version name bumped to 4.3 (added 2026-09-12)
 
 Single coordinated version bump across the Flutter project: the app's

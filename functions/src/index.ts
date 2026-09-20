@@ -18,6 +18,33 @@ import { firestore, auth, getAdmin } from "./firebase";
 // (see user_trial_onboarding.ts).
 export { initializeNewUserTrial } from "./user_trial_onboarding";
 
+// Billing & entitlement hardening — server-authoritative premium state on
+// users/{uid} + entitlements/{uid}. Google Play purchase validation (callable),
+// Real-Time Developer Notification handling (Pub/Sub), and the website-only
+// PayFast ITN webhook (see entitlement.ts).
+// NOTE: the Flutter app NEVER writes isPremium/premiumExpiry — these functions
+// (and the trial trigger) are the only writers, enforced by firestore.rules.
+export {
+  ENTITLEMENTS_COLLECTION,
+  SUBSCRIPTION_SOURCE_GOOGLE_PLAY,
+  SUBSCRIPTION_SOURCE_PAYFAST,
+  SUBSCRIPTION_SOURCE_TRIAL,
+  PACKAGE_NAME,
+  GOOGLE_PLAY_PRODUCTS,
+  writeEntitlement,
+  getPlayPurchaseInfo,
+  parseRtdnMessage,
+  isRevocation,
+  validateGooglePlayPurchase,
+  onGooglePlayRTDN,
+  GOOGLE_PLAY_RTDN_TOPIC,
+  payfastITN,
+  PAYFAST_PLANS,
+  payfastSignatureMatches,
+  payfastPaymentIdFor,
+  paymentPlanFrom,
+} from "./entitlement";
+
 // Referral system Phase 1 — Firestore repository methods + reward config
 // helpers (see referral.ts). The models/collections are shared with the
 // Flutter client `ReferralRepository`.

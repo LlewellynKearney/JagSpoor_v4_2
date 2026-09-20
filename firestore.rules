@@ -96,11 +96,32 @@ service cloud.firestore {
     // deletion via AccountDeletionService, which batch-deletes users/{uid}).
     match /users/{userId} {
       allow read: if isSignedIn();
+      // Owner-scoped write: the user may maintain their own profile document
+      // (role, displayName, medical info, FCM tokens, etc.) EXCEPT the
+      // immutable, server-owned entitlement fields. `isPremium`, `premiumExpiry`,
+      // `subscriptionSource`, `subscriptionProduct`, `subscriptionPlayPurchaseToken`,
+      // `payfastPaymentId` and `entitlementUpdatedAt` are ONLY written by Cloud
+      // Functions (validateGooglePlayPurchase / payfastITN / the trial trigger),
+      // so a user cannot fabricate / extend their own premium state.
       allow write: if isSignedIn() && request.auth.uid == userId
         && (resource == null
           || !('deviceFingerprint' in resource.data)
-          || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint);
+          || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint)
+        && !('isPremium' in request.resource.data)
+        && !('premiumExpiry' in request.resource.data)
+        && !('subscriptionSource' in request.resource.data)
+        && !('subscriptionProduct' in request.resource.data)
+        && !('subscriptionPlayPurchaseToken' in request.resource.data)
+        && !('payfastPaymentId' in request.resource.data)
+        && !('entitlementUpdatedAt' in request.resource.data);
       allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+    // Entitlement documents are written exclusively by Cloud Functions
+    // (validateGooglePlayPurchase / payfastITN / the trial trigger) via the
+    // Admin SDK, which bypasses rules. Clients may read their own.
+    match /entitlements/{entitlementId} {
+      allow read: if isSignedIn() && request.auth.uid == entitlementId;
+      allow write: if false;
     }
     match /users {
       allow list: if isSignedIn();

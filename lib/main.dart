@@ -1,5 +1,6 @@
 // ADDED
 import 'dart:ui' show PlatformDispatcher;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -67,12 +68,31 @@ Future<void> main() async {
     final analytics = FirebaseAnalytics.instance;
     await analytics.logAppOpen();
 
-    // Initialize Firebase App Check with debug provider
-    // NOTE: For production, register your debug token in Firebase Console > App Check > Debug tokens
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.debug,
-      appleProvider: AppleProvider.debug,
-    );
+    // Initialize Firebase App Check.
+    // - Debug builds use the debug provider (no native attestation).
+    // - Release builds use platform attestation: Play Integrity on Android,
+    //   App Attest / DeviceCheck on iOS/macOS. These providers send a
+    //   `safe` App Check token to Firestore so the backend can reject
+    //   unverified clients. (Requires Play Integrity / App Attest to be
+    //   enabled in Firebase Console > App Check.)
+    final runner = const bool.fromEnvironment('dart.vm.product');
+    if (!kDebugMode || runner) {
+      // Production / release: platform attestation providers.
+      try {
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: AndroidProvider.playIntegrity,
+          appleProvider: AppleProvider.appAttest,
+        );
+      } catch (e) {
+        debugPrint('App Check (prod) activation failed: $e');
+      }
+    } else {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
+      );
+    }
+    debugPrint('App Check activated: release=$runner debug=${kDebugMode}');
 
     // Force App Check token pipeline registration to sync Firestore and Auth clients
     try {
@@ -118,36 +138,49 @@ Future<void> main() async {
       }
     });
 
-    // TEMPORARY: force UNCONDITIONAL ballistics + game guide re-seed on every
-    // app startup so local SQLite and Firestore are fully populated. The
-    // SharedPreferences `ballistics_seeded` / `game_guide_seed_version`
-    // gates are bypassed for this forced re-seed pass (v4.5 hot-fix).
+    // Reference-data seeding: version-gated (NOT a forced re-seed on every
+    // launch). The seeds run only when the stored `ballistics_seeded` /
+    // `game_guide_seed_version` markers are missing or out of date, so
+    // reference data is populated once per schema version. Bump the version
+    // constants to re-run a seed after a data change.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
 
-      // --- Ballistics reference-data seed (FORCED, unconditional) ---
-      try {
-        debugPrint("STARTING LIVE BALLISTIC DATA INGESTION (FORCED)...");
-        final seeder = BallisticsSeeder();
-        await seeder.seedAll();
-        await prefs.setBool('ballistics_seeded', true);
-        debugPrint("FIRESTORE POPULATION COMPLETELY SUCCESSFUL!");
-      } catch (e) {
-        debugPrint("SEEDER ERROR LOG: $e");
+      // --- Ballistics reference-data seed (version-gated) ---
+      const ballisticsSeedVersion = 'v2'; // bump to force a re-seed
+      final lastBallistics = prefs.getString('ballistics_seed_version') ?? '';
+      if (lastBallistics != ballisticsSeedVersion) {
+        try {
+          debugPrint(
+            'BALLISTIC DATA SEED (v$ballisticsSeedVersion) — seeding ref data...',
+          );
+          final seeder = BallisticsSeeder();
+          await seeder.seedAll();
+          await prefs.setBool('ballistics_seeded', true);
+          await prefs.setString(
+            'ballistics_seed_version',
+            ballisticsSeedVersion,
+          );
+          debugPrint('BALLISTIC DATA SEED COMPLETE');
+        } catch (e) {
+          debugPrint('SEEDER ERROR LOG: $e');
+        }
       }
 
-      // --- SA Game Guide seed (FORCED, unconditional) ---
-      // Re-runs on every startup so existing installs that carry null /
-      // empty / em-dash Rowland Ward values or blank scientific names get
-      // the full benchmark dataset overwritten via the seeder's
-      // `merge: true` write.
-      try {
-        debugPrint("STARTING SA GAME GUIDE SEED (FORCED, v$gameGuideSeedVersion)...");
-        await seedAnimalsFromCSV();
-        await prefs.setString('game_guide_seed_version', gameGuideSeedVersion);
-        debugPrint("SA GAME GUIDE SEED COMPLETE (v$gameGuideSeedVersion).");
-      } catch (e) {
-        debugPrint("GAME GUIDE SEEDER ERROR LOG: $e");
+      // --- SA Game Guide seed (version-gated) ---
+      final lastGameGuide =
+          prefs.getString('game_guide_seed_version') ?? '';
+      if (lastGameGuide != gameGuideSeedVersion) {
+        try {
+          debugPrint(
+            'SA GAME GUIDE SEED (v$gameGuideSeedVersion) — seeding species...',
+          );
+          await seedAnimalsFromCSV();
+          await prefs.setString('game_guide_seed_version', gameGuideSeedVersion);
+          debugPrint('SA GAME GUIDE SEED COMPLETE (v$gameGuideSeedVersion).');
+        } catch (e) {
+          debugPrint('GAME GUIDE SEEDER ERROR LOG: $e');
+        }
       }
     });
 

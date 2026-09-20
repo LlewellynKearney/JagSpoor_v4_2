@@ -3,6 +3,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
+import 'package:jagspoor/services/entitlement_service.dart';
 
 void main() {
   late FakeFirebaseFirestore fake;
@@ -11,9 +12,14 @@ void main() {
     fake = FakeFirebaseFirestore();
     SubscriptionStatusService.firestoreForTesting = fake;
     SubscriptionStatusService.currentUserIdResolverForTesting = () => 'uid-1';
+    EntitlementService.firestoreForTesting = fake;
+    EntitlementService.currentUserIdResolverForTesting = () => 'uid-1';
   });
 
-  tearDown(SubscriptionStatusService.resetTestSeams);
+  tearDown(() {
+    SubscriptionStatusService.resetTestSeams();
+    EntitlementService.resetTestSeams();
+  });
 
   group('UserSubscription.fromMap', () {
     test('null / empty map yields the empty state', () {
@@ -129,39 +135,40 @@ void main() {
     });
   });
 
-  group('SubscriptionStatusService.recordPlayPurchase', () {
-    test('writes the active Play entitlement onto users/{uid}', () async {
-      final renewal = DateTime(2026, 10, 22);
-      await SubscriptionStatusService.instance.recordPlayPurchase(
-        tier: SubscriptionTier.hunter,
-        purchaseToken: 'token-abc',
-        renewalDate: renewal,
-      );
-      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data['subscriptionStatus'], 'active');
-      expect(data['subscriptionTier'], 'hunter');
-      expect(data['subscriptionProvider'], 'google_play_billing');
-      expect(data['subscriptionPlayPurchaseToken'], 'token-abc');
-      final storedRenewal = (data['subscriptionRenewalDate'] as Timestamp).toDate();
-      expect(storedRenewal.difference(renewal).inSeconds, 0);
-      expect(data.containsKey('subscriptionUpdatedAt'), isTrue);
+  group('server-authoritative entitlement (EntitlementService)', () {
+    test('reads isPremium + trial fields from users/{uid}', () async {
+      await fake.collection('users').doc('uid-1').set({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 12, 31)),
+        'subscriptionSource': 'google_play',
+        'trialStart': Timestamp.fromDate(DateTime(2026, 9, 1)),
+        'trialEnd': Timestamp.fromDate(DateTime(2026, 10, 1)),
+      });
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremium, isTrue);
+      expect(ent.isPremiumActive(DateTime(2026, 10, 15)), isTrue);
+      expect(ent.subscriptionSource, 'google_play');
+      expect(ent.isTrialActive(DateTime(2026, 9, 15)), isTrue);
+      expect(ent.canAccessPremium(DateTime(2026, 9, 15)), isTrue);
     });
 
-    test('recordPlayPurchase rejects an unauthenticated caller', () {
-      SubscriptionStatusService.currentUserIdResolverForTesting = () => null;
-      expect(
-        () => SubscriptionStatusService.instance.recordPlayPurchase(
-          tier: SubscriptionTier.outfitter,
-        ),
-        throwsStateError,
-      );
+    test('an expired premium + expired trial blocks access', () async {
+      await fake.collection('users').doc('uid-1').set({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 6, 1)),
+        'trialEnd': Timestamp.fromDate(DateTime(2026, 6, 1)),
+      });
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremiumActive(DateTime(2026, 9, 1)), isFalse);
+      expect(ent.isTrialActive(DateTime(2026, 9, 1)), isFalse);
+      expect(ent.canAccessPremium(DateTime(2026, 9, 1)), isFalse);
     });
 
-    test('recordPlayCancellation writes the cancelled state', () async {
-      await SubscriptionStatusService.instance.recordPlayCancellation();
-      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data['subscriptionStatus'], 'cancelled');
-      expect(data.containsKey('subscriptionCancelledAt'), isTrue);
+    test('unauthenticated caller yields the empty entitlement', () async {
+      EntitlementService.currentUserIdResolverForTesting = () => null;
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremium, isFalse);
+      expect(ent.canAccessPremium(DateTime.now()), isFalse);
     });
   });
 
@@ -243,6 +250,43 @@ void main() {
       expect(data['subscriptionStatus'], 'trialing');
       final trialEnd = (data['subscriptionTrialEndsAt'] as Timestamp).toDate();
       expect(trialEnd.difference(now).inDays, 30);
+    });
+  });
+
+  group('server-authoritative entitlement (EntitlementService)', () {
+    test('reads isPremium + trial fields from users/{uid}', () async {
+      await fake.collection('users').doc('uid-1').set({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 12, 31)),
+        'subscriptionSource': 'google_play',
+        'trialStart': Timestamp.fromDate(DateTime(2026, 9, 1)),
+        'trialEnd': Timestamp.fromDate(DateTime(2026, 10, 1)),
+      });
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremium, isTrue);
+      expect(ent.isPremiumActive(DateTime(2026, 10, 15)), isTrue);
+      expect(ent.subscriptionSource, 'google_play');
+      expect(ent.isTrialActive(DateTime(2026, 9, 15)), isTrue);
+      expect(ent.canAccessPremium(DateTime(2026, 9, 15)), isTrue);
+    });
+
+    test('an expired premium + expired trial blocks access', () async {
+      await fake.collection('users').doc('uid-1').set({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 6, 1)),
+        'trialEnd': Timestamp.fromDate(DateTime(2026, 6, 1)),
+      });
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremiumActive(DateTime(2026, 9, 1)), isFalse);
+      expect(ent.isTrialActive(DateTime(2026, 9, 1)), isFalse);
+      expect(ent.canAccessPremium(DateTime(2026, 9, 1)), isFalse);
+    });
+
+    test('unauthenticated caller yields the empty entitlement', () async {
+      EntitlementService.currentUserIdResolverForTesting = () => null;
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.isPremium, isFalse);
+      expect(ent.canAccessPremium(DateTime.now()), isFalse);
     });
   });
 }

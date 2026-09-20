@@ -27,6 +27,8 @@ import '../auth/services/user_role_provider.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/subscription_pricing.dart';
+import '../subscription/paywall_screen.dart';
+import '../../services/entitlement_service.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../shared/widgets/facebook_link_tile.dart';
 import 'widgets/outfitter_scaffold.dart';
@@ -163,6 +165,28 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             children: [
                               _buildStatusBanner(widget.theme),
                               const SizedBox(height: 16),
+                              // 🌟 Trial status banner (active trial only).
+                              StreamBuilder<UserEntitlement>(
+                                stream: EntitlementService.instance
+                                    .watchMyEntitlement(),
+                                builder: (context, snapshot) {
+                                  final ent =
+                                      snapshot.data ?? const UserEntitlement();
+                                  if (ent.isPremiumActive(DateTime.now())) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  if (ent.isTrialActive(DateTime.now())) {
+                                    return TrialBanner(
+                                      theme: widget.theme,
+                                      daysRemaining: ent.trialDaysRemaining(
+                                        DateTime.now(),
+                                      ),
+                                      trialEnd: ent.trialEnd,
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
                           // Section label wrapped to avoid overflow on narrow
                           // screens (the manager label is long + tracked-out).
                           Text(

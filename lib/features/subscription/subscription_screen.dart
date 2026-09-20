@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
+import '../../services/entitlement_service.dart';
 import '../auth/services/user_role_provider.dart';
 import 'services/play_billing_service.dart';
 import 'services/subscription_pricing.dart';
@@ -182,39 +183,67 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   /// Listens to the Play Billing purchase stream and mirrors completed
-  /// purchases onto `users/{uid}` so the UI + role gating update.
+  /// purchases onto `users/{uid}` via the SERVER-SIDE
+  /// `validateGooglePlayPurchase` Cloud Function so the entitlement is
+  /// verified against the Google Play Developer API. The app NEVER writes
+  /// `isPremium` locally — the Cloud Function is the only writer.
   ///
   /// Subscriptions are non-consumable; once a [PurchaseStatus.purchased] /
-  /// [PurchaseStatus.restored] event arrives the entitlement is recorded and
-  /// the transaction is finished.
+  /// [PurchaseStatus.restored] event arrives the entitlement is recorded
+  /// server-side and the transaction is finished.
   void _listenForPurchases() {
     PlayBillingService.instance.purchaseStream.listen((purchases) async {
       for (final purchase in purchases) {
         if (purchase.status == PurchaseStatus.purchased ||
             purchase.status == PurchaseStatus.restored) {
           final tier = SubscriptionTier.fromPlayProductId(purchase.productID);
+          final token = purchase.verificationData.serverVerificationData;
           try {
-            await SubscriptionStatusService.instance.recordPlayPurchase(
-              tier: tier,
-              purchaseToken:
-                  purchase.verificationData.serverVerificationData,
+            final result = await EntitlementService.instance
+                .verifyGooglePlayPurchase(
+              purchaseToken: token,
+              productId: tier.playProductId,
             );
+            if (!mounted) continue;
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            if (result.success) {
+              messenger?.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Subscription active — ${tier == SubscriptionTier.outfitter ? 'Outfitter' : 'Hunter'} '
+                    'tier unlocked via Google Play.',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            } else {
+              messenger?.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Purchase received, but server verification is pending. '
+                    'Please try again shortly.',
+                  ),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
           } catch (e) {
-            debugPrint('recordPlayPurchase failed (non-fatal): $e');
+            debugPrint('EntitlementService.verifyGooglePlayPurchase failed: $e');
+            if (mounted) {
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Purchase received — verification pending. Pull to refresh '
+                    'in a moment.',
+                  ),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            continue;
           }
           await PlayBillingService.instance.completePurchase(purchase);
-          if (!mounted) continue;
-          final messenger = ScaffoldMessenger.maybeOf(context);
-          messenger?.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Subscription active — ${tier == SubscriptionTier.outfitter ? 'Outfitter' : 'Hunter'} '
-                'tier unlocked via Google Play.',
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 5),
-            ),
-          );
         } else if (purchase.status == PurchaseStatus.error) {
           debugPrint('Play purchase error: ${purchase.error}');
         }

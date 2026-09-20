@@ -97,8 +97,13 @@ export const initializeNewUserTrial = functionsV1
         subscriptionStatus: "trialing",
         trialStartedAt: now,
         trialEndsAt,
+        trialStart: now,
+        trialEnd: trialEndsAt,
+        isPremium: false,
+        subscriptionSource: "trial",
         requiresPayment: false,
         subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+        entitlementUpdatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );

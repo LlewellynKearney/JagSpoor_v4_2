@@ -162,38 +162,4 @@ class SubscriptionStatusService {
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
-
-  /// Records an active Play Billing purchase on `users/{uid}`.
-  ///
-  /// Writes the mirrored entitlement (live google_play_billing provider) so
-  /// the app's SSR stream + dashboards read it consistently.
-  Future<void> recordPlayPurchase({
-    required SubscriptionTier tier,
-    String purchaseToken = '',
-    DateTime? renewalDate,
-  }) async {
-    final uid = _uid;
-    if (uid == null) throw StateError('No signed-in user');
-    await _db.collection('users').doc(uid).set({
-      'subscriptionStatus': SubscriptionStatus.active.key,
-      'subscriptionTier': tier.key,
-      'subscriptionProvider': 'google_play_billing',
-      'subscriptionPlayPurchaseToken': purchaseToken,
-      if (renewalDate != null)
-        'subscriptionRenewalDate': Timestamp.fromDate(renewalDate),
-      'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  /// Records a cancellation after the Play store reports the subscription was
-  /// cancelled / paused (reflected by the Play purchase stream).
-  Future<void> recordPlayCancellation() async {
-    final uid = _uid;
-    if (uid == null) throw StateError('No signed-in user');
-    await _db.collection('users').doc(uid).set({
-      'subscriptionStatus': SubscriptionStatus.cancelled.key,
-      'subscriptionCancelledAt': Timestamp.now(),
-      'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
 }
