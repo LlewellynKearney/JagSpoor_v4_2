@@ -642,6 +642,12 @@ String? getScientificNameForSpecies(String speciesName) {
 /// (`toeCount`, `trackLengthMinMm`, `trackLengthMaxMm`, `trackWidthMinMm`,
 /// `trackWidthMaxMm`) to every `animals` doc from the `_trackMorphology`
 /// dataset, so the Spoor Validation database can expand systematically.
+///
+/// v4 (current): re-runs the seed so every `animals` doc carries the complete
+/// benchmark set in one write — the official Rowland Ward minimum, the
+/// measurement method + horn description, the official scientific name, and
+/// the five track-morphology fields above. Installs stamped at v3 (or older)
+/// therefore refresh to the full dataset via the seeder's `merge: true` write.
 const String gameGuideSeedVersion = 'game_guide_seed_v4';
 
 String? getRolandWardMinimumForSpecies(String speciesName) {

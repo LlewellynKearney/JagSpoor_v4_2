@@ -283,8 +283,8 @@ void main() {
   });
 
   group('Seed version — spoor morphology migration', () {
-    test('gameGuideSeedVersion is the v3 migration tag', () {
-      expect(gameGuideSeedVersion, 'game_guide_seed_v3');
+    test('gameGuideSeedVersion is the current spoor-morphology tag', () {
+      expect(gameGuideSeedVersion, 'game_guide_seed_v4');
     });
   });
 }

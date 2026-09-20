@@ -199,16 +199,16 @@ void main() {
   });
 
   group('Forced seed migration version tag (v4.5 Item #6)', () {
-    test('gameGuideSeedVersion is the v3 migration tag (spoor morphology)', () {
-      expect(gameGuideSeedVersion, 'game_guide_seed_v3');
+    test('gameGuideSeedVersion is the current spoor-morphology tag', () {
+      expect(gameGuideSeedVersion, 'game_guide_seed_v4');
     });
 
     test('a version bump re-triggers the seeder (string inequality)', () {
       // The main.dart startup hook compares the persisted version against
       // [gameGuideSeedVersion]; any change re-runs seedAnimalsFromCSV.
-      const priorVersion = 'game_guide_seed_v2';
+      const priorVersion = 'game_guide_seed_v3';
       expect(priorVersion == gameGuideSeedVersion, isFalse,
-          reason: 'the v3 tag must differ from the v2 tag so existing '
+          reason: 'the v4 tag must differ from the v3 tag so existing '
               'installs re-seed with the new spoor-morphology fields');
       expect('', isNot(equals(gameGuideSeedVersion)),
           reason: 'a fresh install (empty persisted version) must seed');
