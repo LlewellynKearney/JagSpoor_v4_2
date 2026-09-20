@@ -1,5 +1,94 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Forced in-app update + version bump to v4.4.1 (versionCode 6) (added 2026-09-20)
+
+Added a Google Play **forced in-app update** gate and bumped the app to
+v4.4.1 / versionCode 6. A release AAB was built and verified in-sandbox.
+
+### 1. Dependency + version
+- `pubspec.yaml`: added `in_app_update: ^4.2.3` (resolved to **4.2.5**) and
+  bumped `version: 4.4.0` -> `4.4.1+6`. NOTE: the repo previously had a
+  bare `4.4.0` with NO build number; the requested `+6` was added.
+- No direct Gradle dependency was needed: the package pulls
+  `com.google.android.play:app-update:2.1.0` (+ `-ktx`) transitively —
+  confirmed via `./gradlew :app:dependencies --configuration
+  releaseRuntimeClasspath`.
+- `pubspec.lock` also bumped dev-only transitives (`meta`, `test`,
+  `test_api`, `test_core`) — harmless.
+
+### 2. `lib/services/update_service.dart` (NEW)
+`UpdateService.checkForImmediateUpdate()` — asks Play via
+`InAppUpdate.checkForUpdate()` and, when
+`updateAvailability == updateAvailable`, runs the **immediate** flow
+(`performImmediateUpdate`, Play's full-screen blocking dialog), with the
+flexible flow (`startFlexibleUpdate` -> `completeFlexibleUpdate`) as a
+fallback when Play refuses the immediate flow.
+- **API correction**: the brief's sample used `${result.code}`, but
+  `AppUpdateResult` in 4.2.5 is a plain enum
+  (`success` / `userDeniedUpdate` / `inAppUpdateFailed`) with **no `code`
+  getter** — that would not compile. Logs the enum + non-success branches
+  explicitly instead.
+- Android-only guard (`kIsWeb || defaultTargetPlatform !=
+  TargetPlatform.android` -> return) so iOS/desktop/web never raise
+  `MissingPluginException`.
+- Whole body wrapped in try/catch -> `debugPrint`: a sideloaded APK,
+  non-Play install or transient Play services error can never block startup.
+- Verified field names against the installed package source:
+  `updateAvailability`, `immediateUpdateAllowed`, `flexibleUpdateAllowed`.
+
+### 3. Wiring — `lib/core/splash_screen.dart`
+`_SplashScreenState.initState` now schedules
+`WidgetsBinding.instance.addPostFrameCallback((_) =>
+UpdateService.checkForImmediateUpdate())` after the animation controller
+starts, so the Play dialog never races the splash build/navigation. The
+brief referenced `lib/screens/splash_screen.dart`; the real file is
+`lib/core/splash_screen.dart` (the only splash screen in the repo).
+
+### 4. Version alignment
+- `android/app/build.gradle.kts`: `versionCode 5 -> 6`,
+  `versionName "4.4" -> "4.4.1"` (comment updated).
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode '5' -> '6'`,
+  `fallbackVersionName '4.4' -> '4.4.1'` + both doc-comment examples.
+- `test/version_info_and_facebook_test.dart`: expectations -> `'4.4.1'`/`'6'`.
+- `context.md` + `PROJECT_CONTEXT.md`: product branding v4.4 -> v4.4.1
+  (title + footer only; section headings untouched).
+
+### 5. Build + verification (Flutter 3.44.9 / Dart 3.12.2, Java 21, SDK 36)
+- `flutter analyze`: **0 errors, 0 warnings**, 320 infos (unchanged baseline).
+- `flutter test`: **1740 passed, 0 failed**.
+- `flutter build appbundle --release`: **SUCCESS** ->
+  `build/app/outputs/bundle/release/app-release.aab` (**126,366,305 bytes**,
+  sha256 `0aa38cd3262efd8695e62bee436e227039df0f36bc79853f49c15ef770f44d99`),
+  built in ~577s after NDK/CMake bootstrap.
+- Merged release manifest verified: `package="za.co.jagspoor.app"`,
+  **`versionCode="6"`**, **`versionName="4.4.1"`**, minSdk 24, targetSdk 36.
+
+### Environment (sandbox was wiped — full rebuild required)
+Flutter 3.44.9 at `/tmp/f3449/flutter` (3.29.1 was installed first and
+**failed** `pub get`: `in_app_purchase >=3.2.4` requires Dart >=3.10;
+`pubspec.lock` floors `flutter: >=3.38.0` — the repo no longer builds on
+3.29.1); OpenJDK 21; Android cmdline-tools + `platforms;android-36` +
+`build-tools;36.0.0` + `ndk;27.0.12077973` under `/opt/android-sdk`;
+`android/local.properties` (gitignored) now points at them.
+
+### ⚠️ WARNINGS (deliberately not changed — awaiting user decision)
+1. **The AAB is signed with the DEBUG keystore.** `android/key.properties`
+   and the release keystore are ABSENT, so `buildTypes.release` falls back to
+   `signingConfigs.getByName("debug")` (the gradle file already anticipated
+   this). A debug-signed AAB cannot be uploaded to Play. Production signing
+   needs the real keystore + `key.properties`.
+2. **`google-services.json` still lacks a `za.co.jagspoor.app` client**, so
+   the conditional plugin gate SKIPS `com.google.gms.google-services` (see the
+   package-mismatch phase). Dart-side Firebase (via `firebase_options.dart`)
+   is unaffected, but native `firebase-analytics` is inert and
+   `default_web_client_id` is not generated (matters for Google Sign-In).
+   Fix by downloading a fresh `google-services.json` for
+   `za.co.jagspoor.app` from the Firebase Console.
+3. `in_app_update` requires the app to be **installed from Google Play** —
+   sideloaded builds report `updateNotAvailable` (the service degrades
+   gracefully). A forced update only fires when the published Play build
+   carries a higher `versionCode` than the installed one.
+4. Not deployed to Play Console (as instructed).
 
 ## Phase -- Fix Firebase Functions deploy timeout ("User code failed to load. Cannot determine backend specification. Timeout after 10000.") (added 2026-09-20)
 

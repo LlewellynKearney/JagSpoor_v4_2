@@ -1,4 +1,4 @@
-# 🏔️ JagSpoor v4.4 - Core System Architecture Blueprint
+# 🏔️ JagSpoor v4.4.1 - Core System Architecture Blueprint
 
 > **Version:** 4.4 | **Platform:** Flutter / Firebase | **Currency:** ZAR (South African Rand) | **Last Updated:** 2026-07-30
 
@@ -265,4 +265,4 @@ lib/
 
 ---
 
-*Generated: 2026-07-30 | JagSpoor v4.4 Architecture Blueprint*
+*Generated: 2026-07-30 | JagSpoor v4.4.1 Architecture Blueprint*

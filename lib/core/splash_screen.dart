@@ -6,6 +6,7 @@ import '../features/auth/auth_screen.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
+import '../services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/copyright_footer.dart';
 
@@ -36,6 +37,15 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _animationController.forward();
+
+    // Forced in-app update gate: ask Google Play whether a newer versionCode is
+    // published and, when one is, hand off to Play's immediate-update dialog.
+    // Deferred to the first frame so the check never races the splash build /
+    // navigation; the service swallows every failure (sideloaded builds,
+    // non-Play installs, iOS) so startup can never be blocked by it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkForImmediateUpdate();
+    });
 
     // Navigate after animation
     Future.delayed(const Duration(milliseconds: 2500), () {
