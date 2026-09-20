@@ -1,6 +1,77 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Fix Firebase Functions deploy timeout ("User code failed to load. Cannot determine backend specification. Timeout after 10000.") (added 2026-09-20)
+
+### Symptom
+`npx firebase-tools deploy --only firestore:rules,functions` failed with:
+`User code failed to load. Cannot determine backend specification. Timeout after 10000.`
+The Firebase CLI discovers triggers by loading the functions entry point in a
+child process with a HARD 10s budget. Validation logic was not wrong — the
+module graph was simply too expensive to evaluate at cold-load.
+
+### Root cause
+`functions/src/entitlement.ts` had a top-level
+`import { google } from "googleapis";`. The `googleapis` **umbrella** package
+eagerly evaluates every Google API client at import time. Measured on the
+compiled entry (`lib/index.js`):
+- BEFORE: **1417 node_modules modules / 30.7 MB of JS read / 763 ms**
+  (Linux, warm page cache). Windows cold-start + AV scanning pushed this past
+  10s.
+- The per-API package `@googleapis/androidpublisher` carries the identical
+  v3 surface at a fraction of the cost: **563 modules / 4.3 MB / ~230 ms**.
+
+### Fix (dependency + import swap)
+- `functions/src/entitlement.ts`: replaced
+  `import { google } from "googleapis"` with
+  `import { androidpublisher } from "@googleapis/androidpublisher"` +
+  `import { GoogleAuth } from "google-auth-library"`. `androidPublisher()`
+  now does `new GoogleAuth({scopes:[...]})` + `androidpublisher({version:"v3",
+  auth})`. It remains a **lazily-invoked factory** (never at module scope), and
+  the `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` base64 override is preserved
+  verbatim. An inline comment documents why the umbrella must not return.
+- `functions/package.json`: removed `googleapis`; added
+  `@googleapis/androidpublisher@^42.0.0` + `google-auth-library@^11.1.0`.
+  The GAL pin matters: `@googleapis/androidpublisher` 42 bundles GAL 11
+  (`googleapis-common@9`), while `@google-cloud/pubsub`/`firebase-admin` pull
+  GAL 9. Declaring `google-auth-library@^11.1.0` hoists a single v11 copy so
+  `GoogleAuth` is structurally identical to the type the androidpublisher
+  client expects (two copies produced `TS2769`/`#private` nominal-type errors).
+- No behaviour change to `validateGooglePlayPurchase` / `onGooglePlayRTDN` /
+  `payfastITN`; the androidpublisher v3 `purchases.subscriptionsv2.get` call
+  signature is unchanged.
+
+### Regression guard (`functions/test/functions_load_budget.test.js`, NEW, 6 tests)
+Deterministic + structural (no timing flakiness) so it fails loudly if the
+umbrella is reintroduced:
+- loads `lib/index.js` in a clean child process and asserts **no
+  `node_modules/googleapis/` module** is present;
+- asserts a **bounded graph (<900 modules) and load time (<8s)** against the
+  10s budget;
+- source-scans `entitlement.ts` (comments stripped) for the umbrella import
+  and for module-scope `new GoogleAuth(`;
+- asserts `package.json` does not depend on `googleapis` but does depend on
+  `@googleapis/androidpublisher`;
+- asserts the full entitlement/trigger export surface survives.
+Mutation-tested: reinstalling `googleapis` + restoring the umbrella import
+fails **4 of 6** guard assertions; restoring the fix passes **37/37**.
+
+### Verification
+- `npm run build` (tsc): clean.
+- `npm test`: **37/37 pass** (31 pre-existing + 6 new); suite duration
+  1020 ms -> ~920 ms with a third fewer modules loaded.
+- `lib/index.js` load: **563 modules / 4.3 MB** (was 1417 / 30.7 MB);
+  `FUNCTIONS_CONTROL_API=true` discovery load 213 ms.
+- Full Flutter suite re-run on the same tree: **1740 passed, 0 failed**.
+- Node runtime consistent: `functions/package.json` `engines.node = 22` and
+  `firebase.json` `functions.runtime = nodejs22`.
+- Files: `functions/src/entitlement.ts`, `functions/package.json`,
+  `functions/package-lock.json` (re-resolved),
+  `functions/test/functions_load_budget.test.js` (NEW), `AGENTS.md`.
+- Deploy reminder: re-run `npx firebase-tools deploy --only
+  firestore:rules,functions` in a credentialed env. The first deploy after
+  this change may take longer (cold container + new dependency install).
+
 ## Phase -- Billing & entitlement hardening: server-authoritative isPremium + premiumExpiry (added 2026-09-13)
 
 Goal: move premium entitlement state (`isPremium`, `premiumExpiry`,
@@ -25,8 +96,11 @@ website-priced subscriptions.
   caller uid from the Firebase ID token, queries the androidpublisher v3
   `purchases.subscriptionsv2.get`, rejects fake/unknown product ids +
   expired/cancelled states, and writes a 1-month premium entitlement (tier
-  derived from product id). Uses `googleapis` `google.auth.GoogleAuth`
-  (default SA; optional `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` base64 override).
+  derived from product id). Uses `@googleapis/androidpublisher` +
+  `google-auth-library` `GoogleAuth` (default SA; optional
+  `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` base64 override). NOTE: do NOT
+  reintroduce the `googleapis` umbrella import here — see the
+  "Functions deploy timeout" phase below.
 - `onGooglePlayRTDN` (Pub/Sub `onMessagePublished`) — Real-Time Developer
   Notifications from the Play Console. Revokes entitlement on revocation
   types 12 (REVOKED/refund), 13 (EXPIRED), 9 (PRODUCT_NOT_AVAILABLE); type 3

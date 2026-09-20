@@ -3,7 +3,14 @@ import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
 import { onMessagePublished } from "firebase-functions/v2/pubsub";
 import { FieldValue } from "firebase-admin/firestore";
 import { createHash } from "crypto";
-import { google } from "googleapis";
+// Import ONLY the androidpublisher surface. `import { google } from "googleapis"`
+// eagerly evaluates the aggregator root, which pulls in every Google API client
+// (900+ modules) at container start-up. Firebase CLI discovers triggers by
+// loading this module with a hard 10s budget, so the umbrella import could
+// exhaust it with "User code failed to load. Cannot determine backend
+// specification." The per-API package loads ~6x fewer modules.
+import { androidpublisher } from "@googleapis/androidpublisher";
+import { GoogleAuth } from "google-auth-library";
 import type { Request, Response } from "express";
 import { firestore } from "./firebase";
 
@@ -122,17 +129,21 @@ export async function writeEntitlement(
  * Resolves an authenticated androidpublisher API client. On Google Cloud /
  * Cloud Functions the default service account is used. A service-account key
  * can also be provided via `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (base64).
+ *
+ * IMPORTANT: this must stay a lazily-invoked factory. Constructing `GoogleAuth`
+ * (or resolving credentials) at module scope would run during trigger
+ * discovery and can push module load past the CLI's 10s budget.
  */
 function androidPublisher() {
   const serviceAccountB64 = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
   const authOptions = serviceAccountB64
     ? { credentials: JSON.parse(Buffer.from(serviceAccountB64, "base64").toString("utf8")) }
     : undefined;
-  const auth = new google.auth.GoogleAuth({
+  const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/androidpublisher"],
     ...authOptions,
   });
-  return google.androidpublisher({ version: "v3", auth });
+  return androidpublisher({ version: "v3", auth });
 }
 
 /** Response shape of a successful Google Play subscriptionv2 purchase query. */
