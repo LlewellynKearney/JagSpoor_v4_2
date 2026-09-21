@@ -122,9 +122,12 @@ void main() {
   group('outfitter_revenue_screen.dart count-query contract', () {
     // Run from the project root (flutter test sets the CWD to the package
     // root).
+    // Normalize CRLF -> LF so the multi-line `contains` assertion below
+    // matches on a Windows checkout.
     final source = File(
             'lib/features/hunter_mode/screens/outfitter_revenue_screen.dart')
-        .readAsStringSync();
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
 
     test('managers count queries the farm_managers collection', () {
       expect(source.contains("collection('farm_managers')"), isTrue,

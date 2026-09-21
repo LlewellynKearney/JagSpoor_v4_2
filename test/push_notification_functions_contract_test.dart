@@ -8,7 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// `functions/src/index.ts` — mirroring the project's established structural
 /// test pattern.
 void main() {
-  final source = File('functions/src/index.ts').readAsStringSync();
+  // Normalize CRLF -> LF: the file is checked out with CRLF on Windows and
+  // LF on Unix, and the multi-line `contains` assertions below are written
+  // with `\n`.
+  final source = File('functions/src/index.ts')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
 
   group('booking triggers', () {
     test('onBookingCreated notifies the outfitter on a new booking', () {

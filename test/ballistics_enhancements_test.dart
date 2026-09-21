@@ -6,9 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// range expansion (5m-1000) and the dark-mode text-contrast fix on the
 /// Position Statistics Summary card.
 void main() {
+  // Normalize CRLF -> LF so the multi-line `contains` assertions below match
+  // on a Windows checkout.
   final src = File(
     'lib/features/ballistics/presentation/ballistic_calc_screen.dart',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
 
   group('Zero-distance range expansion (5m up to 1000m)', () {
     test('the min/max range + division count constants are declared', () {

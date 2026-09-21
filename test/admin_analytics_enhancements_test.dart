@@ -281,7 +281,10 @@ void main() {
     });
 
     test('firestore.rules carries the new collections', () {
-      final rules = File('firestore.rules').readAsStringSync();
+      // Normalize CRLF -> LF (Windows checkout) so the multi-line assertion
+      // below matches.
+      final rules =
+          File('firestore.rules').readAsStringSync().replaceAll('\r\n', '\n');
       expect(rules.contains('match /app_config/{docId}'), isTrue);
       expect(rules.contains('match /feature_usage_events/{eventId}'), isTrue);
       expect(

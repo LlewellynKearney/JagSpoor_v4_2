@@ -644,33 +644,48 @@ void main() {
 }
 
 /// Loads `firestore.rules` from the project root.
+///
+/// Line endings are normalized to `\n`: the file is checked out with CRLF on
+/// Windows and LF on Unix, and every multi-line `contains` assertion below
+/// (plus the brace scanner) assumes `\n`.
 String _loadRules() {
   // Run from the project root (flutter test sets the CWD to the package root).
   final file = File('firestore.rules');
-  return file.readAsStringSync();
+  return file.readAsStringSync().replaceAll('\r\n', '\n');
 }
 
 /// Extracts the `match /{col}/{docId} { ... }` block for a collection.
 ///
-/// Captures from the `match /{col}/{docId} {` line up to (but not including)
-/// the next `    }` that sits at the 4-space indentation level (the closing
-/// brace of the match block). This tolerates nested content / comments
-/// inside the block.
+/// Walks from the block's opening `{` counting brace depth, so nested
+/// `function ... { ... }` declarations (packages, trophy_stock, bookings, …)
+/// cannot fool the search for the true closing brace. A naive
+/// `indexOf('\n    }\n')` stops at the first nested function's close and
+/// fails outright on CRLF line endings.
 String _blockFor(String rules, String collection) {
+  // Scan the comment-stripped text so a documentation line that mentions a
+  // path (e.g. `// ... farm_managers/{uid} lookup`) can never offset the
+  // brace count.
+  final scan = _stripComments(rules);
   final startPattern =
       RegExp(r'match /' + collection + r'/\{[^}]+\} \{');
-  final startMatch = startPattern.firstMatch(rules);
+  final startMatch = startPattern.firstMatch(scan);
   if (startMatch == null) {
     fail('No match block found for collection $collection');
   }
-  // Take from the match-block opening line through the closing brace at the
-  // 4-space indent that ends a top-level collection match block.
-  final fromStart = rules.substring(startMatch.start);
-  final close = fromStart.indexOf('\n    }\n');
-  if (close < 0) {
-    fail('No closing brace found for collection $collection block');
+  final openBrace = startMatch.end - 1; // the `{` that opens the block
+  var depth = 0;
+  for (var i = openBrace; i < scan.length; i++) {
+    final ch = scan[i];
+    if (ch == '{') {
+      depth++;
+    } else if (ch == '}') {
+      depth--;
+      if (depth == 0) {
+        return scan.substring(startMatch.start, i + 1);
+      }
+    }
   }
-  return _stripComments(fromStart.substring(0, close));
+  fail('No closing brace found for collection $collection block');
 }
 
 /// Removes full-line `//` comments from a rules block so assertions test the

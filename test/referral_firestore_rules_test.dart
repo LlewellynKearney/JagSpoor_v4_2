@@ -129,24 +129,42 @@ void main() {
   });
 }
 
-/// Loads `firestore.rules` from the project root.
+/// Loads `firestore.rules` from the project root, normalizing CRLF to LF so
+/// multi-line assertions work identically on Windows and Unix checkouts.
 String _loadRules() {
   final file = File('firestore.rules');
-  return file.readAsStringSync();
+  return file.readAsStringSync().replaceAll('\r\n', '\n');
 }
 
 /// Extracts the `match /{col}/{docId} { ... }` block for a collection.
+///
+/// Walks the opening `{` counting brace depth so a nested
+/// `function ... { ... }` inside the block cannot terminate the search early.
+/// A naive `indexOf('\n    }\n')` breaks on nested braces and on CRLF endings.
 String _blockFor(String rules, String collection) {
+  // Strip comments first so a documented path can never offset the depth.
+  final scan = rules
+      .split('\n')
+      .where((line) => !line.trimLeft().startsWith('//'))
+      .join('\n');
   final startPattern =
       RegExp(r'match /' + collection + r'/\{[^}]+\} \{');
-  final startMatch = startPattern.firstMatch(rules);
+  final startMatch = startPattern.firstMatch(scan);
   if (startMatch == null) {
     fail('No match block found for collection $collection');
   }
-  final fromStart = rules.substring(startMatch.start);
-  final close = fromStart.indexOf('\n    }\n');
-  if (close < 0) {
-    fail('No closing brace found for collection $collection block');
+  final openBrace = startMatch.end - 1;
+  var depth = 0;
+  for (var i = openBrace; i < scan.length; i++) {
+    final ch = scan[i];
+    if (ch == '{') {
+      depth++;
+    } else if (ch == '}') {
+      depth--;
+      if (depth == 0) {
+        return scan.substring(startMatch.start, i + 1);
+      }
+    }
   }
-  return fromStart.substring(0, close);
+  fail('No closing brace found for collection $collection block');
 }
