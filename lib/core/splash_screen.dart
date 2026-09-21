@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../features/auth/role_selection_screen.dart';
 import '../features/auth/auth_screen.dart';
+import '../features/auth/screens/email_verification_screen.dart';
+import '../features/auth/services/email_verification_policy.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
@@ -129,6 +131,37 @@ class _SplashScreenState extends State<SplashScreen>
         context,
         MaterialPageRoute(builder: (_) => AuthScreen(themedata: widget.theme)),
       );
+      return;
+    }
+
+    // Email-verification gate (TODO #3): a signed-in account whose email is
+    // still unverified must verify before boot routing continues. Runs BEFORE
+    // role resolution / outfitter self-heal / profile onboarding so no
+    // partial-access write happens for an unverified account. The
+    // demo-reviewer and platform-admin accounts are exempt.
+    try {
+      await user.reload();
+    } catch (_) {
+      // Offline — fall back to the cached verification state.
+    }
+    final refreshed = FirebaseAuth.instance.currentUser ?? user;
+    if (EmailVerificationPolicy.requiresVerification(
+      email: refreshed.email,
+      emailVerified: refreshed.emailVerified,
+    )) {
+      if (!mounted) return;
+      // Push (not replace) so the splash State survives to resume boot routing
+      // once the gate pops `true`. Signing out from the gate clears the stack.
+      final continued = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (routeContext) => EmailVerificationScreen(
+            emailOverride: refreshed.email,
+            onVerified: () => Navigator.of(routeContext).pop(true),
+          ),
+        ),
+      );
+      if (!mounted || continued != true) return;
+      await _navigateToNextScreen();
       return;
     }
 

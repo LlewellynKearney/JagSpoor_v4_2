@@ -1,8 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../services/entitlement_service.dart';
 import '../../subscription/paywall_screen.dart';
+import '../screens/email_verification_screen.dart';
+import '../services/email_verification_policy.dart';
 import '../services/role_guard.dart';
 import '../services/user_role_provider.dart';
 
@@ -17,6 +20,12 @@ import '../services/user_role_provider.dart';
 /// If the role has not been resolved yet (e.g. a deep-link cold launch), the
 /// guard awaits [UserRoleProvider.resolveRole] before deciding, so access is
 /// never granted on a stale `unknown` value.
+///
+/// Email-verification gate: before any of the above, a signed-in account with
+/// an unverified email address is shown the [EmailVerificationScreen] and the
+/// guarded screen only mounts once the address is verified. This is
+/// defense-in-depth behind the splash / auth-screen gates so a deep-link entry
+/// cannot bypass verification.
 ///
 /// Billing & entitlement gate: when [requiresPremium] is true (default), the
 /// route additionally requires an active entitlement - an active trial OR a
@@ -65,6 +74,23 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
   Future<void> _authorize() async {
     final provider = UserRoleProvider.instance;
 
+    // Email-verification gate (TODO #3): defense-in-depth for a deep-link cold
+    // launch into a dashboard. The splash / auth screens already gate, but a
+    // direct route entry must not slip past an unverified account. The gate is
+    // pushed; the dashboard mounts only after the gate pops `true`.
+    if (await _emailVerificationRequired()) {
+      if (!mounted) return;
+      final continued = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (routeContext) => EmailVerificationScreen(
+            onVerified: () => Navigator.of(routeContext).pop(true),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (continued != true) return;
+    }
+
     // Resolve the role if not already (covers deep-link / direct route entry).
     if (!provider.isResolved) {
       await provider.resolveRole();
@@ -109,6 +135,25 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
         ),
       );
     });
+  }
+
+  /// Whether the signed-in account must verify its email before the guarded
+  /// route may mount. Returns `false` when Firebase is unavailable (widget
+  /// tests / cold-launch races) so the guard is never blocked by a missing
+  /// Firebase app.
+  Future<bool> _emailVerificationRequired() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      await user.reload();
+      final refreshed = FirebaseAuth.instance.currentUser ?? user;
+      return EmailVerificationPolicy.requiresVerification(
+        email: refreshed.email,
+        emailVerified: refreshed.emailVerified,
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   @override

@@ -1,5 +1,93 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Enforce email verification (TODO #3) (added 2026-09-21)
+
+### Symptom
+Users could sign up and use the whole app without ever verifying their email
+address. The Firebase Auth verification flow was never wired up: no
+`sendEmailVerification` on signup, no `emailVerified` check on any routing
+path, and no verification screen.
+
+### What was added
+- **`lib/features/auth/screens/email_verification_screen.dart`** (NEW):
+  AppBar "Verify your email"; "We sent verification to {email}" (live
+  `FirebaseAuth.instance.currentUser.email`); **I'VE VERIFIED — CONTINUE**
+  (reload -> verified ? continue : orange guidance snackbar); **RESEND EMAIL**
+  with a 60-second cooldown reusing the pure `PasswordResetCooldown` statics
+  (live "RESEND IN Ns" label, disabled while cooling); an informational
+  "Open your email app..." hint (no mail plugin added); **USE A DIFFERENT
+  ACCOUNT** (signs out -> `pushNamedAndRemoveUntil('/')`). A
+  `Timer.periodic(3s)` auto-reloads and continues by itself; the timer is
+  cancelled in `dispose`. All Firebase access is wrapped in a null-safe
+  `_currentUser()` so the screen renders in a no-Firebase env.
+- **`lib/features/auth/services/email_verification_service.dart`** (NEW):
+  the requested API — `sendVerificationEmail()` and `checkVerified()` — as a
+  failure-tolerant singleton. NOTE: the repo has **no**
+  `lib/services/auth_service.dart`; the auth services live under
+  `lib/features/authentication/services/` (+ `features/auth/services/`), so
+  the APIs were placed in the equivalent `features/auth/services/` location.
+- **`lib/features/auth/services/email_verification_policy.dart`** (NEW):
+  pure, dependency-free gate policy `requiresVerification({email,
+  emailVerified})`. Gated only when signed in + HAS an email + unverified +
+  not exempt. Exempts phone-only accounts and two system accounts: the
+  admin allow-list (`admin@jag-spoor.co.za`) and the Google Play
+  demo-reviewer (`demo@jagspoor.co.za`) — gating either would lock the
+  operator out and break Play Store review.
+
+### Enforcement (3 layers + signup)
+- **Sign-up** (`auth_screen.dart` `_handleAuth`): after
+  `createUserWithEmailAndPassword` the verification email is dispatched
+  (best-effort, never blocks registration) and the success path routes to the
+  gate via `_pushEmailVerification()` instead of straight to role selection.
+- **Post-auth sign-in / Google / 2FA / demo** (`_routeAfterAuth`): the gate
+  runs FIRST — before role resolution, the outfitter self-link, and the
+  hunter mandatory-profile onboarding — so no partial-access write happens for
+  an unverified account.
+- **Cold launch** (`splash_screen.dart` `_navigateToNextScreen`): gated
+  before role resolution / self-heal / profile onboarding.
+- **Deep link** (`widgets/role_guarded_route.dart`): defense-in-depth so a
+  direct dashboard route entry cannot bypass verification.
+
+### Continuation lifecycle (why push, not pushAndRemoveUntil)
+The gate is **pushed** (not pushed-over-replacement) so the caller's State
+survives underneath. On verify the gate pops `true` and the caller re-runs its
+routing (which re-checks the gate, now satisfied). `pushAndRemoveUntil` would
+have disposed the caller's State, leaving the `onVerified` callback to run
+against a dead State and silently no-op. Sign-out from the gate clears the
+whole stack, so the continuation is never reached.
+
+### Tests (`test/email_verification_test.dart`, NEW, 22 tests)
+Gate policy matrix (unverified/verified/phone-only/admin/demo/case-insensitive);
+`EmailVerificationService` API + no-Firebase graceful degradation; the screen
+widget tests (render + email, verify -> continue, verify -> guidance,
+resend -> email sent + 60s cooldown disables the button, 3s auto-poll ->
+continue, sign-out -> route `/`, no-Firebase render); and structural wiring
+contracts (signup dispatches after create; gate precedes role resolution in
+auth + splash; route guard re-checks; policy exempts admin + demo accounts).
+
+### Verification
+- `flutter analyze`: **320 issues** — the EXACT pre-change baseline (all
+  info-level; 0 errors, 0 warnings). New files: "No issues found".
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1785
+  tests passed** (baseline 1763 + 22 new), exit 0.
+  - Note: 3 `mesh_sync_engine_test` failures seen on an intermediate run were
+    FFI-SQLite "database is locked" contention caused by running a second
+    `flutter test` concurrently against the same `jagspoor.db`; the file
+    passes in isolation and in the clean full run.
+- Env: Flutter 3.44.9 downloaded/extracted to `/workspace/flutter` (the
+  sandbox had no SDK); `~/libs/libsqlite3.so -> .../libsqlite3.so.0` symlink
+  for the sqflite-FFI suites; the "Unexpected child config" pubspec warning is
+  the documented pre-existing spurious line.
+- **No pubspec / versionCode / versionName / firestore.rules / build changes**
+  (per the task's constraints).
+- Files: `lib/features/auth/screens/email_verification_screen.dart` (NEW),
+  `lib/features/auth/services/email_verification_service.dart` (NEW),
+  `lib/features/auth/services/email_verification_policy.dart` (NEW),
+  `lib/features/auth/auth_screen.dart` (signup dispatch + gate +
+  `_pushEmailVerification`), `lib/core/splash_screen.dart` (boot gate),
+  `lib/features/auth/widgets/role_guarded_route.dart` (deep-link gate),
+  `test/email_verification_test.dart` (NEW, 22 tests), `AGENTS.md`.
+
 ## Phase -- Fix `[cloud_firestore/permission-denied]` on hunter profile save (merge-save + entitlement guards) (added 2026-09-21)
 
 ### Symptom (tester, published v8 build)

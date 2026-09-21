@@ -8,11 +8,14 @@ import '../../core/widgets/copyright_footer.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
+import 'screens/email_verification_screen.dart';
 import '../hunter_mode/hunter_profile_screen.dart';
 import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
 import 'services/demo_reviewer_config.dart';
 import 'services/demo_reviewer_service.dart';
+import 'services/email_verification_service.dart';
+import 'services/email_verification_policy.dart';
 import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
@@ -267,6 +270,50 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  /// Whether the signed-in account must verify its email before continuing.
+  ///
+  /// Reloads the Firebase user first (via [EmailVerificationService.checkVerified])
+  /// so a link clicked after sign-in is picked up immediately, then defers to
+  /// [EmailVerificationPolicy]. Returns `false` when Firebase is unavailable
+  /// (cold-launch race / widget tests) so routing is never blocked by a
+  /// missing Firebase app.
+  Future<bool> _emailVerificationRequired() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      final verified =
+          await EmailVerificationService.instance.checkVerified();
+      final refreshed = FirebaseAuth.instance.currentUser ?? user;
+      return EmailVerificationPolicy.requiresVerification(
+        email: refreshed.email,
+        emailVerified: verified,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Routes to the email-verification gate and resumes post-auth routing once
+  /// the address is verified.
+  ///
+  /// The gate is *pushed* (not pushed-over-replacement) so this screen's State
+  /// stays alive underneath: when the user verifies, the gate pops `true` and
+  /// [_routeAfterAuth] runs again on a mounted State, re-checking the gate
+  /// (now satisfied) before continuing to the dashboard / role selection.
+  /// Signing out from the gate clears the whole stack, so the continuation is
+  /// never reached.
+  Future<void> _pushEmailVerification() async {
+    final continued = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (routeContext) => EmailVerificationScreen(
+          onVerified: () => Navigator.of(routeContext).pop(true),
+        ),
+      ),
+    );
+    if (!mounted || continued != true) return;
+    await _routeAfterAuth();
+  }
+
   /// Post-auth role-aware routing — the direct role bypass.
   ///
   /// Resolves the signed-in user's role (cached for the route guards) and
@@ -286,6 +333,18 @@ class _AuthScreenState extends State<AuthScreen> {
   /// login. Role selection is strictly reserved for new sign-ups, dual-role
   /// accounts, and `unassigned`/`admin` profiles.
   Future<void> _routeAfterAuth() async {
+    // Email-verification gate (TODO #3): a signed-in account whose email is
+    // still unverified must verify before reaching ANY dashboard. The check
+    // runs FIRST so a hunter/outfitter/admin self-link or profile write never
+    // happens for an unverified account. The Google-Play demo-reviewer and
+    // platform-admin accounts are exempt (see EmailVerificationPolicy).
+    if (await _emailVerificationRequired()) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _pushEmailVerification();
+      return;
+    }
+
     // Resolve the role ONCE (forceRefresh to bypass any stale cache from a
     // previous session) and cache it so the destination route guard admits
     // the user without a re-fetch.
@@ -455,6 +514,15 @@ class _AuthScreenState extends State<AuthScreen> {
         // native credential manager prompts to save the new credentials.
         AutofillCredentialPrompter.promptSaveCredentials();
 
+        // Dispatch the Firebase verification email immediately after account
+        // creation (TODO #3). Best-effort: a failure is logged and never
+        // blocks registration — the user can resend from the gate screen.
+        try {
+          await EmailVerificationService.instance.sendVerificationEmail();
+        } catch (e) {
+          debugPrint('AuthScreen: verification email dispatch failed: $e');
+        }
+
         // Create Firestore user document
         final user = userCredential.user;
         if (user != null) {
@@ -513,11 +581,11 @@ class _AuthScreenState extends State<AuthScreen> {
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
-        // New registration: no role assigned yet — route to role selection.
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-        );
+        // New registration: email verification is mandatory before the account
+        // can be used (TODO #3). Route to the verification gate; the
+        // continuation resumes the normal routing (role selection for a
+        // brand-new account with no role yet) once the inbox link is tapped.
+        await _pushEmailVerification();
         return;
       }
 
