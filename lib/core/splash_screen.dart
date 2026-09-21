@@ -6,9 +6,11 @@ import '../features/auth/auth_screen.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
+import '../services/force_update_service.dart';
 import '../services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/copyright_footer.dart';
+import 'widgets/force_update_dialog.dart';
 
 class SplashScreen extends StatefulWidget {
   final ThemeController theme;
@@ -38,21 +40,65 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animationController.forward();
 
-    // Forced in-app update gate: ask Google Play whether a newer versionCode is
-    // published and, when one is, hand off to Play's immediate-update dialog.
-    // Deferred to the first frame so the check never races the splash build /
-    // navigation; the service swallows every failure (sideloaded builds,
-    // non-Play installs, iOS) so startup can never be blocked by it.
+    // Boot gate: run the Remote Config force-update kill switch and the Google
+    // Play in-app update check back-to-back, then continue the normal boot
+    // routing. Deferred to the first frame so neither check races the splash
+    // build / navigation.
+    //
+    // Both services are fail-open — a Remote Config outage or a non-Play
+    // install must never lock the user out — so the worst case is that boot
+    // proceeds on the installed build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      UpdateService.checkForImmediateUpdate();
+      _runBootGate();
     });
+  }
 
-    // Navigate after animation
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        _navigateToNextScreen();
-      }
-    });
+  /// Minimum time the splash stays on screen. Keeps the branded fade visible
+  /// even when the Remote Config / Play checks resolve instantly, and leaves a
+  /// floor slightly above the animation's 1.5s so it always completes.
+  static const Duration _minimumSplashDuration = Duration(milliseconds: 2500);
+
+  /// Runs the force-update kill switch, then the Play in-app update check,
+  /// then the normal boot routing.
+  ///
+  /// When Remote Config raises `min_required_version_code` above the installed
+  /// build's `versionCode`, a **non-dismissible** "Update Required" dialog is
+  /// shown and boot routing is abandoned: the only way forward is the Play
+  /// update flow. When the installed build satisfies the floor, we still ask
+  /// Play for a newer build (a soft nudge) before routing.
+  Future<void> _runBootGate() async {
+    // Kick off the checks and a minimum-duration timer together so the splash
+    // is never cut short by a fast network round-trip.
+    final minimumHold = Future<void>.delayed(_minimumSplashDuration);
+
+    final decision = await ForceUpdateService.evaluate();
+    if (!mounted) return;
+
+    if (decision.needsUpdate) {
+      _showForceUpdateDialog(decision);
+      return;
+    }
+
+    // Satisfied the Remote Config floor — still offer the Play in-app update
+    // so a user behind the latest published build is nudged forward.
+    await UpdateService.checkForImmediateUpdate();
+    if (!mounted) return;
+
+    // Hold the splash for the remainder of the minimum duration, then route.
+    await minimumHold;
+    if (!mounted) return;
+
+    _navigateToNextScreen();
+  }
+
+  /// Non-dismissible hard block for a build below the Remote Config floor.
+  ///
+  /// Delegates to [showForceUpdateDialog], whose `barrierDismissible: false`
+  /// and `PopScope(canPop: false)` make the dialog impossible to dismiss with
+  /// a tap outside or the Android back button — the sole affordance is the
+  /// Play update flow.
+  Future<void> _showForceUpdateDialog(ForceUpdateDecision decision) {
+    return showForceUpdateDialog(context, message: decision.message);
   }
 
   @override

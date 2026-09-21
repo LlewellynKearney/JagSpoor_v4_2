@@ -1,5 +1,155 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Firebase Remote Config force-update kill switch (added 2026-09-20)
+
+Added a server-controlled **force-update kill switch** on top of the v4.4.1
+in_app_update work, plus a release AAB built + verified end-to-end in-sandbox.
+
+### 1. Dependency — version correction (the brief's version was unresolvable)
+- `pubspec.yaml`: added **`firebase_remote_config: ^6.5.6`**.
+  - The brief asked for `^4.5.0`, but every 4.x release constrains
+    `firebase_core` to `^2.x`. This project resolves **firebase_core 4.13.0**
+    (via cloud_firestore 6.8.0 / firebase_auth 6.5.7 et al.), so `^4.5.0` is
+    **unresolvable**. 6.5.6 is the newest release whose `firebase_core`
+    constraint is exactly `^4.13.0` (6.6.0/6.7.0 require `^4.14.0` and would
+    force a core bump across the whole Firebase platform set).
+  - `package_info_plus` was **already present** at `^9.0.1` (the brief's `^8.0.0`
+    would have been a downgrade) — left unchanged.
+  - `pubspec.lock`: +firebase_remote_config 6.5.6 +
+    `firebase_remote_config_platform_interface` + `firebase_remote_config_web`.
+    Generated registrants regenerated for macOS + Windows (Android/iOS
+    auto-register via Flutter's plugin mechanism; Linux has no impl and is not
+    a build target of this app).
+
+### 2. `lib/services/force_update_service.dart` (NEW)
+`ForceUpdateService` (private ctor, pure static API) — the kill switch:
+- Remote Config keys `min_required_version_code` (int) +
+  `force_update_message` (string), as exported constants.
+- `shouldForceUpdate()` -> `bool` (exactly the brief's signature/contract).
+- `evaluate()` -> `ForceUpdateDecision` (needsUpdate + message + both version
+  codes) so the splash can render the **server-authored** copy and log the
+  comparison. `ForceUpdateDecision.allow` is the fail-open default.
+- **Fail-open by design**: the whole body is try/catch -> `debugPrint` ->
+  `allow`. Uninitialised Firebase (`[core/no-app]`, verified live in tests),
+  offline with no cache, a malformed RC value or a plugin gap can never lock
+  users out.
+- Extra hardening over the brief's sample: `setDefaults({min:
+  defaultMinVersionCode(0), message: defaultForceUpdateMessage})` BEFORE
+  `fetchAndActivate()`, so a **first-ever launch** (no cached RC values yet)
+  still resolves — min 0 never blocks — instead of throwing on an unset key.
+- `@visibleForTesting shouldBlock({minVersionCode, currentVersionCode})` —
+  the pure gating rule, so the rule is unit-testable without Firebase.
+  A non-positive floor can never block (defensive fail-open); a `versionCode`
+  that fails `int.tryParse` collapses to 0 (blocks against a positive floor).
+- API note: `RemoteConfigSettings` uses `fetchTimeout` + `minimumFetchInterval`
+  as in the brief. NOTE this repo runs Flutter 3.44.9, where the 6.x plugin
+  also offers `setConfigSettings`; no deprecated-member usage.
+
+### 3. `lib/core/widgets/force_update_dialog.dart` (NEW)
+`ForceUpdateDialog` + `showForceUpdateDialog(...)` — extracted from the splash
+so the block contract is **widget-testable in isolation** (mirrors the repo's
+`CopyrightFooter` / `ChatComposerBar` extraction pattern):
+- `barrierDismissible: false` (tap-outside can't close) **and**
+  `PopScope(canPop: false)` (Android back button / predictive-back can't
+  close) — a genuine hard block, stronger than the brief's sample.
+- No "Later"/"Cancel" action; the only affordance is `UPDATE NOW`, which
+  delegates to `UpdateService.checkForImmediateUpdate()` (Play's own blocking
+  update dialog). Injectable `onUpdatePressed` seam for tests.
+
+### 4. `lib/core/splash_screen.dart` (wiring)
+- `initState`'s post-frame callback now calls `_runBootGate()` (was a direct
+  `UpdateService.checkForImmediateUpdate()`).
+- `_runBootGate()`: `ForceUpdateService.evaluate()` -> if `needsUpdate`, show
+  the non-dismissible dialog and **abandon boot routing** (return); otherwise
+  still run the existing Play in-app update check (soft nudge) and continue to
+  the normal role-aware routing.
+- **Minimum splash hold** (`_minimumSplashDuration = 2500ms`): the RC check and
+  a delay timer start together and the gate awaits the timer before routing, so
+  a fast RC round-trip can never cut the 1.5s branded fade short. (The old code
+  routed from a fixed `Future.delayed(2500)` independent of the check; the
+  check is now sequenced into boot instead of racing it.)
+- `mounted` guards retained after every await.
+
+### 5. Tests (19 new)
+- `test/force_update_service_test.dart` (14): key constants; default message
+  content; `shouldBlock` matrix (below/equal/above floor, unset 0, negative
+  floor, unparsed versionCode 0, the shipped versionCode-6 build); the decision
+  model (`allow` defaults + a blocking decision); and the **fail-open
+  contract** proven live against uninitialised Firebase (`[core/no-app]`
+  is logged and both `evaluate()` and `shouldForceUpdate()` resolve `false`
+  rather than throwing).
+- `test/force_update_dialog_test.dart` (5 widget): title + server message +
+  UPDATE NOW render; no dismissive action exists; tapping the barrier does NOT
+  dismiss; UPDATE NOW invokes the injected action; `ForceUpdateDialog.fromDecision`.
+
+### 6. Verification + build (Flutter 3.44.9 / Dart 3.12.2, Java 21, SDK 36)
+- `flutter analyze`: **0 errors, 0 warnings**, 320 infos (unchanged baseline;
+  `analysis_options.yaml` NOT auto-touched).
+- `flutter test` (full suite): **1754 passed, 0 failed**, then the new tests
+  bring it to **1773 passed, 0 failed**.
+- `flutter build appbundle --release`: **SUCCESS** (592.6s) ->
+  `build/app/outputs/bundle/release/app-release.aab`
+  (**126,523,775 bytes**, sha256
+  `4707597d2b709644427b82579ac4f95878e9d324f01c7f9f5721974e457ff586`).
+- **Both services confirmed present in the artifact**:
+  - Java/Kotlin side — `base/dex/classes.dex` contains
+    `FirebaseRemoteConfig` (x21), `package_info` (x2), `InAppUpdate` (x1).
+  - Dart AOT side — `base/lib/{arm64-v8a,armeabi-v7a,x86_64}/libapp.so` each
+    contain `min_required_version_code`, `force_update_message`,
+    `A critical update is required for JagSpoor`, `Remote Config force-update`
+    and `Update Required`.
+- Merged release manifest verified: `package="za.co.jagspoor.app"`,
+  `versionCode="6"`, `versionName="4.4.1"`, targetSdk 36, and
+  `android.permission.INTERNET` present (required for the RC fetch).
+
+### Environment (sandbox was wiped — full rebuild required)
+Flutter **3.44.9** at `/tmp/f3449/flutter` (Dart 3.12.2); OpenJDK 21;
+Android cmdline-tools + `platforms;android-36` + `build-tools;36.0.0` +
+`ndk;27.0.12077973` under `/opt/android-sdk`; `android/local.properties`
+(gitignored) points at them. The `~/libs/libsqlite3.so -> .../libsqlite3.so.0`
+symlink + `LD_LIBRARY_PATH="$HOME/libs"` remain the requirement for the
+sqflite-FFI suites.
+
+### ⚠️ WARNINGS (carried over, deliberately not changed)
+1. **The AAB is signed with the DEBUG keystore.** `android/key.properties`
+   and the release keystore are ABSENT, so `buildTypes.release` falls back to
+   `signingConfigs.getByName("debug")` (verified via `keytool`: CN=Android
+   Debug). A debug-signed AAB **cannot be uploaded to Play**. Production
+   signing needs the real keystore + `key.properties`. Also note each machine
+   generates its OWN debug keystore, so this artifact's fingerprint
+   (SHA1 `2A:17:9E:9A:...`) differs from the one recorded in the earlier
+   v4.4.1 phase.
+2. **`google-services.json` still lacks a `za.co.jagspoor.app` client** (it
+   lists `com.example.jagspoor`), so the conditional plugin gate SKIPS
+   `com.google.gms.google-services`. Dart-side Firebase (via
+   `firebase_options.dart`) is unaffected, but native `firebase-analytics` is
+   inert and `default_web_client_id` is not generated. **Note this roll-forward
+   gap was NOT introduced here** — it predates this change (the earlier
+   v4.4.1 phase already recorded it). Fix by downloading a fresh
+   `google-services.json` for `za.co.jagspoor.app` from the Firebase Console.
+3. **Remote Config must be configured in the Firebase Console** for the kill
+   switch to do anything: create `min_required_version_code` (int; e.g. `6`
+   for the current release, raise it to force an update) and
+   `force_update_message` (string). Until then the Service Worker-less
+   defaults (min 0) mean the gate never blocks.
+4. `in_app_update` requires the app to be **installed from Google Play** —
+   sideloaded builds report `updateNotAvailable` (the service degrades
+   gracefully).
+5. Not deployed to Play Console (as instructed).
+
+### Files
+- `lib/services/force_update_service.dart` (NEW),
+  `lib/core/widgets/force_update_dialog.dart` (NEW),
+  `lib/core/splash_screen.dart` (boot gate),
+  `pubspec.yaml` / `pubspec.lock` (`firebase_remote_config ^6.5.6`),
+  `macos/Flutter/GeneratedPluginRegistrant.swift`,
+  `windows/flutter/generated_plugin_registrant.cc`,
+  `windows/flutter/generated_plugins.cmake` (regenerated registrants),
+  `test/force_update_service_test.dart` (NEW, 14 tests),
+  `test/force_update_dialog_test.dart` (NEW, 5 tests), `AGENTS.md`.
+- **Uncommitted in the working tree** (no commit/push, per standing
+  instruction not to push unless asked).
+
 ## Phase -- Forced in-app update + version bump to v4.4.1 (versionCode 6) (added 2026-09-20)
 
 Added a Google Play **forced in-app update** gate and bumped the app to
