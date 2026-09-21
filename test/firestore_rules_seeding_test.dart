@@ -114,6 +114,9 @@ void main() {
   // the owner without a permission-denied error. The single restricted
   // field is `deviceFingerprint` (device-level trial-abuse prevention),
   // which stays immutable once set.
+  //
+  // The server-owned entitlement fields are guarded by CHANGE DETECTION
+  // (not key presence) — see the `entitlement fields` group below.
   group('users/{userId} profile write contract (hotfix)', () {
     test('users read = isSignedIn()', () {
       final block = _blockFor(rules, 'users');
@@ -168,6 +171,98 @@ void main() {
         block,
         contains('allow delete: if isSignedIn() && request.auth.uid == userId;'),
       );
+    });
+  });
+
+  // ── users/{userId} entitlement-field guard contract ──────────────────────
+  //
+  // Regression guard for the v8 tester bug: after the signup trial trigger
+  // stamps `isPremium` / `subscriptionSource` / `entitlementUpdatedAt` onto
+  // users/{uid}, a merge profile save re-sends the complete document, so a
+  // KEY-PRESENCE guard (`!('isPremium' in request.resource.data)`) denied the
+  // save with PERMISSION_DENIED. The guard must be CHANGE DETECTION: deny only
+  // when the submitted value differs from the stored value.
+  group('users/{userId} entitlement fields use change detection', () {
+    const guardedFields = <String>[
+      'isPremium',
+      'premiumExpiry',
+      'subscriptionSource',
+      'subscriptionProduct',
+      'subscriptionPlayPurchaseToken',
+      'payfastPaymentId',
+      'entitlementUpdatedAt',
+    ];
+
+    test('no server-owned field is denied by standalone key presence', () {
+      final block = _blockFor(rules, 'users');
+      for (final field in guardedFields) {
+        // A standalone presence deny — `!('F' in request.resource.data)` chained
+        // directly with `&&` — is the buggy shape that broke merge saves.
+        final standaloneDeny = RegExp(
+          "!\\(\\s*'$field'\\s+in\\s+request\\.resource\\.data\\s*\\)\\s*&&",
+        );
+        expect(
+          standaloneDeny.hasMatch(block),
+          isFalse,
+          reason: "standalone key-presence guard for '$field' reintroduces "
+              'the PERMISSION_DENIED merge-save bug',
+        );
+        // The presence check must instead be an operand of `||`, so it
+        // short-circuits to ALLOW when the incoming write omits the field.
+        final changeDetection = RegExp(
+          "!\\(\\s*'$field'\\s+in\\s+request\\.resource\\.data\\s*\\)\\s*\\|\\|",
+        );
+        expect(
+          changeDetection.hasMatch(block),
+          isTrue,
+          reason: "'$field' presence check must be paired with a value "
+              'comparison via ||',
+        );
+      }
+    });
+
+    test('each server-owned field is compared against the stored value', () {
+      final block = _blockFor(rules, 'users');
+      for (final field in guardedFields) {
+        // Denied only when present AND (no existing doc OR value changed).
+        expect(
+          block,
+          contains("!('$field' in request.resource.data)"),
+          reason: "'$field' must still be guarded",
+        );
+        expect(
+          block,
+          contains(
+            'request.resource.data.$field == resource.data.$field',
+          ),
+          reason: "'$field' must be change-detected against the stored value",
+        );
+      }
+    });
+
+    test('every guard short-circuits to ALLOW when the field is absent', () {
+      final block = _blockFor(rules, 'users');
+      // A plain profile save that omits the server-owned fields resolves to
+      // `!(false) == true` for each clause, so the write is allowed.
+      final guardCount = guardedFields
+          .where((f) => block.contains("!('$f' in request.resource.data)"))
+          .length;
+      expect(guardCount, guardedFields.length);
+      // The stored-value comparison must be gated behind `resource != null`
+      // so a first-time create (resource == null) that omits the fields is
+      // still admitted.
+      expect(block, contains('resource != null'));
+    });
+
+    test('the guarded field set is exactly the server-owned entitlement set',
+        () {
+      final block = _blockFor(rules, 'users');
+      // Only these fields compare request vs stored; nothing else is frozen
+      // (every ordinary profile field stays freely writable by the owner).
+      final compared = RegExp(
+        r'request\.resource\.data\.(\w+) == resource\.data\.\1',
+      ).allMatches(block).map((m) => m.group(1)).toSet();
+      expect(compared, guardedFields.toSet());
     });
   });
 
@@ -575,5 +670,15 @@ String _blockFor(String rules, String collection) {
   if (close < 0) {
     fail('No closing brace found for collection $collection block');
   }
-  return fromStart.substring(0, close);
+  return _stripComments(fromStart.substring(0, close));
+}
+
+/// Removes full-line `//` comments from a rules block so assertions test the
+/// actual rule code, never documentation. Without this, a comment that merely
+/// mentions a guarded field name would satisfy (or break) an assertion.
+String _stripComments(String block) {
+  return block
+      .split('\n')
+      .where((line) => !line.trimLeft().startsWith('//'))
+      .join('\n');
 }

@@ -97,23 +97,51 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       // Owner-scoped write: the user may maintain their own profile document
-      // (role, displayName, medical info, FCM tokens, etc.) EXCEPT the
-      // immutable, server-owned entitlement fields. `isPremium`, `premiumExpiry`,
-      // `subscriptionSource`, `subscriptionProduct`, `subscriptionPlayPurchaseToken`,
-      // `payfastPaymentId` and `entitlementUpdatedAt` are ONLY written by Cloud
+      // (role, displayName, medical info, FCM tokens, etc.). The server-owned
+      // entitlement fields (`isPremium`, `premiumExpiry`, `subscriptionSource`,
+      // `subscriptionProduct`, `subscriptionPlayPurchaseToken`,
+      // `payfastPaymentId`, `entitlementUpdatedAt`) are ONLY written by Cloud
       // Functions (validateGooglePlayPurchase / payfastITN / the trial trigger),
       // so a user cannot fabricate / extend their own premium state.
+      //
+      // IMPORTANT — these guards use CHANGE DETECTION, not key presence.
+      // For a merge `set(..., {merge: true})` (what the hunter profile screen
+      // uses), `request.resource.data` is the COMPLETE resulting document, not
+      // just the incoming delta. The trial trigger stamps `isPremium` /
+      // `subscriptionSource` / `entitlementUpdatedAt` onto users/{uid} at
+      // signup, so those keys are ALWAYS present in `request.resource.data`
+      // and a presence check (`!('isPremium' in request.resource.data)`) denied
+      // every subsequent profile save with PERMISSION_DENIED. Each field is
+      // therefore denied ONLY when the write actually ADDS or CHANGES it:
+      // a plain profile save that re-sends the values already stored (or omits
+      // them, in which case the server keeps the stored values) is allowed,
+      // while a client attempting `isPremium: true` / a new expiry cannot pass
+      // because the submitted value differs from the stored one.
       allow write: if isSignedIn() && request.auth.uid == userId
         && (resource == null
           || !('deviceFingerprint' in resource.data)
           || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint)
-        && !('isPremium' in request.resource.data)
-        && !('premiumExpiry' in request.resource.data)
-        && !('subscriptionSource' in request.resource.data)
-        && !('subscriptionProduct' in request.resource.data)
-        && !('subscriptionPlayPurchaseToken' in request.resource.data)
-        && !('payfastPaymentId' in request.resource.data)
-        && !('entitlementUpdatedAt' in request.resource.data);
+        && (!('isPremium' in request.resource.data)
+          || (resource != null
+            && request.resource.data.isPremium == resource.data.isPremium))
+        && (!('premiumExpiry' in request.resource.data)
+          || (resource != null
+            && request.resource.data.premiumExpiry == resource.data.premiumExpiry))
+        && (!('subscriptionSource' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionSource == resource.data.subscriptionSource))
+        && (!('subscriptionProduct' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionProduct == resource.data.subscriptionProduct))
+        && (!('subscriptionPlayPurchaseToken' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionPlayPurchaseToken == resource.data.subscriptionPlayPurchaseToken))
+        && (!('payfastPaymentId' in request.resource.data)
+          || (resource != null
+            && request.resource.data.payfastPaymentId == resource.data.payfastPaymentId))
+        && (!('entitlementUpdatedAt' in request.resource.data)
+          || (resource != null
+            && request.resource.data.entitlementUpdatedAt == resource.data.entitlementUpdatedAt));
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
     // Entitlement documents are written exclusively by Cloud Functions

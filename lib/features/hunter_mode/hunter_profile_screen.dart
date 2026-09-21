@@ -497,10 +497,20 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       }
     } catch (e) {
       setState(() => _isLoading = false);
+      debugPrint('HunterProfileScreen._saveProfile failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving profile: $e')));
+        final denied = e is FirebaseException &&
+            (e.code == 'permission-denied' || e.code == 'unauthorized');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              denied
+                  ? 'Permission error — please contact support'
+                  : 'Error saving profile: $e',
+            ),
+            backgroundColor: denied ? Colors.red.shade700 : null,
+          ),
+        );
       }
     }
   }

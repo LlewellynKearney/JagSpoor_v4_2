@@ -1,5 +1,110 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Fix `[cloud_firestore/permission-denied]` on hunter profile save (merge-save + entitlement guards) (added 2026-09-21)
+
+### Symptom (tester, published v8 build)
+A hunter who signed up, filled the mandatory profile fields, and tapped SAVE
+PROFILE got:
+`[cloud_firestore/permission-denied] PERMISSION_DENIED: Missing or insufficient permissions.`
+
+### Root cause — `users/{uid}` write rule used KEY PRESENCE, not change detection
+The save writes `users/{uid}` via `set(profileData, SetOptions(merge: true))`
+(`lib/features/hunter_mode/hunter_profile_screen.dart` `_saveProfile`).
+
+The `match /users/{userId}` write grant denied any write whose
+`request.resource.data` contained a server-owned entitlement key:
+
+```
+&& !('isPremium' in request.resource.data)
+&& !('premiumExpiry' in request.resource.data)
+&& !('subscriptionSource' in request.resource.data)
+&& !('subscriptionProduct' in request.resource.data)
+&& !('subscriptionPlayPurchaseToken' in request.resource.data)
+&& !('payfastPaymentId' in request.resource.data)
+&& !('entitlementUpdatedAt' in request.resource.data)
+```
+
+**For a merge write, `request.resource.data` is the COMPLETE resulting
+document, not the incoming delta.** The `initializeNewUserTrial` Auth
+`onCreate` trigger (`functions/src/user_trial_onboarding.ts`) stamps
+`isPremium: false`, `subscriptionSource: 'trial'`, `trialStart`/`trialEnd`,
+`entitlementUpdatedAt` onto `users/{uid}` at signup (and
+`validateGooglePlayPurchase` / `payfastITN` add `premiumExpiry`,
+`subscriptionProduct`, `subscriptionPlayPurchaseToken`, `payfastPaymentId` on
+purchase). So those keys are ALWAYS present in `request.resource.data`, and
+every subsequent profile save re-sent them → the presence guard evaluated
+`!(true)` = false → `PERMISSION_DENIED`.
+
+This is why the bug only reproduced on the **published** build (where the trial
+trigger runs) and not on a bare local/test build with no `users/{uid}` doc.
+
+### Fix — per-field CHANGE DETECTION (immutable-once-set)
+Each server-owned field is now denied ONLY when the write actually ADDS or
+CHANGES it, via `field absent || field unchanged`:
+
+```
+&& (!('isPremium' in request.resource.data)
+  || (resource != null
+    && request.resource.data.isPremium == resource.data.isPremium))
+... (same shape for premiumExpiry, subscriptionSource, subscriptionProduct,
+     subscriptionPlayPurchaseToken, payfastPaymentId, entitlementUpdatedAt)
+```
+
+- `resource != null` is required: on create `resource` is null and touching
+  `resource.data` errors → the clause is skipped, so a first-time profile
+  create that omits these fields still passes.
+- A plain profile save that re-sends the stored values (or omits the fields —
+  the server then keeps the stored values) is now ALLOWED.
+- Anti-fabrication is preserved: a client submitting `isPremium: true`, a new
+  `premiumExpiry`, or a rotated purchase token cannot pass because the
+  submitted value differs from the stored one. The `deviceFingerprint`
+  immutability clause is unchanged.
+
+### App-side error handling (task 5)
+`_saveProfile`'s catch now `debugPrint`s the raw exception (never surfaced to
+the user) and, for a `FirebaseException` with code `permission-denied` /
+`unauthorized`, shows a red `"Permission error — please contact support"`
+snackbar instead of leaking the raw Firestore error text. Other failures keep
+the existing `"Error saving profile: …"` message.
+
+### Tests (`test/firestore_rules_seeding_test.dart`, +4)
+New group `users/{userId} entitlement fields use change detection`:
+- no field is denied by a **standalone** presence guard (regex asserts
+  `!('F' in request.resource.data) &&` never appears — the buggy shape);
+- every presence check is paired with `||` change detection;
+- each field is compared `request.resource.data.F == resource.data.F` against
+  the stored value, with the `resource != null` create guard;
+- the compared field set is EXACTLY the 7 server-owned entitlement fields
+  (nothing else is frozen, so ordinary profile fields stay freely writable).
+
+The `_blockFor` helper now strips full-line `//` comments before assertions so
+a comment mentioning a field name can never satisfy or break a check.
+
+**Mutation-tested**: reverting `firestore.rules` to the buggy presence-only
+guards fails **4 of 4** new assertions; the fixed rules pass **72/72** in the
+two rules suites.
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9 / Dart 3.12.2): **0 errors, 0 warnings**,
+  320 pre-existing infos (unchanged baseline; none in the changed files).
+  `analysis_options.yaml` NOT auto-touched.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **1763 passed,
+  0 failed**.
+- Sandbox env: Flutter 3.44.9 downloaded + extracted to `$HOME/sdk/flutter`
+  (the documented `/opt/flutter` path is not writable); `~/libs/libsqlite3.so`
+  → `libsqlite3.so.0` symlink for the sqflite-FFI suites.
+- **Deploy reminder**: no Firebase credentials in this sandbox (`firebase
+  projects:list` unauthenticated), so the ruleset is committed but NOT
+  deployed. Run `npx firebase-tools deploy --only firestore:rules` in a
+  credentialed env — or paste `firestore.rules` into the Firebase Console →
+  Firestore → Rules. **Until deployed, the published build keeps failing the
+  profile save** (the client fix alone cannot bypass server-side rules).
+- Files: `firestore.rules` (users write → change-detection guards),
+  `lib/features/hunter_mode/hunter_profile_screen.dart` (permission-denied
+  handling), `test/firestore_rules_seeding_test.dart` (+4 tests, comment
+  stripping), `AGENTS.md`.
+- No pubspec / versionCode / AAB changes (as instructed).
+
 ## Phase -- Firebase Remote Config force-update kill switch (added 2026-09-20)
 
 Added a server-controlled **force-update kill switch** on top of the v4.4.1
