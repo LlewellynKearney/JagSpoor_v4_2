@@ -77,8 +77,8 @@ android {
         // accepted AAB (v4.4 / code 5) for acceptance — and the forced
         // in-app update gate only fires when the published build carries a
         // higher versionCode than the installed one.
-        versionCode = 6
-        versionName = "4.4.1"
+        versionCode = 8
+        versionName = "4.4.2"
     }
 
     // ---------- Signing configuration ----------
