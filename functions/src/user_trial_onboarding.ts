@@ -94,11 +94,18 @@ export const initializeNewUserTrial = functionsV1
 
     await userRef.set(
       {
+        // Canonical trial status shared by the client `markTrialStarted`.
         subscriptionStatus: "trialing",
+        // Backend-trigger schema (trialEndsAt / trialStart).
         trialStartedAt: now,
         trialEndsAt,
         trialStart: now,
         trialEnd: trialEndsAt,
+        // Client `markTrialStarted` schema (subscriptionTrialEndsAt) — written
+        // too so a doc provisioned by THIS trigger resolves under every
+        // reader, regardless of which spelling it checks (TODO #5).
+        subscriptionTrialEndsAt: trialEndsAt,
+        subscriptionTrialStart: now,
         isPremium: false,
         subscriptionSource: "trial",
         requiresPayment: false,

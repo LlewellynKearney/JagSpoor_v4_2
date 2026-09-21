@@ -41,6 +41,10 @@ void main() {
       expect(onboardingSource, contains('requiresPayment: false'));
       expect(onboardingSource,
           contains('firestore().collection("users").doc(uid)'));
+      // TODO #5: the trigger also writes the client `markTrialStarted` schema
+      // so a doc it provisions resolves under every reader.
+      expect(onboardingSource, contains('subscriptionTrialEndsAt: trialEndsAt'));
+      expect(onboardingSource, contains('subscriptionTrialStart: now'));
     });
 
     test('merge-writes the trial state without clobbering a non-trial status',

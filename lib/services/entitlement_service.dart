@@ -16,6 +16,40 @@ class SubscriptionSource {
   static const String none = 'none';
 }
 
+/// The free-trial length mirrored from `subscription_pricing.dart`
+/// ([trialDuration]) — 30 days. Used as a last-resort trial window when a
+/// `users/{uid}` document carries neither a trial-end timestamp nor a trial
+/// status but does carry a `createdAt`.
+const Duration trialWindow = Duration(days: 30);
+
+/// Every `users/{uid}` field name under which a trial-end timestamp may be
+/// stored, in priority order. The two signup paths write different spellings:
+/// the backend `initializeNewUserTrial` trigger writes `trialEndsAt` /
+/// `trialEnd`, while the client `SubscriptionStatusService.markTrialStarted`
+/// writes `subscriptionTrialEndsAt`. Both are accepted so a valid trial is
+/// never paywalled on a schema mismatch.
+const List<String> trialEndFieldAliases = <String>[
+  'subscriptionTrialEndsAt',
+  'trialEndsAt',
+  'trialEnd',
+  'subscriptionTrialEnd',
+  'subscription_trial_ends_at',
+  'trial_ends_at',
+  'trial_end',
+];
+
+/// Every `users/{uid}` field name under which a trial-start timestamp may be
+/// stored, in priority order (backend trigger + client markTrialStarted
+/// schemas, plus snake_case legacy variants).
+const List<String> trialStartFieldAliases = <String>[
+  'trialStartedAt',
+  'trialStart',
+  'subscriptionTrialStartedAt',
+  'subscriptionTrialStart',
+  'trial_started_at',
+  'trial_start',
+];
+
 /// Pure snapshot of a user's entitlement state derived from the
 /// `users/{uid}` document. The premium fields (`isPremium`, `premiumExpiry`,
 /// `subscriptionSource`) are server-authoritative — written ONLY by Cloud
@@ -38,6 +72,18 @@ class UserEntitlement {
   /// spelled differently (see [isTrialActive]).
   final String subscriptionStatus;
 
+  /// The server-owned `requiresPayment` flag. When `true` the account has been
+  /// flagged as requiring payment (e.g. a pre-provisioned / abuse-blocked
+  /// account) and must NOT be granted trial access. Written by the backend
+  /// `initializeNewUserTrial` trigger (which sets it `false` for a granted
+  /// trial).
+  final bool requiresPayment;
+
+  /// The account-creation timestamp (`createdAt`), used as a last-resort
+  /// 30-day trial fallback when neither a trial-end timestamp NOR a trial
+  /// status is present. `null` when the field is absent.
+  final DateTime? createdAt;
+
   const UserEntitlement({
     this.isPremium = false,
     this.premiumExpiry,
@@ -46,13 +92,19 @@ class UserEntitlement {
     this.trialStart,
     this.trialEnd,
     this.subscriptionStatus = '',
+    this.requiresPayment = false,
+    this.createdAt,
   });
 
   /// Trial / grace status strings that indicate an in-progress free trial.
   /// Both `'trial'` and `'trialing'` are accepted (the backend + client write
-  /// `'trialing'`; legacy docs may carry `'trial'`).
+  /// `'trialing'`; legacy docs may carry `'trial'`; `'trial_active'` is the
+  /// remaining documented alias).
   static bool _isTrialStatus(String status) =>
-      status == 'trial' || status == 'trialing' || status == 'trialling';
+      status == 'trial' ||
+      status == 'trialing' ||
+      status == 'trialling' ||
+      status == 'trial_active';
 
   /// Status strings that indicate an actively-billed subscription.
   static bool _isActiveStatus(String status) =>
@@ -77,20 +129,43 @@ class UserEntitlement {
 
   /// Whether the user is inside their free trial window.
   ///
-  /// Tolerant by design: a trial is active when EITHER the status says
-  /// `'trial'`/`'trialing'` (the canonical backend value) OR a trial-end
-  /// timestamp is present and in the future. This accepts every documented
-  /// trial-end field spelling (`subscriptionTrialEndsAt`, `trialEnd`,
-  /// `trialEndsAt`, `subscriptionTrialEnd`) and the snake_case variants, so a
-  /// valid trial is never paywalled on a field-name mismatch.
+  /// Schema-tolerant by design — the two signup paths write DIFFERENT field
+  /// layouts, so access must be granted from either:
+  ///  - **Backend trigger schema** (`trialEndsAt`, `trialStart`,
+  ///    `subscriptionSource: 'trial'`, `requiresPayment: false`), and
+  ///  - **Client `markTrialStarted` schema** (`subscriptionTrialEndsAt`,
+  ///    `subscriptionProvider`).
   ///
-  /// An explicit past expiry always wins (an ended trial blocks access even
-  /// when a stale `'trialing'` status lingers), and an unknown expiry with no
-  /// trial status is NOT treated as active (fails closed for non-trials).
+  /// Resolution order:
+  ///  1. A trial-end timestamp under ANY spelling
+  ///     ([_resolveTrialEnd]) — future = active, past = ended (an explicit
+  ///     past expiry always wins over a stale `'trialing'` status).
+  ///  2. A trial status (`'trial'`/`'trialing'`/`'trial_active'`) with no
+  ///     timestamp — active unless [requiresPayment] is set.
+  ///  3. Last resort: no timestamp AND no trial status, but the account was
+  ///     created within the 30-day trial window ([isWithinCreationTrialWindow])
+  ///     — active unless [requiresPayment] is set.
+  ///
+  /// `requiresPayment == true` blocks trial access at every step (the account
+  /// was explicitly flagged as not trial-eligible). Unknown / non-trial
+  /// statuses with no dates fail closed.
   bool isTrialActive(DateTime now) {
+    if (requiresPayment) return false;
     final end = trialEnd;
     if (end != null) return end.isAfter(now);
-    return _isTrialStatus(subscriptionStatus);
+    if (_isTrialStatus(subscriptionStatus)) return true;
+    return isWithinCreationTrialWindow(now);
+  }
+
+  /// Whether the account was created within the 30-day trial window, used as a
+  /// last-resort fallback when a doc carries neither a trial-end timestamp nor
+  /// a recognized trial status (e.g. a partially-written legacy document).
+  /// Returns `false` when [createdAt] is absent or in the future.
+  bool isWithinCreationTrialWindow(DateTime now) {
+    final created = createdAt;
+    if (created == null) return false;
+    final age = now.difference(created);
+    return age >= Duration.zero && age < trialWindow;
   }
 
   /// Combined access gate: trial OR premium.
@@ -111,18 +186,26 @@ class UserEntitlement {
   /// Whether the entitlement was granted via the PayFast website checkout.
   bool get isPayfast => subscriptionSource == SubscriptionSource.payfast;
 
-  /// Resolves the trial-end timestamp across every field spelling the backend
-  /// / client / legacy docs may use. `subscriptionTrialEndsAt` is the value
-  /// the Auth `onCreate` trigger + `markTrialStarted` write (the canonical
-  /// field on a real new-user doc) and must be checked FIRST.
-  static DateTime? _resolveTrialEnd(Map<String, dynamic> data) =>
-      _toDate(data['subscriptionTrialEndsAt']) ??
-      _toDate(data['trialEnd']) ??
-      _toDate(data['trialEndsAt']) ??
-      _toDate(data['subscriptionTrialEnd']) ??
-      _toDate(data['subscription_trial_ends_at']) ??
-      _toDate(data['trial_end']) ??
-      _toDate(data['trial_ends_at']);
+  /// Resolves the first present trial-end timestamp across
+  /// [trialEndFieldAliases] (both signup schemas + snake_case legacy
+  /// variants).
+  static DateTime? _resolveTrialEnd(Map<String, dynamic> data) {
+    for (final key in trialEndFieldAliases) {
+      final value = _toDate(data[key]);
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  /// Resolves the first present trial-start timestamp across
+  /// [trialStartFieldAliases].
+  static DateTime? _resolveTrialStart(Map<String, dynamic> data) {
+    for (final key in trialStartFieldAliases) {
+      final value = _toDate(data[key]);
+      if (value != null) return value;
+    }
+    return null;
+  }
 
   static UserEntitlement fromMap(Map<String, dynamic>? data) {
     if (data == null) return const UserEntitlement();
@@ -132,11 +215,11 @@ class UserEntitlement {
       premiumExpiry: _toDate(data['premiumExpiry']),
       subscriptionSource: data['subscriptionSource'] as String?,
       subscriptionProduct: data['subscriptionProduct'] as String?,
-      trialStart: _toDate(data['trialStart']) ??
-          _toDate(data['trialStartedAt']) ??
-          _toDate(data['subscriptionTrialStartedAt']),
+      trialStart: _resolveTrialStart(data),
       trialEnd: _resolveTrialEnd(data),
       subscriptionStatus: status,
+      requiresPayment: data['requiresPayment'] == true,
+      createdAt: _toDate(data['createdAt']) ?? _toDate(data['created_at']),
     );
   }
 
@@ -234,15 +317,31 @@ class EntitlementService {
   }
 
   /// One-shot read of the current user's entitlement state.
+  ///
+  /// Prefers the SERVER document (`Source.server`) so a just-provisioned
+  /// trial written by the backend trigger (or the client registration write)
+  /// is observed immediately rather than a stale cache hit on the very first
+  /// login. Falls back to the cache when offline / on a server error so an
+  /// off-grid user is not locked out — and finally to the empty entitlement
+  /// when neither is retrievable.
   Future<UserEntitlement> getMyEntitlement() async {
     final uid = _uid;
     if (uid == null) return const UserEntitlement();
+    final ref = _db.collection('users').doc(uid);
     try {
-      final snap = await _db.collection('users').doc(uid).get();
+      final snap = await ref.get(const GetOptions(source: Source.server));
       return UserEntitlement.fromMap(snap.data());
     } catch (e) {
-      debugPrint('EntitlementService.getMyEntitlement error: $e');
-      return const UserEntitlement();
+      debugPrint('EntitlementService.getMyEntitlement server read failed, '
+          'falling back to cache: $e');
+      try {
+        final cached = await ref.get(const GetOptions(source: Source.cache));
+        return UserEntitlement.fromMap(cached.data());
+      } catch (cacheError) {
+        debugPrint('EntitlementService.getMyEntitlement cache read failed: '
+            '$cacheError');
+        return const UserEntitlement();
+      }
     }
   }
 

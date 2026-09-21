@@ -351,6 +351,17 @@ class _AuthScreenState extends State<AuthScreen> {
     final role =
         await UserRoleProvider.instance.resolveRole(forceRefresh: true);
 
+    // Schema-migration (TODO #5): the two historical signup paths wrote
+    // different trial field layouts (`trialEndsAt` vs
+    // `subscriptionTrialEndsAt`). Backfill the missing aliases on login so an
+    // existing account resolves under every reader. Best-effort + idempotent:
+    // a failure (offline / rules) is logged and never blocks the route.
+    try {
+      await SubscriptionStatusService.instance.backfillTrialSchemaAliases();
+    } catch (e) {
+      debugPrint('AuthScreen: trial schema backfill failed (non-fatal): $e');
+    }
+
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,
     // scanned_pricelists…) don't crash on a missing parameter. Applies to

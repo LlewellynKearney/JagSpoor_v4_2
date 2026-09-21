@@ -8,6 +8,7 @@ import '../features/auth/services/email_verification_policy.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
+import '../features/subscription/services/subscription_status_service.dart';
 import '../services/force_update_service.dart';
 import '../services/update_service.dart';
 import 'theme/app_theme.dart';
@@ -167,6 +168,16 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Resolve the role once here (cached for the route guards / dashboards).
     final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+
+    // Schema-migration (TODO #5): backfill the missing trial field aliases for
+    // accounts created by the other historical signup path
+    // (`trialEndsAt` vs `subscriptionTrialEndsAt`). Best-effort + idempotent;
+    // a failure never blocks boot.
+    try {
+      await SubscriptionStatusService.instance.backfillTrialSchemaAliases();
+    } catch (e) {
+      debugPrint('Splash: trial schema backfill failed (non-fatal): $e');
+    }
 
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,

@@ -1,5 +1,90 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Unify the two trial schemas (TODO #5 follow-up) (added 2026-09-21)
+
+### Confirmed root cause (2 real docs)
+Two signup paths wrote **different** `users/{uid}` trial schemas:
+- **Backend** `initializeNewUserTrial` Auth `onCreate` trigger
+  (`functions/src/user_trial_onboarding.ts`) — the "Jannie Bosch" doc
+  (`ZTqCsp0AnsPScSj0juHeX3BSqeW2`): `trialEndsAt`, `trialStartedAt`,
+  `trialEnd`, `trialStart`, `subscriptionSource: 'trial'`,
+  `requiresPayment: false`.
+- **Client** `SubscriptionStatusService.markTrialStarted`
+  (called from `AuthScreen._assignTrialOnRegistration`) — the "Ocker Fourie"
+  doc (`qzV9jsLYvdSyl1wmeplQD807sdG2`): `subscriptionTrialEndsAt`,
+  `subscriptionProvider: 'google_play_billing'` (no `trialEndsAt`, no
+  `requiresPayment`).
+
+Whichever path lands last / wins the race determined the schema, so the same
+fresh-signup produced two incompatible documents. See the prior entry for the
+`UserEntitlement.fromMap` read gap that turned this into an instant paywall.
+
+### Fix 1 — schema-tolerant read (`lib/services/entitlement_service.dart`)
+- New exported canonical alias lists `trialEndFieldAliases` (7 spellings,
+  `subscriptionTrialEndsAt` + `trialEndsAt` + `trialEnd` + snake_case …) and
+  `trialStartFieldAliases` (6). `_resolveTrialEnd` / `_resolveTrialStart` scan
+  them in priority order.
+- New `requiresPayment` + `createdAt` fields, read in `fromMap`.
+- `isTrialActive(now)` resolution order: (1) any trial-end timestamp — future
+  = active, past = blocked (explicit expiry always wins); (2) a trial status
+  (`trial`/`trialing`/`trialling`/`trial_active`) — active; (3) last resort —
+  `createdAt` within the 30-day [`trialWindow`] (`isWithinCreationTrialWindow`).
+  `requiresPayment == true` blocks all three. Unknown status + no dates fails
+  closed.
+- `getMyEntitlement()` now reads `Source.server` first (a just-provisioned
+  trial is seen immediately), falling back to `Source.cache` when offline, then
+  to the empty entitlement.
+
+### Fix 2 — unified creation (`subscription_status_service.dart`)
+- `markTrialStarted` now writes **BOTH** schemas: `trialStartedAt` / `trialStart`
+  / `trialEndsAt` / `trialEnd` **and** `subscriptionTrialEndsAt` /
+  `subscriptionTrialStart`, plus `subscriptionStatus: 'trialing'`, tier, promo,
+  provider.
+- The backend trigger now also writes `subscriptionTrialEndsAt` /
+  `subscriptionTrialStart`, so a doc from EITHER path resolves under every
+  reader. Dart + Node contract tests updated to lock this.
+- **Rules constraint respected**: the server-owned fields (`isPremium`,
+  `subscriptionSource`, `premiumExpiry`, `entitlementUpdatedAt`) are NOT
+  written by the client — `firestore.rules` change-detection freezes them, so
+  the client write would be denied; the trigger (Admin SDK) owns them. A test
+  asserts the client write omits them.
+
+### Fix 3 — migration on login/boot
+- New `SubscriptionStatusService.backfillTrialSchemaAliases()`: reads
+  `users/{uid}`, resolves the trial window from either schema, and backfills
+  ONLY the missing trial-timestamp aliases + normalizes a known trial status to
+  `'trialing'` (and stamps `'trialing'` onto a valid-window doc with no status,
+  i.e. the backend-trigger schema). Idempotent; never touches the frozen
+  server-owned fields; no-op when no trial timestamps exist.
+- Wired (best-effort, non-fatal) into `AuthScreen._routeAfterAuth` and
+  `SplashScreen._navigateToNextScreen`, so an existing single-schema account is
+  healed on the next login / boot.
+- `UserSubscription.fromMap` (the dashboard subscription banner) is now
+  schema-tolerant too.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 infos = unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1810
+  tests passed** (baseline 1795 + 15 net new). The trial suites:
+  `entitlement_trial_status_test` (both exact doc shapes, requiresPayment,
+  createdAt fallback, all aliases, unified-write contract, migration
+  idempotency + frozen-field safety, UserSubscription tolerance) +
+  `subscription_status_service_test` + `subscription_screen_test` +
+  `trial_onboarding_functions_contract_test`: **70 passed**.
+- `functions`: `npx tsc --noEmit` clean; `npm test` **37/37 pass**.
+- Env: Flutter 3.44.9 at `/tmp/flutter`; `~/libs/libsqlite3.so` symlink;
+  Functions `npm install` + typecheck + node:test all run in-sandbox.
+- Files: `lib/services/entitlement_service.dart`,
+  `lib/features/subscription/services/subscription_status_service.dart`,
+  `lib/features/auth/auth_screen.dart`, `lib/core/splash_screen.dart`,
+  `functions/src/user_trial_onboarding.ts`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `test/entitlement_trial_status_test.dart`,
+  `test/trial_onboarding_functions_contract_test.dart`, `AGENTS.md`.
+- No pubspec / versionCode / firestore.rules changes. Backend deploy reminder:
+  `npx firebase-tools deploy --only functions` in a credentialed env to ship
+  the dual-schema trigger write.
+
 ## Phase -- Fix instant paywall for valid new-user trials (TODO #5) (added 2026-09-21)
 
 ### Symptom

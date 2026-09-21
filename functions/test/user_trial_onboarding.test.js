@@ -42,6 +42,10 @@ test("the trigger writes the trialing state to users/{uid}", () => {
   assert.match(compiled, /trialEndsAt/);
   assert.match(compiled, /requiresPayment: false/);
   assert.match(compiled, /merge: true/);
+  // TODO #5: the trigger writes BOTH trial schemas so a doc it provisions
+  // resolves under every reader (entitlement gate + dashboards).
+  assert.match(compiled, /subscriptionTrialEndsAt/);
+  assert.match(compiled, /subscriptionTrialStart/);
 });
 
 test("the trigger preserves a pre-existing non-trial subscription status", () => {
