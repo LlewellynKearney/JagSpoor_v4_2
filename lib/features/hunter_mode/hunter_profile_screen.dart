@@ -11,11 +11,13 @@ import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
 import '../auth/screens/privacy_policy_screen.dart';
+import '../auth/services/user_role_provider.dart';
 import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
+import 'services/hunter_profile_completeness.dart';
 import 'widgets/hunter_scaffold.dart';
 
 class HunterProfileScreen extends StatefulWidget {
@@ -62,11 +64,51 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
   bool _isUploading = false;
   bool _isFetchingLocation = false;
 
+  /// True when this screen was reached as the mandatory onboarding gate
+  /// (pushed with the whole nav stack cleared), so a back action returns to
+  /// the hunter dashboard instead of popping to nothing.
+  bool _isOnboardingGate = false;
+
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _loadBatterySaverState();
+    _resolveOnboardingGate();
+  }
+
+  /// Detects the onboarding-gate entry (no route can be popped) so the AppBar
+  /// can render a back button that returns to the dashboard instead of
+  /// leaving the user stranded after signing up.
+  Future<void> _resolveOnboardingGate() async {
+    if (Navigator.of(context).canPop()) {
+      // Reached from the dashboard/profile entry — a normal pop works.
+      return;
+    }
+    bool complete = true;
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final status = await HunterProfileCompleteness.instance.statusFor(uid);
+        complete = status.isComplete;
+      }
+    } catch (_) {
+      // Auth/Firestore unavailable (offline / test env) — assume the user came
+      // from the dashboard rather than the mandatory gate.
+    }
+    if (mounted) setState(() => _isOnboardingGate = !complete);
+  }
+
+  /// Returns to the correct home for the current role. Used by the AppBar back
+  /// button when there is no route to pop (onboarding-gate entry).
+  void _returnToDashboard() {
+    final role = UserRoleProvider.instance.role;
+    final route = switch (role) {
+      AppRole.outfitter => '/outfitter_dashboard',
+      AppRole.admin => '/admin_dashboard',
+      _ => '/hunter_dashboard',
+    };
+    Navigator.of(context).pushNamedAndRemoveUntil(route, (r) => false);
   }
 
   Future<void> _loadBatterySaverState() async {
@@ -429,14 +471,29 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       // Update cache
       await _cacheProfileData(profileData);
 
+      // Once the mandatory onboarding fields are saved, let the user back into
+      // the app automatically instead of leaving them stranded on this screen.
+      bool profileComplete = false;
+      try {
+        final status =
+            await HunterProfileCompleteness.instance.statusFor(user.uid);
+        profileComplete = status.isComplete;
+      } catch (_) {
+        // Firestore unavailable — fall through to the plain save confirmation.
+      }
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(
           const SnackBar(
             content: Text('Profile saved successfully!'),
             backgroundColor: Colors.green,
           ),
         );
         setState(() => _isLoading = false);
+        if (profileComplete && _isOnboardingGate) {
+          _returnToDashboard();
+        }
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -456,6 +513,17 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         return HunterScaffold(
           theme: widget.theme,
           appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Back',
+              onPressed: () {
+                if (Navigator.of(context).canPop() || !_isOnboardingGate) {
+                  Navigator.of(context).pop();
+                } else {
+                  _returnToDashboard();
+                }
+              },
+            ),
             title: Text(
               'Hunter Profile',
               style: TextStyle(

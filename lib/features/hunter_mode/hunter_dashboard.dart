@@ -48,6 +48,12 @@ class HunterDashboard extends StatefulWidget {
 
 class _HunterDashboardState extends State<HunterDashboard> {
   static const _favoritePrefKey = 'favorited_dashboard_features';
+
+  /// One-shot guard: the onboarding gate redirects at most once per app
+  /// session, so a hunter who deliberately backs out of the profile screen
+  /// (onboarding gate) is not immediately bounced back into it in a loop.
+  static bool _onboardingRedirected = false;
+
   final List<String> favoriteIds = [];
   bool _isAdmin = false;
   bool _isDual = false;
@@ -71,6 +77,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
   /// Firebase app in a cold-launch/test environment) is swallowed so the
   /// dashboard always renders instead of crashing.
   Future<void> _enforceProfileOnboarding() async {
+    if (_onboardingRedirected) return;
     try {
       final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
       if (isAdmin) return;
@@ -79,6 +86,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
       final status =
           await HunterProfileCompleteness.instance.statusFor(uid);
       if (!status.isComplete && mounted) {
+        _onboardingRedirected = true;
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => HunterProfileScreen(theme: widget.theme),
