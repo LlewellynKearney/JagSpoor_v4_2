@@ -28,6 +28,16 @@ class UserEntitlement {
   final DateTime? trialStart;
   final DateTime? trialEnd;
 
+  /// The canonical `users/{uid}.subscriptionStatus` string, stored
+  /// lower-cased + trimmed (e.g. `'trialing'`, `'active'`, `'cancelled'`).
+  ///
+  /// The status is the primary signal for access: the backend Auth `onCreate`
+  /// trigger + the client `markTrialStarted` both write `'trialing'`, and a
+  /// Play purchase writes `'active'`. It is read here so an account with a
+  /// valid trial is never paywalled purely because the trial-end field is
+  /// spelled differently (see [isTrialActive]).
+  final String subscriptionStatus;
+
   const UserEntitlement({
     this.isPremium = false,
     this.premiumExpiry,
@@ -35,15 +45,53 @@ class UserEntitlement {
     this.subscriptionProduct,
     this.trialStart,
     this.trialEnd,
+    this.subscriptionStatus = '',
   });
 
-  /// Whether the user has an active premium entitlement (verified server-side).
-  bool isPremiumActive(DateTime now) =>
-      isPremium && premiumExpiry != null && premiumExpiry!.isAfter(now);
+  /// Trial / grace status strings that indicate an in-progress free trial.
+  /// Both `'trial'` and `'trialing'` are accepted (the backend + client write
+  /// `'trialing'`; legacy docs may carry `'trial'`).
+  static bool _isTrialStatus(String status) =>
+      status == 'trial' || status == 'trialing' || status == 'trialling';
 
-  /// Whether the user is inside their 30-day free trial window.
-  bool isTrialActive(DateTime now) =>
-      trialEnd != null && trialEnd!.isAfter(now);
+  /// Status strings that indicate an actively-billed subscription.
+  static bool _isActiveStatus(String status) =>
+      status == 'active' || status == 'subscribed' || status == 'premium';
+
+  /// Whether the user has an active premium entitlement.
+  ///
+  /// Primary: the server-authoritative `isPremium` flag + a future
+  /// `premiumExpiry`. Fallback: `subscriptionStatus == 'active'` (a Play
+  /// purchase whose expiry mirror has not landed yet) — treated as active
+  /// when the expiry is absent or still in the future.
+  bool isPremiumActive(DateTime now) {
+    if (isPremium && premiumExpiry != null && premiumExpiry!.isAfter(now)) {
+      return true;
+    }
+    if (_isActiveStatus(subscriptionStatus)) {
+      final expiry = premiumExpiry;
+      return expiry == null || expiry.isAfter(now);
+    }
+    return false;
+  }
+
+  /// Whether the user is inside their free trial window.
+  ///
+  /// Tolerant by design: a trial is active when EITHER the status says
+  /// `'trial'`/`'trialing'` (the canonical backend value) OR a trial-end
+  /// timestamp is present and in the future. This accepts every documented
+  /// trial-end field spelling (`subscriptionTrialEndsAt`, `trialEnd`,
+  /// `trialEndsAt`, `subscriptionTrialEnd`) and the snake_case variants, so a
+  /// valid trial is never paywalled on a field-name mismatch.
+  ///
+  /// An explicit past expiry always wins (an ended trial blocks access even
+  /// when a stale `'trialing'` status lingers), and an unknown expiry with no
+  /// trial status is NOT treated as active (fails closed for non-trials).
+  bool isTrialActive(DateTime now) {
+    final end = trialEnd;
+    if (end != null) return end.isAfter(now);
+    return _isTrialStatus(subscriptionStatus);
+  }
 
   /// Combined access gate: trial OR premium.
   bool canAccessPremium(DateTime now) =>
@@ -63,15 +111,32 @@ class UserEntitlement {
   /// Whether the entitlement was granted via the PayFast website checkout.
   bool get isPayfast => subscriptionSource == SubscriptionSource.payfast;
 
+  /// Resolves the trial-end timestamp across every field spelling the backend
+  /// / client / legacy docs may use. `subscriptionTrialEndsAt` is the value
+  /// the Auth `onCreate` trigger + `markTrialStarted` write (the canonical
+  /// field on a real new-user doc) and must be checked FIRST.
+  static DateTime? _resolveTrialEnd(Map<String, dynamic> data) =>
+      _toDate(data['subscriptionTrialEndsAt']) ??
+      _toDate(data['trialEnd']) ??
+      _toDate(data['trialEndsAt']) ??
+      _toDate(data['subscriptionTrialEnd']) ??
+      _toDate(data['subscription_trial_ends_at']) ??
+      _toDate(data['trial_end']) ??
+      _toDate(data['trial_ends_at']);
+
   static UserEntitlement fromMap(Map<String, dynamic>? data) {
     if (data == null) return const UserEntitlement();
+    final status = (data['subscriptionStatus'] ?? '').toString().trim().toLowerCase();
     return UserEntitlement(
       isPremium: data['isPremium'] == true,
       premiumExpiry: _toDate(data['premiumExpiry']),
       subscriptionSource: data['subscriptionSource'] as String?,
       subscriptionProduct: data['subscriptionProduct'] as String?,
-      trialStart: _toDate(data['trialStart']) ?? _toDate(data['trialStartedAt']),
-      trialEnd: _toDate(data['trialEnd']) ?? _toDate(data['trialEndsAt']),
+      trialStart: _toDate(data['trialStart']) ??
+          _toDate(data['trialStartedAt']) ??
+          _toDate(data['subscriptionTrialStartedAt']),
+      trialEnd: _resolveTrialEnd(data),
+      subscriptionStatus: status,
     );
   }
 

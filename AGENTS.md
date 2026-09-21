@@ -1,5 +1,82 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Fix instant paywall for valid new-user trials (TODO #5) (added 2026-09-21)
+
+### Symptom
+A brand-new account (Ocker Fourie, uid `qzV9jsLYvdSyl1wmeplQD807sdG2`) with a
+VALID trial in Firestore (`subscriptionStatus: "trialing"`,
+`subscriptionTrialEndsAt: Oct 21 2026`, `subscriptionProvider:
+google_play_billing`) saw **"Premium Access Required — Your free trial has
+ended"** on FIRST install.
+
+### Root cause -- `UserEntitlement.fromMap` never read `subscriptionStatus`
+`lib/services/entitlement_service.dart` is the sole source of the premium gate
+(`RoleGuardedRoute` -> `PaywallScreen`). Its `UserEntitlement.fromMap`:
+- read ONLY `trialEnd` / `trialEndsAt` for the trial window — NOT the
+  canonical `subscriptionTrialEndsAt` field the Auth `onCreate` trial trigger
+  + `markTrialStarted` actually write;
+- **never read `subscriptionStatus` at all**;
+
+so on a real new-user doc (which carries `subscriptionTrialEndsAt`, not
+`trialEnd`) `trialEnd` resolved to `null` → `isTrialActive` false →
+`canAccessPremium` false → instant paywall. The task brief's "status string
+mismatch" diagnosis was directionally right, but the true defect was the
+missing field read, not a `trial` vs `trialing` comparison.
+
+### Fix (`lib/services/entitlement_service.dart`)
+- New `subscriptionStatus` field on `UserEntitlement`, read in `fromMap` as
+  `(data['subscriptionStatus'] ?? '').toString().trim().toLowerCase()`
+  (tolerant of case/whitespace/legacy values).
+- New `_resolveTrialEnd` checks every documented spelling in priority order:
+  `subscriptionTrialEndsAt` (canonical, FIRST) → `trialEnd` → `trialEndsAt` →
+  `subscriptionTrialEnd` → `subscription_trial_ends_at` → `trial_end` →
+  `trial_ends_at`. `trialStart` also gained a
+  `subscriptionTrialStartedAt` fallback.
+- `isTrialActive(now)`: an explicit trial-end timestamp always wins (future =
+  active, past = blocked even if a stale `'trialing'` lingers); with NO
+  timestamp, `'trial'` / `'trialing'` / `'trialling'` grant access (fixes
+  status-only trial docs). Unknown statuses fail closed.
+- `isPremiumActive(now)`: unchanged primary path (`isPremium` + future
+  `premiumExpiry`), plus a new fallback — `subscriptionStatus` in
+  `{'active','subscribed','premium'}` is active when the expiry is absent or
+  in the future (covers a Play purchase whose expiry mirror has not landed).
+- `canAccessPremium` = `isPremiumActive || isTrialActive` (unchanged formula).
+
+### Device fingerprint (verified — no runtime gating existed)
+Audited the fingerprint path: `DeviceFingerprintService` only **stamps**
+`deviceFingerprint` onto `users/{uid}`; there is **no client-side code that
+blocks on it** (grep for `deviceFingerprint` outside the stamping service /
+auth signup returns nothing). The blocking logic that once existed in the
+backend `initializeNewUserTrial` was removed in an earlier phase (the
+`trial_onboarding_functions_contract_test` asserts its absence). So the
+fingerprint could not have caused the paywall; the `users/{uid}` rules keep
+the field immutable-once-set (anti-abuse) but never deny a first trial.
+
+### Tests (`test/entitlement_trial_status_test.dart`, NEW, 10 tests)
+Ocker's exact doc shape passes the gate; `fromMap` reads
+status + `subscriptionTrialEndsAt`; status tolerance
+(`trial`/`trialing`/`trialling`/`TRIALING`); `active` grants premium; an
+expired trial blocks even with a stale `trialing` status; unknown status fails
+closed; an expired `active` mirror blocks; all 7 trial-end field aliases
+resolve; a stamped fingerprint does not deny a valid trial.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings**; 320 infos — the exact
+  pre-change baseline (the 2 infos in `entitlement_service.dart` at
+  lines 256/279 are pre-existing, verified by stashing the fix).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 1795
+  tests passed** (baseline 1785 + 10 new), exit 0.
+- Env: Flutter **3.44.9** downloaded/extracted to `/tmp/flutter` (the sandbox
+  had no SDK); `~/libs/libsqlite3.so -> .../libsqlite3.so.0` symlink for the
+  sqflite-FFI suites; the "Unexpected child config" pubspec warning is the
+  documented pre-existing spurious line.
+- Files: `lib/services/entitlement_service.dart` (status-aware
+  `isTrialActive`/`isPremiumActive` + `subscriptionStatus` field +
+  `_resolveTrialEnd` alias resolver),
+  `test/entitlement_trial_status_test.dart` (NEW, 10 tests), `AGENTS.md`.
+- No pubspec / versionCode / firestore.rules / functions changes (pure
+  client-side entitlement-read fix).
+
 ## Phase -- Enforce email verification (TODO #3) (added 2026-09-21)
 
 ### Symptom
