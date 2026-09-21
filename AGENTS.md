@@ -1,5 +1,64 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Fix 54 CRLF-fragile contract tests (pre-release v9) (added 2026-09-21)
+
+### Symptom
+`flutter test` on Windows showed **1744 passed / 54 failed** while the 63 trial
+tests were all green. The 54 failures were structural contract tests that
+parse source/rules files — NOT trial logic.
+
+### Root cause (one mechanism, two triggers)
+Every one of the 6 failing suites reads a source file with
+`File(...).readAsStringSync()` and asserts on it:
+- **CRLF trigger**: multi-line expectations written as `'...\n...'` (and the
+  `_blockFor` helper's `indexOf('\n    }\n')`) fail on a Windows checkout
+  where the file is `\r\n`. Verified: `replaceAll('\r\n','\n')` flips every
+  one of the 54 from red to green.
+- **Nested-brace trigger**:
+  `firestore_rules_seeding_test` + `referral_firestore_rules_test`'s
+  `_blockFor(collection)` found the block's closing brace by scanning for the
+  first `\n    }\n`, which stops at the close of a nested
+  `function isOwner() { ... }` inside `packages` / `trophy_stock` / `bookings`.
+  (46 of the 54 failures were this parser failing outright.)
+
+### Fix (test-only; no production logic, no `functions/src/index.ts` changes)
+- `test/firestore_rules_seeding_test.dart` + `test/referral_firestore_rules_test.dart`:
+  rewrote `_blockFor` to walk **brace depth** from the block's opening `{`
+  (increment on `{`, decrement on `}`, return at depth 0) over the
+  **comment-stripped** text (so a doc line mentioning `farm_managers/{uid}`
+  can't offset the depth), and normalized CRLF->LF in `_loadRules`.
+- `test/admin_analytics_enhancements_test.dart` (rules read),
+  `test/ballistics_enhancements_test.dart` (`ballistic_calc_screen.dart`),
+  `test/outfitter_dashboard_counts_test.dart` (`outfitter_revenue_screen.dart`):
+  added `.replaceAll('\r\n','\n')` before the multi-line `contains` assertions.
+  The asserted content ALREADY existed in-source (`app_config` +
+  `feature_usage_events` blocks in `firestore.rules`; the
+  `zeroDistanceMinMeters = 5.0` / `zeroDistanceMaxMeters = 1000.0` /
+  `zeroDistanceDivisions = 199` slider wiring; the
+  `.collection('bookings').where('outfitterId', ...)` +
+  `BookingStatus.isPendingApproval` pending-count query) — only the `\n`
+  literal matching had failed. No source edits were needed for Tasks 1-3.
+- `test/push_notification_functions_contract_test.dart`: normalized CRLF->LF
+  for `functions/src/index.ts` (the `onDocumentCreated`/`onDocumentUpdated`/
+  `sendFcm` contract expectations). The triggers already existed correctly.
+
+### Verification
+- `flutter test --reporter=compact` (full suite, Flutter 3.44.9 / Dart 3.12.2,
+  `LD_LIBRARY_PATH="$HOME/libs"`): **All 1810 tests passed, 0 failed**.
+- `firestore_rules_seeding_test`: **63/63** (was 46 failures);
+  `referral_firestore_rules_test`: green.
+- Critical trial suites still green: `entitlement_trial_status_test` +
+  `subscription_status_service_test` + `device_trial_abuse_contract_test` +
+  `trial_onboarding_functions_contract_test` -> **63/63**.
+- `flutter analyze`: **0 errors**, 320 pre-existing info-level issues
+  (unchanged baseline); all 6 changed test files are analyzer-clean.
+- Env: Flutter **3.44.9** is REQUIRED (3.29.1 cannot resolve deps — Dart 3.7
+  < the `in_app_purchase >=3.2.4` floor of Dart 3.10). Installed at
+  `/tmp/f3449/flutter`; `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink + `LD_LIBRARY_PATH="$HOME/libs"`
+  for the sqflite-FFI suites.
+- Commit `c757c22`. Files: the 6 test files above.
+
 ## Phase -- Unify the two trial schemas (TODO #5 follow-up) (added 2026-09-21)
 
 ### Confirmed root cause (2 real docs)
