@@ -9,6 +9,7 @@ import '../features/auth/services/user_role_provider.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
 import '../features/subscription/services/subscription_status_service.dart';
+import '../services/app_version_check.dart';
 import '../services/force_update_service.dart';
 import '../services/update_service.dart';
 import 'theme/app_theme.dart';
@@ -73,6 +74,13 @@ class _SplashScreenState extends State<SplashScreen>
     // Kick off the checks and a minimum-duration timer together so the splash
     // is never cut short by a fast network round-trip.
     final minimumHold = Future<void>.delayed(_minimumSplashDuration);
+
+    // Firestore control-plane gate (`admin_config/app_version`) — the closed-
+    // test kill switch. Runs BEFORE the Remote Config gate so a control-plane
+    // set blocks the build immediately, without a Remote Config publish.
+    final firestoreBlocked = await AppVersionCheck.isUpdateRequired(context);
+    if (!mounted) return;
+    if (firestoreBlocked) return;
 
     final decision = await ForceUpdateService.evaluate();
     if (!mounted) return;

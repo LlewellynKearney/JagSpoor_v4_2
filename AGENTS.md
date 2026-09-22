@@ -1,5 +1,103 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Version 9 (1.0.9+9) + Firestore forced-update gate for closed testers (added 2026-09-22)
+
+### What changed
+- **Version bump**: `pubspec.yaml` `4.4.1+7` -> `1.0.9+9`;
+  `android/app/build.gradle.kts` `versionCode = 8` / `versionName = "4.4.2"`
+  -> `versionCode = 9` / `versionName = "1.0.9"`. The Gradle values are
+  HARDCODED (this project deliberately does not track `flutter.versionCode`);
+  they are kept in sync with the pubspec by hand — the two must always match
+  or the forced-update floor (`min_required_version: 9`) blocks the shipped
+  build itself.
+- **`lib/core/widgets/version_info.dart`**: `fallbackVersionCode '6'` ->
+  `'9'`, `fallbackVersionName '4.4.1'` -> `'1.0.9'` (+ the doc-comment
+  examples). These mirror the Android Play build for the headless/test host.
+- **`lib/services/app_version_check.dart` (NEW)**: the Firestore
+  control-plane forced-update gate — the direct-Firestore counterpart to the
+  existing `ForceUpdateService` (Firebase Remote Config).
+  - Reads `admin_config/app_version`: `min_required_version` (int),
+    `force_update` (bool), `force_update_message` (String).
+  - `shouldForceUpdate({docExists, minRequiredVersion, forceUpdate,
+    currentBuildNumber})` — the pure gating rule (extracted for unit testing):
+    a missing doc, `force_update == false`, or a non-positive floor never
+    blocks; otherwise `currentBuildNumber < minRequiredVersion` blocks.
+  - `isUpdateRequired(context)` — resolves `PackageInfo.fromPlatform()`
+    build number and shows a **non-dismissible** (`barrierDismissible: false`
+    + `PopScope(canPop: false)`) "Update Required" dialog whose only action
+    opens the Play listing (`za.co.jagspoor.app`). Returns `true` when it
+    blocked (the caller must abandon navigation).
+  - **Fail-open**: the whole body is try/catch -> `debugPrint` -> `false`, so
+    an uninitialised Firebase / offline / malformed doc can never lock users
+    out. Proven live in tests against `[core/no-app]`.
+- **`lib/core/splash_screen.dart`**: `_runBootGate()` now calls
+  `AppVersionCheck.isUpdateRequired(context)` BEFORE
+  `ForceUpdateService.evaluate()`; when it returns `true` the boot routing is
+  abandoned (only the Play update flow remains). Order matters: the Firestore
+  gate blocks immediately on a control-plane set, without waiting for a
+  Remote Config publish. Both gates remain fail-open.
+- **`functions/src/seed_app_version.ts` (NEW)**: the one-time operator seed
+  for `admin_config/app_version` (`min_required_version: 9`,
+  `latest_version: 9`, `force_update: true`, the v9 billing-fix message,
+  `updated_at: FieldValue.serverTimestamp()`). Deliberately NOT exported from
+  `src/index.ts` (a script, not a Cloud Function). Guarded by
+  `SEED_CONFIRM=yes` so it can never arm the kill switch implicitly; run with
+  `SEED_CONFIRM=yes node lib/seed_app_version.js` (or
+  `npm run seed:app-version` + confirm) in a credentialed env.
+  `functions/package.json` gained the `seed:app-version` script.
+- **Tests**: `test/app_version_check_test.dart` (NEW, 12 tests) — the config-
+  path/Play-URL/message constants, the `shouldForceUpdate` matrix (missing
+  doc, `force_update: false`, unset/negative floor, below/equal/above the
+  floor, unparsed build number -> blocked), and the fail-open
+  `isUpdateRequired` contract against uninitialised Firebase.
+  `test/force_update_service_test.dart`'s shipped-build test updated from
+  versionCode 6 -> 9; `test/version_info_and_facebook_test.dart`'s fallback
+  expectations updated to `'1.0.9'` / `'9'`.
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9 / Dart 3.12.2 at `/tmp/flutter`):
+  **0 errors, 0 warnings**, 320 pre-existing infos (unchanged baseline; the
+  2 `unnecessary_const` infos in `version_info_and_facebook_test.dart` are on
+  pre-existing untouched lines).
+- `flutter test --reporter=compact` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`
+  + the `~/libs/libsqlite3.so -> .../libsqlite3.so.0` symlink for the
+  sqflite-FFI suites): **All 1825 tests passed**, exit 0.
+- `functions`: `npx tsc --noEmit` clean; `npm test` **40/40**.
+- `flutter pub get`: clean (no `pubspec.lock` change — `package_info_plus`,
+  `url_launcher` and `cloud_firestore` were already direct dependencies).
+- No `firestore.rules` change needed: `admin_config/{docId}` is already
+  `read: isSignedIn()` / `write: isAdmin()`, which covers the new doc.
+
+### ⚠️ Operator steps still required (cannot be done in this sandbox)
+1. **Arm the kill switch** once the v9 AAB is live on the closed-test track
+   (`firebase login` / ADC required — `firebase projects:list` is
+   unauthenticated here): `cd functions && npm run build && SEED_CONFIRM=yes
+   node lib/seed_app_version.js`, OR paste the JSON into the Firebase Console
+   → Firestore → `admin_config` → `app_version`:
+   ```
+   min_required_version: 9
+   latest_version: 9
+   force_update: true
+   force_update_message: "New JagSpoor update required - billing fix for Hunters & Outfitters (v9). Please update to continue."
+   ```
+   Do NOT set `min_required_version` before the v9 AAB is available to
+   testers — it blocks every build below 9 with no in-app way forward.
+2. **Build + upload the AAB**: `flutter clean && flutter build appbundle
+   --release` (NOT run here, per instruction) then upload
+   `build/app/outputs/bundle/release/app-release.aab` to the Play closed
+   testing track. Note the carried-over release-signing caveat (a debug
+   keystore will not be accepted by Play — `android/key.properties` + the
+   release keystore must be present).
+
+### Files
+- `pubspec.yaml`, `android/app/build.gradle.kts`,
+  `lib/core/widgets/version_info.dart`, `lib/services/app_version_check.dart`
+  (NEW), `lib/core/splash_screen.dart`, `functions/src/seed_app_version.ts`
+  (NEW), `functions/package.json`, `test/app_version_check_test.dart` (NEW),
+  `test/force_update_service_test.dart`, `test/version_info_and_facebook_test.dart`,
+  `AGENTS.md`.
+- Committed + pushed to `origin/main` (`chore: bump to v9 ...`).
+
 ## Phase -- Production-safe pricing + real referral grant + trial-field freeze (v9) (added 2026-09-22)
 
 ### What changed (control plane = Admin Portal, charge truth = Play Console)
