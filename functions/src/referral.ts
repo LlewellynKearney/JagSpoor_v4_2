@@ -1,5 +1,8 @@
+import { logger } from "firebase-functions/v2";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { firestore } from "./firebase";
+import { writeEntitlement, SUBSCRIPTION_SOURCE_GOOGLE_PLAY } from "./entitlement";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JagSpoor referral system — Phase 1 backend module.
@@ -33,8 +36,8 @@ export const REFERRAL_REWARDS_DOC_ID = "referral_rewards";
  * referral_rewards` document is absent. The live document is the source of
  * truth for the reward calculation.
  */
-export const DEFAULT_HUNTER_REWARD_ZAR = 19.99;
-export const DEFAULT_OUTFITTER_REWARD_ZAR = 199.99;
+export const DEFAULT_HUNTER_REWARD_ZAR = 29.99;
+export const DEFAULT_OUTFITTER_REWARD_ZAR = 299.99;
 
 /** Lifecycle states of a referral conversion. */
 export const REFERRAL_STATUS_PENDING = "pending";
@@ -75,7 +78,27 @@ export interface ReferralConversion {
 export interface ReferralRewardConfig {
   hunterRewardZAR: number;
   outfitterRewardZAR: number;
+  /** Reward mechanism (`extension_days` today). */
+  rewardType: string;
+  /** Entitlement-extension days granted per granted hunter referral. */
+  hunterDays: number;
+  /** Entitlement-extension days granted per granted outfitter referral. */
+  outfitterDays: number;
   updatedAt?: FirebaseFireTimestamp;
+}
+
+/** Default reward mechanism — a premium / trial extension in days. */
+export const DEFAULT_REWARD_TYPE = "extension_days";
+export const DEFAULT_HUNTER_DAYS = 30;
+export const DEFAULT_OUTFITTER_DAYS = 30;
+
+/** Clamps a numeric day count to >= 0; tolerates numeric strings. */
+function clampDays(value: unknown, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  const parsed =
+    typeof value === "number" ? value : Number(String(value).trim());
+  if (Number.isNaN(parsed)) return fallback;
+  return parsed < 0 ? 0 : Math.floor(parsed);
 }
 
 // Minimal structural type for the Firestore Timestamp shape we read (the
@@ -119,7 +142,26 @@ export async function loadReferralRewardConfig(): Promise<ReferralRewardConfig> 
         DEFAULT_OUTFITTER_REWARD_ZAR,
       DEFAULT_OUTFITTER_REWARD_ZAR
     ),
+    rewardType: (data.rewardType ?? DEFAULT_REWARD_TYPE).toString(),
+    hunterDays: clampDays(
+      data.hunter_days ?? data.hunterDays,
+      DEFAULT_HUNTER_DAYS
+    ),
+    outfitterDays: clampDays(
+      data.outfitter_days ?? data.outfitterDays,
+      DEFAULT_OUTFITTER_DAYS
+    ),
   };
+}
+
+/** Entitlement-extension days for a tier, resolved from the live config. */
+export function rewardDaysForTier(
+  config: ReferralRewardConfig,
+  tier: string
+): number {
+  return tier === REFERRAL_TIER_OUTFITTER
+    ? config.outfitterDays
+    : config.hunterDays;
 }
 
 /**
@@ -283,3 +325,231 @@ export async function finaliseConversionReward(
   const updated = await ref.get();
   return { ...(updated.data() ?? {}) } as ReferralConversion;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Phase 2 — grant the referral reward SERVER-SIDE on conversion creation
+//
+// A referral conversion is created client-side (by the Flutter signup flow)
+// with `status: 'pending'`. This Firestore trigger (Admin SDK — bypasses
+// firestore.rules) validates the referrer, resolves the reward days from the
+// live `admin_config/referral_rewards` config, extends the REFERRER's
+// entitlement by the reward days (via writeEntitlement — the SAME writer the
+// Google Play validation uses), and marks the conversion `granted`/`rewarded`
+// idempotently.
+//
+// The client NEVER writes an expiry; the entitlement write happens here.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Conversion status once the reward has been granted. */
+export const REFERRAL_STATUS_GRANTED = "granted";
+
+/**
+ * Extends a user's entitlement by [days] using `writeEntitlement` (the only
+ * sanctioned writer of premium fields). The new expiry is the LATER of:
+ *  - the current `premiumExpiry` (if any), or
+ *  - the current `trialEndsAt` / `subscriptionTrialEndsAt` (if any),
+ *  - or `now` (so an expired / new account is extended from today).
+ *
+ * Preserves the user's existing `subscriptionTier` / `subscriptionProduct` /
+ * `subscriptionSource` when present so an extension never downgrades a
+ * higher-value entitlement; it does not flip a trial into a paid
+ * `subscriptionSource` when the account was only ever on the trial source.
+ */
+async function extendReferrerEntitlement(
+  uid: string,
+  days: number
+): Promise<Date> {
+  const userRef = firestore().collection("users").doc(uid);
+  const snap = await userRef.get();
+  const data = snap.exists ? snap.data() ?? {} : {};
+
+  const toDate = (v: unknown): Date | null => {
+    if (!v) return null;
+    // Firestore Timestamp (admin SDK) exposes `toDate()`.
+    const maybe = v as { toDate?: () => Date };
+    if (typeof maybe.toDate === "function") return maybe.toDate();
+    if (v instanceof Date) return v;
+    const parsed = new Date(String(v));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const now = new Date();
+  const candidates = [
+    toDate(data.premiumExpiry),
+    toDate(data.trialEndsAt),
+    toDate(data.subscriptionTrialEndsAt),
+    toDate(data.trialEnd),
+  ].filter((d): d is Date => d !== null);
+
+  const base = candidates.reduce<Date>(
+    (latest: Date, d: Date) => (d.getTime() > latest.getTime() ? d : latest),
+    now
+  );
+  const extended = new Date(
+    Math.max(base.getTime(), now.getTime()) + days * 24 * 60 * 60 * 1000
+  );
+
+  const existingSource = (data.subscriptionSource as string | undefined) ?? "";
+  await writeEntitlement(uid, {
+    isPremium: true,
+    premiumExpiry: extended,
+    // Keep an existing non-trial source; a trial-source account that is
+    // extended stays on the trial source (it is still not a Play purchase).
+    subscriptionSource: existingSource || SUBSCRIPTION_SOURCE_GOOGLE_PLAY,
+    ...(data.subscriptionProduct
+      ? { subscriptionProduct: String(data.subscriptionProduct) }
+      : {}),
+    ...(data.subscriptionPlayPurchaseToken
+      ? {
+          subscriptionPlayPurchaseToken: String(
+            data.subscriptionPlayPurchaseToken
+          ),
+        }
+      : {}),
+    ...(data.subscriptionTier
+      ? { subscriptionTier: String(data.subscriptionTier) }
+      : {}),
+    subscriptionStatus: "active",
+    subscriptionRenewalDate: extended,
+  });
+  return extended;
+}
+
+/**
+ * onReferralConversionCreated
+ *
+ * Firestore trigger (v2) on `referral_conversions/{conversionId}`.
+ *
+ * Grants the referrer's reward server-side:
+ *  1. Validates the conversion carries a referrer + referred uid and that
+ *     they differ (defence-in-depth — the client also validates).
+ *  2. Idempotency: if the conversion is already `granted`/`rewarded`, or any
+ *     conversion already exists with the SAME `referredUserId` in a final
+ *     state, it is a no-op (a referred user can only ever reward once).
+ *  3. Resolves the reward-config (`admin_config/referral_rewards`) and the
+ *     reward days for the referred user's tier.
+ *  4. Extends the REFERRER's entitlement (premiumExpiry / trial window) by
+ *     the reward days via `writeEntitlement`.
+ *  5. Marks the conversion `status: 'granted'` + `rewarded` + `grantedAt` +
+ *     `rewardDays` + `rewardAmountZAR`.
+ *
+ * Never throws — a failure is logged and leaves the conversion `pending` so a
+ * later retry / manual finalisation can complete it.
+ */
+export const onReferralConversionCreated = onDocumentCreated(
+  { document: "referral_conversions/{conversionId}", region: "us-central1" },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const conversionId = event.params.conversionId;
+    const conversion = snap.data() ?? {};
+
+    const referrerId = String(conversion.referrerId ?? "").trim();
+    const referredUserId = String(conversion.referredUserId ?? "").trim();
+    const status = String(conversion.status ?? "").trim().toLowerCase();
+    const tier =
+      conversion.subscriptionTier === REFERRAL_TIER_OUTFITTER
+        ? REFERRAL_TIER_OUTFITTER
+        : REFERRAL_TIER_HUNTER;
+
+    if (!referrerId || !referredUserId) {
+      logger.warn("onReferralConversionCreated: missing party ids", {
+        conversionId,
+      });
+      return;
+    }
+    if (referrerId === referredUserId) {
+      logger.warn("onReferralConversionCreated: self-referral rejected", {
+        conversionId,
+        referrerId,
+      });
+      return;
+    }
+
+    const conversions = firestore().collection(REFERRAL_CONVERSIONS_COLLECTION);
+    const conversionRef = conversions.doc(conversionId);
+
+    // Idempotency: a conversion already finalised / granted is a no-op. Also
+    // reject a second grant for the same referred user.
+    if (
+      status === REFERRAL_STATUS_GRANTED ||
+      status === REFERRAL_STATUS_REWARDED
+    ) {
+      return;
+    }
+    const priorGrant = await conversions
+      .where("referredUserId", "==", referredUserId)
+      .get();
+    const alreadyGranted = priorGrant.docs.some((d) => {
+      if (d.id === conversionId) return false;
+      const s = String((d.data() ?? {}).status ?? "").toLowerCase();
+      return s === REFERRAL_STATUS_GRANTED || s === REFERRAL_STATUS_REWARDED;
+    });
+    if (alreadyGranted) {
+      logger.info("onReferralConversionCreated: already granted for user", {
+        conversionId,
+        referredUserId,
+      });
+      await conversionRef.update({
+        status: REFERRAL_STATUS_REJECTED,
+        rejectReason: "already_rewarded",
+        statusUpdatedAt: FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    try {
+      const config = await loadReferralRewardConfig();
+      const days = rewardDaysForTier(config, tier);
+
+      // A non-extension reward mechanism is not yet supported server-side —
+      // leave the conversion pending rather than mis-granting.
+      if (config.rewardType !== DEFAULT_REWARD_TYPE) {
+        logger.warn("onReferralConversionCreated: unsupported rewardType", {
+          conversionId,
+          rewardType: config.rewardType,
+        });
+        return;
+      }
+      if (days <= 0) {
+        logger.warn("onReferralConversionCreated: zero reward days", {
+          conversionId,
+          tier,
+        });
+        await conversionRef.update({
+          status: REFERRAL_STATUS_REJECTED,
+          rejectReason: "zero_reward_days",
+          statusUpdatedAt: FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      const extended = await extendReferrerEntitlement(referrerId, days);
+
+      await conversionRef.update({
+        status: REFERRAL_STATUS_GRANTED,
+        rewarded: true,
+        rewardDays: days,
+        rewardType: config.rewardType,
+        rewardAmountZAR:
+          tier === REFERRAL_TIER_OUTFITTER
+            ? config.outfitterRewardZAR
+            : config.hunterRewardZAR,
+        grantedPremiumExpiry: extended,
+        grantedAt: FieldValue.serverTimestamp(),
+        statusUpdatedAt: FieldValue.serverTimestamp(),
+      });
+      logger.info("referral reward granted", {
+        conversionId,
+        referrerId,
+        referredUserId,
+        days,
+      });
+    } catch (err) {
+      logger.error("onReferralConversionCreated: grant failed", {
+        conversionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+);

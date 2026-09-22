@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../subscription/services/play_billing_service.dart';
+import '../../subscription/services/subscription_pricing.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
 import '../services/media_storage_analytics.dart';
@@ -50,6 +54,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final AdminAuthGuard _guard = AdminAuthGuard.instance;
   bool _authorized = false;
 
+  /// Live Play-vs-admin price mismatch warnings (empty when aligned or when
+  /// the Play catalog is unavailable).
+  List<String> _priceDivergenceMessages = const [];
+
   @override
   void dispose() {
     _hunterSubController.dispose();
@@ -81,7 +89,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAnalyticsService.instance.fetchEntityMetrics(),
         AdminAnalyticsService.instance.fetchFinancialAnalytics(),
         UsageAnalyticsService.instance.fetchUsageAnalytics(),
-        SubscriptionConfigService.instance.loadConfig(),
+        SubscriptionConfigService.instance.loadConfigOrDefaults(),
         MediaStorageAnalyticsService.instance.fetch(),
       ]);
       final metrics = results[0] as AdminMetrics;
@@ -101,11 +109,45 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
         _loading = false;
       });
+      // Compare the live Play Console prices against the admin-configured
+      // prices and surface a mismatch banner (the store is the charge truth).
+      unawaited(_checkPriceDivergence(config));
     } catch (e) {
       setState(() {
         _loading = false;
         _error = 'Failed to load analytics: $e';
       });
+    }
+  }
+
+  /// Fetches the live Play catalog prices and compares each against the
+  /// admin-configured `admin_config/pricing` amount. A difference > R0.01
+  /// surfaces a warning banner so the operator updates the Play base plan.
+  /// Best-effort: a billing-unavailable / catalog-miss / error leaves the
+  /// banner hidden (nothing to compare).
+  Future<void> _checkPriceDivergence(SubscriptionConfig config) async {
+    try {
+      if (!await PlayBillingService.instance.isBillingSupported()) return;
+      final products = await PlayBillingService.instance.loadProducts();
+      final hunterPlay = products[SubscriptionTier.hunter]?.rawPrice;
+      final outfitterPlay = products[SubscriptionTier.outfitter]?.rawPrice;
+      final messages = <String>[];
+      if (hunterPlay != null &&
+          (hunterPlay - config.hunterSubscriptionZAR).abs() > 0.01) {
+        messages.add(
+            'Play Console price R${hunterPlay.toStringAsFixed(2)} != Admin pricing '
+            'R${config.hunterSubscriptionZAR.toStringAsFixed(2)} — update Play Console base plan to match.');
+      }
+      if (outfitterPlay != null &&
+          (outfitterPlay - config.outfitterSubscriptionZAR).abs() > 0.01) {
+        messages.add(
+            'Play Console price R${outfitterPlay.toStringAsFixed(2)} != Admin pricing '
+            'R${config.outfitterSubscriptionZAR.toStringAsFixed(2)} — update Play Console base plan to match.');
+      }
+      if (!mounted) return;
+      setState(() => _priceDivergenceMessages = messages);
+    } catch (e) {
+      debugPrint('AdminDashboardScreen: price divergence check failed: $e');
     }
   }
 
@@ -139,6 +181,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       messenger?.showSnackBar(const SnackBar(
           content: Text('Subscription amounts saved.'),
           backgroundColor: Colors.green));
+      unawaited(_checkPriceDivergence(config));
     } catch (e) {
       if (!mounted) return;
       setState(() => _savingConfig = false);
@@ -199,6 +242,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           _buildFinancialSection(),
                           const SizedBox(height: 24),
                           _buildSectionHeader('Subscription Revenue (ZAR)'),
+                          if (_priceDivergenceMessages.isNotEmpty)
+                            _buildPriceDivergenceBanner(),
                           _buildSubscriptionConfigCard(),
                           _buildSubscriptionRevenueCard(),
                           const SizedBox(height: 24),
@@ -414,6 +459,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  /// Warning banner shown when the live Play Console price differs from the
+  /// admin-configured `admin_config/pricing` amount by more than R0.01. The
+  /// Play Console is the charge truth; the operator must align the base plan.
+  Widget _buildPriceDivergenceBanner() {
+    return Container(
+      key: const ValueKey('adminPriceDivergenceBanner'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withAlpha(120)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'PRICE DIVERGENCE',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final message in _priceDivergenceMessages)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                message,
+                style: TextStyle(color: widget.theme.textColor, fontSize: 12),
+              ),
+            ),
+        ],
       ),
     );
   }

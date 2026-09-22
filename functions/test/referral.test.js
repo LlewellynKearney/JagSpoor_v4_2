@@ -23,8 +23,36 @@ test("collection + doc constants match the Phase-1 contract", () => {
 });
 
 test("documented default reward amounts are one month's subscription value", () => {
-  assert.equal(referral.DEFAULT_HUNTER_REWARD_ZAR, 19.99);
-  assert.equal(referral.DEFAULT_OUTFITTER_REWARD_ZAR, 199.99);
+  assert.equal(referral.DEFAULT_HUNTER_REWARD_ZAR, 29.99);
+  assert.equal(referral.DEFAULT_OUTFITTER_REWARD_ZAR, 299.99);
+});
+
+test("reward mechanism defaults (extension_days / 30 days per tier)", () => {
+  assert.equal(referral.DEFAULT_REWARD_TYPE, "extension_days");
+  assert.equal(referral.DEFAULT_HUNTER_DAYS, 30);
+  assert.equal(referral.DEFAULT_OUTFITTER_DAYS, 30);
+  assert.equal(referral.REFERRAL_STATUS_GRANTED, "granted");
+});
+
+test("rewardDaysForTier resolves the tier-specific extension length", () => {
+  const config = {
+    hunterRewardZAR: 29.99,
+    outfitterRewardZAR: 299.99,
+    rewardType: "extension_days",
+    hunterDays: 30,
+    outfitterDays: 90,
+  };
+  assert.equal(referral.rewardDaysForTier(config, "hunter"), 30);
+  assert.equal(referral.rewardDaysForTier(config, "outfitter"), 90);
+});
+
+test("the referral grant trigger is exported from index.js", () => {
+  const index = require("../lib/index.js");
+  assert.ok(
+    index.onReferralConversionCreated,
+    "onReferralConversionCreated must be exported so the Firestore trigger deploys"
+  );
+  assert.ok(referral.REFERRAL_STATUS_GRANTED);
 });
 
 test("status + tier constants", () => {
@@ -41,8 +69,8 @@ test("index.js re-exports the referral module surface", () => {
   assert.equal(index.REFERRAL_CONVERSIONS_COLLECTION, "referral_conversions");
   assert.equal(index.ADMIN_CONFIG_COLLECTION, "admin_config");
   assert.equal(index.REFERRAL_REWARDS_DOC_ID, "referral_rewards");
-  assert.equal(index.DEFAULT_HUNTER_REWARD_ZAR, 19.99);
-  assert.equal(index.DEFAULT_OUTFITTER_REWARD_ZAR, 199.99);
+  assert.equal(index.DEFAULT_HUNTER_REWARD_ZAR, 29.99);
+  assert.equal(index.DEFAULT_OUTFITTER_REWARD_ZAR, 299.99);
   assert.equal(typeof index.loadReferralRewardConfig, "function");
   assert.equal(typeof index.rewardAmountForTier, "function");
   assert.equal(typeof index.getReferralProfile, "function");

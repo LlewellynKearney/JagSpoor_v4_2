@@ -72,12 +72,27 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   bool _isAdmin = false;
   bool _isDeletingAccount = false;
 
+  /// Live monthly price (ZAR) for the outfitter subscription card. Resolved
+  /// from the Play catalog → `admin_config/pricing` → hard-coded last resort
+  /// (see [resolveMonthlyPrice]); the hard-coded value renders until the async
+  /// resolution completes so the card never shows a blank amount.
+  double _outfitterMonthlyPrice = outfitterMonthlyPriceZAR;
+
   @override
   void initState() {
     super.initState();
     _resolveUserRole();
+    _loadSubscriptionPrice();
     UsageAnalyticsService.instance
         .trackScreenView('Outfitter Dashboard');
+  }
+
+  /// Resolves the live outfitter subscription price for the dashboard card.
+  /// Best effort — a failure leaves the hard-coded fallback in place.
+  Future<void> _loadSubscriptionPrice() async {
+    final price = await resolveMonthlyPrice(SubscriptionTier.outfitter);
+    if (!mounted) return;
+    setState(() => _outfitterMonthlyPrice = price);
   }
 
   Future<void> _resolveUserRole() async {
@@ -370,7 +385,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                             title: 'Subscription',
                             description:
                                 'Manage your plan — 30-day free trial, then '
-                                'R${outfitterMonthlyPriceZAR.toStringAsFixed(2)}/month.',
+                                'R${_outfitterMonthlyPrice.toStringAsFixed(2)}/month.',
                             theme: widget.theme,
                             onTap: () {
                               Navigator.push(

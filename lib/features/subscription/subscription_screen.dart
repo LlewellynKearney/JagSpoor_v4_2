@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../services/entitlement_service.dart';
+import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
 import 'services/play_billing_service.dart';
 import 'services/subscription_pricing.dart';
@@ -43,8 +44,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   String? _promoError;
   bool _isLaunching = false;
   bool _isOpeningPlayStore = false;
+  bool _isRestoring = false;
   bool _billingSupported = true;
   Map<SubscriptionTier, PlayProduct> _products = const {};
+
+  /// Admin-controlled fallback price (from `admin_config/pricing`), resolved
+  /// when the live Play catalog has not loaded. Null until the async load
+  /// completes; the hard-coded last resort applies until then.
+  double? _adminFallbackPrice;
 
   SubscriptionTier get _tier =>
       widget.tier ??
@@ -52,18 +59,30 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   /// The recurring monthly amount for the current tier.
   ///
-  /// Prefers the LIVE Google Play Billing catalog price (`rawPrice` from
-  /// [PlayBillingService.loadProducts]) so the checkout summary, promo
-  /// calculations, and the tier-card fallback all stay consistent with the
-  /// Play Console catalog. Falls back to the documented static prices only
-  /// when the catalog has not loaded (billing unsupported / products absent).
+  /// Precedence: the LIVE Google Play Billing catalog price (`rawPrice` from
+  /// [PlayBillingService.loadProducts], the authoritative charge) → the
+  /// admin-controlled `admin_config/pricing` amount → the hard-coded last
+  /// resort. This keeps the checkout summary, promo calculations, and the
+  /// tier-card copy consistent with the Play Console catalog while the Admin
+  /// Portal remains the control plane when the catalog is unavailable.
   double get _baseAmount =>
       _products[_tier]?.rawPrice ??
+      _adminFallbackPrice ??
       (_tier == SubscriptionTier.outfitter
           ? outfitterMonthlyPriceZAR
           : hunterMonthlyPriceZAR);
   double get _checkoutAmount =>
       _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
+
+  /// Whether the live Play catalog price diverges from the admin-configured
+  /// price (by more than one cent) — the Admin Portal WARNING basis, surfaced
+  /// here so a subscriber sees the same mismatch the operator does.
+  bool get _hasPriceDivergence {
+    final play = _products[_tier]?.rawPrice;
+    final admin = _adminFallbackPrice;
+    if (play == null || admin == null) return false;
+    return (play - admin).abs() > 0.01;
+  }
 
   @override
   void initState() {
@@ -91,10 +110,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         debugPrint('SubscriptionScreen: loadProducts failed: $e');
       }
     }
+    // Resolve the admin-controlled fallback price (`admin_config/pricing`).
+    // Best-effort — an unreadable doc leaves the hard-coded last resort in
+    // place. `_baseAmount` still prefers the live Play catalog price.
+    double? adminFallback;
+    try {
+      adminFallback = await SubscriptionConfigService.instance
+          .getFallbackPrice(_tier.key);
+    } catch (e) {
+      debugPrint('SubscriptionScreen: admin pricing load failed: $e');
+    }
     if (!mounted) return;
     setState(() {
       _billingSupported = supported;
       _products = products;
+      _adminFallbackPrice = adminFallback;
     });
   }
 
@@ -328,6 +358,40 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     await _openPlaySubscriptionCenter();
   }
 
+  /// Restores prior Google Play purchases (required for Play policy). Queries
+  /// the store for existing subscriptions; any restored purchase arrives on
+  /// [PlayBillingService.purchaseStream], which the screen already mirrors to
+  /// the server-authoritative entitlement via [EntitlementService].
+  Future<void> _restorePurchases() async {
+    if (_isRestoring) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    setState(() => _isRestoring = true);
+    try {
+      await PlayBillingService.instance.restorePurchases();
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Checking Google Play for prior purchases — any restored '
+            'subscription will be applied shortly.',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Unable to restore purchases: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRestoring = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
@@ -359,6 +423,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 _buildTotalCard(theme),
                 const SizedBox(height: 24),
                 _buildSubscribeButton(theme, subscription),
+                const SizedBox(height: 12),
+                _buildRestoreButton(theme),
+                if (_hasPriceDivergence) ...[
+                  const SizedBox(height: 16),
+                  _buildDivergenceNotice(theme),
+                ],
                 const CopyrightFooter(),
               ],
             );
@@ -793,6 +863,77 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             letterSpacing: 1.1,
           ),
         ),
+      ),
+    );
+  }
+
+  /// Play-policy "Restore Purchases" action. Always available so a subscriber
+  /// on a new device / after a reinstall can re-sync their entitlement.
+  Widget _buildRestoreButton(ThemeController theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const ValueKey('restorePurchasesButton'),
+        onPressed: _isRestoring ? null : _restorePurchases,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.accentColor,
+          side: BorderSide(color: theme.accentColor, width: 1.4),
+          disabledForegroundColor: theme.subtitleColor,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: _isRestoring
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.accentColor,
+                ),
+              )
+            : const Icon(Icons.restore_rounded, size: 18),
+        label: Text(
+          _isRestoring ? 'RESTORING…' : 'RESTORE PURCHASES',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Warns the subscriber that the live Play catalog price differs from the
+  /// Admin-Portal-configured price (the store is the charge truth; the
+  /// operator must align the Play base plan).
+  Widget _buildDivergenceNotice(ThemeController theme) {
+    final play = _products[_tier];
+    final playLabel = play == null ? '—' : 'R ${play.rawPrice.toStringAsFixed(2)}';
+    final adminLabel = 'R ${(_adminFallbackPrice ?? 0).toStringAsFixed(2)}';
+    return Container(
+      key: const ValueKey('priceDivergenceNotice'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'WARNING: Play Console price $playLabel != Admin pricing '
+              '$adminLabel — update the Play Console base plan to match.',
+              style: TextStyle(color: theme.textColor, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

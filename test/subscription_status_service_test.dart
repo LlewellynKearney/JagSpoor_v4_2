@@ -82,21 +82,26 @@ void main() {
   });
 
   group('SubscriptionStatusService', () {
-    test('markTrialStarted writes the trial window + tier to users/{uid}', () async {
-      final now = DateTime(2026, 8, 23, 10, 0);
+    test('markTrialStarted writes only the client-owned tier/promo metadata',
+        () async {
+      // v9: the trial window + status are server-owned (frozen in
+      // firestore.rules); the client may only write its own tier/promo/
+      // provider metadata.
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.outfitter,
         promoCode: 'LAUNCH25',
-        now: now,
       );
       final snap = await fake.collection('users').doc('uid-1').get();
       final data = snap.data()!;
-      expect(data['subscriptionStatus'], subscriptionStatusTrial);
       expect(data['subscriptionTier'], 'outfitter');
       expect(data['subscriptionPromoCode'], 'LAUNCH25');
-      final trialEnd = (data['subscriptionTrialEndsAt'] as Timestamp).toDate();
-      expect(trialEnd.difference(now).inDays, 30);
+      expect(data['subscriptionProvider'], 'google_play_billing');
       expect(data.containsKey('subscriptionUpdatedAt'), isTrue);
+      // Frozen server-owned trial fields are NOT written by the client.
+      expect(data.containsKey('subscriptionStatus'), isFalse);
+      expect(data.containsKey('subscriptionTrialEndsAt'), isFalse);
+      expect(data.containsKey('trialEndsAt'), isFalse);
+      expect(data.containsKey('trialStartedAt'), isFalse);
     });
 
     test('markTrialStarted rejects an unauthenticated caller', () {
@@ -238,18 +243,38 @@ void main() {
     });
   });
 
-  group('markTrialStarted canonical status', () {
-    test('writes the canonical trialing status + 30 day window', () async {
-      final now = DateTime(2026, 8, 23, 10, 0);
+  group('markTrialStarted canonical contract (server-owned trial window)', () {
+    test('never writes the frozen trial/status fields', () async {
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.hunter,
-        now: now,
       );
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data['subscriptionStatus'], subscriptionStatusTrial);
-      expect(data['subscriptionStatus'], 'trialing');
-      final trialEnd = (data['subscriptionTrialEndsAt'] as Timestamp).toDate();
-      expect(trialEnd.difference(now).inDays, 30);
+      for (final frozen in const [
+        'subscriptionStatus',
+        'trialEndsAt',
+        'trialEnd',
+        'trialStartedAt',
+        'trialStart',
+        'subscriptionTrialEndsAt',
+        'subscriptionTrialStart',
+      ]) {
+        expect(data.containsKey(frozen), isFalse,
+            reason: '$frozen is frozen (server-owned) — the client must not '
+                'write it or firestore.rules denies the write');
+      }
+      expect(data['subscriptionTier'], 'hunter');
+    });
+
+    test('readTrialState reads the server-provisioned window (read-only)',
+        () async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'trialStartedAt': Timestamp.fromDate(DateTime(2026, 8, 23)),
+        'trialEndsAt': Timestamp.fromDate(DateTime(2026, 9, 22)),
+      });
+      final state = await SubscriptionStatusService.instance.readTrialState();
+      expect(state.start, DateTime(2026, 8, 23));
+      expect(state.end, DateTime(2026, 9, 22));
     });
   });
 

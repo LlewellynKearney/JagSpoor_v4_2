@@ -169,6 +169,12 @@ class DemoReviewerService {
     //    `roles: ['hunter','outfitter']` triple is what makes the reviewer
     //    usable on BOTH dashboards (see `UserRoleProvider.resolveRole`); the
     //    `outfitterId` self-link satisfies the owner-scoped outfitter rules.
+    // NOTE: the server-owned entitlement / trial fields (`subscriptionStatus`,
+    // `subscriptionRenewalDate`, `isPremium`, `premiumExpiry`, `trialEndsAt`,
+    // `trialStartedAt`, `createdAt`, …) are frozen in firestore.rules and may
+    // only be written by Cloud Functions. The client seed therefore omits
+    // them — the reviewer's access is granted by the backend Auth onCreate
+    // trial trigger, which provisions the trial on account creation.
     final profile = <String, dynamic>{
       'firstName': 'Demo',
       'lastName': 'Reviewer',
@@ -179,12 +185,8 @@ class DemoReviewerService {
       'isDualRole': true,
       'roles': DemoReviewerConfig.roles,
       'outfitterId': userId,
-      'subscriptionStatus': 'active',
       'subscriptionTier': DemoReviewerConfig.subscriptionTier,
       'subscriptionProvider': 'google_play_billing',
-      'subscriptionRenewalDate': Timestamp.fromDate(
-        now.add(const Duration(days: 30)),
-      ),
       'profileUpdatedAt': FieldValue.serverTimestamp(),
     };
     try {

@@ -193,12 +193,23 @@ class ReferralRewards {
   static const String adminConfigDocId = 'referral_rewards';
 
   /// Default hunter-tier referral reward (ZAR) — one month's hunter
-  /// subscription value.
-  static const double defaultHunterRewardZAR = 19.99;
+  /// subscription value (mirrors the Admin Portal pricing default).
+  static const double defaultHunterRewardZAR = 29.99;
 
   /// Default outfitter-tier referral reward (ZAR) — one month's outfitter
-  /// subscription value.
-  static const double defaultOutfitterRewardZAR = 199.99;
+  /// subscription value (mirrors the Admin Portal pricing default).
+  static const double defaultOutfitterRewardZAR = 299.99;
+
+  /// Default reward mechanism. Referrals are granted server-side as a
+  /// premium / trial EXTENSION (days), not as a cash payout — the Cloud
+  /// Function reads the `rewardType` + `<tier>_days` fields off
+  /// `admin_config/referral_rewards` and extends the referrer's entitlement.
+  static const String defaultRewardType = 'extension_days';
+
+  /// Default extension length (days) granted per granted referral for each
+  /// tier.
+  static const int defaultHunterDays = 30;
+  static const int defaultOutfitterDays = 30;
 
   /// The reward amount the referred new subscriber's tier pays out. Used by
   /// the UI copy + the fallback path when the dynamic admin config is

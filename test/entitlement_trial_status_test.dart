@@ -216,40 +216,35 @@ void main() {
     });
   });
 
-  group('markTrialStarted writes BOTH schemas (unified creation path)', () {
-    test('writes trialEndsAt + subscriptionTrialEndsAt + status', () async {
-      final now = DateTime(2026, 9, 21, 10, 0);
+  group('markTrialStarted (server-owned trial window — v9)', () {
+    test('writes ONLY the client-owned tier/promo/provider metadata', () async {
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.hunter,
-        now: now,
       );
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      final end = now.add(trialDuration);
-
-      // Backend-trigger schema.
-      expect((data['trialEndsAt'] as Timestamp).toDate(), end);
-      expect((data['trialEnd'] as Timestamp).toDate(), end);
-      expect((data['trialStartedAt'] as Timestamp).toDate(), now);
-      expect((data['trialStart'] as Timestamp).toDate(), now);
-      // Client schema.
-      expect((data['subscriptionTrialEndsAt'] as Timestamp).toDate(), end);
-      expect((data['subscriptionTrialStart'] as Timestamp).toDate(), now);
-      // Shared.
-      expect(data['subscriptionStatus'], 'trialing');
       expect(data['subscriptionTier'], 'hunter');
       expect(data['subscriptionProvider'], 'google_play_billing');
-
-      // The written doc passes the entitlement gate.
-      expect(UserEntitlement.fromMap(data).canAccessPremium(now), isTrue);
+      // Every trial-window / status field is frozen (server-owned) — the
+      // client write must not include any of them.
+      for (final frozen in const [
+        'subscriptionStatus',
+        'trialEndsAt',
+        'trialEnd',
+        'trialStartedAt',
+        'trialStart',
+        'subscriptionTrialEndsAt',
+        'subscriptionTrialStart',
+      ]) {
+        expect(data.containsKey(frozen), isFalse, reason: '$frozen is frozen');
+      }
     });
 
-    test('never writes the server-owned (rules-frozen) fields', () async {
+    test('never writes the premium entitlement (rules-frozen) fields',
+        () async {
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.hunter,
       );
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      // These are change-detected by firestore.rules and owned by the backend
-      // trigger; a client write would be rejected.
       expect(data.containsKey('isPremium'), isFalse);
       expect(data.containsKey('subscriptionSource'), isFalse);
       expect(data.containsKey('premiumExpiry'), isFalse);
@@ -257,65 +252,38 @@ void main() {
     });
   });
 
-  group('trial schema migration (backfillTrialSchemaAliases)', () {
-    test("backfills a Jannie-schema doc with the client-schema aliases",
-        () async {
+  group('trial schema migration (backfillTrialSchemaAliases — disabled v9)', () {
+    test('is a no-op: never writes a frozen field', () async {
       await fake.collection('users').doc('uid-1').set(jannieDoc());
       final changed = await SubscriptionStatusService.instance
           .backfillTrialSchemaAliases();
-      expect(changed, isTrue);
-
+      expect(changed, isFalse);
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data.containsKey('subscriptionTrialEndsAt'), isTrue);
-      expect((data['subscriptionTrialEndsAt'] as Timestamp).toDate(),
-          DateTime(2026, 10, 21));
-      expect(data['subscriptionStatus'], 'trialing');
+      // The doc is untouched — no alias backfill (all aliases are frozen).
+      expect(data.containsKey('subscriptionTrialEndsAt'), isFalse);
     });
 
-    test("backfills an Ocker-schema doc with the backend-schema aliases",
+    test('readTrialState resolves the backend-schema window (read-only)',
+        () async {
+      await fake.collection('users').doc('uid-1').set(jannieDoc());
+      final state = await SubscriptionStatusService.instance.readTrialState();
+      expect(state.end, DateTime(2026, 10, 21));
+    });
+
+    test('readTrialState resolves the client-schema window (read-only)',
         () async {
       await fake.collection('users').doc('uid-1').set(ockerDoc());
-      final changed = await SubscriptionStatusService.instance
-          .backfillTrialSchemaAliases();
-      expect(changed, isTrue);
-
-      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data.containsKey('trialEndsAt'), isTrue);
-      expect(data.containsKey('trialEnd'), isTrue);
-      expect((data['trialEndsAt'] as Timestamp).toDate(), DateTime(2026, 10, 21));
+      // The Ocker doc reads `subscriptionTrialEndsAt`; readTrialState resolves
+      // it through the alias list without any write.
+      final state = await SubscriptionStatusService.instance.readTrialState();
+      expect(state.end, isNotNull);
     });
 
-    test('is idempotent — a second run makes no further change', () async {
-      await fake.collection('users').doc('uid-1').set(jannieDoc());
-      expect(
-        await SubscriptionStatusService.instance.backfillTrialSchemaAliases(),
-        isTrue,
-      );
-      expect(
-        await SubscriptionStatusService.instance.backfillTrialSchemaAliases(),
-        isFalse,
-      );
-    });
-
-    test('never touches the rules-frozen server-owned fields', () async {
-      await fake.collection('users').doc('uid-1').set({
-        ...jannieDoc(),
-        'isPremium': false,
-        'subscriptionSource': 'trial',
-        'entitlementUpdatedAt': Timestamp.fromDate(DateTime(2026, 9, 21)),
-      });
-      await SubscriptionStatusService.instance.backfillTrialSchemaAliases();
-      final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data['isPremium'], isFalse);
-      expect(data['subscriptionSource'], 'trial');
-    });
-
-    test('does nothing when the doc has no trial timestamps at all', () async {
+    test('readTrialState tolerates a doc with no trial timestamps', () async {
       await fake.collection('users').doc('uid-1').set({'role': 'hunter'});
-      expect(
-        await SubscriptionStatusService.instance.backfillTrialSchemaAliases(),
-        isFalse,
-      );
+      final state = await SubscriptionStatusService.instance.readTrialState();
+      expect(state.start, isNull);
+      expect(state.end, isNull);
     });
   });
 

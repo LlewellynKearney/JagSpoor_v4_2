@@ -1,3 +1,4 @@
+import '../../admin/services/subscription_config_service.dart';
 import '../../auth/services/user_role_provider.dart';
 
 /// The billing tier a user is subscribed to. Mirrors the app's role model
@@ -24,7 +25,10 @@ enum SubscriptionTier {
   ///
   /// These SkuDetails ids must be created in the Google Play Console under
   /// the same application id (`za.co.jagspoor.app`), configured as
-  /// *Subscriptions* with the sale price below (R 19.99 / R 199.99 per month).
+  /// *Subscriptions*. The sale price lives in the Play Console base plan
+  /// (the charge truth) and must match the Admin Portal
+  /// `admin_config/pricing` amounts — the current control-plane default is
+  /// R 29.99 / R 299.99 per month.
   String get playProductId => switch (this) {
         SubscriptionTier.hunter => 'jagspoor_hunter_monthly',
         SubscriptionTier.outfitter => 'jagspoor_outfitter_monthly',
@@ -41,18 +45,44 @@ enum SubscriptionTier {
 /// lasts (30 days).
 const Duration trialDuration = Duration(days: 30);
 
-/// Static fallback monthly prices (ZAR) for the two billing tiers.
+/// Last-resort fallback monthly prices (ZAR) for the two billing tiers.
 ///
-/// These are the DOCUMENTED launch prices mirrored from the Google Play
-/// Console subscription products (`jagspoor_hunter_monthly` /
-/// `jagspoor_outfitter_monthly`). They are used ONLY as a display/list
-/// fallback when the live Play Billing catalog has not loaded (billing
-/// unsupported / product absent); the authoritative, store-driven price is
-/// [PlayBillingService.loadProducts] → `PlayProduct.rawPrice`. Keeping the
-/// fallback amounts in one place prevents the checkout + dashboard copy from
-/// drifting apart from each other and from the Play Console catalog.
-const double hunterMonthlyPriceZAR = 19.99;
-const double outfitterMonthlyPriceZAR = 199.99;
+/// These mirror the Admin Portal defaults
+/// ([SubscriptionConfigService.defaultHunterMonthlyZAR] /
+/// [SubscriptionConfigService.defaultOutfitterMonthlyZAR]) and are used ONLY
+/// when NEITHER the live Play Billing catalog
+/// ([PlayBillingService.loadProducts] → `PlayProduct.rawPrice`, the
+/// authoritative charge) NOR the admin-controlled `admin_config/pricing`
+/// document resolves an amount. The Admin Portal is the control plane; the
+/// Play Console is the charge truth — see [resolveMonthlyPrice].
+const double hunterMonthlyPriceZAR = 29.99;
+const double outfitterMonthlyPriceZAR = 299.99;
+
+/// Resolves the monthly display price (ZAR) for [tier] using the documented
+/// precedence:
+///   1. the LIVE Play catalog `rawPrice` (the authoritative charge), when a
+///      product has loaded;
+///   2. the admin-controlled `admin_config/pricing` amount (via
+///      [SubscriptionConfigService.getFallbackPrice]);
+///   3. the hard-coded [hunterMonthlyPriceZAR] / [outfitterMonthlyPriceZAR]
+///      last resort.
+///
+/// Kept on the pricing module so the dashboard cards, the checkout screen and
+/// any other price consumer agree on one resolution order.
+Future<double> resolveMonthlyPrice(
+  SubscriptionTier tier, {
+  double? playRawPrice,
+}) async {
+  if (playRawPrice != null && playRawPrice > 0) return playRawPrice;
+  try {
+    return await SubscriptionConfigService.instance
+        .getFallbackPrice(tier.key);
+  } catch (_) {
+    return tier == SubscriptionTier.outfitter
+        ? outfitterMonthlyPriceZAR
+        : hunterMonthlyPriceZAR;
+  }
+}
 
 /// The canonical `users/{uid}.subscriptionStatus` string representing an
 /// active free trial. This is the value the automatic trial assignment writes

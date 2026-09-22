@@ -191,6 +191,19 @@ void main() {
       'subscriptionPlayPurchaseToken',
       'payfastPaymentId',
       'entitlementUpdatedAt',
+      // Trial-abuse hardening (v9): the trial window timestamps (every alias
+      // the entitlement reader honours), the trial status, the
+      // account-creation stamp and the referral-code marker are server-owned —
+      // only Cloud Functions (Admin SDK) may write them.
+      'trialEndsAt',
+      'trialEnd',
+      'subscriptionTrialEndsAt',
+      'trialStartedAt',
+      'trialStart',
+      'subscriptionTrialStart',
+      'subscriptionStatus',
+      'createdAt',
+      'referralCodeUsed',
     ];
 
     test('no server-owned field is denied by standalone key presence', () {

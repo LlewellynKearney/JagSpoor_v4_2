@@ -25,10 +25,23 @@ void main() {
       });
       expect(config.hunterSubscriptionZAR, 149.99);
       expect(config.outfitterSubscriptionZAR, 499.5);
+      // toMap writes the canonical `admin_config/pricing` snake_case keys
+      // alongside the legacy camelCase aliases so any reader resolves them.
       expect(config.toMap(), {
+        'hunter_monthly': 149.99,
+        'outfitter_monthly': 499.5,
         'hunterSubscriptionZAR': 149.99,
         'outfitterSubscriptionZAR': 499.5,
       });
+    });
+
+    test('reads the canonical admin_config/pricing keys', () {
+      final config = SubscriptionConfig.fromMap(const {
+        'hunter_monthly': 29.99,
+        'outfitter_monthly': 299.99,
+      });
+      expect(config.hunterSubscriptionZAR, 29.99);
+      expect(config.outfitterSubscriptionZAR, 299.99);
     });
 
     test('defaults to zero amounts for an absent config doc', () {

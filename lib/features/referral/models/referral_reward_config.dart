@@ -19,9 +19,24 @@ class ReferralRewardConfig {
   final double hunterRewardZAR;
   final double outfitterRewardZAR;
 
+  /// The reward mechanism (`extension_days` today). Reserved for future
+  /// mechanisms (e.g. a cash payout); the Cloud Function grants the reward as
+  /// an entitlement extension when this is `extension_days`.
+  final String rewardType;
+
+  /// Days the referrer's entitlement is extended per granted hunter referral.
+  final int hunterDays;
+
+  /// Days the referrer's entitlement is extended per granted outfitter
+  /// referral.
+  final int outfitterDays;
+
   const ReferralRewardConfig({
     this.hunterRewardZAR = ReferralRewards.defaultHunterRewardZAR,
     this.outfitterRewardZAR = ReferralRewards.defaultOutfitterRewardZAR,
+    this.rewardType = ReferralRewards.defaultRewardType,
+    this.hunterDays = ReferralRewards.defaultHunterDays,
+    this.outfitterDays = ReferralRewards.defaultOutfitterDays,
   });
 
   /// Hydrates from a Firestore map. Numeric strings are tolerated; missing /
@@ -39,12 +54,27 @@ class ReferralRewardConfig {
             data['outfitterAmountZAR'] ??
             data['outfitter'] ??
             ReferralRewards.defaultOutfitterRewardZAR),
+      rewardType: (data['rewardType'] ?? ReferralRewards.defaultRewardType)
+          .toString(),
+      hunterDays: _clampedInt(
+          data['hunter_days'] ?? data['hunterDays'],
+          ReferralRewards.defaultHunterDays),
+      outfitterDays: _clampedInt(
+          data['outfitter_days'] ?? data['outfitterDays'],
+          ReferralRewards.defaultOutfitterDays),
     );
   }
 
+  /// The admin-config payload. Writes BOTH the canonical snake_case keys the
+  /// control plane / Cloud Function read and the legacy camelCase aliases.
   Map<String, dynamic> toMap() => {
+        'hunter': hunterRewardZAR,
+        'outfitter': outfitterRewardZAR,
         'hunterRewardZAR': hunterRewardZAR,
         'outfitterRewardZAR': outfitterRewardZAR,
+        'rewardType': rewardType,
+        'hunter_days': hunterDays,
+        'outfitter_days': outfitterDays,
       };
 
   /// The reward amount for a given subscription tier.
@@ -53,11 +83,25 @@ class ReferralRewardConfig {
           ? outfitterRewardZAR
           : hunterRewardZAR;
 
+  /// The entitlement-extension length (days) for a given subscription tier.
+  int daysFor(ReferralSubscriptionTier tier) =>
+      tier == ReferralSubscriptionTier.outfitter ? outfitterDays : hunterDays;
+
   static double _clamped(dynamic v) {
     final parsed = v is num
         ? v.toDouble()
         : double.tryParse(v?.toString() ?? '') ?? 0.0;
     return parsed < 0 ? 0.0 : parsed;
+  }
+
+  /// Clamps a day count to >= 0; tolerates numeric strings; a missing /
+  /// unparseable value falls back to [fallback].
+  static int _clampedInt(dynamic v, int fallback) {
+    if (v == null) return fallback;
+    final parsed =
+        v is num ? v.toInt() : int.tryParse(v.toString().trim());
+    if (parsed == null) return fallback;
+    return parsed < 0 ? 0 : parsed;
   }
 }
 

@@ -58,16 +58,22 @@ export {
   REFERRAL_STATUS_PENDING,
   REFERRAL_STATUS_REWARDED,
   REFERRAL_STATUS_REJECTED,
+  REFERRAL_STATUS_GRANTED,
   REFERRAL_TIER_HUNTER,
   REFERRAL_TIER_OUTFITTER,
+  DEFAULT_REWARD_TYPE,
+  DEFAULT_HUNTER_DAYS,
+  DEFAULT_OUTFITTER_DAYS,
   loadReferralRewardConfig,
   rewardAmountForTier,
+  rewardDaysForTier,
   getReferralProfile,
   findReferrerByCode,
   createReferralProfile,
   recordReferralConversion,
   getConversionsForReferrer,
   finaliseConversionReward,
+  onReferralConversionCreated,
 } from "./referral";
 
 // ────────────────────────────────────────────────────────────────────────────

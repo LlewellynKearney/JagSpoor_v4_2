@@ -20,7 +20,6 @@ import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
 import 'services/device_fingerprint_service.dart';
-import '../subscription/services/subscription_pricing.dart';
 import '../subscription/services/subscription_status_service.dart';
 import '../referral/services/referral_repository.dart';
 
@@ -224,33 +223,6 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _stampDeviceFingerprint(User user) async {
     await DeviceFingerprintService.instance
         .stampDeviceFingerprint(user.uid);
-  }
-
-  /// Automatically assigns the 30-day free trial to a freshly registered
-  /// standard account, bypassing the admin account.
-  ///
-  /// The trial is written onto `users/{uid}` via
-  /// [SubscriptionStatusService.markTrialStarted] (the same status string the
-  /// backend `initializeNewUserTrial` Auth trigger writes, so the client and
-  /// the Cloud Function agree on the trial state). The admin account —
-  /// detected by the [TrialAssignmentPolicy] email/UID check — is excluded
-  /// and keeps its fixed billing tiers.
-  ///
-  /// Best-effort: a failure (offline / rules not yet deployed) is logged and
-  /// never blocks registration; the backend trigger remains the authoritative
-  /// trial assigner.
-  Future<void> _assignTrialOnRegistration(User user, String email) async {
-    if (TrialAssignmentPolicy.isAdmin(user.uid, email)) {
-      debugPrint('Trial assignment skipped for admin account: ${user.uid}');
-      return;
-    }
-    try {
-      await SubscriptionStatusService.instance.markTrialStarted(
-        tier: SubscriptionTier.fromAppRole(AppRole.unknown),
-      );
-    } catch (e) {
-      debugPrint('Trial assignment failed (non-fatal): $e');
-    }
   }
 
   /// Show 2FA Verification Bottom Sheet
@@ -538,6 +510,9 @@ class _AuthScreenState extends State<AuthScreen> {
         final user = userCredential.user;
         if (user != null) {
           try {
+            // NOTE: `createdAt` is server-owned (frozen in firestore.rules +
+            // stamped by the Auth onCreate trigger) — the client must NOT
+            // write it, or the whole create is denied.
             await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
@@ -545,7 +520,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   'email': email,
                   if (deviceFingerprint != null && deviceFingerprint.isNotEmpty)
                     'deviceFingerprint': deviceFingerprint,
-                  'createdAt': FieldValue.serverTimestamp(),
                   'updatedAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));
           } catch (firestoreError) {
@@ -553,11 +527,13 @@ class _AuthScreenState extends State<AuthScreen> {
             // User can still proceed, profile can be created later
           }
 
-          // Automatically assign the 30-day free trial to this new standard
-          // account (admin accounts are excluded). Best-effort: the backend
-          // `initializeNewUserTrial` Auth trigger is the authoritative
-          // assigner, so a client-side failure never blocks registration.
-          await _assignTrialOnRegistration(user, email);
+          // The 30-day free trial is provisioned SOLELY by the backend
+          // `initializeNewUserTrial` Auth onCreate trigger (Admin SDK). The
+          // trial fields (`trialEndsAt` / `trialStartedAt` / `subscriptionStatus`)
+          // are frozen in firestore.rules, so the client must not write them —
+          // any client trial write is denied. The trigger runs immediately on
+          // account creation, so the trial is in place before this screen
+          // routes.
 
           // Redeem the optional referral code (Phase 4). Best-effort: a
           // blank / invalid / self-referral code is logged and skipped —

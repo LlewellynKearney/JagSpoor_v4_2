@@ -145,31 +145,23 @@ class SubscriptionStatusService {
     }
   }
 
-  /// Marks the start of the free trial on the user's profile.
+  /// Records the trial TIER / promo metadata on the user's profile.
   ///
-  /// With Google Play Billing the free-trial offer itself is configured in
-  /// the Play Console (a per-product promo/offer linked to the subscription);
-  /// this write records the trial window + tier on `users/{uid}` so the UI
-  /// reflects the trial immediately after a successful Play purchase. The
-  /// `users/{uid}` rules already allow owner writes.
+  /// **Server-owned trial window (v9)**: the trial timestamps
+  /// (`trialEndsAt` / `trialStart` / `trialStartedAt` / `trialEnd` /
+  /// `subscriptionTrialEndsAt` / `subscriptionTrialStart`) and the
+  /// `subscriptionStatus` are FROZEN in `firestore.rules` — they may only be
+  /// written by Cloud Functions (Admin SDK) to prevent trial abuse via
+  /// client-writable timestamps. The authoritative trial provisioner is the
+  /// backend `initializeNewUserTrial` Auth `onCreate` trigger, which stamps
+  /// the full trial window on account creation.
   ///
-  /// **Schema unification (TODO #5)**: two signup paths previously wrote
-  /// DIFFERENT field layouts — the backend `initializeNewUserTrial` trigger
-  /// writes `trialEndsAt` / `trialStart` / `subscriptionSource: 'trial'` /
-  /// `requiresPayment`, while this client write historically wrote only
-  /// `subscriptionTrialEndsAt` / `subscriptionProvider`. A doc from either
-  /// path alone could therefore fail the entitlement read. This method now
-  /// writes BOTH timestamp schemas (`trialStart`/`trialEnd`/`trialStartedAt`/
-  /// `trialEndsAt` AND `subscriptionTrialEndsAt`/`subscriptionTrialStart`)
-  /// plus the canonical `subscriptionStatus`, so every reader — the
-  /// entitlement gate, the dashboards, and any legacy consumer — resolves the
-  /// trial regardless of which spelling it checks.
-  ///
-  /// NOTE: the server-owned fields (`isPremium`, `subscriptionSource`,
-  /// `premiumExpiry`, `entitlementUpdatedAt`) are deliberately NOT written
-  /// here. `firestore.rules` uses field-level CHANGE DETECTION to keep them
-  /// backend-only, so a client write would be rejected; the
-  /// `initializeNewUserTrial` trigger owns them (Admin SDK, bypasses rules).
+  /// This method therefore writes ONLY the fields the client still owns:
+  /// the tier (`subscriptionTier`), the promo code (`subscriptionPromoCode`)
+  /// and the provider (`subscriptionProvider`). It deliberately does NOT
+  /// write any trial timestamp or the status — a client write of a frozen
+  /// field is rejected by the rules. Callers should treat the trial window as
+  /// server-provisioned (read back from `users/{uid}`).
   Future<void> markTrialStarted({
     required SubscriptionTier tier,
     String promoCode = '',
@@ -177,19 +169,9 @@ class SubscriptionStatusService {
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('No signed-in user');
-    final start = now ?? DateTime.now();
-    final end = start.add(trialDuration);
     await _db.collection('users').doc(uid).set({
-      // --- Backend-trigger schema (trialEndsAt / trialStart) ---
-      'trialStartedAt': Timestamp.fromDate(start),
-      'trialStart': Timestamp.fromDate(start),
-      'trialEndsAt': Timestamp.fromDate(end),
-      'trialEnd': Timestamp.fromDate(end),
-      // --- Client markTrialStarted schema (subscriptionTrialEndsAt) ---
-      'subscriptionTrialEndsAt': Timestamp.fromDate(end),
-      'subscriptionTrialStart': Timestamp.fromDate(start),
-      // --- Shared status / tier / provider ---
-      'subscriptionStatus': subscriptionStatusTrial,
+      // Client-owned metadata only — the trial window + status are frozen
+      // and provisioned by the backend trigger.
       'subscriptionTier': tier.key,
       'subscriptionPromoCode': promoCode,
       'subscriptionProvider': 'google_play_billing',
@@ -197,34 +179,36 @@ class SubscriptionStatusService {
     }, SetOptions(merge: true));
   }
 
-  /// Migration helper (TODO #5): backfills the MISSING trial-schema aliases on
-  /// an existing `users/{uid}` document so a doc created by the OTHER signup
-  /// path resolves under every reader.
+  /// Trial-schema migration (TODO #5).
   ///
-  /// Called on login / boot. Only the trial-timestamp aliases + the canonical
-  /// `subscriptionStatus` are written — the server-owned fields
-  /// (`isPremium`, `subscriptionSource`, `premiumExpiry`,
-  /// `entitlementUpdatedAt`) are NEVER touched (they are frozen by
-  /// `firestore.rules` change-detection and owned by Cloud Functions).
+  /// **Disabled client-side in v9.** The trial-window aliases
+  /// (`trialEndsAt` / `trialStart` / `subscriptionTrialEndsAt` / …) and
+  /// `subscriptionStatus` are FROZEN in `firestore.rules` (only the Admin SDK
+  /// may write them — trial-abuse prevention). A client backfill of those
+  /// aliases would therefore be rejected with PERMISSION_DENIED. The schema
+  /// unification it performed is now the responsibility of the backend:
+  /// `initializeNewUserTrial` stamps the full trial window on every new
+  /// account, and a one-off Admin-SDK migration can heal legacy docs.
   ///
-  /// Best-effort and idempotent: when no trial timestamps are present at all
-  /// nothing is written; when the alias fields already exist nothing changes.
-  /// Returns `true` when a backfill write was performed.
-  Future<bool> backfillTrialSchemaAliases() async {
+  /// Retained as a no-op so existing call sites (login / boot) keep
+  /// compiling; it performs no write and always returns `false`. Use
+  /// [readTrialState] to inspect a doc's trial window.
+  Future<bool> backfillTrialSchemaAliases() async => false;
+
+  /// Reads the current trial window (`start`/`end`) from `users/{uid}`,
+  /// tolerating every documented alias. Best-effort — returns `(null, null)`
+  /// on a missing doc / read error. Read-only (no frozen-field write).
+  Future<({DateTime? start, DateTime? end})> readTrialState() async {
     final uid = _uid;
-    if (uid == null) return false;
-    final ref = _db.collection('users').doc(uid);
+    if (uid == null) return (start: null, end: null);
     final Map<String, dynamic> data;
     try {
-      final snap = await ref.get();
+      final snap = await _db.collection('users').doc(uid).get();
       data = snap.data() ?? const <String, dynamic>{};
     } catch (e) {
-      debugPrint('SubscriptionStatusService.backfillTrialSchemaAliases read failed: $e');
-      return false;
+      debugPrint('SubscriptionStatusService.readTrialState failed: $e');
+      return (start: null, end: null);
     }
-    if (data.isEmpty) return false;
-
-    // Resolve the existing trial window from either schema.
     DateTime? start;
     DateTime? end;
     for (final key in trialStartFieldAliases) {
@@ -233,47 +217,7 @@ class SubscriptionStatusService {
     for (final key in trialEndFieldAliases) {
       end ??= _toDate(data[key]);
     }
-    if (start == null && end == null) return false; // no trial on file
-
-    final status =
-        (data['subscriptionStatus'] ?? '').toString().trim().toLowerCase();
-    final trialStatus = const {'trial', 'trialing', 'trialling', 'trial_active'}
-        .contains(status);
-
-    final patch = <String, dynamic>{};
-    if (start != null) {
-      final ts = Timestamp.fromDate(start);
-      for (final key in trialStartFieldAliases) {
-        if (data[key] == null) patch[key] = ts;
-      }
-    }
-    if (end != null) {
-      final ts = Timestamp.fromDate(end);
-      for (final key in trialEndFieldAliases) {
-        if (data[key] == null) patch[key] = ts;
-      }
-    }
-    // Normalize a known trial status to the canonical `'trialing'` value, and
-    // stamp that status onto a doc that carries a STILL-VALID trial window but
-    // no status at all (the backend-trigger schema). An expired window is left
-    // alone rather than mislabelled `'trialing'` — the timestamp already
-    // governs access.
-    if (trialStatus && status != subscriptionStatusTrial) {
-      patch['subscriptionStatus'] = subscriptionStatusTrial;
-    } else if (status.isEmpty &&
-        end != null &&
-        end.isAfter(DateTime.now())) {
-      patch['subscriptionStatus'] = subscriptionStatusTrial;
-    }
-    if (patch.isEmpty) return false;
-
-    try {
-      await ref.set(patch, SetOptions(merge: true));
-      return true;
-    } catch (e) {
-      debugPrint('SubscriptionStatusService.backfillTrialSchemaAliases write failed: $e');
-      return false;
-    }
+    return (start: start, end: end);
   }
 
   static DateTime? _toDate(dynamic v) {

@@ -70,11 +70,12 @@ void main() {
     testWidgets('falls back to the documented defaults when the doc is absent',
         (tester) async {
       await pumpCard(tester);
-      // _formatAmount strips a trailing ".00" (19.99 -> "19.99").
+      // The v9 control-plane defaults are the current subscription amounts
+      // (R29.99 / R299.99 per month).
       expect(tester.widget<TextFormField>(hunterField()).controller?.text,
-          '19.99');
+          '29.99');
       expect(tester.widget<TextFormField>(outfitterField()).controller?.text,
-          '199.99');
+          '299.99');
     });
 
     testWidgets('a negative amount is blocked by the inline validator',

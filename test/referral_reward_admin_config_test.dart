@@ -141,5 +141,45 @@ void main() {
       expect(config.hunterRewardZAR, 59.99);
       expect(config.outfitterRewardZAR, 599.99);
     });
+
+    test('persists the canonical control-plane keys (hunter/outfitter/days)',
+        () async {
+      await repo.saveRewardConfig(const ReferralRewardConfig(
+        hunterRewardZAR: 29.99,
+        outfitterRewardZAR: 299.99,
+        rewardType: 'extension_days',
+        hunterDays: 30,
+        outfitterDays: 30,
+      ));
+      final data = (await firestore
+              .collection('admin_config')
+              .doc(ReferralRewards.adminConfigDocId)
+              .get())
+          .data()!;
+      // Canonical snake_case keys the server-side grant trigger reads.
+      expect(data['hunter'], 29.99);
+      expect(data['outfitter'], 299.99);
+      expect(data['rewardType'], 'extension_days');
+      expect(data['hunter_days'], 30);
+      expect(data['outfitter_days'], 30);
+      // Audit stamps.
+      expect(data.containsKey('updatedAt'), isTrue);
+      expect(data['updatedBy'], 'admin-1');
+    });
+
+    test('round-trips rewardType + extension days', () async {
+      await repo.saveRewardConfig(const ReferralRewardConfig(
+        hunterRewardZAR: 29.99,
+        outfitterRewardZAR: 299.99,
+        hunterDays: 45,
+        outfitterDays: 60,
+      ));
+      final config = await repo.loadRewardConfig();
+      expect(config.rewardType, 'extension_days');
+      expect(config.hunterDays, 45);
+      expect(config.outfitterDays, 60);
+      expect(config.daysFor(ReferralSubscriptionTier.hunter), 45);
+      expect(config.daysFor(ReferralSubscriptionTier.outfitter), 60);
+    });
   });
 }

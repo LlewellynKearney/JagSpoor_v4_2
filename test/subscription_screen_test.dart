@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
+import 'package:jagspoor/features/admin/services/subscription_config_service.dart';
 import 'package:jagspoor/features/subscription/services/play_billing_service.dart';
 import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 import 'package:jagspoor/features/subscription/services/subscription_status_service.dart';
@@ -15,6 +16,17 @@ void main() {
     fake = FakeFirebaseFirestore();
     SubscriptionStatusService.firestoreForTesting = fake;
     SubscriptionStatusService.currentUserIdResolverForTesting = () => 'uid-1';
+    // The Admin Portal control plane: the screen resolves the display price
+    // from `admin_config/pricing` (via SubscriptionConfigService) when the
+    // live Play catalog has no product loaded. Seed the canonical doc so the
+    // tests assert the admin-authored amounts rather than the last-resort
+    // hard-coded fallback.
+    SubscriptionConfigService.firestoreForTesting = fake;
+    SubscriptionConfigService.currentUserIdResolverForTesting = () => 'admin-1';
+    fake.collection('admin_config').doc('pricing').set({
+      'hunter_monthly': 29.99,
+      'outfitter_monthly': 299.99,
+    });
     TestWidgetsFlutterBinding.ensureInitialized();
     // Stub the platform launcher so launchUrl completes without a native
     // intent (the Play subscription center URL is still asserted directly).
@@ -27,6 +39,7 @@ void main() {
 
   tearDown(() {
     SubscriptionStatusService.resetTestSeams();
+    SubscriptionConfigService.resetTestSeams();
     PlayBillingService.resetTestSeams();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -65,8 +78,8 @@ void main() {
       expect(find.text('NO ACTIVE SUBSCRIPTION'), findsOneWidget);
       expect(find.text('TIER PRICING'), findsOneWidget);
       // Hunter mode (default): ONLY the Hunter tier card renders.
-      expect(find.text('R 19.99 / month'), findsOneWidget);
-      expect(find.text('R 199.99 / month'), findsNothing);
+      expect(find.text('R 29.99 / month'), findsOneWidget);
+      expect(find.text('R 299.99 / month'), findsNothing);
       expect(find.text('After a 30-day free trial'), findsOneWidget);
 
       // The promo section sits below the tier card on the 800x600 test
@@ -106,7 +119,7 @@ void main() {
       expect(find.byKey(const ValueKey('tierCard_hunter')), findsNothing);
       // The checkout total maps the outfitter price.
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
-      expect(find.text('R 199.99'), findsOneWidget);
+      expect(find.text('R 299.99'), findsOneWidget);
     });
   });
 
@@ -183,7 +196,7 @@ void main() {
       await pumpScreen(tester, tier: SubscriptionTier.hunter);
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
       expect(find.text('Then monthly (hunter)'), findsOneWidget);
-      expect(find.text('R 19.99'), findsOneWidget);
+      expect(find.text('R 29.99'), findsOneWidget);
       expect(find.text('Then monthly (outfitter)'), findsNothing);
     });
 
@@ -192,7 +205,7 @@ void main() {
       await pumpScreen(tester, tier: SubscriptionTier.outfitter);
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
       expect(find.text('Then monthly (outfitter)'), findsOneWidget);
-      expect(find.text('R 199.99'), findsOneWidget);
+      expect(find.text('R 299.99'), findsOneWidget);
       expect(find.text('Then monthly (hunter)'), findsNothing);
     });
   });
@@ -211,10 +224,10 @@ void main() {
       expect(find.textContaining('JAGSPOOR10'), findsWidgets);
       expect(find.textContaining('10% off'), findsOneWidget);
 
-      // 19.99 - 10% = 17.99 shown as the promo-adjusted monthly total.
+      // 29.99 - 10% = 26.991 (rounds to 26.99 for display).
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
       expect(find.text('Promo-adjusted monthly'), findsOneWidget);
-      expect(find.text('R 17.99'), findsOneWidget);
+      expect(find.text('R 26.99'), findsOneWidget);
     });
 
     testWidgets('an invalid promo code surfaces an error and no adjustment',

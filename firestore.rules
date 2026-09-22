@@ -98,11 +98,14 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // Owner-scoped write: the user may maintain their own profile document
       // (role, displayName, medical info, FCM tokens, etc.). The server-owned
-      // entitlement fields (`isPremium`, `premiumExpiry`, `subscriptionSource`,
-      // `subscriptionProduct`, `subscriptionPlayPurchaseToken`,
-      // `payfastPaymentId`, `entitlementUpdatedAt`) are ONLY written by Cloud
-      // Functions (validateGooglePlayPurchase / payfastITN / the trial trigger),
-      // so a user cannot fabricate / extend their own premium state.
+      // entitlement / trial fields (`isPremium`, `premiumExpiry`,
+      // `subscriptionSource`, `subscriptionProduct`,
+      // `subscriptionPlayPurchaseToken`, `payfastPaymentId`,
+      // `entitlementUpdatedAt`, `trialEndsAt`, `trialStartedAt`,
+      // `subscriptionStatus`, `createdAt`, `referralCodeUsed`) are ONLY written
+      // by Cloud Functions (validateGooglePlayPurchase / payfastITN / the trial
+      // trigger / the referral grant trigger), so a user cannot fabricate /
+      // extend their own premium state or trial window (trial-abuse hardening).
       //
       // IMPORTANT — these guards use CHANGE DETECTION, not key presence.
       // For a merge `set(..., {merge: true})` (what the hunter profile screen
@@ -115,8 +118,10 @@ service cloud.firestore {
       // therefore denied ONLY when the write actually ADDS or CHANGES it:
       // a plain profile save that re-sends the values already stored (or omits
       // them, in which case the server keeps the stored values) is allowed,
-      // while a client attempting `isPremium: true` / a new expiry cannot pass
-      // because the submitted value differs from the stored one.
+      // while a client attempting `isPremium: true` / a new expiry / a new
+      // trial end cannot pass because the submitted value differs from the
+      // stored one. Only the Admin SDK (Cloud Functions) may write these —
+      // the client can read but never write them.
       allow write: if isSignedIn() && request.auth.uid == userId
         && (resource == null
           || !('deviceFingerprint' in resource.data)
@@ -141,7 +146,37 @@ service cloud.firestore {
             && request.resource.data.payfastPaymentId == resource.data.payfastPaymentId))
         && (!('entitlementUpdatedAt' in request.resource.data)
           || (resource != null
-            && request.resource.data.entitlementUpdatedAt == resource.data.entitlementUpdatedAt));
+            && request.resource.data.entitlementUpdatedAt == resource.data.entitlementUpdatedAt))
+        // Trial window + status (server-owned: trial abuse prevention). Every
+        // trial-end / trial-start alias the entitlement reader honours is
+        // frozen, so a client cannot widen its own trial through an alias.
+        && (!('trialEndsAt' in request.resource.data)
+          || (resource != null
+            && request.resource.data.trialEndsAt == resource.data.trialEndsAt))
+        && (!('trialEnd' in request.resource.data)
+          || (resource != null
+            && request.resource.data.trialEnd == resource.data.trialEnd))
+        && (!('subscriptionTrialEndsAt' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionTrialEndsAt == resource.data.subscriptionTrialEndsAt))
+        && (!('trialStartedAt' in request.resource.data)
+          || (resource != null
+            && request.resource.data.trialStartedAt == resource.data.trialStartedAt))
+        && (!('trialStart' in request.resource.data)
+          || (resource != null
+            && request.resource.data.trialStart == resource.data.trialStart))
+        && (!('subscriptionTrialStart' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionTrialStart == resource.data.subscriptionTrialStart))
+        && (!('subscriptionStatus' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionStatus == resource.data.subscriptionStatus))
+        && (!('createdAt' in request.resource.data)
+          || (resource != null
+            && request.resource.data.createdAt == resource.data.createdAt))
+        && (!('referralCodeUsed' in request.resource.data)
+          || (resource != null
+            && request.resource.data.referralCodeUsed == resource.data.referralCodeUsed));
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
     // Entitlement documents are written exclusively by Cloud Functions
@@ -678,10 +713,14 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // `admin_config/referral_rewards` holds the DYNAMIC reward amounts for
-    // hunter vs. outfitter referrals. Read is open to any signed-in user
-    // (every referral-reward consumer needs the live amount); write is
-    // admin-only so regular users can never alter their own payout.
+    // `admin_config/*` is the Admin Portal control plane:
+    //   - `admin_config/pricing`          — hunter/outfitter monthly amounts.
+    //   - `admin_config/referral_rewards` — dynamic referral reward config.
+    // Read is open to any signed-in user (the pricing + reward amounts are
+    // consumed by the subscription screen, the referral flow and the dashboards
+    // — the live amount is needed everywhere); write is admin-only so regular
+    // users can never alter pricing or their own payout. Cloud Functions also
+    // read this doc via the Admin SDK (which bypasses rules) to grant rewards.
     match /admin_config/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();

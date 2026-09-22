@@ -1,5 +1,64 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Production-safe pricing + real referral grant + trial-field freeze (v9) (added 2026-09-22)
+
+### What changed (control plane = Admin Portal, charge truth = Play Console)
+- **Admin Portal SAVE**: `SubscriptionConfig.toMap` writes canonical
+  `hunter_monthly` / `outfitter_monthly` (+ camelCase read aliases);
+  `SubscriptionConfigService.saveConfig` stamps `updatedAt`
+  (serverTimestamp) + `updatedBy` (uid). `ReferralRewardConfig.toMap` writes
+  canonical `hunter` / `outfitter` + `rewardType: 'extension_days'` +
+  `hunter_days` / `outfitter_days`; `ReferralRepository.saveRewardConfig`
+  stamps the audit fields. Rules verified: `admin_config/{docId}` =
+  `read: isSignedIn()` / `write: isAdmin()`.
+- **Pricing source of truth**: `subscription_pricing.dart` keeps the product
+  IDs; the fallback constants are the control-plane defaults (29.99/299.99)
+  and `resolveMonthlyPrice(tier, {playRawPrice})` resolves **live Play
+  `rawPrice` → `admin_config/pricing` (`getFallbackPrice`) → hard-coded last
+  resort**. Hunter + outfitter dashboard cards now hold a
+  `_*MonthlyPrice` field hydrated by `resolveMonthlyPrice` instead of
+  rendering the constant.
+- **MRR** is live: `hunterCount × config.hunterSubscriptionZAR +
+  outfitterCount × config.outfitterSubscriptionZAR` via
+  `SubscriptionConfigService.computeRevenue` (counts from `AdminMetrics`).
+- **Referral is real**: `onReferralConversionCreated` (v2 Firestore trigger,
+  `functions/src/referral.ts`) validates the parties, resolves reward days
+  from `admin_config/referral_rewards`, extends the REFERRER's entitlement
+  via `writeEntitlement` (the same writer Play validation uses), and marks
+  the conversion `granted`. Idempotent: skips an already-granted conversion
+  and rejects a second grant for the same `referredUserId`
+  (`already_rewarded`). Client writes no expiry.
+- **Trial-abuse freeze**: `firestore.rules` `users/{userId}` write now also
+  freezes `trialEndsAt` / `trialEnd` / `subscriptionTrialEndsAt` /
+  `trialStartedAt` / `trialStart` / `subscriptionTrialStart` /
+  `subscriptionStatus` / `createdAt` / `referralCodeUsed` (change-detection,
+  so only the Admin SDK writes them).
+- **Client trial writes removed**: `markTrialStarted` writes ONLY
+  `subscriptionTier` / `subscriptionPromoCode` / `subscriptionProvider`;
+  `backfillTrialSchemaAliases` is a no-op; new read-only `readTrialState()`.
+  Demo-reviewer seed omits every frozen field. The backend
+  `initializeNewUserTrial` trigger is the sole trial provisioner.
+- **Restore Purchases**: `subscription_screen.dart` renders a Play-policy
+  "Restore Purchases" button (`restorePurchasesButton`) wired to the existing
+  `PlayBillingService.restorePurchases()`.
+- **Divergence warning**: Admin Portal banner when live Play `rawPrice`
+  differs from `admin_config/pricing` by > R0.01 ("update Play Console base
+  plan to match"); the subscription screen surfaces the same mismatch to the
+  subscriber.
+- **google-services.json**: still registers `com.example.jagspoor` vs the app
+  id `za.co.jagspoor.app` — documented (not auto-fixed) in
+  `GOOGLE_SERVICES_FIX.md`.
+- Docs: `REFERRAL_PRICING_FIX.md` (before/after file:line + Play Console
+  steps).
+
+### Verification
+- `flutter test --reporter=compact`: **1813 passed / 0 failed** (exit 0).
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing infos).
+- `functions`: `npx tsc --noEmit` clean; `npm test` **40/40**.
+- Env: Flutter 3.44.9 at `/tmp/f3449/flutter`; `~/libs/libsqlite3.so` symlink
+  + `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites.
+- No new dependencies. Not pushed (left clean for review).
+
 ## Phase -- Fix 54 CRLF-fragile contract tests (pre-release v9) (added 2026-09-21)
 
 ### Symptom

@@ -443,19 +443,32 @@ class ReferralRepository {
   /// sanitisation contract as [ReferralRewardConfig.fromMap] /
   /// `SubscriptionConfigService.saveConfig`. Admin-write per
   /// `firestore.rules` (`admin_config` write is admin-only).
+  ///
+  /// The canonical control-plane fields (`hunter`, `outfitter`,
+  /// `rewardType`, `hunter_days`, `outfitter_days`) are written alongside the
+  /// legacy aliases, and the write is stamped with `updatedAt` (server
+  /// timestamp) + `updatedBy` (admin uid) so the config is auditable and the
+  /// server-side grant Cloud Function reads the same schema the Admin Portal
+  /// writes.
   Future<void> saveRewardConfig(ReferralRewardConfig config) async {
     final sanitized = ReferralRewardConfig(
-      hunterRewardZAR: config.hunterRewardZAR < 0
-          ? 0.0
-          : config.hunterRewardZAR,
-      outfitterRewardZAR: config.outfitterRewardZAR < 0
-          ? 0.0
-          : config.outfitterRewardZAR,
+      hunterRewardZAR:
+          config.hunterRewardZAR < 0 ? 0.0 : config.hunterRewardZAR,
+      outfitterRewardZAR:
+          config.outfitterRewardZAR < 0 ? 0.0 : config.outfitterRewardZAR,
+      rewardType: config.rewardType,
+      hunterDays: config.hunterDays < 0 ? 0 : config.hunterDays,
+      outfitterDays: config.outfitterDays < 0 ? 0 : config.outfitterDays,
     );
+    final uid = _currentUserId;
     await _firestore
         .collection(kAdminConfigCollection)
         .doc(ReferralRewards.adminConfigDocId)
-        .set(sanitized.toMap(), SetOptions(merge: true));
+        .set({
+      ...sanitized.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (uid != null && uid.isNotEmpty) 'updatedBy': uid,
+    }, SetOptions(merge: true));
   }
 
   static void _putStringOrDelete(
