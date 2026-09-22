@@ -58,28 +58,13 @@ class _HunterDashboardState extends State<HunterDashboard> {
   bool _isAdmin = false;
   bool _isDual = false;
 
-  /// Live monthly price (ZAR) for the hunter subscription card. Resolved from
-  /// the Play catalog → `admin_config/pricing` → hard-coded last resort (see
-  /// [resolveMonthlyPrice]); the hard-coded value renders until the async
-  /// resolution completes so the card never shows a blank amount.
-  double _hunterMonthlyPrice = hunterMonthlyPriceZAR;
-
   @override
   void initState() {
     super.initState();
     _loadFavoriteIds();
     _resolveAdmin();
     _enforceProfileOnboarding();
-    _loadSubscriptionPrice();
     UsageAnalyticsService.instance.trackScreenView('Hunter Dashboard');
-  }
-
-  /// Resolves the live hunter subscription price for the dashboard card. Best
-  /// effort — a failure leaves the hard-coded fallback in place.
-  Future<void> _loadSubscriptionPrice() async {
-    final price = await resolveMonthlyPrice(SubscriptionTier.hunter);
-    if (!mounted) return;
-    setState(() => _hunterMonthlyPrice = price);
   }
 
   /// Defense-in-depth onboarding gate: if a hunter somehow reaches the
@@ -393,9 +378,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
         id: 'subscription',
         icon: Icons.workspace_premium_rounded,
         title: '💎 Subscription',
-        description:
-            'Manage your plan — 30-day free trial, then '
-            'R${_hunterMonthlyPrice.toStringAsFixed(2)}/month.',
+        description: 'Manage your subscription and billing.',
         onTap:
             (context, theme) => Navigator.push(
               context,

@@ -12,7 +12,7 @@ import 'services/subscription_pricing.dart';
 ///   2. Manage subscription on the JagSpoor website
 ///      (https://jagspoor.co.za/pricing — PayFast lives on the website,
 ///      deliberately NOT embedded in the app).
-class PaywallScreen extends StatelessWidget {
+class PaywallScreen extends StatefulWidget {
   final ThemeController theme;
 
   const PaywallScreen({super.key, required this.theme});
@@ -20,21 +20,62 @@ class PaywallScreen extends StatelessWidget {
   /// The pricing page hosted on the website (PayFast checkout).
   static const String websitePricingUrl = 'https://jagspoor.co.za/pricing';
 
+  /// Shown while the live Google Play catalog price has not resolved yet.
+  static const String loadingPriceLabel = 'Loading price…';
+
+  @override
+  State<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends State<PaywallScreen> {
+  /// Live Play catalog price label (e.g. "R34.99") — already formatted by
+  /// Google Play, so it reflects whatever base-plan amount (VAT inclusive)
+  /// the Play Console configured. Null until the catalog resolves.
+  String? _playPrice;
+
+  ThemeController get theme => widget.theme;
+
   SubscriptionTier get _tier =>
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlayPrice();
+  }
+
+  /// Loads the live Google Play Billing catalog price for the active tier.
+  ///
+  /// The price is NEVER hardcoded here: Google Play returns the localized,
+  /// VAT-inclusive base-plan amount (`ProductDetails.price`, e.g. "R34.99"),
+  /// so the paywall always shows exactly what the store will charge. Until
+  /// the catalog resolves — or when billing is unavailable — the paywall
+  /// falls back to [PaywallScreen.loadingPriceLabel] rather than inventing a
+  /// number.
+  Future<void> _loadPlayPrice() async {
+    try {
+      final products = await PlayBillingService.instance.loadProducts();
+      final product = products[_tier];
+      if (!mounted || product == null) return;
+      setState(() => _playPrice = product.price);
+    } catch (e) {
+      debugPrint('PaywallScreen.loadPlayPrice failed: $e');
+    }
+  }
 
   Future<void> _launchWebsite(BuildContext context) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final launched = await launchUrl(
-        Uri.parse(websitePricingUrl),
+        Uri.parse(PaywallScreen.websitePricingUrl),
         mode: LaunchMode.externalApplication,
       );
       if (!launched && messenger != null) {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Unable to open the website. Please visit $websitePricingUrl in your browser.',
+              'Unable to open the website. Please visit '
+              '${PaywallScreen.websitePricingUrl} in your browser.',
             ),
             backgroundColor: Colors.orange,
           ),
@@ -75,6 +116,7 @@ class PaywallScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = this.theme;
+    final priceLabel = _playPrice ?? PaywallScreen.loadingPriceLabel;
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
@@ -124,6 +166,29 @@ class PaywallScreen extends StatelessWidget {
                       style: TextStyle(
                         color: theme.subtitleColor,
                         fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 14),
+                    // Live Google Play price — already localized + VAT
+                    // inclusive, so it always matches what the store charges
+                    // (e.g. "R34.99"). Never a hardcoded amount.
+                    Text(
+                      priceLabel,
+                      key: const ValueKey('paywallPriceLabel'),
+                      style: TextStyle(
+                        color: theme.accentColor,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'per month · includes VAT',
+                      style: TextStyle(
+                        color: theme.subtitleColor,
+                        fontSize: 12,
                       ),
                       textAlign: TextAlign.center,
                     ),

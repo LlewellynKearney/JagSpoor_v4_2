@@ -193,11 +193,13 @@ class ReferralRewards {
   static const String adminConfigDocId = 'referral_rewards';
 
   /// Default hunter-tier referral reward (ZAR) — one month's hunter
-  /// subscription value (mirrors the Admin Portal pricing default).
-  static const double defaultHunterRewardZAR = 29.99;
+  /// subscription value (mirrors the VAT-inclusive Admin Portal pricing
+  /// default of R34.99).
+  static const double defaultHunterRewardZAR = 34.99;
 
   /// Default outfitter-tier referral reward (ZAR) — one month's outfitter
-  /// subscription value (mirrors the Admin Portal pricing default).
+  /// subscription value (mirrors the VAT-inclusive Admin Portal pricing
+  /// default of R299.99).
   static const double defaultOutfitterRewardZAR = 299.99;
 
   /// Default reward mechanism. Referrals are granted server-side as a

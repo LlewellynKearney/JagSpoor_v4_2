@@ -7,6 +7,14 @@ import 'package:flutter/foundation.dart';
 /// manually in the Admin portal; the revenue figures are derived from the
 /// configured rates × the current subscriber counts.
 ///
+/// **VAT model (Option A)**: the amounts are the **VAT-inclusive** final
+/// charge the customer pays (R34.99 / R299.99). 15% SA VAT is *absorbed* out
+/// of that amount, not added on top — the exclusive component is
+/// `incl / 1.15`. The document therefore also carries the derived
+/// `price_excl` / `price_incl` / `vat` / `display_price` fields so the
+/// control plane and the Play Console base plan can be reconciled at a
+/// glance.
+///
 /// `admin_config/*` documents are admin-write / signed-in-read per
 /// `firestore.rules`, so the values are a server-owned control-plane input
 /// that every client reads but only an admin can change.
@@ -30,30 +38,81 @@ class SubscriptionConfig {
             outfitterSubscriptionZAR ?? this.outfitterSubscriptionZAR,
       );
 
+  /// South African VAT rate applied to subscriptions (percent).
+  static const double vatRatePercent = 15.0;
+
+  /// The VAT-exclusive component of a VAT-inclusive [amount]
+  /// (`amount / 1.15`, rounded to whole cents).
+  static double exclusiveOf(double amount) =>
+      double.parse((amount / (1 + vatRatePercent / 100)).toStringAsFixed(2));
+
+  /// The VAT component of a VAT-inclusive [amount] (`amount − excl`).
+  static double vatOf(double amount) =>
+      double.parse((amount - exclusiveOf(amount)).toStringAsFixed(2));
+
+  /// Human-readable display label, e.g. `"R34.99/month incl. VAT"`.
+  static String displayPriceFor(double amount) =>
+      'R${amount.toStringAsFixed(2)}/month incl. VAT';
+
   /// Firestore / model hydration. Numeric strings are tolerated.
   ///
   /// Canonical field names are `hunter_monthly` / `outfitter_monthly` (the
   /// `admin_config/pricing` schema); the legacy camelCase keys are accepted
-  /// as read aliases so a doc written by an older build still resolves.
+  /// as read aliases so a doc written by an older build still resolves. The
+  /// `<tier>_monthly` amount is the VAT-INCLUSIVE charge; a doc holding only
+  /// the exclusive `price_excl` reconciles to the inclusive amount.
   static SubscriptionConfig fromMap(Map<String, dynamic>? data) {
     if (data == null) return const SubscriptionConfig();
     return SubscriptionConfig(
-      hunterSubscriptionZAR: _asDouble(
-          data['hunter_monthly'] ?? data['hunterSubscriptionZAR']),
-      outfitterSubscriptionZAR: _asDouble(
-          data['outfitter_monthly'] ?? data['outfitterSubscriptionZAR']),
+      hunterSubscriptionZAR: _resolveInclusive(
+        exclusive: _firstPositive(data['hunter_price_excl']),
+        inclusive: _firstPositive(
+            data['hunter_monthly'] ?? data['hunterSubscriptionZAR']),
+      ),
+      outfitterSubscriptionZAR: _resolveInclusive(
+        exclusive: _firstPositive(data['outfitter_price_excl']),
+        inclusive: _firstPositive(
+            data['outfitter_monthly'] ?? data['outfitterSubscriptionZAR']),
+      ),
     );
   }
 
-  /// The admin-config payload. Writes BOTH the canonical snake_case keys the
-  /// control plane uses and the legacy camelCase aliases so any reader (old
-  /// or new) resolves the same amount.
+  /// The admin-config payload. Writes the canonical snake_case keys the
+  /// control plane uses, the legacy camelCase aliases, AND the derived
+  /// VAT-inclusive/exclusive breakdown for both tiers so any reader (old or
+  /// new) resolves the same amount.
   Map<String, dynamic> toMap() => {
         'hunter_monthly': hunterSubscriptionZAR,
         'outfitter_monthly': outfitterSubscriptionZAR,
         'hunterSubscriptionZAR': hunterSubscriptionZAR,
         'outfitterSubscriptionZAR': outfitterSubscriptionZAR,
+        'vat': vatRatePercent,
+        'hunter_price_excl': exclusiveOf(hunterSubscriptionZAR),
+        'hunter_price_incl': hunterSubscriptionZAR,
+        'outfitter_price_excl': exclusiveOf(outfitterSubscriptionZAR),
+        'outfitter_price_incl': outfitterSubscriptionZAR,
+        'hunter_display_price': displayPriceFor(hunterSubscriptionZAR),
+        'outfitter_display_price': displayPriceFor(outfitterSubscriptionZAR),
       };
+
+  /// Resolves the VAT-inclusive amount: the stored inclusive value when
+  /// positive, else the exclusive value grossed up by VAT, else 0.
+  static double _resolveInclusive({
+    required double? exclusive,
+    required double? inclusive,
+  }) {
+    if (inclusive != null && inclusive > 0) return inclusive;
+    if (exclusive != null && exclusive > 0) {
+      return double.parse(
+          (exclusive * (1 + vatRatePercent / 100)).toStringAsFixed(2));
+    }
+    return 0.0;
+  }
+
+  static double? _firstPositive(dynamic v) {
+    final d = _asDouble(v);
+    return d > 0 ? d : null;
+  }
 
   static double _asDouble(dynamic v) {
     if (v is num) return v.toDouble();
@@ -92,12 +151,15 @@ class SubscriptionConfigService {
   static const String configPath = 'admin_config';
   static const String configDocId = 'pricing';
 
-  /// Admin control-plane defaults (ZAR / month). Used ONLY as the last-resort
-  /// fallback when neither the live Play catalog NOR the `admin_config/pricing`
-  /// document resolves an amount (e.g. first launch offline, billing
-  /// unsupported, Firestore unreadable). The Admin Portal is the control
-  /// plane; the Play Console is the charge truth.
-  static const double defaultHunterMonthlyZAR = 29.99;
+  /// Admin control-plane defaults (ZAR / month, **VAT inclusive**). Used ONLY
+  /// as the last-resort fallback when neither the live Play catalog NOR the
+  /// `admin_config/pricing` document resolves an amount (e.g. first launch
+  /// offline, billing unsupported, Firestore unreadable). The Admin Portal is
+  /// the control plane; the Play Console is the charge truth.
+  ///
+  /// Option A: R34.99 / R299.99 is the FINAL charge — 15% VAT is absorbed out
+  /// of it (R30.43 / R260.86 excl).
+  static const double defaultHunterMonthlyZAR = 34.99;
   static const double defaultOutfitterMonthlyZAR = 299.99;
 
   /// Test seam: inject `FakeFirebaseFirestore` (same pattern as the other

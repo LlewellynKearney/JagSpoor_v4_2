@@ -30,13 +30,14 @@ export const ADMIN_CONFIG_COLLECTION = "admin_config";
 export const REFERRAL_REWARDS_DOC_ID = "referral_rewards";
 
 /**
- * Documented default reward amounts (ZAR) â€” one month's subscription value
- * for each tier. These mirror the Flutter `ReferralRewards` constants and
- * are used ONLY as the fallback when the dynamic `admin_config/
- * referral_rewards` document is absent. The live document is the source of
- * truth for the reward calculation.
+ * Default reward amounts (ZAR) — one month's subscription value at the
+ * VAT-inclusive Admin Portal pricing (R34.99 hunter / R299.99 outfitter).
+ * These mirror the Flutter `ReferralRewards` constants and are used ONLY as
+ * the fallback when the dynamic `admin_config/referral_rewards` document is
+ * absent. The live document is the source of truth for the reward
+ * calculation.
  */
-export const DEFAULT_HUNTER_REWARD_ZAR = 29.99;
+export const DEFAULT_HUNTER_REWARD_ZAR = 34.99;
 export const DEFAULT_OUTFITTER_REWARD_ZAR = 299.99;
 
 /** Lifecycle states of a referral conversion. */

@@ -23,7 +23,7 @@ test("collection + doc constants match the Phase-1 contract", () => {
 });
 
 test("documented default reward amounts are one month's subscription value", () => {
-  assert.equal(referral.DEFAULT_HUNTER_REWARD_ZAR, 29.99);
+  assert.equal(referral.DEFAULT_HUNTER_REWARD_ZAR, 34.99);
   assert.equal(referral.DEFAULT_OUTFITTER_REWARD_ZAR, 299.99);
 });
 
@@ -36,7 +36,7 @@ test("reward mechanism defaults (extension_days / 30 days per tier)", () => {
 
 test("rewardDaysForTier resolves the tier-specific extension length", () => {
   const config = {
-    hunterRewardZAR: 29.99,
+    hunterRewardZAR: 34.99,
     outfitterRewardZAR: 299.99,
     rewardType: "extension_days",
     hunterDays: 30,
@@ -69,7 +69,7 @@ test("index.js re-exports the referral module surface", () => {
   assert.equal(index.REFERRAL_CONVERSIONS_COLLECTION, "referral_conversions");
   assert.equal(index.ADMIN_CONFIG_COLLECTION, "admin_config");
   assert.equal(index.REFERRAL_REWARDS_DOC_ID, "referral_rewards");
-  assert.equal(index.DEFAULT_HUNTER_REWARD_ZAR, 29.99);
+  assert.equal(index.DEFAULT_HUNTER_REWARD_ZAR, 34.99);
   assert.equal(index.DEFAULT_OUTFITTER_REWARD_ZAR, 299.99);
   assert.equal(typeof index.loadReferralRewardConfig, "function");
   assert.equal(typeof index.rewardAmountForTier, "function");

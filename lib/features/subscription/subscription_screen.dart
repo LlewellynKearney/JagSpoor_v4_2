@@ -14,10 +14,16 @@ import 'services/subscription_status_service.dart';
 
 /// Subscription checkout screen.
 ///
-/// Shows the user's trial / subscription status, the two tier prices
-/// (Hunter R19.99/month vs Outfitter R199.99/month), a promo-code input that
-/// adjusts the displayed checkout total, and a primary action that invokes
-/// the native **Google Play Billing** subscription flow.
+/// Shows the user's trial / subscription status, the active tier's price
+/// (always resolved dynamically — the live Google Play catalog label when
+/// available, else the VAT-inclusive `admin_config/pricing` amount; never a
+/// hardcoded literal), a promo-code input that adjusts the displayed checkout
+/// total, and a primary action that invokes the native **Google Play Billing**
+/// subscription flow.
+///
+/// Pricing model (Option A): the listed price is the FINAL charge and is
+/// **VAT inclusive** (R34.99 hunter / R299.99 outfitter) — 15% SA VAT is
+/// absorbed out of it, not added on top.
 ///
 /// Recurring billing is handled entirely by Google Play (Play Console
 /// subscription products `jagspoor_hunter_monthly` /
@@ -618,7 +624,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            playPrice ?? 'R ${amount.toStringAsFixed(2)} / month',
+            // The live Google Play catalog label when it has resolved (already
+            // localized + VAT-inclusive per the Play Console base plan), else
+            // the control-plane amount. Never a hardcoded literal.
+            playPrice ?? 'R ${amount.toStringAsFixed(2)} / month incl. VAT',
             style: TextStyle(
               color: theme.accentColor,
               fontWeight: FontWeight.w800,
@@ -627,7 +636,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'After a ${SubscriptionTrial.trialDays}-day free trial',
+            'After a ${SubscriptionTrial.trialDays}-day free trial · '
+            'price includes VAT',
             style: TextStyle(color: theme.subtitleColor, fontSize: 12),
           ),
           const SizedBox(height: 10),
@@ -749,7 +759,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           const SizedBox(height: 8),
           _totalRow(
             theme,
-            'Then monthly (${_tier.key})',
+            'Then monthly (${_tier.key}) · incl. VAT',
             'R ${_baseAmount.toStringAsFixed(2)}',
             strikethrough: discounted,
           ),
@@ -757,7 +767,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             const SizedBox(height: 8),
             _totalRow(
               theme,
-              'Promo-adjusted monthly',
+              'Promo-adjusted monthly · incl. VAT',
               'R ${_checkoutAmount.toStringAsFixed(2)}',
               highlight: true,
             ),

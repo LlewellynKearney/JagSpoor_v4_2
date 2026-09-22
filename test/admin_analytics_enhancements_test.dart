@@ -26,21 +26,50 @@ void main() {
       expect(config.hunterSubscriptionZAR, 149.99);
       expect(config.outfitterSubscriptionZAR, 499.5);
       // toMap writes the canonical `admin_config/pricing` snake_case keys
-      // alongside the legacy camelCase aliases so any reader resolves them.
+      // alongside the legacy camelCase aliases AND the derived VAT
+      // breakdown so any reader resolves them.
       expect(config.toMap(), {
         'hunter_monthly': 149.99,
         'outfitter_monthly': 499.5,
         'hunterSubscriptionZAR': 149.99,
         'outfitterSubscriptionZAR': 499.5,
+        'vat': 15.0,
+        'hunter_price_excl': 130.43,
+        'hunter_price_incl': 149.99,
+        'outfitter_price_excl': 434.35,
+        'outfitter_price_incl': 499.5,
+        'hunter_display_price': 'R149.99/month incl. VAT',
+        'outfitter_display_price': 'R499.50/month incl. VAT',
       });
+    });
+
+    test('VAT (Option A): incl. amount absorbs 15% VAT', () {
+      // R34.99 incl -> R30.43 excl + R4.56 VAT.
+      expect(SubscriptionConfig.exclusiveOf(34.99), 30.43);
+      expect(SubscriptionConfig.vatOf(34.99), 4.56);
+      // R299.99 incl -> R260.86 excl + R39.13 VAT.
+      expect(SubscriptionConfig.exclusiveOf(299.99), 260.86);
+      expect(SubscriptionConfig.vatOf(299.99), 39.13);
+      expect(SubscriptionConfig.vatRatePercent, 15.0);
+      expect(SubscriptionConfig.displayPriceFor(34.99),
+          'R34.99/month incl. VAT');
     });
 
     test('reads the canonical admin_config/pricing keys', () {
       final config = SubscriptionConfig.fromMap(const {
-        'hunter_monthly': 29.99,
+        'hunter_monthly': 34.99,
         'outfitter_monthly': 299.99,
       });
-      expect(config.hunterSubscriptionZAR, 29.99);
+      expect(config.hunterSubscriptionZAR, 34.99);
+      expect(config.outfitterSubscriptionZAR, 299.99);
+    });
+
+    test('grosses up a VAT-exclusive-only doc to the inclusive charge', () {
+      final config = SubscriptionConfig.fromMap(const {
+        'hunter_price_excl': 30.43,
+        'outfitter_price_excl': 260.86,
+      });
+      expect(config.hunterSubscriptionZAR, 34.99);
       expect(config.outfitterSubscriptionZAR, 299.99);
     });
 

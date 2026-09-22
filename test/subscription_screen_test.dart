@@ -24,7 +24,7 @@ void main() {
     SubscriptionConfigService.firestoreForTesting = fake;
     SubscriptionConfigService.currentUserIdResolverForTesting = () => 'admin-1';
     fake.collection('admin_config').doc('pricing').set({
-      'hunter_monthly': 29.99,
+      'hunter_monthly': 34.99,
       'outfitter_monthly': 299.99,
     });
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -78,9 +78,9 @@ void main() {
       expect(find.text('NO ACTIVE SUBSCRIPTION'), findsOneWidget);
       expect(find.text('TIER PRICING'), findsOneWidget);
       // Hunter mode (default): ONLY the Hunter tier card renders.
-      expect(find.text('R 29.99 / month'), findsOneWidget);
-      expect(find.text('R 299.99 / month'), findsNothing);
-      expect(find.text('After a 30-day free trial'), findsOneWidget);
+      expect(find.text('R 34.99 / month incl. VAT'), findsOneWidget);
+      expect(find.text('R 299.99 / month incl. VAT'), findsNothing);
+      expect(find.text('After a 30-day free trial · price includes VAT'), findsOneWidget);
 
       // The promo section sits below the tier card on the 800x600 test
       // surface; scroll it into view before asserting.
@@ -195,18 +195,18 @@ void main() {
         (tester) async {
       await pumpScreen(tester, tier: SubscriptionTier.hunter);
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
-      expect(find.text('Then monthly (hunter)'), findsOneWidget);
-      expect(find.text('R 29.99'), findsOneWidget);
-      expect(find.text('Then monthly (outfitter)'), findsNothing);
+      expect(find.text('Then monthly (hunter) · incl. VAT'), findsOneWidget);
+      expect(find.text('R 34.99'), findsOneWidget);
+      expect(find.text('Then monthly (outfitter) · incl. VAT'), findsNothing);
     });
 
     testWidgets('the monthly summary reflects the Outfitter tier fee',
         (tester) async {
       await pumpScreen(tester, tier: SubscriptionTier.outfitter);
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
-      expect(find.text('Then monthly (outfitter)'), findsOneWidget);
+      expect(find.text('Then monthly (outfitter) · incl. VAT'), findsOneWidget);
       expect(find.text('R 299.99'), findsOneWidget);
-      expect(find.text('Then monthly (hunter)'), findsNothing);
+      expect(find.text('Then monthly (hunter) · incl. VAT'), findsNothing);
     });
   });
 
@@ -224,10 +224,10 @@ void main() {
       expect(find.textContaining('JAGSPOOR10'), findsWidgets);
       expect(find.textContaining('10% off'), findsOneWidget);
 
-      // 29.99 - 10% = 26.991 (rounds to 26.99 for display).
+      // 34.99 - 10% = 31.491 (rounds to 31.49 for display).
       await scrollTo(tester, find.byKey(const ValueKey('checkoutTotalCard')));
-      expect(find.text('Promo-adjusted monthly'), findsOneWidget);
-      expect(find.text('R 26.99'), findsOneWidget);
+      expect(find.text('Promo-adjusted monthly · incl. VAT'), findsOneWidget);
+      expect(find.text('R 31.49'), findsOneWidget);
     });
 
     testWidgets('an invalid promo code surfaces an error and no adjustment',
@@ -242,7 +242,7 @@ void main() {
 
       expect(find.text('Invalid promo code'), findsOneWidget);
       expect(find.byKey(const ValueKey('promoAppliedLabel')), findsNothing);
-      expect(find.text('Promo-adjusted monthly'), findsNothing);
+      expect(find.text('Promo-adjusted monthly · incl. VAT'), findsNothing);
     });
   });
 

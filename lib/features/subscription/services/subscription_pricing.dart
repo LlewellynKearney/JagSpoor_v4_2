@@ -27,8 +27,9 @@ enum SubscriptionTier {
   /// the same application id (`za.co.jagspoor.app`), configured as
   /// *Subscriptions*. The sale price lives in the Play Console base plan
   /// (the charge truth) and must match the Admin Portal
-  /// `admin_config/pricing` amounts — the current control-plane default is
-  /// R 29.99 / R 299.99 per month.
+  /// `admin_config/pricing` amounts — the VAT-inclusive control-plane
+  /// defaults are R 34.99 / R 299.99 per month (Option A: the listed price is
+  /// the final charge; 15% VAT is absorbed out of it).
   String get playProductId => switch (this) {
         SubscriptionTier.hunter => 'jagspoor_hunter_monthly',
         SubscriptionTier.outfitter => 'jagspoor_outfitter_monthly',
@@ -47,7 +48,12 @@ const Duration trialDuration = Duration(days: 30);
 
 /// Last-resort fallback monthly prices (ZAR) for the two billing tiers.
 ///
-/// These mirror the Admin Portal defaults
+/// These are **VAT-inclusive** end-user amounts (Option A: the customer pays
+/// R34.99 / R299.99 and that is the final charge — VAT is absorbed out of it,
+/// not added on top). At the 15% SA VAT rate that is R30.43 excl / R34.99
+/// incl and R260.86 excl / R299.99 incl.
+///
+/// They mirror the Admin Portal defaults
 /// ([SubscriptionConfigService.defaultHunterMonthlyZAR] /
 /// [SubscriptionConfigService.defaultOutfitterMonthlyZAR]) and are used ONLY
 /// when NEITHER the live Play Billing catalog
@@ -55,7 +61,11 @@ const Duration trialDuration = Duration(days: 30);
 /// authoritative charge) NOR the admin-controlled `admin_config/pricing`
 /// document resolves an amount. The Admin Portal is the control plane; the
 /// Play Console is the charge truth — see [resolveMonthlyPrice].
-const double hunterMonthlyPriceZAR = 29.99;
+///
+/// The Play Console base plan MUST be configured as R34.99 / R299.99
+/// **including VAT** so `ProductDetails.price` (the value the paywall shows)
+/// matches these fallbacks.
+const double hunterMonthlyPriceZAR = 34.99;
 const double outfitterMonthlyPriceZAR = 299.99;
 
 /// Resolves the monthly display price (ZAR) for [tier] using the documented

@@ -200,15 +200,15 @@ void main() {
 
   group('ReferralRewards + ReferralRewardConfig', () {
     test('documented defaults + tier mapping', () {
-      expect(ReferralRewards.defaultHunterRewardZAR, 29.99);
+      expect(ReferralRewards.defaultHunterRewardZAR, 34.99);
       expect(ReferralRewards.defaultOutfitterRewardZAR, 299.99);
       expect(ReferralRewards.adminConfigDocId, 'referral_rewards');
       expect(ReferralRewards.amountFor(ReferralSubscriptionTier.hunter),
-          29.99);
+          34.99);
       expect(ReferralRewards.amountFor(ReferralSubscriptionTier.outfitter),
           299.99);
       expect(ReferralRewards.labelFor(ReferralSubscriptionTier.hunter),
-          'R 29.99');
+          'R 34.99');
       expect(ReferralRewards.labelFor(ReferralSubscriptionTier.outfitter),
           'R 299.99');
     });

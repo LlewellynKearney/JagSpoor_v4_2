@@ -70,10 +70,10 @@ void main() {
     testWidgets('falls back to the documented defaults when the doc is absent',
         (tester) async {
       await pumpCard(tester);
-      // The v9 control-plane defaults are the current subscription amounts
-      // (R29.99 / R299.99 per month).
+      // The v9.1 control-plane defaults are the current VAT-inclusive
+      // subscription amounts (R34.99 / R299.99 per month).
       expect(tester.widget<TextFormField>(hunterField()).controller?.text,
-          '29.99');
+          '34.99');
       expect(tester.widget<TextFormField>(outfitterField()).controller?.text,
           '299.99');
     });

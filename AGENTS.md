@@ -98,6 +98,106 @@
   `AGENTS.md`.
 - Committed + pushed to `origin/main` (`chore: bump to v9 ...`).
 
+## Phase -- v9.1 Option A VAT-inclusive pricing: hide dashboard prices, dynamic Play price in paywall, VAT seed (added 2026-09-22)
+
+### Problem
+Play Console base plans were set to R34.99 / R299.99 EXCL VAT, so the customer
+would be charged R40.24 / R344.99. Owner chose **Option A**: the listed
+R34.99 / R299.99 is the FINAL charge and 15% VAT is absorbed out of it
+(R30.43 / R260.86 excl). Also, dashboard subscription cards advertised a
+price the customer could mismatch against the store.
+
+### 1. Dashboard cards -- no price
+- `hunter_dashboard.dart` + `outfitter_mode/outfitter_dashboard.dart`: the
+  Subscription feature-card description changed from
+  `'Manage your plan — 30-day free trial, then R<price>/month.'` to
+  `'Manage your subscription and billing.'`.
+- Removed the now-dead `_hunterMonthlyPrice` / `_outfitterMonthlyPrice` fields,
+  their `_loadSubscriptionPrice()` methods, and the `initState` calls (no
+  R-amount ever renders on a dashboard card now). The
+  `subscription_pricing.dart` import remains (the card still builds
+  `SubscriptionScreen(tier: ...)`).
+
+### 2. Paywall / subscription detail -- dynamic price only
+- `paywall_screen.dart`: converted `PaywallScreen` from `StatelessWidget` to
+  `StatefulWidget`; `initState` calls `PlayBillingService.instance.loadProducts()`
+  and stores `product.price` (the Google Play-formatted, VAT-inclusive label,
+  e.g. `R34.99`). Rendered under key `paywallPriceLabel` with the caption
+  "per month · includes VAT". Until the catalog resolves the paywall shows
+  `PaywallScreen.loadingPriceLabel` (`'Loading price…'`) — never a hardcoded
+  number. Static consts are now qualified `PaywallScreen.*` from the State.
+- `subscription_screen.dart`: the tier card + checkout rows already preferred
+  the live Play label; the fallback label + labels now say `incl. VAT`
+  (`'R <amount> / month incl. VAT'`, `'Then monthly (<tier>) · incl. VAT'`,
+  `'Promo-adjusted monthly · incl. VAT'`, `'After a 30-day free trial · price
+  includes VAT'`). No hardcoded literal is ever rendered.
+- `subscription_pricing.dart`: last-resort fallbacks bumped to the
+  VAT-inclusive amounts — `hunterMonthlyPriceZAR = 34.99`,
+  `outfitterMonthlyPriceZAR = 299.99`.
+
+### 3. Firestore seed -- VAT-inclusive control plane
+- NEW `functions/src/seed_pricing.ts` (operator script, NOT exported from
+  `index.ts`; `SEED_CONFIRM=yes` guard; dry-run prints the payload). Writes
+  `admin_config/pricing` with BOTH key families + the derived breakdown:
+  `hunter_monthly/hunter_price_incl = 34.99`, `hunter_price_excl = 30.43`,
+  `outfitter_monthly/outfitter_price_incl = 299.99`,
+  `outfitter_price_excl = 260.86`, `vat = 15`,
+  `hunter_display_price = "R34.99/month incl. VAT"`,
+  `outfitter_display_price = "R299.99/month incl. VAT"`. Also seeds
+  `admin_config/referral_rewards` (hunter 34.99 / outfitter 299.99,
+  `extension_days`, 30/30). npm script `seed:pricing`.
+- `subscription_config_service.dart` `SubscriptionConfig`: the amounts are
+  documented as VAT-inclusive; `fromMap` grosses up an excl-only doc
+  (`*_price_excl * 1.15`) when no inclusive value exists; `toMap` now also
+  writes `vat` / `<tier>_price_excl` / `<tier>_price_incl` /
+  `<tier>_display_price`. New pure helpers `vatRatePercent` (15),
+  `exclusiveOf`, `vatOf`, `displayPriceFor`. Defaults bumped to 34.99 / 299.99.
+- Referral defaults aligned to one month's new value: Dart
+  `ReferralRewards.defaultHunterRewardZAR = 34.99` and
+  `functions/src/referral.ts` `DEFAULT_HUNTER_REWARD_ZAR = 34.99`.
+
+### Tests
+- NEW `test/paywall_dynamic_price_test.dart` (3): neutral loading label with
+  NO hardcoded amount (asserts R40.24 / R344.99 / R30.43 / R260.86 / R34.99 /
+  R299.99 are absent from the paywall), the price label + incl.-VAT caption
+  always render, and the paywall does not touch Firestore.
+- NEW `functions/test/seed_pricing.test.js` (7): constants, `exclusiveOf` /
+  `vatOf` (34.99→30.43/4.56, 299.99→260.86/39.13), `displayPriceFor`, both
+  seed payloads, and a negative contract that the module is not re-exported
+  from `index.js`.
+- Updated `test/subscription_screen_test.dart` (incl.-VAT labels, 34.99 seed,
+  promo 31.49), `test/admin_analytics_enhancements_test.dart` (+VAT toMap +
+  gross-up + `exclusiveOf`/`vatOf` tests), `test/referral_models_test.dart`
+  and `functions/test/referral.test.js` (34.99 default).
+
+### Verification
+- `flutter analyze`: 0 errors, 0 warnings, 320 infos (unchanged baseline).
+- `flutter test`: all pass (see run log).
+- `functions`: `npm run build` clean; `npm test` 47/47.
+- `grep -rn "R19.99|R199.99|R29.99|R34.99|R299.99|R40.24|R344.99" lib/` →
+  only explanatory comments; zero hardcoded UI prices.
+- Env: Flutter 3.44.9 re-downloaded/extracted to `/tmp/flutter`;
+  `~/libs/libsqlite3.so → /usr/lib/.../libsqlite3.so.0` symlink +
+  `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites.
+- Deploy reminder: the Play Console base plans MUST be set to R34.99 /
+  R299.99 **incl. VAT** (Play Console → Monetize → Products → Subscriptions →
+  base plan). Then arm the control plane:
+  `cd functions && SEED_CONFIRM=yes npm run seed:pricing`.
+- Files: `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/services/subscription_pricing.dart`,
+  `lib/features/admin/services/subscription_config_service.dart`,
+  `lib/features/referral/models/referral_conversion.dart`,
+  `functions/src/seed_pricing.ts` (NEW), `functions/src/referral.ts`,
+  `functions/package.json`, `functions/test/seed_pricing.test.js` (NEW),
+  `test/paywall_dynamic_price_test.dart` (NEW),
+  `test/subscription_screen_test.dart`,
+  `test/admin_analytics_enhancements_test.dart`,
+  `test/referral_models_test.dart`, `functions/test/referral.test.js`,
+  `AGENTS.md`.
+
 ## Phase -- Production-safe pricing + real referral grant + trial-field freeze (v9) (added 2026-09-22)
 
 ### What changed (control plane = Admin Portal, charge truth = Play Console)

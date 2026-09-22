@@ -14,6 +14,7 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "seed:app-version": "npm run build && node lib/seed_app_version.js",
+    "seed:pricing": "npm run build && node lib/seed_pricing.js",
     "test": "npm run build && node --test test/*.test.js"
   },
   "dependencies": {
