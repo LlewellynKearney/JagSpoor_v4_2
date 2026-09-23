@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/services/user_role_provider.dart';
 import 'services/play_billing_service.dart';
+import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 
 /// Paywall shown when a user's free trial has expired and they are not a
@@ -28,10 +29,12 @@ class PaywallScreen extends StatefulWidget {
 }
 
 class _PaywallScreenState extends State<PaywallScreen> {
-  /// Live Play catalog price label (e.g. "R34.99") — already formatted by
-  /// Google Play, so it reflects whatever base-plan amount (VAT inclusive)
-  /// the Play Console configured. Null until the catalog resolves.
-  String? _playPrice;
+  /// Live Play catalog price, EXCLUDING VAT. Google Play returns the
+  /// localized, formatted catalog price, which in South Africa is quoted
+  /// **excluding** 15% VAT, so the amount the customer pays is derived from
+  /// [PlayProduct.rawPrice] (see `SubscriptionVatPrice`). Null until the
+  /// catalog resolves.
+  SubscriptionVatPrice? _price;
 
   ThemeController get theme => widget.theme;
 
@@ -41,23 +44,32 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   void initState() {
     super.initState();
+    // Record any Google Play purchase (new or restored) onto users/{uid} +
+    // the `purchases` collection. Idempotent, so it is safe to start from
+    // every subscription surface.
+    PlayPurchaseRecorder.instance.startListening();
     _loadPlayPrice();
   }
 
-  /// Loads the live Google Play Billing catalog price for the active tier.
+  /// Loads the live Google Play Billing catalog price for the active tier and
+  /// converts it to the VAT-inclusive amount the customer is charged.
   ///
-  /// The price is NEVER hardcoded here: Google Play returns the localized,
-  /// VAT-inclusive base-plan amount (`ProductDetails.price`, e.g. "R34.99"),
-  /// so the paywall always shows exactly what the store will charge. Until
-  /// the catalog resolves — or when billing is unavailable — the paywall
-  /// falls back to [PaywallScreen.loadingPriceLabel] rather than inventing a
-  /// number.
+  /// Google Play's catalog amount is quoted EXCLUDING VAT in South Africa, so
+  /// the paywall shows `exVat * 1.15` as the primary price with the ex-VAT
+  /// figure as an explanatory note (`Incl. 15% VAT (R199.00 excl. VAT)`).
+  /// The amount is NEVER hardcoded: until the catalog resolves the paywall
+  /// shows [PaywallScreen.loadingPriceLabel] rather than inventing a number.
   Future<void> _loadPlayPrice() async {
     try {
       final products = await PlayBillingService.instance.loadProducts();
       final product = products[_tier];
       if (!mounted || product == null) return;
-      setState(() => _playPrice = product.price);
+      setState(() {
+        _price = SubscriptionVatPrice.fromExVat(
+          product.rawPrice,
+          currencySymbol: product.currencySymbol,
+        );
+      });
     } catch (e) {
       debugPrint('PaywallScreen.loadPlayPrice failed: $e');
     }
@@ -116,7 +128,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = this.theme;
-    final priceLabel = _playPrice ?? PaywallScreen.loadingPriceLabel;
+    final price = _price;
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
@@ -170,11 +182,15 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 14),
-                    // Live Google Play price — already localized + VAT
-                    // inclusive, so it always matches what the store charges
-                    // (e.g. "R34.99"). Never a hardcoded amount.
+                    // The VAT-inclusive price the customer is charged. Google
+                    // Play's catalog amount is quoted EXCLUDING VAT in South
+                    // Africa, so the payable amount (`exVat * 1.15`) is derived
+                    // here and shown as the primary price, with the ex-VAT
+                    // figure as the explanatory note. Never a hardcoded amount:
+                    // until the catalog resolves the neutral loading label is
+                    // shown instead.
                     Text(
-                      priceLabel,
+                      price?.primaryLabel ?? PaywallScreen.loadingPriceLabel,
                       key: const ValueKey('paywallPriceLabel'),
                       style: TextStyle(
                         color: theme.accentColor,
@@ -185,7 +201,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'per month · includes VAT',
+                      price?.vatNote ?? 'per month · includes VAT',
+                      key: const ValueKey('paywallVatNote'),
                       style: TextStyle(
                         color: theme.subtitleColor,
                         fontSize: 12,

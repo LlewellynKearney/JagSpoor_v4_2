@@ -102,10 +102,16 @@ service cloud.firestore {
       // `subscriptionSource`, `subscriptionProduct`,
       // `subscriptionPlayPurchaseToken`, `payfastPaymentId`,
       // `entitlementUpdatedAt`, `trialEndsAt`, `trialStartedAt`,
-      // `subscriptionStatus`, `createdAt`, `referralCodeUsed`) are ONLY written
-      // by Cloud Functions (validateGooglePlayPurchase / payfastITN / the trial
-      // trigger / the referral grant trigger), so a user cannot fabricate /
-      // extend their own premium state or trial window (trial-abuse hardening).
+      // `subscriptionStatus`, `isPro`, `createdAt`, `referralCodeUsed`) are
+      // ONLY written by Cloud Functions (validateGooglePlayPurchase /
+      // the trial trigger / the referral grant trigger) — with ONE narrow
+      // exception: the Google Play Billing purchase recorder
+      // (`PlayPurchaseRecorder`) may confirm a purchase by moving
+      // `subscriptionStatus` from a trial state to `'active'` and setting
+      // `isPro: true` in the same write. A client can therefore never
+      // fabricate premium state, extend a trial window, or claim an active
+      // subscription out of thin air — only confirm one Google Play has
+      // already charged for.
       //
       // IMPORTANT — these guards use CHANGE DETECTION, not key presence.
       // For a merge `set(..., {merge: true})` (what the hunter profile screen
@@ -170,7 +176,19 @@ service cloud.firestore {
             && request.resource.data.subscriptionTrialStart == resource.data.subscriptionTrialStart))
         && (!('subscriptionStatus' in request.resource.data)
           || (resource != null
-            && request.resource.data.subscriptionStatus == resource.data.subscriptionStatus))
+            && (request.resource.data.subscriptionStatus == resource.data.subscriptionStatus
+              || (request.resource.data.subscriptionStatus == 'active'
+                && ('subscriptionStatus' in resource.data)
+                && resource.data.subscriptionStatus in ['trialing', 'trial', 'active']))))
+        // `isPro` is the convenience premium mirror the purchase recorder
+        // stamps alongside the status transition. It may only be turned on in
+        // the SAME write that confirms the subscription as active (or remain
+        // unchanged), so it cannot be flipped on its own.
+        && (!('isPro' in request.resource.data)
+          || (resource != null
+            && request.resource.data.isPro == resource.data.isPro)
+          || (request.resource.data.isPro == true
+            && request.resource.data.subscriptionStatus == 'active'))
         && (!('createdAt' in request.resource.data)
           || (resource != null
             && request.resource.data.createdAt == resource.data.createdAt))
@@ -180,14 +198,30 @@ service cloud.firestore {
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
     // Entitlement documents are written exclusively by Cloud Functions
-    // (validateGooglePlayPurchase / payfastITN / the trial trigger) via the
-    // Admin SDK, which bypasses rules. Clients may read their own.
+    // (validateGooglePlayPurchase / the trial trigger) via the Admin SDK,
+    // which bypasses rules. Clients may read their own.
     match /entitlements/{entitlementId} {
       allow read: if isSignedIn() && request.auth.uid == entitlementId;
       allow write: if false;
     }
     match /users {
       allow list: if isSignedIn();
+    }
+
+    // ── Google Play purchase records ─────────────────────────────────────
+    // One document per (uid, productId) written by `PlayPurchaseRecorder` when
+    // Billing confirms a purchase. Owner-scoped: a signed-in user may only
+    // read/write their own purchase records (`uid` must be their own uid), and
+    // no user can read another subscriber's purchase token. Deletes are
+    // admin-only so a transaction record cannot be erased by the buyer.
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if isAdmin();
     }
 
     // Outfitter profiles (created by adminCreateOutfitter Cloud Function).

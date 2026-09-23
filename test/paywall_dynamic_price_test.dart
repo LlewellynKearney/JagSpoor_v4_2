@@ -1,23 +1,39 @@
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/subscription/paywall_screen.dart';
 import 'package:jagspoor/features/subscription/services/play_billing_service.dart';
+import 'package:jagspoor/features/subscription/services/play_purchase_recorder.dart';
+import 'package:jagspoor/features/auth/services/user_role_provider.dart';
+import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 
-/// Task 2 (Option A VAT): the paywall must NEVER hardcode a price. It shows
-/// the live Google Play catalog label (already localized + VAT inclusive per
-/// the Play Console base plan, e.g. "R34.99") and falls back to a neutral
-/// "Loading price…" placeholder — never an invented amount such as R40.24.
+/// v9.2 VAT compliance: Google Play quotes the catalog amount EXCLUDING VAT in
+/// South Africa, so the paywall must show the VAT-inclusive amount the customer
+/// is actually charged (`exVat * 1.15`) as the primary price, with the ex-VAT
+/// figure as the explanatory subtext. Applies to both `jagspoor_hunter_monthly`
+/// and `jagspoor_outfitter_monthly`.
 void main() {
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
     PlayBillingService.resetTestSeams();
+    PlayPurchaseRecorder.resetTestSeams();
   });
 
   tearDown(() {
     PlayBillingService.resetTestSeams();
+    PlayPurchaseRecorder.resetTestSeams();
   });
+
+  PlayProduct productFor(SubscriptionTier tier, double exVat) => PlayProduct(
+        tier: tier,
+        productId: tier.playProductId,
+        title: tier == SubscriptionTier.outfitter ? 'Outfitter' : 'Hunter',
+        description: 'Monthly subscription',
+        price: 'R${exVat.toStringAsFixed(2)}',
+        rawPrice: exVat,
+        currencyCode: 'ZAR',
+        currencySymbol: 'R',
+      );
 
   Widget buildPaywall() => MaterialApp(
         home: PaywallScreen(theme: ThemeController()),
@@ -50,6 +66,41 @@ void main() {
     }
   });
 
+  testWidgets('shows the VAT-inclusive hunter price with the ex-VAT subtext',
+      (tester) async {
+    // The catalog amount is quoted excluding VAT (e.g. R199.00 ex VAT).
+    PlayBillingService.productsForTesting = {
+      SubscriptionTier.hunter: productFor(SubscriptionTier.hunter, 199.00),
+    };
+    await tester.pumpWidget(buildPaywall());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Primary price = exVat * 1.15 = R228.85.
+    expect(find.text('R228.85/month'), findsOneWidget);
+    // Explanatory subtext carries both the VAT rate and the ex-VAT amount.
+    expect(
+      find.text('Incl. 15% VAT (R199.00 excl. VAT)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows the VAT-inclusive outfitter price', (tester) async {
+    UserRoleProvider.instance.setRole(AppRole.outfitter);
+    PlayBillingService.productsForTesting = {
+      SubscriptionTier.outfitter:
+          productFor(SubscriptionTier.outfitter, 299.99),
+    };
+    await tester.pumpWidget(buildPaywall());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // 299.99 * 1.15 = 344.9885 -> R344.99.
+    expect(find.text('R344.99/month'), findsOneWidget);
+    expect(find.text('Incl. 15% VAT (R299.99 excl. VAT)'), findsOneWidget);
+    UserRoleProvider.instance.reset();
+  });
+
   testWidgets('the price label is always present after resolution settles',
       (tester) async {
     await tester.pumpWidget(buildPaywall());
@@ -58,20 +109,43 @@ void main() {
     // paywall always renders exactly ONE price label (either the Play label
     // or the loading placeholder) — it can never render a hardcoded amount.
     expect(find.byKey(const ValueKey('paywallPriceLabel')), findsOneWidget);
-    expect(find.text('per month · includes VAT'), findsOneWidget);
+    expect(find.byKey(const ValueKey('paywallVatNote')), findsOneWidget);
   });
 
-  testWidgets('uses the fake Firestore seam without crashing', (tester) async {
-    // Guards against a regression where the paywall touches Firestore at
-    // build time (it should not — the price comes from Play Billing).
-    await FakeFirebaseFirestore().collection('admin_config').doc('pricing').set({
-      'hunter_monthly': 34.99,
-      'outfitter_monthly': 299.99,
-    });
+  testWidgets('renders the subscribe + website actions', (tester) async {
     await tester.pumpWidget(buildPaywall());
     await tester.pump();
     expect(find.byKey(const ValueKey('paywallPlaySubscribeButton')),
         findsOneWidget);
     expect(find.byKey(const ValueKey('paywallWebsiteButton')), findsOneWidget);
+  });
+
+  group('SubscriptionVatPrice', () {
+    test('derives the inclusive amount + VAT note from an ex-VAT amount', () {
+      final p = SubscriptionVatPrice.fromExVat(199.00);
+      expect(p.exVat, 199.00);
+      expect(p.inclVat, closeTo(228.85, 0.001));
+      expect(p.vatAmount, closeTo(29.85, 0.001));
+      expect(p.primaryLabel, 'R228.85/month');
+      expect(p.vatNote, 'Incl. 15% VAT (R199.00 excl. VAT)');
+    });
+
+    test('applies the SA 15% rate to the outfitter amount', () {
+      final p = SubscriptionVatPrice.fromExVat(299.99);
+      expect(p.inclVat, closeTo(344.9885, 0.0001));
+      expect(p.primaryLabel, 'R344.99/month');
+      expect(p.vatNote, 'Incl. 15% VAT (R299.99 excl. VAT)');
+    });
+
+    test('non-positive / invalid amounts resolve to zero', () {
+      expect(SubscriptionVatPrice.fromExVat(0).inclVat, 0);
+      expect(SubscriptionVatPrice.fromExVat(-5).inclVat, 0);
+      expect(SubscriptionVatPrice.fromExVat(double.nan).inclVat, 0);
+    });
+
+    test('honours the store currency symbol', () {
+      final p = SubscriptionVatPrice.fromExVat(100, currencySymbol: r'$');
+      expect(p.primaryLabel, r'$115.00/month');
+    });
   });
 }

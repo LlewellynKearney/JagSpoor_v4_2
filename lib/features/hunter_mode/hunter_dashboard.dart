@@ -32,7 +32,10 @@ import '../shared/widgets/hunter_media_card.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/paywall_screen.dart';
+import '../subscription/services/play_billing_service.dart';
+import '../subscription/services/play_purchase_recorder.dart';
 import '../subscription/services/subscription_pricing.dart';
+import '../subscription/services/subscription_status_service.dart';
 import '../../services/entitlement_service.dart';
 import 'widgets/network_diagnostic_hud.dart';
 import 'widgets/hunter_scaffold.dart';
@@ -54,6 +57,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
   /// (onboarding gate) is not immediately bounced back into it in a loop.
   static bool _onboardingRedirected = false;
 
+  /// One-shot guard for the Google Play purchase re-sync: the dashboard can
+  /// be rebuilt / re-entered many times per session, but the store only needs
+  /// to be queried once (the purchase stream keeps delivering afterwards).
+  static bool _subscriptionRestored = false;
+
   final List<String> favoriteIds = [];
   bool _isAdmin = false;
   bool _isDual = false;
@@ -64,7 +72,38 @@ class _HunterDashboardState extends State<HunterDashboard> {
     _loadFavoriteIds();
     _resolveAdmin();
     _enforceProfileOnboarding();
+    _loadSubscription();
     UsageAnalyticsService.instance.trackScreenView('Hunter Dashboard');
+  }
+
+  /// Restores the Google Play subscription state on dashboard entry (v9.1
+  /// deleted this with the dashboard card price cleanup, which silently
+  /// dropped the purchase re-sync — a subscriber on a fresh install was then
+  /// never re-linked to their purchase).
+  ///
+  /// Two effects:
+  ///  1. Attaches [PlayPurchaseRecorder] to the Play purchase stream so any
+  ///     new **or restored** purchase is written to `users/{uid}` and the
+  ///     `purchases` collection.
+  ///  2. Asks Google Play to replay prior purchases, so an existing
+  ///     subscriber re-syncs their entitlement without re-buying.
+  ///
+  /// Runs at most once per app session (the stream keeps delivering
+  /// afterwards) and is fully failure-tolerant: an uninitialised Firebase
+  /// app, an unsupported device or a store error simply leaves the cached
+  /// `users/{uid}` state in place.
+  Future<void> _loadSubscription() async {
+    PlayPurchaseRecorder.instance.startListening();
+    if (_subscriptionRestored) return;
+    _subscriptionRestored = true;
+    try {
+      await SubscriptionStatusService.instance.getMySubscription();
+      if (await PlayBillingService.instance.isBillingSupported()) {
+        await PlayBillingService.instance.restorePurchases();
+      }
+    } catch (e) {
+      debugPrint('HunterDashboard.loadSubscription failed: $e');
+    }
   }
 
   /// Defense-in-depth onboarding gate: if a hunter somehow reaches the

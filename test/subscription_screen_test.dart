@@ -78,9 +78,10 @@ void main() {
       expect(find.text('NO ACTIVE SUBSCRIPTION'), findsOneWidget);
       expect(find.text('TIER PRICING'), findsOneWidget);
       // Hunter mode (default): ONLY the Hunter tier card renders.
-      expect(find.text('R 34.99 / month incl. VAT'), findsOneWidget);
-      expect(find.text('R 299.99 / month incl. VAT'), findsNothing);
-      expect(find.text('After a 30-day free trial · price includes VAT'), findsOneWidget);
+      expect(find.text('R 34.99/month'), findsOneWidget);
+      expect(find.text('R 299.99/month'), findsNothing);
+      expect(find.text('Price includes 15% VAT'), findsOneWidget);
+      expect(find.text('After a 30-day free trial'), findsOneWidget);
 
       // The promo section sits below the tier card on the 800x600 test
       // surface; scroll it into view before asserting.

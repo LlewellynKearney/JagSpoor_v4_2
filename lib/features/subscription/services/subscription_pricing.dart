@@ -68,6 +68,75 @@ const Duration trialDuration = Duration(days: 30);
 const double hunterMonthlyPriceZAR = 34.99;
 const double outfitterMonthlyPriceZAR = 299.99;
 
+/// South African Value-Added Tax rate (15%) applied to Google Play catalog
+/// prices, which are quoted **excluding VAT** in South Africa.
+const double saVatRate = 0.15;
+
+/// Resolved VAT breakdown for a catalog amount quoted **excluding VAT**.
+///
+/// Google Play returns the localized, formatted catalog price
+/// (`ProductDetails.price` / `rawPrice`) which — in South Africa — is the
+/// EX-VAT amount. The app must display the amount the customer actually pays,
+/// so the VAT-inclusive amount is derived here (`exVat * 1.15`) and shown as
+/// the primary price, with the ex-VAT figure as the explanatory subtext.
+///
+/// Single source of truth so the paywall / subscription screen and their tests
+/// agree on one VAT calculation (`hunter_monthly` + `outfitter_monthly`).
+class SubscriptionVatPrice {
+  /// Catalog amount excluding VAT.
+  final double exVat;
+
+  /// Amount the customer pays, including VAT.
+  final double inclVat;
+
+  /// Currency symbol reported by the store (e.g. `R`). Falls back to `R`.
+  final String currencySymbol;
+
+  /// The VAT rate applied (defaults to the SA 15%).
+  final double vatRate;
+
+  const SubscriptionVatPrice({
+    required this.exVat,
+    required this.inclVat,
+    this.currencySymbol = 'R',
+    this.vatRate = saVatRate,
+  });
+
+  /// Builds the breakdown for an ex-VAT [exVat] amount, adding VAT at
+  /// [vatRate] (default 15%). Non-positive amounts resolve to zero so the UI
+  /// can never render a negative price.
+  factory SubscriptionVatPrice.fromExVat(
+    double exVat, {
+    String currencySymbol = 'R',
+    double vatRate = saVatRate,
+  }) {
+    final base = exVat.isFinite && exVat > 0 ? exVat : 0.0;
+    return SubscriptionVatPrice(
+      exVat: base,
+      inclVat: base * (1 + vatRate),
+      currencySymbol: currencySymbol.isEmpty ? 'R' : currencySymbol,
+      vatRate: vatRate,
+    );
+  }
+
+  /// The VAT portion of [inclVat].
+  double get vatAmount => inclVat - exVat;
+
+  /// Primary price label, e.g. `R228.85/month`.
+  String get primaryLabel => '${formatZar(inclVat)}/month';
+
+  /// Explanatory subtext, e.g. `Incl. 15% VAT (R199.00 excl. VAT)`.
+  String get vatNote {
+    final percent = (vatRate * 100).round();
+    return 'Incl. $percent% VAT (${formatZar(exVat)} excl. VAT)';
+  }
+
+  /// Formats a ZAR amount with the resolved currency symbol + two decimals
+  /// (`199` -> `R199.00`). Locale-independent.
+  String formatZar(double amount) =>
+      '$currencySymbol${amount.toStringAsFixed(2)}';
+}
+
 /// Resolves the monthly display price (ZAR) for [tier] using the documented
 /// precedence:
 ///   1. the LIVE Play catalog `rawPrice` (the authoritative charge), when a
@@ -99,6 +168,12 @@ Future<double> resolveMonthlyPrice(
 /// (and the value the backend `initializeNewUserTrial` Auth trigger writes),
 /// so the client and the Cloud Function agree on a single trial status.
 const String subscriptionStatusTrial = 'trialing';
+
+/// The canonical `users/{uid}.subscriptionStatus` string representing an
+/// actively-billed Google Play subscription. Written by the purchase recorder
+/// (`PlayPurchaseRecorder`) once Billing confirms the transaction — the
+/// `firestore.rules` guard permits this transition from a trial state.
+const String subscriptionStatusActive = 'active';
 
 /// Defines which newly registered accounts automatically receive a free
 /// trial. The admin account is excluded so that it keeps its fixed billing

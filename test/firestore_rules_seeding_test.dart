@@ -27,6 +27,8 @@ import 'package:jagspoor/features/hunter_mode/services/outfitter_enterprise_mana
 void main() {
   final rules = _loadRules();
 
+  _purchaseRecordingContracts(rules);
+
   group('firestore.rules structural integrity', () {
     test('helpers intact', () {
       for (final h in [
@@ -154,13 +156,17 @@ void main() {
       );
       // No OTHER field may be frozen in the write grant — the owner must be
       // able to update every profile field (medical info, legal compliance,
-      // battery settings, …) without a permission-denied.
+      // battery settings, …) without a permission-denied. `deviceFingerprint`
+      // is the only immutability clause; `subscriptionStatus` is read on the
+      // RESOURCE (stored) side by the v9.2 purchase-confirmation guard, which
+      // restricts a transition rather than freezing the field.
       final restrictions = RegExp(r"'([^']+)' in resource\.data")
           .allMatches(block)
           .map((m) => m.group(1))
-          .toList();
-      expect(restrictions, ['deviceFingerprint'],
-          reason: 'only deviceFingerprint may be frozen on the users doc');
+          .toSet();
+      expect(restrictions, {'deviceFingerprint', 'subscriptionStatus'},
+          reason: 'deviceFingerprint stays immutable; subscriptionStatus is '
+              'only read to validate the Play purchase confirmation');
     });
 
     test('users delete = owner-scoped signed-in (GDPR account deletion)', () {
@@ -204,6 +210,11 @@ void main() {
       'subscriptionStatus',
       'createdAt',
       'referralCodeUsed',
+      // v9.2: the convenience premium mirror the Google Play purchase
+      // recorder stamps alongside the status confirmation. Guarded so it can
+      // only be turned on in the same write that marks the subscription
+      // active.
+      'isPro',
     ];
 
     test('no server-owned field is denied by standalone key presence', () {
@@ -709,4 +720,78 @@ String _stripComments(String block) {
       .split('\n')
       .where((line) => !line.trimLeft().startsWith('//'))
       .join('\n');
+}
+
+// ── v9.2: Google Play purchase records + client subscription confirmation ──
+//
+// `PlayPurchaseRecorder` writes the purchase transaction to
+// `purchases/{uid}_{productId}` and mirrors the entitlement onto `users/{uid}`.
+// These structural contracts assert the rules permit exactly that and nothing
+// broader.
+void _purchaseRecordingContracts(String rules) {
+  group('purchases collection contract (v9.2)', () {
+    test('the purchases match block exists', () {
+      expect(rules.contains('match /purchases/{purchaseId}'), isTrue);
+    });
+
+    test('reads are owner-scoped to the caller\'s own uid', () {
+      final block = _blockFor(rules, 'purchases');
+      expect(block, contains('resource.data.uid == request.auth.uid'));
+    });
+
+    test('create + update require the caller to own the record', () {
+      final block = _blockFor(rules, 'purchases');
+      expect(block, contains('request.resource.data.uid == request.auth.uid'));
+      expect(block, contains('allow create:'));
+      expect(block, contains('allow update:'));
+    });
+
+    test('delete is admin-only (a buyer cannot erase the transaction)', () {
+      final block = _blockFor(rules, 'purchases');
+      expect(block, contains('allow delete: if isAdmin();'));
+    });
+  });
+
+  group('users/{uid} purchase confirmation contract (v9.2)', () {
+    test('subscriptionStatus may move to active from a trial state', () {
+      final block = _blockFor(rules, 'users');
+      expect(
+        block,
+        contains("request.resource.data.subscriptionStatus == 'active'"),
+      );
+      expect(
+        block,
+        contains("resource.data.subscriptionStatus in ['trialing', 'trial', 'active']"),
+      );
+    });
+
+    test('isPro may only be set alongside the active confirmation', () {
+      final block = _blockFor(rules, 'users');
+      expect(block, contains("!('isPro' in request.resource.data)"));
+      expect(
+        block,
+        contains('request.resource.data.isPro == true'),
+      );
+      expect(
+        block,
+        contains("request.resource.data.subscriptionStatus == 'active'"),
+      );
+    });
+
+    test('the subscription-status guard is still a change-detection operand',
+        () {
+      final block = _blockFor(rules, 'users');
+      // The very shape the merge-save bug fix requires: presence checked via
+      // `||`, never a standalone `&&` deny.
+      expect(
+        block,
+        contains("!('subscriptionStatus' in request.resource.data)"),
+      );
+      expect(
+        RegExp(r"!\('subscriptionStatus'\s+in\s+request\.resource\.data\s*\)\s*&&")
+            .hasMatch(block),
+        isFalse,
+      );
+    });
+  });
 }

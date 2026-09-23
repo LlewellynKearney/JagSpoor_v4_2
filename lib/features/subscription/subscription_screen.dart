@@ -9,6 +9,7 @@ import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
 import 'services/play_billing_service.dart';
+import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 import 'services/subscription_status_service.dart';
 
@@ -63,38 +64,67 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       widget.tier ??
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
 
-  /// The recurring monthly amount for the current tier.
+  /// The recurring monthly amount for the current tier, **including VAT**.
   ///
   /// Precedence: the LIVE Google Play Billing catalog price (`rawPrice` from
-  /// [PlayBillingService.loadProducts], the authoritative charge) → the
-  /// admin-controlled `admin_config/pricing` amount → the hard-coded last
-  /// resort. This keeps the checkout summary, promo calculations, and the
-  /// tier-card copy consistent with the Play Console catalog while the Admin
-  /// Portal remains the control plane when the catalog is unavailable.
+  /// [PlayBillingService.loadProducts], the authoritative charge — quoted
+  /// EXCLUDING VAT in South Africa, so it is grossed up by 15% here) → the
+  /// admin-controlled `admin_config/pricing` amount (already a VAT-inclusive
+  /// end-user amount) → the hard-coded last resort. This keeps the checkout
+  /// summary, promo calculations, and the tier-card copy consistent with the
+  /// Play Console catalog while the Admin Portal remains the control plane
+  /// when the catalog is unavailable.
   double get _baseAmount =>
-      _products[_tier]?.rawPrice ??
+      _playInclVat ??
       _adminFallbackPrice ??
       (_tier == SubscriptionTier.outfitter
           ? outfitterMonthlyPriceZAR
           : hunterMonthlyPriceZAR);
-  double get _checkoutAmount =>
-      _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
+
+  /// The live Play catalog amount grossed up to the VAT-inclusive amount the
+  /// customer is charged, or null when no Play product has loaded. Google Play
+  /// quotes the catalog amount EXCLUDING VAT in South Africa, so the payable
+  /// amount is `exVat * 1.15`.
+  double? get _playInclVat {
+    final product = _products[_tier];
+    if (product == null) return null;
+    return SubscriptionVatPrice.fromExVat(
+      product.rawPrice,
+      currencySymbol: product.currencySymbol,
+    ).inclVat;
+  }
+
+  /// The live Play catalog amount resolved to its VAT breakdown, or null when
+  /// no product has loaded (the control-plane amount is then shown instead).
+  SubscriptionVatPrice? get _playVatPrice {
+    final product = _products[_tier];
+    if (product == null) return null;
+    return SubscriptionVatPrice.fromExVat(
+      product.rawPrice,
+      currencySymbol: product.currencySymbol,
+    );
+  }
 
   /// Whether the live Play catalog price diverges from the admin-configured
   /// price (by more than one cent) — the Admin Portal WARNING basis, surfaced
   /// here so a subscriber sees the same mismatch the operator does.
   bool get _hasPriceDivergence {
-    final play = _products[_tier]?.rawPrice;
+    final play = _playInclVat;
     final admin = _adminFallbackPrice;
     if (play == null || admin == null) return false;
     return (play - admin).abs() > 0.01;
   }
+
+  double get _checkoutAmount =>
+      _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
 
   @override
   void initState() {
     super.initState();
     _initBilling();
     _listenForPurchases();
+    // Persist any purchase (new or restored) onto users/{uid} + `purchases`.
+    PlayPurchaseRecorder.instance.startListening();
   }
 
   @override
@@ -224,6 +254,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// verified against the Google Play Developer API. The app NEVER writes
   /// `isPremium` locally — the Cloud Function is the only writer.
   ///
+  /// Alongside the server verification, the transaction is recorded through
+  /// [PlayPurchaseRecorder] (`users/{uid}` subscription state +
+  /// `purchases/{uid}_{productId}`) so the app has a durable, queryable
+  /// record and the gated screens unlock immediately. The write is keyed on
+  /// uid + product id, so the recorder's own listener delivering the same
+  /// event cannot create a duplicate.
+  ///
   /// Subscriptions are non-consumable; once a [PurchaseStatus.purchased] /
   /// [PurchaseStatus.restored] event arrives the entitlement is recorded
   /// server-side and the transaction is finished.
@@ -234,6 +271,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             purchase.status == PurchaseStatus.restored) {
           final tier = SubscriptionTier.fromPlayProductId(purchase.productID);
           final token = purchase.verificationData.serverVerificationData;
+          // Durable local record: `users/{uid}` subscription state + the
+          // `purchases` collection document (idempotent on uid + product id).
+          await PlayPurchaseRecorder.instance.recordPurchase(
+            productId: purchase.productID,
+            purchaseToken: token,
+          );
           try {
             final result = await EntitlementService.instance
                 .verifyGooglePlayPurchase(
@@ -561,7 +604,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           tier: _tier,
           title: isOutfitter ? 'Outfitter' : 'Hunter',
           amount: _baseAmount,
-          playPrice: _products[_tier]?.price,
+          vatPrice: _playVatPrice,
           perks: isOutfitter ? _outfitterPerks : _hunterPerks,
         ),
       ],
@@ -574,7 +617,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     required String title,
     required double amount,
     required List<String> perks,
-    String? playPrice,
+    SubscriptionVatPrice? vatPrice,
   }) {
     final isCurrent = tier == _tier;
     return Container(
@@ -624,10 +667,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            // The live Google Play catalog label when it has resolved (already
-            // localized + VAT-inclusive per the Play Console base plan), else
-            // the control-plane amount. Never a hardcoded literal.
-            playPrice ?? 'R ${amount.toStringAsFixed(2)} / month incl. VAT',
+            // The VAT-inclusive amount the customer is charged. The live Play
+            // catalog amount is quoted EXCLUDING VAT in South Africa, so it is
+            // grossed up to `exVat * 1.15`; otherwise the control-plane amount
+            // (already VAT inclusive) is shown. Never a hardcoded literal.
+            vatPrice?.primaryLabel ??
+                'R ${amount.toStringAsFixed(2)}/month',
             style: TextStyle(
               color: theme.accentColor,
               fontWeight: FontWeight.w800,
@@ -636,8 +681,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'After a ${SubscriptionTrial.trialDays}-day free trial · '
-            'price includes VAT',
+            // `Incl. 15% VAT (R199.00 excl. VAT)` when the live Play catalog
+            // resolved the ex-VAT amount, else the inclusive-price caption.
+            vatPrice?.vatNote ?? 'Price includes 15% VAT',
+            key: ValueKey('tierVatNote_${tier.key}'),
+            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'After a ${SubscriptionTrial.trialDays}-day free trial',
             style: TextStyle(color: theme.subtitleColor, fontSize: 12),
           ),
           const SizedBox(height: 10),

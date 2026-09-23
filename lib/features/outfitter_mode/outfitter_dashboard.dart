@@ -26,7 +26,10 @@ import '../admin/widgets/admin_mode_switcher.dart';
 import '../auth/services/user_role_provider.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../subscription/subscription_screen.dart';
+import '../subscription/services/play_billing_service.dart';
+import '../subscription/services/play_purchase_recorder.dart';
 import '../subscription/services/subscription_pricing.dart';
+import '../subscription/services/subscription_status_service.dart';
 import '../subscription/paywall_screen.dart';
 import '../../services/entitlement_service.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
@@ -72,12 +75,44 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
   bool _isAdmin = false;
   bool _isDeletingAccount = false;
 
+  /// One-shot guard for the Google Play purchase re-sync: the dashboard can
+  /// be rebuilt / re-entered many times per session, but the store only needs
+  /// to be queried once (the purchase stream keeps delivering afterwards).
+  static bool _subscriptionRestored = false;
+
   @override
   void initState() {
     super.initState();
     _resolveUserRole();
+    _loadSubscription();
     UsageAnalyticsService.instance
         .trackScreenView('Outfitter Dashboard');
+  }
+
+  /// Restores the Google Play subscription state on dashboard entry (v9.1
+  /// deleted this with the dashboard card price cleanup, which silently
+  /// dropped the purchase re-sync — a subscriber on a fresh install was then
+  /// never re-linked to their purchase).
+  ///
+  /// Attaches [PlayPurchaseRecorder] to the Play purchase stream (so a new or
+  /// restored purchase is written to `users/{uid}` + the `purchases`
+  /// collection), reads back the mirrored subscription state, then asks
+  /// Google Play to replay prior purchases so an existing subscriber re-syncs
+  /// their entitlement without re-buying. Runs at most once per app session
+  /// and never throws — an uninitialised Firebase app or an unsupported
+  /// device simply leaves the cached profile state in place.
+  Future<void> _loadSubscription() async {
+    PlayPurchaseRecorder.instance.startListening();
+    if (_subscriptionRestored) return;
+    _subscriptionRestored = true;
+    try {
+      await SubscriptionStatusService.instance.getMySubscription();
+      if (await PlayBillingService.instance.isBillingSupported()) {
+        await PlayBillingService.instance.restorePurchases();
+      }
+    } catch (e) {
+      debugPrint('OutfitterDashboard.loadSubscription failed: $e');
+    }
   }
 
   Future<void> _resolveUserRole() async {

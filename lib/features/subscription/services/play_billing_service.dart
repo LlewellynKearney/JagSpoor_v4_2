@@ -93,6 +93,12 @@ class PlayBillingService {
   @visibleForTesting
   static InAppPurchase? billingForTesting;
 
+  /// Test seam: a canned Play catalog so the price rendering (including the
+  /// ex-VAT -> VAT-inclusive conversion) can be asserted without the
+  /// `in_app_purchase` platform plugin.
+  @visibleForTesting
+  static Map<SubscriptionTier, PlayProduct>? productsForTesting;
+
   /// Web-safe openable Play subscriptions URL (compliance + management).
   ///
   /// `playStoreSubscriptionsUrl` opens the platform subscriptions page for
@@ -106,6 +112,7 @@ class PlayBillingService {
   @visibleForTesting
   static void resetTestSeams() {
     billingForTesting = null;
+    productsForTesting = null;
   }
 
   InAppPurchase get _billing => billingForTesting ?? InAppPurchase.instance;
@@ -135,6 +142,8 @@ class PlayBillingService {
   /// product id is not configured in the Play Console (only in store, dev,
   /// reviewer builds) so the caller degrades gracefully.
   Future<Map<SubscriptionTier, PlayProduct>> loadProducts() async {
+    final canned = productsForTesting;
+    if (canned != null) return canned;
     final response = await _billing.queryProductDetails(productIds);
     final result = <SubscriptionTier, PlayProduct>{};
     for (final details in response.productDetails) {
