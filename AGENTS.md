@@ -1,5 +1,175 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- v9.2 debug: VAT-inclusive Play price display + restored subscription loader / purchase recording (added 2026-09-23)
+
+### Bug 1 -- VAT compliance (main issue): paywall quoted an EX-VAT amount
+- Google Play quotes the SA catalog amount **excluding VAT** (`product.price`
+  is the ex-VAT figure), so the paywall was advertising the pre-tax number
+  while the customer is charged the VAT-inclusive amount.
+- NEW `SubscriptionVatPrice` in
+  `lib/features/subscription/services/subscription_pricing.dart`: pure,
+  dependency-free `SubscriptionVatPrice.fromExVat(exVat, {vatPercent = 15,
+  currencySymbol = 'R'})` ->
+  - `inclVat = exVat * 1.15` (SA standard rate, `kSaVatPercent = 15`);
+  - `vatAmount = inclVat - exVat`;
+  - `primaryLabel` = `"R228.85/month"`;
+  - `vatNote` = `"Incl. 15% VAT (R199.00 excl. VAT)"`.
+  Guards non-positive / NaN / infinite inputs down to 0; honours the store's
+  `currencySymbol`. `formatZar` (thin-space thousands) drives the labels.
+- `paywall_screen.dart`: `initState` still resolves the live Play catalog
+  (`loadProducts()`), but now converts the resolved `product.rawPrice`
+  (ex VAT) through `SubscriptionVatPrice` and renders the INCLUSIVE amount as
+  the primary label (`ValueKey('paywallPriceLabel')`) with the ex-VAT note
+  beneath it (`ValueKey('paywallVatNote')`). Until the catalog resolves it
+  shows the neutral `PaywallScreen.loadingPriceLabel` — never a hardcoded
+  number. Applies to BOTH `jagspoor_hunter_monthly` and
+  `jagspoor_outfitter_monthly`.
+- `subscription_screen.dart`: the tier card + checkout rows route every
+  rendered amount through `SubscriptionVatPrice` (`R 34.99/month`,
+  `Price includes 15% VAT`, `Then monthly (hunter) · incl. VAT`,
+  `Promo-adjusted monthly · incl. VAT`), and the promo-adjusted total is
+  re-derived inclusively so the discount lands on the price the customer
+  actually pays.
+- `play_billing_service.dart`: new `@visibleForTesting productsForTesting`
+  seam (a canned Play catalog) so the price rendering + VAT conversion are
+  assertable without the `in_app_purchase` platform plugin.
+
+### Bug 2 -- Subscription never populated (`purchases` collection = 0 docs)
+- Root cause: v9.1's dashboard price cleanup deleted the dashboards'
+  `_loadSubscription()` / `restorePurchases()` wiring, so nothing ever
+  recorded a Play purchase. For Stuart
+  (`b9HLbAlMOdg56AlXZWXW9Plpael1`) the `purchases` collection stayed empty
+  and `users/{uid}` never mirrored the purchase.
+- NEW `lib/features/subscription/services/play_purchase_recorder.dart`
+  (`PlayPurchaseRecorder.instance`): the single writer of a Play transaction.
+  - `recordPurchase({productId, purchaseToken, tier?})` writes BOTH:
+    - `users/{uid}`: `subscriptionTier` (resolved from the product id when the
+      tier is not passed), `subscriptionStatus: 'active'`, `isPro: true`,
+      `subscriptionProvider: 'google_play_billing'`,
+      `subscriptionUpdatedAt` (server timestamp);
+    - `purchases/{uid}_{productId}`: `{uid, productId, purchaseToken, status,
+      tier, createdAt, updatedAt}` — idempotent (a re-delivery refreshes the
+      stored token, never duplicates the doc).
+  - `startListening()` attaches ONE `InAppPurchase.purchaseStream` listener
+    for the process lifetime and records every `purchased` / `restored`
+    delivery (cancelled / pending / errored are skipped). Completing the Play
+    transaction is deliberately left to the caller (the subscription screen
+    finishes it after the server-side verification round-trip) — calling
+    `completePurchase` here crashed on non-Android `PurchaseDetails`.
+  - Failure-tolerant: a missing uid or any Firestore error resolves `false` /
+    logs, never throws.
+  - Test seams: `firestoreForTesting`, `currentUserIdResolverForTesting`,
+    `purchaseStreamForTesting` + `resetTestSeams()`.
+- `subscription_screen.dart`: after a successful Play purchase (`purchased` /
+  `restored` on the purchase stream) it now calls
+  `PlayPurchaseRecorder.instance.recordPurchase(productId:
+  purchase.productID, purchaseToken:
+  purchase.verificationData.serverVerificationData)` before completing the
+  purchase, so the Firestore write is guaranteed on every store event.
+- `hunter_dashboard.dart` + `outfitter_mode/outfitter_dashboard.dart`:
+  `_loadSubscription()` restored into `initState` — attaches the recorder's
+  purchase-stream listener, reads back `getMySubscription()`, and (once per
+  app session, guarded) calls
+  `PlayBillingService.instance.restorePurchases()` when
+  `isBillingSupported()`, so an existing subscriber re-syncs without
+  re-buying. Fully failure-tolerant (uninitialised Firebase / unsupported
+  device leaves the cached state in place).
+
+### Firestore rules
+- NEW `match /purchases/{purchaseId}`: read + create + update are owner-scoped
+  (`resource.data.uid == request.auth.uid` /
+  `request.resource.data.uid == request.auth.uid`); `delete` is admin-only so
+  a buyer cannot erase the transaction record.
+- `match /users/{userId}` write: the frozen-field set gained `isPro`, guarded
+  by CHANGE DETECTION (`!('isPro' in request.resource.data)` ||
+  `request.resource.data.isPro == true`), so the recorder can flip it to
+  `true` in the same write that confirms `subscriptionStatus == 'active'`
+  while a client can never turn a subscription off (or on) out of band.
+  `subscriptionStatus` already had the trialing/trial/active transition
+  allowance from the v9 entitlement work.
+- Server-side `validateGooglePlayPurchase` remains the authoritative
+  entitlement writer (Admin SDK, bypasses rules); the client write is the
+  immediately-visible mirror so the UI unlocks without waiting for the
+  function round-trip.
+
+### Tests
+- `test/paywall_dynamic_price_test.dart` (rewritten, 9): neutral loading
+  label with no hardcoded amount; VAT-inclusive hunter price (`R228.85/month`
+  + `Incl. 15% VAT (R199.00 excl. VAT)`) from an ex-VAT R199.00; the
+  outfitter amount (`R344.99/month` from R299.99 ex VAT); the price + VAT
+  note always render; subscribe/website actions; and the
+  `SubscriptionVatPrice` unit contract (derivation, 15% rate, zero/NaN
+  guards, currency symbol).
+- `test/play_purchase_recorder_test.dart` (NEW, 12): constants; the hunter +
+  outfitter `users/{uid}` + `purchases` writes; idempotency (latest token
+  wins, one doc); no-uid -> nothing written; a Firestore failure resolves
+  false rather than throwing; the purchase-stream listener records a
+  delivered purchase, ignores cancelled purchases, and attaches at most one
+  listener.
+- `test/subscription_loader_restoration_test.dart` (NEW, 6): structural
+  regression guards locking `_loadSubscription()` + `startListening()` +
+  `restorePurchases()` (billing-gated) into BOTH dashboards, the recorder's
+  `users`/`purchases` field writes, and the subscription screen's
+  recordPurchase call.
+- `test/firestore_rules_seeding_test.dart`: +7 in a new
+  `_purchaseRecordingContracts` group (purchases owner-scoped read/create/
+  update + admin-only delete; the `users` subscriptionStatus transition +
+  `isPro` change-detection guard), the guarded-field set extended with
+  `isPro`, and the "no other field frozen" assertion updated to the
+  `{deviceFingerprint, subscriptionStatus}` set the purchase-confirmation
+  guard legitimately reads on the stored resource.
+- `test/subscription_screen_test.dart`: label expectations realigned to the
+  v9.2 rendering (`R 34.99/month`, `Price includes 15% VAT`,
+  `After a 30-day free trial`).
+
+### Verification
+- `flutter analyze` (Flutter 3.44.9 / Dart 3.12.2 at `/tmp/sdk/flutter`):
+  **0 errors, 0 warnings**, 320 pre-existing infos (unchanged baseline).
+- `flutter test --reporter=compact` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`
+  + the `~/libs/libsqlite3.so -> .../libsqlite3.so.0` symlink for the
+  sqflite-FFI suites): **All 1858 tests passed**, exit 0.
+- **No version bump** (`pubspec.yaml` stays `1.0.9+9`; `build.gradle.kts`
+  untouched). No AAB built.
+- Committed + pushed: `505a1ed` -> `origin/main`.
+
+### ⚠️ Operator steps still required
+1. **Play Console base plans must be set to the VAT-INCLUSIVE amount** the
+   paywall now advertises, OR left ex-VAT with `product.price` understood as
+   the pre-tax figure — the app converts ex-VAT -> incl-VAT at display time
+   (`* 1.15`). If the Console plan already carries the final inclusive price
+   (e.g. R34.99), the app would double-add VAT; confirm the catalog is
+   EX-VAT before shipping, otherwise set `kSaVatPercent = 0` for that plan.
+2. **Deploy the rules**: `npx firebase-tools deploy --only firestore:rules`
+   in a credentialed environment (the sandbox has no Firebase credentials).
+   Until deployed the `purchases` writes are denied.
+3. **Debug APK build instructions** (not run here):
+   `flutter clean && flutter build apk --debug` ->
+   `build/app/outputs/flutter-apk/app-debug.apk`. Install on the tester
+   device (`flutter install` / `adb install -r`), sign the tester in, open the
+   subscription screen, complete a Play purchase, then verify
+   `users/{uid}` (`subscriptionStatus: active`, `isPro: true`) and one
+   `purchases/{uid}_{productId}` document exist.
+
+### Files
+- `lib/features/subscription/services/subscription_pricing.dart`
+  (`SubscriptionVatPrice` + `kSaVatPercent` + helpers),
+- `lib/features/subscription/paywall_screen.dart` (inclusive price + VAT
+  note),
+- `lib/features/subscription/services/play_purchase_recorder.dart` (NEW),
+- `lib/features/subscription/services/play_billing_service.dart`
+  (`productsForTesting` seam),
+- `lib/features/subscription/subscription_screen.dart` (inclusive rendering +
+  recordPurchase),
+- `lib/features/hunter_mode/hunter_dashboard.dart` (`_loadSubscription`),
+- `lib/features/outfitter_mode/outfitter_dashboard.dart`
+  (`_loadSubscription`),
+- `firestore.rules` (`purchases` block + `isPro` change-detection guard),
+- `test/paywall_dynamic_price_test.dart`,
+  `test/play_purchase_recorder_test.dart` (NEW),
+  `test/subscription_loader_restoration_test.dart` (NEW),
+  `test/firestore_rules_seeding_test.dart`, `test/subscription_screen_test.dart`,
+  `AGENTS.md`.
+
 ## Phase -- Version 9 (1.0.9+9) + Firestore forced-update gate for closed testers (added 2026-09-22)
 
 ### What changed
