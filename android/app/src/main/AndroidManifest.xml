@@ -51,6 +51,30 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Referral App Links (post-Dynamic-Links).
+                 https://jagspoor.co.za/r/<CODE> is an Android App Link
+                 (autoVerify=true): Android checks
+                 https://jagspoor.co.za/.well-known/assetlinks.json against
+                 this app's signing certificate before opening the app
+                 directly. The jagspoor:// custom scheme is the fallback for
+                 an installed app whose association has not been verified yet
+                 / an OEM that did not auto-verify. Firebase Dynamic Links
+                 (jagspoor.page.link) was shut down on 2025-08-25. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="jagspoor.co.za"
+                    android:pathPrefix="/r/"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="jagspoor" android:host="referral"/>
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"

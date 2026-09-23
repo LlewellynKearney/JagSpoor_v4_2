@@ -5,17 +5,30 @@ import 'package:jagspoor/features/referral/services/referral_share_composer.dart
 /// WhatsApp builders that drive the ReferralShareWidget copy + share actions.
 void main() {
   group('ReferralShareComposer.buildReferralLink', () {
-    test('builds a deep link carrying the code', () {
+    test('builds an App Link carrying the code as a path segment', () {
       expect(
         ReferralShareComposer.buildReferralLink('JAGSPOOR7Q3X'),
-        'https://jagspoor.page.link/referral?code=JAGSPOOR7Q3X',
+        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
+      );
+    });
+
+    test('never emits the dead page.link domain', () {
+      final link = ReferralShareComposer.buildReferralLink('JAGSPOOR7Q3X');
+      expect(link.contains('page.link'), isFalse);
+      expect(link.startsWith('https://jagspoor.co.za/r/'), isTrue);
+    });
+
+    test('builds the custom-scheme fallback', () {
+      expect(
+        ReferralShareComposer.buildCustomSchemeLink('JAGSPOOR7Q3X'),
+        'jagspoor://referral?code=JAGSPOOR7Q3X',
       );
     });
 
     test('upper-cases + trims the code', () {
       expect(
         ReferralShareComposer.buildReferralLink('  jagspoor7q3x '),
-        'https://jagspoor.page.link/referral?code=JAGSPOOR7Q3X',
+        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
       );
     });
 
@@ -33,7 +46,7 @@ void main() {
       expect(message, contains('JAGSPOOR7Q3X'));
       expect(
         message,
-        contains('jagspoor.page.link/referral?code=JAGSPOOR7Q3X'),
+        contains('jagspoor.co.za/r/JAGSPOOR7Q3X'),
       );
       expect(message, contains('Refer a friend and we both unlock rewards.'));
       expect(message, contains('support@jagspoor.co.za'));
@@ -49,9 +62,9 @@ void main() {
       final link = ReferralShareComposer.buildWhatsAppShareLink(
           'JAGSPOOR7Q3X');
       expect(link, startsWith('https://wa.me/?text='));
-      // The whole message is percent-encoded, so the deep-link separator
-      // `?code=` inside it appears encoded (`%3Fcode%3D`).
-      expect(link, contains('%3Fcode%3D'));
+      // The whole message is percent-encoded, so the App Link's `/r/` path
+      // appears encoded (`%2Fr%2F`).
+      expect(link, contains('%2Fr%2F'));
       expect(link, contains('JAGSPOOR7Q3X'));
       // The text payload must be percent-encoded (safe for the WhatsApp
       // intent) and not contain raw spaces/newlines.

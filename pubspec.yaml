@@ -95,6 +95,12 @@ dependencies:
   # URL launcher for communication shortcuts
   url_launcher: ^6.3.0
 
+  # Deep linking (App Links + custom scheme). Replaces Firebase Dynamic Links,
+  # which Google shut down on 2025-08-25 — referral sharing now uses standard
+  # HTTPS App Links on jagspoor.co.za (`/r/<CODE>`) plus a `jagspoor://` scheme
+  # fallback, received via AppLinks().uriLinkStream.
+  app_links: ^6.0.0
+
   # Hardware compass for tactical navigation
   flutter_compass: ^0.8.1
 

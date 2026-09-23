@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
+import '../../services/incoming_referral_handler.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
@@ -75,6 +77,37 @@ class _AuthScreenState extends State<AuthScreen> {
   // of truth (an absolute timestamp); the dialog owns its own 1s countdown
   // timer that reads this value.
   DateTime? _resetCooldownUntil;
+
+  @override
+  void initState() {
+    super.initState();
+    // If the app was opened from a referral App Link
+    // (https://jagspoor.co.za/r/<CODE> or jagspoor://referral?code=<CODE>),
+    // pre-fill the referral field so the user only has to complete signup.
+    _prefillReferralFromIncomingLink();
+  }
+
+  /// Pre-fills the referral field from a pending incoming-link code (if any).
+  /// Best-effort: the handler stores the code in memory + SharedPreferences,
+  /// so this survives both a navigation and a cold start.
+  Future<void> _prefillReferralFromIncomingLink() async {
+    try {
+      final handler = ReferralLinkHandler.instance;
+      var code = handler.pendingCode;
+      if (code == null || code.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        code = prefs.getString(ReferralLinkHandler.pendingCodePrefsKey);
+      }
+      if (code == null || code.trim().isEmpty) return;
+      if (!mounted) return;
+      setState(() {
+        _isLoginMode = false; // A referral link implies a new signup.
+        _referralCodeController.text = code!.trim().toUpperCase();
+      });
+    } catch (e) {
+      debugPrint('AuthScreen: referral prefill failed: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -543,10 +576,16 @@ class _AuthScreenState extends State<AuthScreen> {
           final referralCode = _referralCodeController.text.trim();
           if (referralCode.isNotEmpty) {
             try {
-              await ReferralRepository.instance.redeemReferralCode(
+              final result =
+                  await ReferralRepository.instance.redeemReferralCode(
                 referredUserId: user.uid,
                 referralCode: referralCode,
               );
+              // Consume the incoming-link code once it has been actioned so
+              // the same App Link does not re-apply on the next launch.
+              if (result.isRecorded) {
+                await ReferralLinkHandler.instance.clearPendingCode();
+              }
             } catch (e) {
               debugPrint('AuthScreen: referral redemption failed: $e');
             }

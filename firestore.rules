@@ -778,6 +778,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // `referralCodes/{code}` is the reverse index (CODE -> owner uid) that
+    // the post-Dynamic-Links App Links referral flow reads directly: an
+    // incoming `https://jagspoor.co.za/r/<CODE>` resolves its owner with a
+    // single document read (no query / composite index). The document id IS
+    // the upper-cased code, so uniqueness is enforced by construction.
+    match /referralCodes/{code} {
+      // Any signed-in user may resolve a code to its owner (needed to
+      // validate an incoming link for a brand-new, not-yet-signed-up user the
+      // moment they authenticate).
+      allow read: if isSignedIn();
+      // The entry can only be created mapping to the CALLER's own uid, so a
+      // code can never be claimed on behalf of another user.
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+      // The owner may update their own entry (e.g. flip `active` off); any
+      // other signed-in user may ONLY bump the redemption counter
+      // (`uses` / `lastUsedAt`) — the owner uid, code, and active flag are
+      // frozen for non-owners so a code can never be hijacked.
+      allow update: if isSignedIn()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || (
+            request.resource.data.ownerUid == resource.data.ownerUid
+            && request.resource.data.code == resource.data.code
+            && request.resource.data.active == resource.data.active
+          )
+        );
+      allow delete: if false;
+    }
+
     // `referral_conversions/{conversionId}` tracks who referred whom, the
     // referred user's subscription tier, and the reward status. Any signed-in
     // user may append a conversion (a new signup records the code they

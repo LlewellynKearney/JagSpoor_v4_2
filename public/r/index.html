@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join Jagspoor — Referral Invite</title>
+  <meta name="description" content="You have been invited to Jagspoor. Download the app and enter the referral code to unlock rewards.">
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #1E1E1E;
+      color: #EFE7DC;
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      max-width: 420px;
+      width: 100%;
+      background: #262626;
+      border: 1px solid rgba(212, 175, 55, 0.35);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      text-align: center;
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; color: #D4AF37; letter-spacing: 1px; }
+    p { font-size: 14px; line-height: 1.5; color: #C9C0B4; margin: 0 0 20px; }
+    .code-label { font-size: 11px; letter-spacing: 2px; color: #9C9388; margin-bottom: 4px; }
+    .code {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: #D4AF37;
+      margin-bottom: 20px;
+      word-break: break-all;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 12px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary { background: #D4AF37; color: #1E1E1E; }
+    .btn-secondary { background: transparent; color: #EFE7DC; border: 1px solid rgba(212, 175, 55, 0.5); }
+    .foot { font-size: 11px; color: #7C7468; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>JAGSPOOR</h1>
+    <p>You have been invited to join Jagspoor. Download the app and enter your referral code to unlock rewards.</p>
+    <div class="code-label">YOUR REFERRAL CODE</div>
+    <div class="code" id="code">—</div>
+    <a class="btn btn-primary" id="play" href="https://play.google.com/store/apps/details?id=za.co.jagspoor.app">Download on Google Play</a>
+    <button class="btn btn-secondary" id="copy">Copy code</button>
+    <div class="foot" id="status"></div>
+  </div>
+  <script>
+    // Extract the code from either /r/<CODE> or ?code=<CODE>.
+    function resolveCode() {
+      var params = new URLSearchParams(window.location.search);
+      var fromQuery = params.get('code');
+      if (fromQuery) return fromQuery.trim().toUpperCase();
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      var rIndex = parts.indexOf('r');
+      if (rIndex >= 0 && parts.length > rIndex + 1) {
+        return decodeURIComponent(parts[rIndex + 1]).trim().toUpperCase();
+      }
+      return '';
+    }
+    var code = resolveCode();
+    var codeEl = document.getElementById('code');
+    if (code) {
+      codeEl.textContent = code;
+      // Deep-link straight into the app if it is installed; otherwise the
+      // Play button below handles the download. The custom scheme is the
+      // fallback for an installed app whose App Link association has not
+      // been verified yet.
+      var scheme = 'jagspoor://referral?code=' + encodeURIComponent(code);
+      var playUrl = 'https://play.google.com/store/apps/details?id=za.co.jagspoor.app';
+      // Android intent:// resolves the app or falls back to Play.
+      var ua = navigator.userAgent || '';
+      if (/Android/i.test(ua)) {
+        window.location.href = 'intent://referral?code=' + encodeURIComponent(code) +
+          '#Intent;scheme=jagspoor;package=za.co.jagspoor.app;S.browser_fallback_url=' +
+          encodeURIComponent(playUrl) + ';end';
+      } else if (/iPhone|iPad|iPod/i.test(ua)) {
+        window.location.href = scheme;
+      }
+    } else {
+      codeEl.textContent = '—';
+      document.getElementById('status').textContent = 'No referral code was found in this link.';
+    }
+    document.getElementById('copy').addEventListener('click', function () {
+      if (!code) return;
+      navigator.clipboard.writeText(code).then(function () {
+        document.getElementById('status').textContent = 'Code copied!';
+      });
+    });
+  </script>
+</body>
+</html>

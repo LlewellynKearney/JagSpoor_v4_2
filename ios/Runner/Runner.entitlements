@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- iOS Universal Links for referral invites: an https://jagspoor.co.za/r/*
+	     link opens the app directly (verified against the
+	     /.well-known/apple-app-site-association file on the domain). Replaces
+	     Firebase Dynamic Links (shut down 2025-08-25). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:jagspoor.co.za</string>
+	</array>
+</dict>
+</plist>

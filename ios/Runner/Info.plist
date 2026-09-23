@@ -53,5 +53,24 @@
 		<string>JagSpoor needs photo library access to select existing trophy photos, package images, and scanned price lists.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>JagSpoor saves captured photos and exported PDF reports to your photo library.</string>
+		<!-- Custom URL scheme fallback for referral invites
+		     (jagspoor://referral?code=CODE). The primary path is the
+		     https://jagspoor.co.za/r/CODE Universal Link declared in
+		     Runner.entitlements; this scheme covers browsers / SMS clients
+		     that cannot follow a Universal Link. Replaces Firebase Dynamic
+		     Links (shut down 2025-08-25). -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>za.co.jagspoor.app.referral</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>jagspoor</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 </plist>

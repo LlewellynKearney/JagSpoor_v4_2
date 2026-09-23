@@ -14,6 +14,7 @@ import 'core/theme/app_theme.dart';
 import 'core/splash_screen.dart';
 import 'core/services/firestore_bootstrap.dart';
 import 'core/services/push_notification_service.dart';
+import 'services/incoming_referral_handler.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/auth/widgets/role_guarded_route.dart';
@@ -109,6 +110,21 @@ Future<void> main() async {
     // drops, and queued writes flush on reconnect. On web, a second tab
     // claiming IndexedDB triggers a graceful in-memory fallback (no crash).
     await FirestoreBootstrap.initialize();
+
+    // --- Referral App Links listener (post-Dynamic-Links) ---
+    // Firebase Dynamic Links was shut down on 2025-08-25, so referral sharing
+    // now uses standard HTTPS App Links on jagspoor.co.za:
+    //   * https://jagspoor.co.za/r/<CODE>   (Android App Link / iOS Universal
+    //     Link, verified via /.well-known/assetlinks.json)
+    //   * jagspoor://referral?code=<CODE>   (custom-scheme fallback)
+    // The handler validates the code against the `referralCodes/{code}`
+    // reverse index and caches it so the signup screen can pre-fill it.
+    // Best-effort: a plugin / link failure must never block startup.
+    try {
+      await ReferralLinkHandler.instance.initialize();
+    } catch (e) {
+      debugPrint('Referral link handler initialization failed: $e');
+    }
 
     // --- FCM push notifications: device-token registration + foreground
     // delivery. Registers the token on users/{uid} for the persisted session

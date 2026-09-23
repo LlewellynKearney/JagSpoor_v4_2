@@ -1,33 +1,34 @@
 /// Pure, dependency-light composer for the JagSpoor referral share flow.
 ///
-/// Owns the deep-link URL, the human-readable share text, and the WhatsApp
-/// `wa.me` deep link — all derived from a user's [ReferralProfile] referral
-/// code. Fully unit-testable with no Flutter / platform plugins (mirrors the
-/// [TrophyShareComposer] / [SupportEmailComposer] pattern).
+/// Owns the human-readable share text + the WhatsApp `wa.me` deep link, and
+/// delegates the canonical referral URL to [ReferralLinkService] (the
+/// post-Dynamic-Links App Links service). Fully unit-testable with no
+/// Flutter / platform plugins (mirrors the [TrophyShareComposer] /
+/// [SupportEmailComposer] pattern).
 library;
 
-import 'package:jagspoor/features/referral/models/referral_profile.dart';
+import 'package:jagspoor/services/referral_link_service.dart';
 
 /// Builds shareable referral strings + links for a referral code.
 ///
-/// The canonical share URL is a Firebase Dynamic Links deep link on the
-/// `jagspoor.page.link` domain (the same domain the password-reset flow
-/// uses) so a tapped link can be handed to the installed app or web checker
-/// (`jagspoor.page.link/referral?code=<CODE>`). `wa.me` links are used for
-/// the "Share via WhatsApp" action (the native WhatsApp share intent).
+/// The canonical share URL is now a plain HTTPS App Link on the owned
+/// `jagspoor.co.za` domain — `https://jagspoor.co.za/r/<CODE>` — because
+/// Firebase Dynamic Links (`jagspoor.page.link`) was shut down by Google on
+/// 2025-08-25. The link is verified by Android App Links / iOS Universal
+/// Links and falls back to a website landing page when the app is not
+/// installed. See [ReferralLinkService] for the full contract.
 class ReferralShareComposer {
   ReferralShareComposer._();
 
-  /// The Firebase Dynamic Links base domain used for the referral deep link.
-  /// Must stay authorized in the Firebase Console (Authentication -> Settings
-  /// -> Authorized domains) for the link to resolve.
-  static const String kReferralLinkBaseUrl = 'https://jagspoor.page.link/referral';
+  /// The canonical HTTPS App Link base for the referral landing route.
+  static const String kReferralLinkBaseUrl =
+      '${ReferralLinkService.domain}${ReferralLinkService.referralPathPrefix}';
 
   /// WhatsApp web/mobile deep-link base for the share intent.
   static const String kWhatsAppBaseUrl = 'https://wa.me/';
 
   /// The default share subject used by the native share sheet.
-  static const String kDefaultShareSubject = 'Join me on JagSpoor!';
+  static const String kDefaultShareSubject = ReferralLinkService.shareSubject;
 
   /// The app display-name used in the composed share message.
   static const String kAppName = 'JagSpoor';
@@ -35,19 +36,21 @@ class ReferralShareComposer {
   /// The support / contact email appended to the share message.
   static const String kSupportEmail = 'support@jagspoor.co.za';
 
-  /// Builds the shareable referral deep link for [code], e.g.
-  /// `https://jagspoor.page.link/referral?code=JAGSPOOR7Q3X`.
+  /// Builds the shareable referral App Link for [code], e.g.
+  /// `https://jagspoor.co.za/r/JAGSPOOR7Q3X`.
   ///
   /// [code] is upper-cased + trimmed; a blank/null code yields an empty
   /// string (the caller should hide the share UI when there is no code).
-  static String buildReferralLink(String? code) {
-    final cleaned = _cleanCode(code);
-    if (cleaned.isEmpty) return '';
-    return '$kReferralLinkBaseUrl?code=$cleaned';
-  }
+  static String buildReferralLink(String? code) =>
+      ReferralLinkService.generateReferralLinkForCode(code ?? '');
+
+  /// Builds the custom-scheme fallback link (`jagspoor://referral?code=CODE`).
+  /// Empty for a blank code.
+  static String buildCustomSchemeLink(String? code) =>
+      ReferralLinkService.generateCustomSchemeLink(code ?? '');
 
   /// Builds the human-readable share message for [code] (WhatsApp / native
-  /// share text). Multi-line, brand-consistent, with the deep link.
+  /// share text). Multi-line, brand-consistent, with the App Link.
   static String buildShareMessage(String? code) {
     final cleaned = _cleanCode(code);
     if (cleaned.isEmpty) return '';

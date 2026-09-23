@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/referral_code.dart';
 import '../models/referral_conversion.dart';
 import '../models/referral_profile.dart';
 import '../models/referral_reward_config.dart';
@@ -159,6 +160,24 @@ class ReferralRepository {
   Future<ReferralProfile?> findReferrerByCode(String code) async {
     final normalized = code.trim().toUpperCase();
     if (normalized.isEmpty) return null;
+
+    // Fast path: the `referralCodes/{code}` reverse index maps the code to
+    // its owner uid with a single document read (no query / composite index).
+    // This is the path the App Links referral flow relies on.
+    try {
+      final index = await getReferralCode(normalized);
+      if (index != null && index.ownerUid.isNotEmpty) {
+        final profile = await getReferralProfile(index.ownerUid);
+        if (profile != null && profile.referralCode.isNotEmpty) {
+          return profile;
+        }
+      }
+    } catch (e) {
+      debugPrint('ReferralRepository.findReferrerByCode (index): $e');
+    }
+
+    // Fallback: query `referral_profiles` by its `referralCode` field. Covers
+    // legacy profiles created before the reverse index existed.
     try {
       final snap = await _firestore
           .collection(kReferralProfilesCollection)
@@ -206,11 +225,72 @@ class ReferralRepository {
           },
           SetOptions(merge: true),
         );
+    // Maintain the reverse code → owner index so an incoming App Link
+    // (`https://jagspoor.co.za/r/<CODE>`) resolves its owner with a direct
+    // document read (O(1), no query / composite index). Best-effort: a
+    // failure here must not fail profile creation (the profile-code query
+    // fallback in findReferrerByCode still resolves the referrer).
+    try {
+      await _firestore
+          .collection(kReferralCodesCollection)
+          .doc(code)
+          .set(
+            {
+              'code': code,
+              'ownerUid': uid,
+              'uses': 0,
+              'active': true,
+              'createdAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+    } catch (e) {
+      debugPrint('ReferralRepository.createMyReferralProfile (codes index): $e');
+    }
     return ReferralProfile(
       userId: uid,
       referralCode: code,
       bankingDetailsProvided: false,
     );
+  }
+
+  // ── referralCodes (reverse index: code -> owner uid) ─────────────────────
+
+  /// Resolves the `referralCodes/{code}` index entry directly, or null when
+  /// the code is unknown. Used by the App Links incoming-link handler to map
+  /// an extracted code to its owner.
+  Future<ReferralCode?> getReferralCode(String code) async {
+    final cleaned = code.trim().toUpperCase();
+    if (cleaned.isEmpty) return null;
+    try {
+      final snap = await _firestore
+          .collection(kReferralCodesCollection)
+          .doc(cleaned)
+          .get();
+      if (!snap.exists) return null;
+      return ReferralCode.fromFirestore(snap);
+    } catch (e) {
+      debugPrint('ReferralRepository.getReferralCode: $e');
+      return null;
+    }
+  }
+
+  /// Increments the `uses` counter for [code] on the reverse index
+  /// (best-effort — a failure is logged and ignored).
+  Future<void> markReferralCodeUsed(String code) async {
+    final cleaned = code.trim().toUpperCase();
+    if (cleaned.isEmpty) return;
+    try {
+      await _firestore
+          .collection(kReferralCodesCollection)
+          .doc(cleaned)
+          .set({
+        'uses': FieldValue.increment(1),
+        'lastUsedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('ReferralRepository.markReferralCodeUsed: $e');
+    }
   }
 
   /// Loads the current user's referral profile, generating + persisting a
@@ -368,6 +448,10 @@ class ReferralRepository {
         subscriptionTier: subscriptionTier,
         rewardAmountZAR: reward,
       );
+      // Best-effort: bump the reverse-index use counter so the owner can see
+      // how many times their code was redeemed (a failure never fails the
+      // redemption).
+      await markReferralCodeUsed(code);
       return ReferralRedemptionResult.recorded(conversionId);
     } catch (e) {
       debugPrint('ReferralRepository.redeemReferralCode: $e');

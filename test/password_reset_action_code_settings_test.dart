@@ -9,7 +9,7 @@ void main() {
     setUp(() => settings = PasswordResetActionCodeSettings.build());
 
     test('uses the configured deep-link URL', () {
-      expect(settings.url, 'https://jagspoor.page.link/reset-password');
+      expect(settings.url, 'https://jagspoor.co.za/reset-password');
     });
 
     test('handleCodeInApp is true', () {
@@ -35,7 +35,7 @@ void main() {
     test('constants are stable and documented', () {
       expect(
         PasswordResetActionCodeSettings.resetDeepLinkUrl,
-        'https://jagspoor.page.link/reset-password',
+        'https://jagspoor.co.za/reset-password',
       );
       expect(
         PasswordResetActionCodeSettings.androidPackageName,
@@ -58,7 +58,7 @@ void main() {
 
     test('asMap() round-trips all configured deep-link fields', () {
       final map = settings.asMap();
-      expect(map['url'], 'https://jagspoor.page.link/reset-password');
+      expect(map['url'], 'https://jagspoor.co.za/reset-password');
       expect(map['handleCodeInApp'], isTrue);
       expect(map['iOS'], {'bundleId': 'com.example.jagspoorV42'});
       expect(map['android'], isA<Map>());

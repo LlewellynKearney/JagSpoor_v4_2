@@ -84,8 +84,7 @@ void main() {
       expect(codeText, findsWidgets);
       expect(find.text('COPY LINK'), findsOneWidget);
       expect(find.text('WHATSAPP'), findsOneWidget);
-      expect(find.textContaining('jagspoor.page.link/referral?code='),
-          findsOneWidget);
+      expect(find.textContaining('jagspoor.co.za/r/'), findsOneWidget);
     });
 
     testWidgets('loads + displays an existing stored code', (tester) async {
@@ -97,7 +96,7 @@ void main() {
       await pumpCard(tester);
 
       expect(find.text('STOR ED12 3'), findsOneWidget);
-      expect(find.textContaining('code=STORED123'), findsOneWidget);
+      expect(find.textContaining('/r/STORED123'), findsOneWidget);
     });
 
     testWidgets('COPY LINK writes to the clipboard + shows confirmation',
@@ -120,7 +119,7 @@ void main() {
       await tester.tap(find.text('COPY LINK'));
       await tester.pumpAndSettle();
 
-      expect(copiedText, startsWith('https://jagspoor.page.link/referral?code='));
+      expect(copiedText, startsWith('https://jagspoor.co.za/r/'));
       expect(find.text('✓ Copied to clipboard'), findsOneWidget);
     });
 
@@ -144,9 +143,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(launchedUrl, startsWith('https://wa.me/?text='));
-      // The deep link inside the message is percent-encoded by
-      // Uri.encodeComponent, so the `code=` param appears as `code%3D`.
-      expect(launchedUrl, contains('%3Fcode%3D'));
+      // The App Link inside the message is percent-encoded by
+      // Uri.encodeComponent, so its `/r/` path appears as `%2Fr%2F`.
+      expect(launchedUrl, contains('%2Fr%2F'));
       // The raw code itself is present (unencoded).
       expect(launchedUrl, contains('HZY9ZW3J'));
     });

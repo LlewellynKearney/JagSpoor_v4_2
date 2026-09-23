@@ -1,5 +1,205 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Migrate referral sharing off Firebase Dynamic Links (shutdown 2025-08-25) to App Links jagspoor.co.za/r/:code (added 2026-09-23)
+
+### Symptom
+A shared referral link rendered the Android/Chrome error
+**"Dynamic Link Not Found - Failed to resolve uri domain prefix:
+https://jagspoor.page.link"**. Google shut Firebase Dynamic Links down on
+2025-08-25, so every `jagspoor.page.link` URL is dead and referral sharing was
+broken.
+
+### Audit finding (the app never used the SDK)
+There was **no `firebase_dynamic_links` dependency** in `pubspec.yaml` and no
+`FirebaseDynamicLinks.instance` call anywhere. The app hand-built
+`jagspoor.page.link` URLs as plain strings:
+- `ReferralShareComposer.kReferralLinkBaseUrl =
+  'https://jagspoor.page.link/referral'` -> `buildReferralLink`,
+  `buildShareMessage`, `buildWhatsAppShareLink` (the "Refer & Earn" card on the
+  hunter profile + outfitter dashboard).
+- `PasswordResetActionCodeSettings.resetDeepLinkUrl =
+  'https://jagspoor.page.link/reset-password'` (the Firebase password-reset
+  `ActionCodeSettings` continue URL) -- a second, independent Dynamic Links
+  dependency on the same dead domain.
+
+### New referral system (App Links + Firestore)
+- NEW **`lib/services/referral_link_service.dart`** (`ReferralLinkService`):
+  - `domain = 'https://jagspoor.co.za'`, `referralPathPrefix = '/r/'`.
+  - `generateReferralLink(userId, referralCode)` ->
+    `https://jagspoor.co.za/r/<CODE>` (code trimmed/upper-cased +
+    `Uri.encodeComponent`). `generateReferralLinkForCode(code)` single-arg
+    overload.
+  - `generateCustomSchemeLink(code)` -> `jagspoor://referral?code=<CODE>` (the
+    installed-app fallback).
+  - `buildShareMessage(code, {userId})` -> `"Join JagSpoor and get 1 month
+    free! <link>"`; `shareReferralLink(...)` -> native share sheet via
+    `share_plus` (never throws).
+  - `extractReferralCode(Uri?)` -> the code from EITHER shape: the HTTPS App
+    Link final path segment after `/r/` (with a `?code=` secondary), or the
+    custom-scheme `code` query param. `isReferralLink(uri)` helper.
+  - Constants for the association-file paths + the web landing prefix.
+- `ReferralShareComposer` (`lib/features/referral/services/referral_share_composer.dart`)
+  now delegates the URL to `ReferralLinkService` (keeps its public API +
+  `buildCustomSchemeLink` added); `kReferralLinkBaseUrl` =
+  `https://jagspoor.co.za/r/`. The WhatsApp/SMS/native share text now carries
+  the App Link; **no `page.link` string is emitted anywhere**.
+
+### Firestore structure: `referralCodes/{code}`
+- NEW **`lib/features/referral/models/referral_code.dart`**
+  (`ReferralCode` + `kReferralCodesCollection = 'referralCodes'`):
+  `{ ownerUid, createdAt, uses, active, lastUsedAt }`; the document id IS the
+  upper-cased code, so a code -> owner lookup is an O(1) direct read (no query
+  / composite index). Alias-tolerant `fromMap` (`ownerUid`/`userId`/`ownerId`,
+  numeric-string `uses`), `toMap`, `copyWith`, `isRedeemable`.
+- `ReferralRepository` (`referral_repository.dart`):
+  - `createMyReferralProfile` now ALSO writes the `referralCodes/{code}` reverse
+    index (best-effort, so a legacy/offline profile creation never fails).
+  - `getReferralCode(code)` / `markReferralCodeUsed(code)` added.
+  - `findReferrerByCode` tries the reverse index FIRST (single doc read) and
+    falls back to the legacy `referral_profiles.referralCode` field query, so
+    pre-index profiles still resolve.
+  - `redeemReferralCode` bumps the index `uses` counter after recording the
+    conversion.
+- `firestore.rules`: new `match /referralCodes/{code}` block — `read: isSignedIn()`
+  (link validation for a not-yet-signed-up user the moment they authenticate);
+  `create` requires `ownerUid == request.auth.uid` (no code claimed for another
+  user); `update` allows the owner OR any signed-in user ONLY when
+  `ownerUid`/`code`/`active` are unchanged (a stranger may bump `uses` but can
+  never hijack the code); `delete: false`.
+
+### Incoming link handling (`app_links`)
+- NEW **`lib/services/incoming_referral_handler.dart`**
+  (`ReferralLinkHandler.instance`): wraps `AppLinks().getInitialLink()` (cold
+  start) + `uriLinkStream` (warm links), extracts the code via
+  `ReferralLinkService.extractReferralCode`, validates it against the
+  `referralCodes` reverse index, and caches it in memory + `SharedPreferences`
+  (`pending_referral_code`) so a link tapped BEFORE signup is not lost. Every
+  failure path is caught (a missing plugin / `[core/no-app]` / malformed URI
+  never blocks startup). Testable via an `AppLinkSource` abstraction
+  (`PluginAppLinkSource` in production) + injectable validators; `resetForTesting`
+  + `handleUri` seams.
+- `lib/main.dart`: `ReferralLinkHandler.instance.initialize()` after
+  `FirestoreBootstrap.initialize()` (best-effort try/catch).
+- `lib/features/auth/auth_screen.dart`: `initState` pre-fills the referral
+  field from `ReferralLinkHandler.instance.pendingCode` (falling back to the
+  SharedPreferences copy) and flips to registration mode — an incoming referral
+  link implies a new signup. On a successfully recorded redemption the pending
+  code is cleared so the same link never re-applies.
+
+### Hosting / association files
+- NEW `public/.well-known/assetlinks.json` — Android App Links verification for
+  `za.co.jagspoor.app` (placeholders for the release + Play App Signing SHA-256
+  fingerprints — **operator must fill these in**).
+- NEW `public/.well-known/apple-app-site-association` — iOS Universal Links for
+  `/r/*` (placeholder `TEAM_ID` — **operator must fill in**).
+- NEW `public/r/index.html` — the web fallback landing page shown when the app
+  is not installed: extracts the code from `/r/<CODE>` (or `?code=`), shows it
+  pre-filled, offers the Play download, and `intent://` / `jagspoor://`
+  deep-links into an installed app.
+- `firebase.json`: new `hosting` block (`public: "public"`, `cleanUrls: true`,
+  rewrite `/r/**` -> `/r/index.html`).
+
+### Platform manifests
+- `android/app/src/main/AndroidManifest.xml`: `android:autoVerify="true"` intent
+  filter for `https://jagspoor.co.za/r/` (`scheme=https`, `host=jagspoor.co.za`,
+  `pathPrefix=/r/`) + a `jagspoor://referral` custom-scheme filter.
+- `ios/Runner/Runner.entitlements` (NEW): `com.apple.developer.associated-domains`
+  = `applinks:jagspoor.co.za`; wired into all 3 Runner build configs via
+  `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;` in `project.pbxproj`.
+- `ios/Runner/Info.plist`: `CFBundleURLTypes` declaring the `jagspoor` scheme
+  (fallback). Validated with `plistlib` (parses).
+- `PasswordResetActionCodeSettings.resetDeepLinkUrl` moved off the dead
+  `jagspoor.page.link` domain to `https://jagspoor.co.za/reset-password`
+  (authorize this domain in Firebase Console -> Auth -> Settings).
+
+### Dependencies
+- `pubspec.yaml` / `pubspec.lock`: added **`app_links: ^6.0.0`** (resolved
+  6.4.1) + its platform implementations. `share_plus` was ALREADY `^10.0.0`
+  (newer than the brief's `^8.0.0`) so it was left unchanged — the brief's
+  `^8.0.0` would have been a downgrade. No `firebase_dynamic_links` to remove.
+  Generated plugin registrants regenerated for linux/macos/windows.
+
+### Tests (all pass; full suite **1950 passed**)
+- NEW `test/referral_link_service_test.dart` (18): link builders, the
+  `page.link`-never-emitted guard, the custom scheme, `buildShareMessage`,
+  `extractReferralCode` for both shapes + the `?code=` fallback + the
+  round-trip, constant contracts.
+- NEW `test/incoming_referral_handler_test.dart` (11): HTTPS + custom-scheme
+  ingestion, upper-casing, non-referral ignore, invalid-but-stored code,
+  throwing-validator resilience, SharedPreferences persistence/restore/clear,
+  `initialize()` initial-link + `onCodeResolved` callback.
+- NEW `test/referral_codes_index_test.dart` (14): `ReferralCode` model
+  (aliases, doc-id code, `active` default, `isRedeemable`, numeric-string uses,
+  toMap); the repository reverse index write, case-insensitive direct read,
+  `findReferrerByCode` fast path + legacy fallback, `markReferralCodeUsed`
+  increment, and the redeem-bumps-uses contract.
+- NEW `test/referral_share_sheet_test.dart` (2): the share message the sheet
+  receives is the App Link, not `page.link`.
+- NEW `test/app_links_config_test.dart` (14) structural guards: manifest
+  `autoVerify` + host/pathPrefix + scheme fallback, `assetlinks.json` package,
+  AASA `/r/*`, the landing page, the `firebase.json` rewrite, the iOS
+  entitlements + `CODE_SIGN_ENTITLEMENTS` wiring + `Info.plist` scheme, and the
+  `referralCodes` rules block.
+- Updated: `test/referral_share_composer_test.dart`,
+  `test/referral_share_widget_test.dart`,
+  `test/password_reset_action_code_settings_test.dart` (new URL assertions, incl.
+  an explicit "never emits page.link" guard).
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues, unchanged baseline); all changed/new files are analyzer-clean.
+- `flutter test --reporter=compact` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`
+  + the `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites):
+  **All 1950 tests passed**, exit 0.
+- XML/plist/JSON validated (`xml.dom.minidom` / `plistlib` / `json`): manifest,
+  Info.plist, Runner.entitlements, assetlinks.json, AASA, firebase.json.
+- Untouched (per instruction): Play Console pricing (30.43/260.86), `.firebaserc`,
+  `serviceAccountKey.json`. No version bump, no AAB built.
+- Env: Flutter 3.44.9 downloaded + extracted to `$HOME/flutter` (the sandbox had
+  no SDK); `libsqlite3-dev` installed for the DB suites.
+
+### ⚠️ Operator steps required (cannot be done in this sandbox)
+1. **Fill the SHA-256 fingerprints** in `public/.well-known/assetlinks.json`
+   (release keystore + Play App Signing) — the placeholders block Android App
+   Links verification.
+2. **Fill the `TEAM_ID`** in `public/.well-known/apple-app-site-association`.
+3. **Deploy**: `npx firebase-tools deploy --only hosting,firestore:rules` (the
+   sandbox has no Firebase credentials). Hosting must serve
+   `/.well-known/assetlinks.json`, `/.well-known/apple-app-site-association`, and
+   `/r/**`.
+4. **Authorize** `https://jagspoor.co.za` in Firebase Console -> Authentication
+   -> Settings -> Authorized domains (the password-reset continue URL now uses
+   it). Until then the reset call surfaces `auth/invalid-continue-uri`.
+5. Verify the domain over HTTPS with Google's
+   `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://jagspoor.co.za&relation=delegate_permission/common.handle_all_urls`.
+
+### Files
+- NEW: `lib/services/referral_link_service.dart`,
+  `lib/services/incoming_referral_handler.dart`,
+  `lib/features/referral/models/referral_code.dart`,
+  `public/.well-known/assetlinks.json`,
+  `public/.well-known/apple-app-site-association`, `public/r/index.html`,
+  `ios/Runner/Runner.entitlements`,
+  `test/referral_link_service_test.dart`,
+  `test/incoming_referral_handler_test.dart`,
+  `test/referral_codes_index_test.dart`, `test/referral_share_sheet_test.dart`,
+  `test/app_links_config_test.dart`.
+- MODIFIED: `lib/features/referral/services/referral_share_composer.dart`,
+  `lib/features/referral/services/referral_repository.dart`,
+  `lib/features/auth/auth_screen.dart`,
+  `lib/features/auth/services/password_reset_action_code_settings.dart`,
+  `lib/main.dart`, `pubspec.yaml`, `pubspec.lock`, `firebase.json`,
+  `firestore.rules`, `android/app/src/main/AndroidManifest.xml`,
+  `ios/Runner/Info.plist`, `ios/Runner.xcodeproj/project.pbxproj`,
+  `linux/flutter/generated_plugin_registrant.cc`,
+  `linux/flutter/generated_plugins.cmake`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift`,
+  `windows/flutter/generated_plugin_registrant.cc`,
+  `windows/flutter/generated_plugins.cmake`,
+  `test/referral_share_composer_test.dart`,
+  `test/referral_share_widget_test.dart`,
+  `test/password_reset_action_code_settings_test.dart`, `AGENTS.md`.
+
 ## Phase -- Fix false Admin Portal PRICE DIVERGENCE under Option A VAT-inclusive pricing (added 2026-09-23)
 
 ### Symptom
