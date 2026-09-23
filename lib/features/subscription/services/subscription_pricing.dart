@@ -72,6 +72,94 @@ const double outfitterMonthlyPriceZAR = 299.99;
 /// prices, which are quoted **excluding VAT** in South Africa.
 const double saVatRate = 0.15;
 
+/// Tolerance (ZAR) within which two reconciled price figures count as equal.
+///
+/// The Play Console catalog amount is quoted **excluding VAT** while the Admin
+/// control plane stores the **VAT-inclusive** amount, so a reconciliation must
+/// gross the catalog figure up by 15% before comparing. Rounding across the two
+/// representations (and the store's own cent rounding) can drift by a fraction
+/// of a cent, so a 2-cent tolerance avoids a false PRICE DIVERGENCE warning
+/// (e.g. Play R30.43 excl -> R34.9945 incl vs Admin R34.99).
+const double priceDivergenceToleranceZAR = 0.02;
+
+/// Reconciles a Google Play catalog amount against an Admin-configured amount
+/// under the Option A (VAT-inclusive listed price) model.
+///
+/// Google Play quotes the catalog amount EXCLUDING VAT in South Africa; the
+/// Admin control plane (`admin_config/pricing`) stores the FINAL VAT-INCLUSIVE
+/// charge the customer pays. A naive comparison of the two figures is therefore
+/// always wrong (R30.43 vs R34.99). This helper performs the correct
+/// reconciliation — `playExVat * 1.15` vs `adminInclVat`, within
+/// [priceDivergenceToleranceZAR] — and produces the operator-facing copy.
+///
+/// Single source of truth used by the Admin Portal divergence banner and the
+/// subscriber-facing checkout notice so both agree on when (and how) to warn.
+class PlayPriceReconciliation {
+  /// Catalog amount **excluding** VAT, as returned by Play (`rawPrice`).
+  final double playExVat;
+
+  /// Catalog amount **including** VAT (`playExVat * (1 + vatRate)`).
+  final double playInclVat;
+
+  /// Admin-configured amount (already VAT inclusive).
+  final double adminInclVat;
+
+  /// Currency symbol used in the generated [matchMessage] / [mismatchMessage].
+  final String currencySymbol;
+
+  /// Tolerance within which the inclusive amounts count as equal.
+  final double tolerance;
+
+  const PlayPriceReconciliation({
+    required this.playExVat,
+    required this.playInclVat,
+    required this.adminInclVat,
+    this.currencySymbol = 'R',
+    this.tolerance = priceDivergenceToleranceZAR,
+  });
+
+  /// Builds the reconciliation: grosses [playExVat] up to the VAT-inclusive
+  /// payable amount and compares it against the Admin-inclusive
+  /// [adminInclVat]. Non-finite inputs collapse to zero so the UI can never
+  /// render `NaN`.
+  factory PlayPriceReconciliation.compare({
+    required double playExVat,
+    required double adminInclVat,
+    double vatRate = saVatRate,
+    String currencySymbol = 'R',
+    double tolerance = priceDivergenceToleranceZAR,
+  }) {
+    final exVat = playExVat.isFinite && playExVat > 0 ? playExVat : 0.0;
+    final admin =
+        adminInclVat.isFinite && adminInclVat > 0 ? adminInclVat : 0.0;
+    return PlayPriceReconciliation(
+      playExVat: exVat,
+      playInclVat: exVat * (1 + vatRate),
+      adminInclVat: admin,
+      currencySymbol: currencySymbol.isEmpty ? 'R' : currencySymbol,
+      tolerance: tolerance,
+    );
+  }
+
+  String _fmt(double v) => '$currencySymbol${v.toStringAsFixed(2)}';
+
+  /// Whether the Play (grossed-up) and Admin amounts agree within [tolerance].
+  /// When this is true the operator banner must stay hidden.
+  bool get matches => (playInclVat - adminInclVat).abs() < tolerance;
+
+  /// Confirmation copy, e.g.
+  /// `Play Console R30.43 excl (R34.99 incl) matches Admin R34.99`.
+  String get matchMessage => 'Play Console ${_fmt(playExVat)} excl '
+      '(${_fmt(playInclVat)} incl) matches Admin ${_fmt(adminInclVat)}';
+
+  /// Warning copy, e.g.
+  /// `Play Console R30.43 excl (R34.99 incl) != Admin R35.99 — update Play
+  /// Console base plan to match.`
+  String get mismatchMessage => 'Play Console ${_fmt(playExVat)} excl '
+      '(${_fmt(playInclVat)} incl) != Admin ${_fmt(adminInclVat)} — '
+      'update Play Console base plan to match.';
+}
+
 /// Resolved VAT breakdown for a catalog amount quoted **excluding VAT**.
 ///
 /// Google Play returns the localized, formatted catalog price

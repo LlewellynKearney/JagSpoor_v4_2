@@ -106,13 +106,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   /// Whether the live Play catalog price diverges from the admin-configured
-  /// price (by more than one cent) — the Admin Portal WARNING basis, surfaced
-  /// here so a subscriber sees the same mismatch the operator does.
+  /// price once the catalog amount (quoted EXCLUDING VAT) is grossed up to its
+  /// VAT-inclusive payable amount — the Admin Portal WARNING basis, surfaced
+  /// here so a subscriber sees the same mismatch the operator does. Uses the
+  /// shared [PlayPriceReconciliation] so both surfaces agree on the comparison.
   bool get _hasPriceDivergence {
-    final play = _playInclVat;
+    final product = _products[_tier];
     final admin = _adminFallbackPrice;
-    if (play == null || admin == null) return false;
-    return (play - admin).abs() > 0.01;
+    if (product == null || admin == null || admin <= 0) return false;
+    return !PlayPriceReconciliation.compare(
+      playExVat: product.rawPrice,
+      adminInclVat: admin,
+      currencySymbol: product.currencySymbol,
+    ).matches;
   }
 
   double get _checkoutAmount =>
@@ -968,13 +974,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  /// Warns the subscriber that the live Play catalog price differs from the
-  /// Admin-Portal-configured price (the store is the charge truth; the
-  /// operator must align the Play base plan).
+  /// Warns the subscriber that the live Play catalog price (grossed up to its
+  /// VAT-inclusive amount) differs from the Admin-Portal-configured price. The
+  /// store is the charge truth; the operator must align the Play base plan.
   Widget _buildDivergenceNotice(ThemeController theme) {
-    final play = _products[_tier];
-    final playLabel = play == null ? '—' : 'R ${play.rawPrice.toStringAsFixed(2)}';
-    final adminLabel = 'R ${(_adminFallbackPrice ?? 0).toStringAsFixed(2)}';
+    final product = _products[_tier];
+    final admin = _adminFallbackPrice ?? 0;
+    final message = product == null
+        ? 'Play Console price unavailable != Admin pricing '
+            'R ${admin.toStringAsFixed(2)} — update the Play Console base plan '
+            'to match.'
+        : PlayPriceReconciliation.compare(
+            playExVat: product.rawPrice,
+            adminInclVat: admin,
+            currencySymbol: product.currencySymbol,
+          ).mismatchMessage;
     return Container(
       key: const ValueKey('priceDivergenceNotice'),
       padding: const EdgeInsets.all(12),
@@ -990,8 +1004,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'WARNING: Play Console price $playLabel != Admin pricing '
-              '$adminLabel — update the Play Console base plan to match.',
+              'WARNING: $message',
               style: TextStyle(color: theme.textColor, fontSize: 12),
             ),
           ),

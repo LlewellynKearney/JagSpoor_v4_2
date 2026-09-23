@@ -120,29 +120,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  /// Fetches the live Play catalog prices and compares each against the
-  /// admin-configured `admin_config/pricing` amount. A difference > R0.01
-  /// surfaces a warning banner so the operator updates the Play base plan.
+  /// Fetches the live Play catalog prices and reconciles each against the
+  /// admin-configured `admin_config/pricing` amount under the Option A
+  /// (VAT-inclusive listed price) model.
+  ///
+  /// Google Play quotes the catalog amount EXCLUDING VAT while the Admin
+  /// control plane stores the VAT-INCLUSIVE final charge, so the catalog figure
+  /// is grossed up by 15% before comparing (via [PlayPriceReconciliation]).
+  /// Example: Play R30.43 excl → R34.99 incl == Admin R34.99 → NO warning.
+  /// The banner is shown ONLY when the reconciled amounts differ by more than
+  /// the documented 2-cent tolerance.
+  ///
   /// Best-effort: a billing-unavailable / catalog-miss / error leaves the
   /// banner hidden (nothing to compare).
   Future<void> _checkPriceDivergence(SubscriptionConfig config) async {
     try {
       if (!await PlayBillingService.instance.isBillingSupported()) return;
       final products = await PlayBillingService.instance.loadProducts();
-      final hunterPlay = products[SubscriptionTier.hunter]?.rawPrice;
-      final outfitterPlay = products[SubscriptionTier.outfitter]?.rawPrice;
       final messages = <String>[];
-      if (hunterPlay != null &&
-          (hunterPlay - config.hunterSubscriptionZAR).abs() > 0.01) {
-        messages.add(
-            'Play Console price R${hunterPlay.toStringAsFixed(2)} != Admin pricing '
-            'R${config.hunterSubscriptionZAR.toStringAsFixed(2)} — update Play Console base plan to match.');
-      }
-      if (outfitterPlay != null &&
-          (outfitterPlay - config.outfitterSubscriptionZAR).abs() > 0.01) {
-        messages.add(
-            'Play Console price R${outfitterPlay.toStringAsFixed(2)} != Admin pricing '
-            'R${config.outfitterSubscriptionZAR.toStringAsFixed(2)} — update Play Console base plan to match.');
+      for (final tier in SubscriptionTier.values) {
+        final product = products[tier];
+        if (product == null) continue; // catalog miss — nothing to compare
+        final adminPrice = tier == SubscriptionTier.outfitter
+            ? config.outfitterSubscriptionZAR
+            : config.hunterSubscriptionZAR;
+        if (adminPrice <= 0) continue;
+        final reconciliation = PlayPriceReconciliation.compare(
+          playExVat: product.rawPrice,
+          adminInclVat: adminPrice,
+          currencySymbol: product.currencySymbol,
+        );
+        // Reconciled figures agree (30.43 * 1.15 == 34.99 within tolerance):
+        // do NOT warn.
+        if (reconciliation.matches) continue;
+        messages.add(reconciliation.mismatchMessage);
       }
       if (!mounted) return;
       setState(() => _priceDivergenceMessages = messages);
@@ -463,9 +474,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  /// Warning banner shown when the live Play Console price differs from the
-  /// admin-configured `admin_config/pricing` amount by more than R0.01. The
-  /// Play Console is the charge truth; the operator must align the base plan.
+  /// Warning banner shown when the live Play Console price, grossed up to its
+  /// VAT-inclusive amount, differs from the admin-configured
+  /// `admin_config/pricing` amount by more than the documented reconciliation
+  /// tolerance ([priceDivergenceToleranceZAR]). The Play Console is the charge
+  /// truth; the operator must align the base plan.
   Widget _buildPriceDivergenceBanner() {
     return Container(
       key: const ValueKey('adminPriceDivergenceBanner'),
