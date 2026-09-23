@@ -1,5 +1,86 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Fix false Admin Portal PRICE DIVERGENCE under Option A VAT-inclusive pricing (added 2026-09-23)
+
+### Symptom
+The Admin Portal showed a false orange **PRICE DIVERGENCE** banner:
+`Play Console price R30.43 != Admin pricing R34.99 — update Play Console base
+plan to match.` (and R260.86 vs R299.99). The two figures are actually the
+SAME price under Option A: the Play Console base plan is configured EXCLUDING
+VAT (R30.43 / R260.86) while `admin_config/pricing` stores the FINAL
+VAT-INCLUSIVE charge (R34.99 / R299.99). `30.43 * 1.15 = 34.9945 ≈ 34.99`.
+
+### Root cause
+`lib/features/admin/screens/admin_dashboard_screen.dart`
+`_checkPriceDivergence` compared the raw Play catalog `rawPrice` (ex-VAT)
+directly against `config.hunterSubscriptionZAR` (inclusive) with a `> 0.01`
+threshold — a category error: excl-VAT vs incl-VAT. The subscriber-side
+`subscription_screen.dart` did gross the Play price up (`_playInclVat`) but
+still used a 1-cent threshold, so rounding drift (34.9945 vs 34.99) could also
+produce a spurious notice.
+
+### Fix -- `PlayPriceReconciliation` (single source of truth)
+NEW in `lib/features/subscription/services/subscription_pricing.dart`:
+- `const priceDivergenceToleranceZAR = 0.02` — 2-cent tolerance absorbing
+  across-representation rounding.
+- `PlayPriceReconciliation.compare({playExVat, adminInclVat, vatRate,
+  currencySymbol, tolerance})` — grosses the catalog amount up
+  (`playInclVat = playExVat * 1.15`), clamps non-finite/negative inputs to 0
+  (never NaN), and exposes:
+  - `matches` — `(playInclVat - adminInclVat).abs() < tolerance`.
+  - `matchMessage` — `Play Console R30.43 excl (R34.99 incl) matches Admin
+    R34.99`.
+  - `mismatchMessage` — `Play Console R30.43 excl (R34.99 incl) != Admin R39.99
+    — update Play Console base plan to match.`
+
+### Wiring
+- **Admin Portal** (`admin_dashboard_screen.dart` `_checkPriceDivergence`):
+  iterates `SubscriptionTier.values`, builds a reconciliation per tier, and
+  **`continue`s on `matches`** — so a genuine match (30.43↔34.99, 260.86↔299.99)
+  adds NO message → `_priceDivergenceMessages` is empty → the banner (gated on
+  `isNotEmpty` at the call site) is never built. Only real divergences beyond
+  2 cents produce the warning, whose copy now states both the excl and incl
+  Play figures plus the Admin amount.
+- **Subscriber checkout** (`subscription_screen.dart`): `_hasPriceDivergence`
+  and `_buildDivergenceNotice` route through the shared reconciliation, so both
+  surfaces agree on when (and how) to warn.
+
+### Source of truth (no config change needed)
+`SubscriptionConfig.toMap()` already writes the canonical VAT-INCLUSIVE
+`hunter_monthly: 34.99` / `outfitter_monthly: 299.99` plus the derived
+`*_price_excl` (= `incl / 1.15` → 30.43 / 260.86) and `vat: 15`. Task item 3 was
+already satisfied; no `appConfig` / remote-config / seed change was required.
+(`functions/src/seed_pricing.ts` seeds the same document.)
+
+### Tests
+NEW `test/price_divergence_reconciliation_test.dart` (13 tests): the two exact
+Option A pairs reconcile as `matches`; sub-2-cent drift absorbed; the exact
+bug shape (raw ex-VAT compared as inclusive) is NOT a match; a real divergence
+warns; NaN/negative collapse to 0; `matchMessage` / `mismatchMessage` copy;
+currency-symbol honouring; constant contract (34.99/299.99/0.15/0.02).
+
+### Verified
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues, unchanged baseline).
+- `flutter test --reporter=compact` (full suite): **All 1891 tests passed**.
+- `pubspec.lock` / `analysis_options.yaml` untouched. No Firestore rules /
+  functions / manifest changes.
+- Env: Flutter 3.44.9 (Dart 3.12.2) downloaded + extracted to `/tmp/f/flutter`
+  (the sandbox had no SDK); `LD_LIBRARY_PATH="$HOME/libs"` with the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink
+  for the sqflite-FFI suites; the pubspec "Unexpected child config" warning is
+  the documented pre-existing spurious line.
+- Commit `f768d63`.
+
+### Files
+- `lib/features/subscription/services/subscription_pricing.dart`
+  (`priceDivergenceToleranceZAR` + `PlayPriceReconciliation`),
+- `lib/features/admin/screens/admin_dashboard_screen.dart`
+  (`_checkPriceDivergence` reconciliation + banner docstring),
+- `lib/features/subscription/subscription_screen.dart`
+  (`_hasPriceDivergence` + `_buildDivergenceNotice`),
+- `test/price_divergence_reconciliation_test.dart` (NEW), `AGENTS.md`.
+
 ## Phase -- v9.3 POPIA compliance: policy rewrite + sensitive-data isolation (added 2026-09-23)
 
 ### Context
