@@ -67,3 +67,4 @@ functions/lib/
 functions/.env
 functions/.env.local
 functions/*.local
+scripts/serviceAccountKey.json
