@@ -864,15 +864,24 @@ class _AuthScreenState extends State<AuthScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.only(top: 4.0),
                                 child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
+                                  onTap: () async {
+                                    final accepted = await Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder:
-                                            (context) =>
-                                                const PrivacyPolicyScreen(),
+                                            (_) => const PrivacyPolicyScreen(
+                                              showAcceptanceFooter: true,
+                                            ),
                                       ),
                                     );
+                                    // The policy's own "I ACCEPT" button lets
+                                    // the reader acknowledge straight from the
+                                    // document (POPIA s.18 notification).
+                                    if (accepted == true && context.mounted) {
+                                      setState(
+                                        () => _hasAcceptedPrivacyPolicy = true,
+                                      );
+                                    }
                                   },
                                   child: RichText(
                                     text: TextSpan(
@@ -940,6 +949,40 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                     ],
+                    // POPIA s.18 notification: the policy is reachable from
+                    // BOTH modes — the sign-up acceptance checkbox above and
+                    // this standalone link on the login form.
+                    const SizedBox(height: 12.0),
+                    Center(
+                      child: TextButton.icon(
+                        key: const ValueKey('loginPrivacyPolicyLink'),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => const PrivacyPolicyScreen(
+                                    showAcceptanceFooter: false,
+                                  ),
+                            ),
+                          );
+                        },
+                        icon: Icon(
+                          Icons.privacy_tip_outlined,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                        label: Text(
+                          'Privacy & POPIA Policy',
+                          style: TextStyle(
+                            fontFamily: 'Mono',
+                            fontSize: 11.0,
+                            color: theme.colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 24.0),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(

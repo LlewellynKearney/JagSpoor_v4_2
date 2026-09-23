@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 // `foundation` also re-exports `Uint8List` (dart:typed_data).
 import 'package:flutter/foundation.dart';
 import '../../../core/services/offline_stream_guard.dart';
+import '../../legal/sensitive_personal_information.dart';
 import '../models/venison_transport_permit.dart';
 
 /// VenisonPermitManager — central engine for the legal South African Venison /
@@ -404,7 +405,11 @@ class VenisonPermitManager {
       }
     }
 
-    // Hunter details.
+    // Hunter details. The POPIA-sensitive fields (ID number, health info)
+    // live in the owner-only `users/{hunterId}/private/profile` subcollection;
+    // only the account-directory contact fields are on the parent document.
+    // Best-effort: a missing private doc simply omits the ID number, which the
+    // issuing user completes on the permit form.
     if (hunterId != null) {
       final userDoc = await _firestore.collection('users').doc(hunterId).get();
       if (userDoc.exists) {
@@ -412,7 +417,20 @@ class VenisonPermitManager {
         result['hunterName'] = u['fullName'] ?? u['name'] ?? '';
         result['hunterCell'] = u['phoneNumber'] ?? u['cellNumber'] ?? '';
         result['hunterAddress'] = u['address'] ?? '';
-        result['hunterIdNumber'] = u['idNumber'] ?? '';
+      }
+      try {
+        final privateDoc = await _firestore
+            .collection('users')
+            .doc(hunterId)
+            .collection(SensitivePersonalInformation.privateCollection)
+            .doc(SensitivePersonalInformation.privateProfileDocId)
+            .get();
+        final p = privateDoc.data();
+        if (p != null && (p['idNumber'] as String?)?.trim().isNotEmpty == true) {
+          result['hunterIdNumber'] = p['idNumber'];
+        }
+      } catch (_) {
+        // Offline / permissions / not-found — the field stays blank.
       }
     }
 

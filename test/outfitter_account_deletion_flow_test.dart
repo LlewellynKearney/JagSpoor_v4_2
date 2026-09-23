@@ -45,6 +45,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The settings sheet is a scrollable modal: the DANGER ZONE sits below the
+  /// privacy tile + referral widget, so the destructive button must be
+  /// scrolled into view before it can be tapped.
+  Future<void> tapDeleteAccount(WidgetTester tester) async {
+    final deleteButton = find.text('DELETE ACCOUNT & ALL DATA');
+    await tester.ensureVisible(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('the settings sheet shows the Delete Account danger zone',
       (tester) async {
     await openSettingsSheet(tester);
@@ -59,8 +70,7 @@ void main() {
       (tester) async {
     await openSettingsSheet(tester);
 
-    await tester.tap(find.text('DELETE ACCOUNT & ALL DATA'));
-    await tester.pumpAndSettle();
+    await tapDeleteAccount(tester);
 
     expect(find.text('Delete Account'), findsOneWidget);
     expect(find.textContaining('IRREVERSIBLE'), findsOneWidget);
@@ -74,8 +84,7 @@ void main() {
       (tester) async {
     await openSettingsSheet(tester);
 
-    await tester.tap(find.text('DELETE ACCOUNT & ALL DATA'));
-    await tester.pumpAndSettle();
+    await tapDeleteAccount(tester);
     await tester.tap(find.text('CANCEL'));
     await tester.pumpAndSettle();
 
@@ -88,8 +97,7 @@ void main() {
       (tester) async {
     await openSettingsSheet(tester);
 
-    await tester.tap(find.text('DELETE ACCOUNT & ALL DATA'));
-    await tester.pumpAndSettle();
+    await tapDeleteAccount(tester);
     await tester.tap(find.text('DELETE FOREVER'));
     await tester.pumpAndSettle();
 

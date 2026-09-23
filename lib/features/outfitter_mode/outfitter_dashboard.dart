@@ -25,6 +25,7 @@ import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../auth/services/user_role_provider.dart';
 import '../referral/widgets/referral_share_widget.dart';
+import '../auth/screens/privacy_policy_screen.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/play_billing_service.dart';
 import '../subscription/services/play_purchase_recorder.dart';
@@ -751,6 +752,40 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                     color: theme.subtitleColor,
                   ),
                   onTap: () => ChangePasswordDialog.show(context),
+                ),
+                const SizedBox(height: 24),
+
+                // ── Privacy & POPIA (Google Play + POPIA s.18) ───────────
+                // Outfitter accounts get the same in-app policy + Information
+                // Officer contact surface as hunters. The account-deletion
+                // route is the DANGER ZONE card below.
+                ListTile(
+                  key: const ValueKey('outfitterPrivacyPolicyTile'),
+                  leading: Icon(
+                    Icons.privacy_tip_outlined,
+                    color: theme.accentColor,
+                  ),
+                  title: Text(
+                    'Privacy & POPIA Policy',
+                    style: TextStyle(color: theme.textColor),
+                  ),
+                  subtitle: Text(
+                    'How JagSpoor collects, uses and protects your data · '
+                    'Information Officer contact',
+                    style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                  ),
+                  trailing: Icon(
+                    Icons.chevron_right,
+                    color: theme.subtitleColor,
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PrivacyPolicyScreen(),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
 

@@ -1,5 +1,141 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- v9.3 POPIA compliance: policy rewrite + sensitive-data isolation (added 2026-09-23)
+
+### Context
+POPIA registration certificate (Information Regulator, issued 2026-09-05)
+supplied: JAGSPOOR VELD AND VENTURES, reg no 2026-066026, private company
+2026/675772/07, Information Officer Donald Llewelyn Kearney (appointed
+2026-09-01). Tasks: rewrite the privacy policy to be POPIA-compliant, surface
+it on signup/login/settings, and make the data handling match it.
+
+### What was MISSING before this phase (the audit)
+1. **No registered particulars.** The policy named no organisation, no POPIA
+   registration number, and no Information Officer — it referred vaguely to
+   "our data protection officer" with `privacy@jag-spoor.co.za`.
+2. **Incomplete s.18 disclosure.** No lawful-basis section, no retention
+   schedule, no cross-border-transfer clause, no FCM/notification disclosure,
+   no right to object to direct marketing, no complaint procedure, no children
+   clause, no version number. "Last Updated: July 2026 / Version 2.0" was
+   stale. The old text also claimed AES-256 at-rest encryption and "TLS 1.3"
+   that the app does not implement (inaccurate = non-compliant).
+3. **CRITICAL — sensitive data was world-readable.** `firestore.rules`
+   granted `allow read: if isSignedIn()` on `users/{userId}`, and that
+   document carried `bloodType`, `allergies`, `medicalAid`, `emergencyContact`,
+   `idNumber`, `hunterStatus` and `provincialPermits`. **ANY signed-in user
+   could read ANY other user's medical information and SA ID number** — a POPIA
+   s.19/s.26 breach with a high risk of serious harm.
+4. **Plaintext sensitive-data cache.** `hunter_profile_screen.dart` wrote the
+   whole profile (incl. ID number, blood type, allergies, medical aid) into
+   `SharedPreferences` via `data.toString()`, and stored it as a Dart-map
+   string — unencrypted, readable with root/backup extraction.
+5. **2FA was silently broken.** The OTP challenge was written to
+   `users/{uid}/security/two_factor_challenge`, but `firestore.rules` had NO
+   block for that subcollection, so the default-deny rejected the write. 2FA
+   could never complete.
+6. **Policy not on the login screen**, not in outfitter settings, and the
+   signup checkbox only opened the document (no acknowledgement affordance).
+
+### What was FIXED
+1. **NEW `lib/features/legal/popia_registration.dart`** — single source of
+   truth for the certificate particulars (organisation, reg 2026-066026, date
+   2026-09-05, company 2026/675772/07, officer Donald Llewelyn Kearney +
+   2026-09-01 appointment, `privacy@` / `support@`, regulator channels,
+   `lastUpdated = 23 September 2026`, `policyVersion = 3.0`).
+2. **`lib/features/auth/screens/privacy_policy_screen.dart` rewritten** (10
+   sections): who we are (registered particulars + Information Officer);
+   categories of personal information (incl. **FCM tokens**, **farmName**,
+   **ID number**, **medical info** — the exact fields from the users
+   collection); lawful purpose (contract / legal obligation / **explicit
+   consent for health data** / legitimate interest, plus an explicit "we never
+   sell your data and other users see only booking-essential contact
+   details"); sharing + **cross-border transfer (POPIA s.72)**; a **retention
+   table**; user rights (access s.23, correction s.24, deletion/objection,
+   direct-marketing objection s.69, **complaint to the Information Regulator**);
+   security safeguards (s.19) **with an honest, claim-checked measure list**;
+   cookies/local storage/push notifications (s.21-ish + FCM); children (s.35);
+   policy updates + version. Footer carries the officer contact and a
+   **"COMPLAIN TO THE INFORMATION REGULATOR"** button → inforegulator.org.za.
+   New `showAcceptanceFooter` flag renders an "I ACCEPT" button.
+3. **CRITICAL FIX — new owner-only subcollection.** NEW
+   `lib/features/legal/sensitive_personal_information.dart` classifies the
+   s.26 fields. The profile write now splits: the cross-user-readable
+   `users/{uid}` keeps only booking-essential directory data, while
+   `users/{uid}/private/profile` (owner-only in the rules) holds blood type,
+   allergies, medical aid, emergency contact, ID number, hunter status and
+   provincial permits. The profile reader reads both. The venison-permit
+   hunter-ID prefill reads the private doc. **Migration:** the save writes
+   `FieldValue.delete()` for every sensitive field on the parent doc, so
+   legacy public copies are scrubbed on the next profile save.
+4. **Rules guard.** New `sensitiveFieldUnchanged(field)` /
+   `noSensitiveFieldAdded()` helpers (change-detection, same rationale as the
+   entitlement guards) deny any client write that ADDS or CHANGES a sensitive
+   field on the cross-user-readable document, while allowing merge-updates of
+   legacy docs (so ordinary saves never regress to PERMISSION_DENIED) and the
+   privacy-positive delete.
+5. NEW rules blocks `users/{userId}/private/{docId}` (owner-only) and
+   `users/{userId}/security/{docId}` (owner-scoped — fixes 2FA while keeping
+   the OTP code private).
+6. **Cache fix.** `_cacheProfileData` now redacts sensitive fields and stores
+   JSON; sensitive values are re-read from the owner-only doc. Docstring
+   records the POPIA s.19 rationale.
+7. **Surfaced in all three places:** signup acceptance checkbox (opens the
+   policy with the acceptance footer, returns `true` → ticks the box), a new
+   login-mode `loginPrivacyPolicyLink`, and the hunter profile "PRIVACY & DATA"
+   section (pre-existing) plus a NEW outfitter settings
+   `outfitterPrivacyPolicyTile`.
+
+### Honesty note (claim-checked, deliberately weaker than before)
+The old policy claimed AES-256 application-layer encryption and TLS 1.3. The
+app relies on Firebase/Google Cloud **at-rest encryption** and TLS **1.2+**
+transport, and the offline SQLite is OS-protected rather than
+app-encrypted. The rewritten policy states only what is actually true —
+overstating safeguards is itself a POPIA failure.
+
+### Tests
+NEW `test/popia_privacy_policy_test.dart` (23 tests): certificate particulars
+verbatim; sensitive-field classification (`isSensitive` / `extract` /
+`redact` / private path); policy content contracts for every mandatory
+disclosure element; the acceptance-footer behaviour + `pop(true)`; and a
+`firestore.rules` structural group asserting the private/security blocks are
+owner-scoped (not the blanket `isSignedIn()` read) and that
+`noSensitiveFieldAdded()` guards the users write. `outfitter_account_deletion_flow_test`
+gained `ensureVisible` before tapping the (now further down) delete button.
+
+### Verified
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing infos).
+- `flutter test`: **All 1881 tests passed** (was 1858; +23 new).
+- `firestore.rules` structurally validated (braces/parens balanced, default-deny
+  intact).
+- Env: Flutter 3.44.9 at `/tmp/sdk/flutter`; `LD_LIBRARY_PATH="$HOME/libs"` +
+  the `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites.
+
+### ⚠️ Operator steps required (cannot be done in this sandbox)
+1. **Deploy the rules** — `npx firebase-tools deploy --only
+   firestore:rules` in a credentialed env. Until then the sensitive fields
+   remain world-readable on the deployed project.
+2. **Migrate existing documents.** Ask each user to open + save their Hunter
+   Profile once (the save scrubs the public copy), or run a one-off Admin-SDK
+   script that copies `bloodType`/`allergies`/`medicalAid`/`emergencyContact`/
+   `idNumber`/`hunterStatus`/`provincialPermits` into
+   `users/{uid}/private/profile` and deletes them from `users/{uid}`.
+3. Update the Play Store data-safety form to match section 2 of the policy and
+   host the same text at `https://jagspoor.co.za/privacy` if a public URL is
+   required for the listing.
+
+### Files
+- `lib/features/legal/popia_registration.dart` (NEW),
+  `lib/features/legal/sensitive_personal_information.dart` (NEW),
+  `lib/features/auth/screens/privacy_policy_screen.dart` (rewritten),
+  `lib/features/auth/auth_screen.dart` (login link + acceptance return),
+  `lib/features/outfitter_mode/outfitter_dashboard.dart` (privacy tile),
+  `lib/features/hunter_mode/hunter_profile_screen.dart` (profile split +
+  cache redaction + private read),
+  `lib/features/hunter_mode/services/venison_permit_manager.dart` (ID from
+  private doc), `firestore.rules` (private + security blocks, sensitive-field
+  guard), `test/popia_privacy_policy_test.dart` (NEW),
+  `test/outfitter_account_deletion_flow_test.dart`, `AGENTS.md`.
+
 ## Phase -- v9.2 debug: VAT-inclusive Play price display + restored subscription loader / purchase recording (added 2026-09-23)
 
 ### Bug 1 -- VAT compliance (main issue): paywall quoted an EX-VAT amount

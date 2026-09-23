@@ -38,6 +38,39 @@ service cloud.firestore {
       );
     }
 
+    // POPIA s.26 change-detection guard for the cross-user-readable
+    // users/{userId} document.
+    //
+    // The health / identity / firearm fields below must live ONLY in the
+    // owner-only `users/{userId}/private/profile` subcollection. This helper
+    // denies a client write that ADDS or CHANGES any of them on the parent
+    // document while still permitting:
+    //   • a write that does not mention the field (the server keeps or, for a
+    //     migration, removes the stored value), and
+    //   • a write that leaves the stored value untouched (merge-updates of
+    //     legacy documents must not start failing with PERMISSION_DENIED —
+    //     the same change-detection rationale as the entitlement guards).
+    // Deleting a legacy copy is therefore allowed (privacy-positive), while
+    // (re-)publishing a sensitive value to every signed-in user is not.
+    function sensitiveFieldUnchanged(field) {
+      return !(field in request.resource.data)
+        || (resource != null && request.resource.data[field] == resource.data[field]);
+    }
+
+    function noSensitiveFieldAdded() {
+      return sensitiveFieldUnchanged('bloodType')
+        && sensitiveFieldUnchanged('allergies')
+        && sensitiveFieldUnchanged('medicalAid')
+        && sensitiveFieldUnchanged('medicalAidNumber')
+        && sensitiveFieldUnchanged('medicalConditions')
+        && sensitiveFieldUnchanged('emergencyContact')
+        && sensitiveFieldUnchanged('hasFirstAid')
+        && sensitiveFieldUnchanged('idNumber')
+        && sensitiveFieldUnchanged('idPassportNumber')
+        && sensitiveFieldUnchanged('hunterStatus')
+        && sensitiveFieldUnchanged('provincialPermits');
+    }
+
     // Owner-or-admin scope for strictly private user data collections.
     // isOwnerOf is checked first so a normal owner access never triggers the
     // users-doc get() inside isAdmin(); admin access falls through to it.
@@ -129,6 +162,7 @@ service cloud.firestore {
       // stored one. Only the Admin SDK (Cloud Functions) may write these —
       // the client can read but never write them.
       allow write: if isSignedIn() && request.auth.uid == userId
+        && noSensitiveFieldAdded()
         && (resource == null
           || !('deviceFingerprint' in resource.data)
           || resource.data.deviceFingerprint == request.resource.data.deviceFingerprint)
@@ -196,6 +230,28 @@ service cloud.firestore {
           || (resource != null
             && request.resource.data.referralCodeUsed == resource.data.referralCodeUsed));
       allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ── Owner-only sensitive profile (POPIA s.26) ────────────────────────
+    // Health information (bloodType / allergies / medicalAid /
+    // emergencyContact), the SA ID number and firearm-permit particulars are
+    // POPIA "special personal information" / high-harm identifiers. They are
+    // deliberately NOT stored on the cross-user-readable users/{userId}
+    // document: the privacy policy commits that "your health, ID and firearm
+    // data are readable only by you". Any other signed-in user is denied
+    // outright, and no client can ever read another account's medical data.
+    match /users/{userId}/private/{docId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ── Two-factor / OTP challenge subcollection ─────────────────────────
+    // Holds the SMS one-time-code challenge (`code`, `expiresAt`, `attempts`,
+    // `mobileNumber`). It must be reachable ONLY by the account holder — the
+    // previous default-deny made the OTP write fail silently, so 2FA could
+    // never complete; these explicit owner-scoped grants fix that without
+    // opening the challenge (or its code) to anyone else.
+    match /users/{userId}/security/{docId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
     // Entitlement documents are written exclusively by Cloud Functions
     // (validateGooglePlayPurchase / the trial trigger) via the Admin SDK,

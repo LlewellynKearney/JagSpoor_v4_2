@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +12,7 @@ import '../../core/services/image_service.dart';
 import '../../core/utils/measurement_formatter.dart';
 import '../auth/change_password_dialog.dart';
 import '../auth/screens/privacy_policy_screen.dart';
+import '../legal/sensitive_personal_information.dart';
 import '../auth/services/user_role_provider.dart';
 import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
@@ -233,12 +235,27 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         _populateProfileFromCache(cachedProfile);
       }
 
-      // Load from Firestore
-      final doc =
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get();
+      // Load from Firestore. The account directory (name / contact / address)
+      // lives on users/{uid}; the POPIA-sensitive fields (health, ID number,
+      // firearm-permit particulars) live in the owner-only
+      // users/{uid}/private/profile document. Both are read together so the
+      // form is complete.
+      final userRef =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final doc = await userRef.get();
+
+      Map<String, dynamic> privateData = const <String, dynamic>{};
+      try {
+        final privateSnap = await userRef
+            .collection(SensitivePersonalInformation.privateCollection)
+            .doc(SensitivePersonalInformation.privateProfileDocId)
+            .get();
+        privateData = privateSnap.data() ?? const <String, dynamic>{};
+      } catch (_) {
+        // An un-migrated account has no private doc yet — the legacy public
+        // values below are used as a one-time fallback and are migrated to
+        // the private document on the next save.
+      }
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -268,14 +285,24 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
           _farmNameController.text = data['farmName'] ?? '';
           _latitudeController.text = data['latitude'] ?? '';
           _longitudeController.text = data['longitude'] ?? '';
-          _bloodTypeController.text = data['bloodType'] ?? '';
-          _allergiesController.text = data['allergies'] ?? '';
-          _medicalAidController.text = data['medicalAid'] ?? '';
-          _emergencyContactController.text = data['emergencyContact'] ?? '';
-          _idNumberController.text = data['idNumber'] ?? '';
-          _hunterStatusController.text = data['hunterStatus'] ?? '';
-          _provincialPermitsController.text = data['provincialPermits'] ?? '';
-          _hasFirstAid = data['hasFirstAid'] ?? false;
+          // POPIA-sensitive fields: read from the owner-only private
+          // document, falling back to a legacy public copy on the first load
+          // after the upgrade (the next save migrates it).
+          _bloodTypeController.text =
+              privateData['bloodType'] ?? data['bloodType'] ?? '';
+          _allergiesController.text =
+              privateData['allergies'] ?? data['allergies'] ?? '';
+          _medicalAidController.text =
+              privateData['medicalAid'] ?? data['medicalAid'] ?? '';
+          _emergencyContactController.text =
+              privateData['emergencyContact'] ?? data['emergencyContact'] ?? '';
+          _idNumberController.text =
+              privateData['idNumber'] ?? data['idNumber'] ?? '';
+          _hunterStatusController.text =
+              privateData['hunterStatus'] ?? data['hunterStatus'] ?? '';
+          _provincialPermitsController.text =
+              privateData['provincialPermits'] ?? data['provincialPermits'] ?? '';
+          _hasFirstAid = privateData['hasFirstAid'] ?? data['hasFirstAid'] ?? false;
           _profileImageUrl = data['profileImageUrl'];
         });
 
@@ -295,12 +322,20 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     // Basic cache population - will be updated by Firestore
   }
 
+  /// Caches the hunter's NON-SENSITIVE profile fields for offline form
+  /// pre-fill.
+  ///
+  /// POPIA s.19 safeguard: health information (blood type, allergies, medical
+  /// aid, emergency contact), the ID number and firearm-permit particulars are
+  /// POPIA special personal information and are deliberately NOT written to
+  /// the unencrypted `SharedPreferences` store. They are re-read from the
+  /// owner-only `users/{uid}/private/profile` document when the screen loads.
   Future<void> _cacheProfileData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    // Cache key fields for offline use
-    await prefs.setString('cached_profile_${user.uid}', data.toString());
+    final safe = SensitivePersonalInformation.redact(data);
+    await prefs.setString('cached_profile_${user.uid}', jsonEncode(safe));
   }
 
   Future<void> _pickImage() async {
@@ -440,7 +475,12 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       final composedFullName =
           [first, last].where((p) => p.isNotEmpty).join(' ');
 
-      final profileData = {
+      // ── Public account directory (cross-user readable) ──────────────────
+      // Name, contact, address and role only. The health / identity /
+      // firearm fields are deliberately excluded here — they are POPIA
+      // special personal information and go to the owner-only private
+      // document below.
+      final publicProfile = {
         'firstName': first,
         'lastName': last,
         'fullName': composedFullName,
@@ -451,6 +491,12 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         'farmName': _farmNameController.text.trim(),
         'latitude': _latitudeController.text.trim(),
         'longitude': _longitudeController.text.trim(),
+        'profileImageUrl': _profileImageUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // ── Owner-only sensitive document (POPIA s.26) ──────────────────────
+      final privateProfile = {
         'bloodType': _bloodTypeController.text.trim(),
         'allergies': _allergiesController.text.trim(),
         'medicalAid': _medicalAidController.text.trim(),
@@ -459,17 +505,36 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
         'hunterStatus': _hunterStatusController.text.trim(),
         'provincialPermits': _provincialPermitsController.text.trim(),
         'hasFirstAid': _hasFirstAid,
-        'profileImageUrl': _profileImageUrl,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set(profileData, SetOptions(merge: true));
+      final db = FirebaseFirestore.instance;
+      final userRef = db.collection('users').doc(user.uid);
 
-      // Update cache
-      await _cacheProfileData(profileData);
+      // Migration: remove any sensitive values a previous app version
+      // published on the cross-user-readable document. Writing an explicit
+      // delete is permitted by the rules' change-detection guard and is the
+      // privacy-positive direction (a value can never be re-published there).
+      final legacyFieldCleanup = {
+        for (final f in SensitivePersonalInformation.allSensitiveFields)
+          f: FieldValue.delete(),
+      };
+
+      await userRef
+          .set({...publicProfile, ...legacyFieldCleanup},
+              SetOptions(merge: true))
+          .timeout(const Duration(seconds: 20));
+
+      // Sensitive data lives ONLY in users/{uid}/private/profile, which the
+      // Firestore rules restrict to the account holder.
+      await userRef
+          .collection(SensitivePersonalInformation.privateCollection)
+          .doc(SensitivePersonalInformation.privateProfileDocId)
+          .set(privateProfile, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 20));
+
+      // Update cache (public fields only — no plaintext health/ID data)
+      await _cacheProfileData({...publicProfile, ...privateProfile});
 
       // Once the mandatory onboarding fields are saved, let the user back into
       // the app automatically instead of leaving them stranded on this screen.
