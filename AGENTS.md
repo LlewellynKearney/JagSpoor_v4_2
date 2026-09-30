@@ -1,5 +1,131 @@
 # JagSpoor -- Agent Memory
 
+
+## Phase -- Switch canonical referral domain to jag-spoor.co.za (Afrihost) + App Links manifest/entitlements (v10) (added 2026-09-30)
+
+### Symptom
+The prior App Links migration (commit c107763) used `jagspoor.co.za` (NO
+hyphen), but the real Afrihost custom domain is **`jag-spoor.co.za`** (with
+hyphen). The Firebase Hosting deploy to `jagspoor.web.app` had 3 files, yet
+`https://jagspoor.co.za/r/CODE` 404'd because the domain was never verified.
+
+### Canonical domain change
+- `ReferralLinkService.domain` `https://jagspoor.co.za` ->
+  **`https://jag-spoor.co.za`** (`lib/services/referral_link_service.dart`).
+  `generateReferralLink` now yields `https://jag-spoor.co.za/r/<CODE>`; the
+  share text reads `Join JagSpoor and get 1 month free!
+  https://jag-spoor.co.za/r/<CODE>`.
+- Custom-scheme fallback `jagspoor://referral?code=<CODE>` is UNCHANGED.
+- Comments / docstrings / constants updated in: `incoming_referral_handler.dart`,
+  `main.dart`, `referral_code.dart`, `referral_repository.dart`,
+  `referral_share_composer.dart`, `auth_screen.dart`,
+  `password_reset_action_code_settings.dart` (`resetDeepLinkUrl` ->
+  `https://jag-spoor.co.za/reset-password`), `paywall_screen.dart`
+  (`websitePricingUrl` -> `https://jag-spoor.co.za/pricing`), `pubspec.yaml`,
+  `firestore.rules` (comment), `functions/src/entitlement.ts` (comment).
+
+### firebase.json hosting (the reason assetlinks would have failed)
+- REMOVED the default `"**/.*"` entry from `ignore` — it excludes the
+  `.well-known/` directory from the upload, so the hand-authored
+  `assetlinks.json` / `apple-app-site-association` would never be served.
+- Added `"appAssociation": "NONE"` — Firebase Hosting's default `AUTO`
+  DYNAMICALLY GENERATES and OVERRIDES those files at request time; `NONE`
+  makes Hosting serve OUR committed files.
+- Added `headers` Content-Type `application/json` for both association files
+  (the AASA is extension-less and would otherwise be mis-typed).
+- Rewrites kept to `{ "source": "/r/**", "destination": "/r/index.html" }`
+  ONLY — there is deliberately NO `"**" -> "/index.html"` catch-all (it would
+  swallow `/.well-known/*` and break App Links verification).
+
+### Android App Links (`AndroidManifest.xml`)
+- `autoVerify="true"` intent-filter host `jagspoor.co.za` ->
+  **`jag-spoor.co.za`**, `pathPrefix="/r/"` -> **`/r`**, plus a NEW
+  `pathPrefix="/.well-known"` data element (per the task spec).
+- `jagspoor://referral` scheme fallback filter unchanged.
+
+### iOS (`Runner.entitlements` + `Info.plist`)
+- Associated domain `applinks:jagspoor.co.za` -> **`applinks:jag-spoor.co.za`**;
+  `Info.plist` comment updated.
+
+### Association files
+- `public/.well-known/assetlinks.json` — package kept as the REAL
+  `za.co.jagspoor.app` (matches `android/app/build.gradle.kts`
+  `applicationId`; the brief's `com.jagspoor.app` is a typo and would break
+  verification). Added a JSON-safe `_comment` documenting that the two
+  `sha256_cert_fingerprints` placeholders must be replaced with the real
+  Play Console → App integrity values.
+- `public/.well-known/apple-app-site-association` — added a `_comment`
+  documenting the `REPLACE_WITH_TEAM_ID` placeholder.
+- `public/r/index.html` — no change needed: it already parses BOTH
+  `/r/<CODE>` (path) and `?code=<CODE>` (query, path wins), then
+  `intent://referral` (Android) / `jagspoor://referral?code=` (iOS) with a
+  Play Store fallback. Verified functionally with a Node mirror of the
+  resolver.
+
+### Tests
+- Domain references updated in `referral_link_service_test`,
+  `incoming_referral_handler_test`, `referral_share_composer_test`,
+  `referral_share_widget_test`, `referral_share_sheet_test`,
+  `password_reset_action_code_settings_test`, `app_links_config_test`.
+- `app_links_config_test.dart` STRENGTHENED (+4 tests): the new `/.well-known`
+  pathPrefix; a guard that no hyphen-less `android:host="jagspoor.co.za"`
+  reappears; the AASA `appID`; landing-page `?code=`/path parsing + intent/
+  Play fallback; `appAssociation == NONE`; the `**/.*` ignore pattern is gone;
+  the two `.well-known` Content-Type headers exist; and NO catch-all
+  `**` -> `/index.html` rewrite exists.
+
+### Verification
+- `flutter pub get`: clean. `flutter analyze --no-pub`: **0 errors, 0
+  warnings**, 320 pre-existing info-level issues (unchanged baseline).
+- `flutter test --no-pub` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites):
+  **All 1954 tests passed**.
+- JSON/XML/HTML validated (`json` / `xml.dom.minidom` / `html.parser`):
+  `firebase.json`, `assetlinks.json`, AASA, `AndroidManifest.xml`,
+  `Runner.entitlements`, `Info.plist`, `public/r/index.html`.
+- Env: Flutter 3.44.9 downloaded + extracted to `/tmp/fl/flutter` (the
+  sandbox had no SDK).
+- Commit `bc94ec2` pushed to `origin/main` (`c107763..bc94ec2`).
+
+### ⚠️ Operator steps required (cannot be done in this sandbox)
+1. **Afrihost DNS**: remove the OLD `A 154.0.169.121` record for
+   `jag-spoor.co.za`; keep the new Firebase Hosting `A 199.36.158.100` +
+   `TXT hosting-site=jagspoor`. Wait for propagation, then verify the domain
+   in the Firebase Console (Hosting → custom domain).
+2. **Fill the SHA-256 fingerprints** in `public/.well-known/assetlinks.json`
+   (Play Console → Release → Setup → App integrity: Play App Signing +
+   upload keystore). Until then Android falls back to `jagspoor://`.
+3. **Fill the `TEAM_ID`** in `public/.well-known/apple-app-site-association`.
+4. **Deploy** (on the local machine, after DNS verify):
+   `npx firebase-tools deploy --only hosting` (rules/functions unchanged in
+   behaviour — only comments). Hosting must serve
+   `/.well-known/assetlinks.json`, `/.well-known/apple-app-site-association`,
+   and `/r/**`.
+5. **Authorize** `https://jag-spoor.co.za` in Firebase Console →
+   Authentication → Settings → Authorized domains (the password-reset
+   continue URL now uses it).
+6. Verify with
+   `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://jag-spoor.co.za&relation=delegate_permission/common.handle_all_urls`.
+
+### Files
+- MODIFIED: `lib/services/referral_link_service.dart`,
+  `lib/services/incoming_referral_handler.dart`, `lib/main.dart`,
+  `lib/features/referral/models/referral_code.dart`,
+  `lib/features/referral/services/referral_repository.dart`,
+  `lib/features/referral/services/referral_share_composer.dart`,
+  `lib/features/auth/auth_screen.dart`,
+  `lib/features/auth/services/password_reset_action_code_settings.dart`,
+  `lib/features/subscription/paywall_screen.dart`, `pubspec.yaml`,
+  `firebase.json`, `firestore.rules`, `functions/src/entitlement.ts`,
+  `android/app/src/main/AndroidManifest.xml`, `ios/Runner/Runner.entitlements`,
+  `ios/Runner/Info.plist`, `public/.well-known/assetlinks.json`,
+  `public/.well-known/apple-app-site-association`,
+  `test/app_links_config_test.dart`, `test/referral_link_service_test.dart`,
+  `test/incoming_referral_handler_test.dart`,
+  `test/referral_share_composer_test.dart`,
+  `test/referral_share_widget_test.dart`, `test/referral_share_sheet_test.dart`,
+  `test/password_reset_action_code_settings_test.dart`, `AGENTS.md`.
+
 ## Phase -- Migrate referral sharing off Firebase Dynamic Links (shutdown 2025-08-25) to App Links jagspoor.co.za/r/:code (added 2026-09-23)
 
 ### Symptom
