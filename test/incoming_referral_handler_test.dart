@@ -18,7 +18,7 @@ void main() {
 
   test('handleUri stores an HTTPS App Link code', () async {
     await ReferralLinkHandler.instance.handleUri(
-      Uri.parse('https://jagspoor.co.za/r/JAGSPOOR7Q3X'),
+      Uri.parse('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'),
       validateCode: (_) async => true,
     );
     expect(ReferralLinkHandler.instance.pendingCode, 'JAGSPOOR7Q3X');
@@ -35,7 +35,7 @@ void main() {
 
   test('upper-cases the stored code', () async {
     await ReferralLinkHandler.instance.handleUri(
-      Uri.parse('https://jagspoor.co.za/r/abc123'),
+      Uri.parse('https://jag-spoor.co.za/r/abc123'),
       validateCode: (_) async => true,
     );
     expect(ReferralLinkHandler.instance.pendingCode, 'ABC123');
@@ -43,7 +43,7 @@ void main() {
 
   test('ignores a non-referral URI', () async {
     await ReferralLinkHandler.instance.handleUri(
-      Uri.parse('https://jagspoor.co.za/about'),
+      Uri.parse('https://jag-spoor.co.za/about'),
       validateCode: (_) async => true,
     );
     expect(ReferralLinkHandler.instance.pendingCode, isNull);
@@ -52,7 +52,7 @@ void main() {
   test('a code that fails validation is stored but not signalled', () async {
     var resolved = false;
     await ReferralLinkHandler.instance.handleUri(
-      Uri.parse('https://jagspoor.co.za/r/INVALID1'),
+      Uri.parse('https://jag-spoor.co.za/r/INVALID1'),
       validateCode: (_) async => false,
     );
     // registerCode still records it (so the signup screen can pre-fill), but
@@ -63,7 +63,7 @@ void main() {
 
   test('a validation failure (throwing validator) never crashes', () async {
     await ReferralLinkHandler.instance.handleUri(
-      Uri.parse('https://jagspoor.co.za/r/BOOM1234'),
+      Uri.parse('https://jag-spoor.co.za/r/BOOM1234'),
       validateCode: (_) async => throw StateError('no firebase'),
     );
     expect(ReferralLinkHandler.instance.pendingCode, 'BOOM1234');
@@ -111,7 +111,7 @@ void main() {
     var resolvedCode = '';
     await ReferralLinkHandler.instance.initialize(
       appLinks: _FixedAppLinks(
-        Uri.parse('https://jagspoor.co.za/r/LAUNCH99'),
+        Uri.parse('https://jag-spoor.co.za/r/LAUNCH99'),
       ),
       validateCode: (_) async => true,
       onCodeResolved: (code) => resolvedCode = code,

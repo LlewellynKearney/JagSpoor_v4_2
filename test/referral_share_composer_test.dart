@@ -8,14 +8,14 @@ void main() {
     test('builds an App Link carrying the code as a path segment', () {
       expect(
         ReferralShareComposer.buildReferralLink('JAGSPOOR7Q3X'),
-        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
+        'https://jag-spoor.co.za/r/JAGSPOOR7Q3X',
       );
     });
 
     test('never emits the dead page.link domain', () {
       final link = ReferralShareComposer.buildReferralLink('JAGSPOOR7Q3X');
       expect(link.contains('page.link'), isFalse);
-      expect(link.startsWith('https://jagspoor.co.za/r/'), isTrue);
+      expect(link.startsWith('https://jag-spoor.co.za/r/'), isTrue);
     });
 
     test('builds the custom-scheme fallback', () {
@@ -28,7 +28,7 @@ void main() {
     test('upper-cases + trims the code', () {
       expect(
         ReferralShareComposer.buildReferralLink('  jagspoor7q3x '),
-        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
+        'https://jag-spoor.co.za/r/JAGSPOOR7Q3X',
       );
     });
 
@@ -46,10 +46,10 @@ void main() {
       expect(message, contains('JAGSPOOR7Q3X'));
       expect(
         message,
-        contains('jagspoor.co.za/r/JAGSPOOR7Q3X'),
+        contains('jag-spoor.co.za/r/JAGSPOOR7Q3X'),
       );
       expect(message, contains('Refer a friend and we both unlock rewards.'));
-      expect(message, contains('support@jagspoor.co.za'));
+      expect(message, contains('support@jag-spoor.co.za'));
     });
 
     test('returns an empty string for a blank code', () {

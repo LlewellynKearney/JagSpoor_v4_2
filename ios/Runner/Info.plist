@@ -55,7 +55,7 @@
 		<string>JagSpoor saves captured photos and exported PDF reports to your photo library.</string>
 		<!-- Custom URL scheme fallback for referral invites
 		     (jagspoor://referral?code=CODE). The primary path is the
-		     https://jagspoor.co.za/r/CODE Universal Link declared in
+		     https://jag-spoor.co.za/r/CODE Universal Link declared in
 		     Runner.entitlements; this scheme covers browsers / SMS clients
 		     that cannot follow a Universal Link. Replaces Firebase Dynamic
 		     Links (shut down 2025-08-25). -->

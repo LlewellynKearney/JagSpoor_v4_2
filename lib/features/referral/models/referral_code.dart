@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// The document id IS the (upper-cased) referral code, so a code → owner
 /// lookup is an O(1) direct read rather than a query — which is what the
 /// post-Dynamic-Links App Links flow needs: an incoming
-/// `https://jagspoor.co.za/r/<CODE>` link resolves its owner without a
+/// `https://jag-spoor.co.za/r/<CODE>` link resolves its owner without a
 /// composite index or a collection scan.
 ///
 /// The parallel `referral_profiles/{uid}` collection remains the per-user

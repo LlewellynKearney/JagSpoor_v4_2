@@ -4,7 +4,7 @@
 /// `https://jagspoor.page.link/...` URL is dead. Referral sharing now uses
 /// **standard HTTPS App Links** on the owned domain:
 ///
-///   * canonical share link: `https://jagspoor.co.za/r/<CODE>`
+///   * canonical share link: `https://jag-spoor.co.za/r/<CODE>`
 ///   * custom-scheme fallback: `jagspoor://referral?code=<CODE>`
 ///
 /// The HTTPS link resolves on Android via App Links (`android:autoVerify` +
@@ -31,9 +31,9 @@ class ReferralLinkService {
 
   /// The owned production domain that hosts the App-Links / Universal-Links
   /// association files and the `/r/<code>` web fallback page.
-  static const String domain = 'https://jagspoor.co.za';
+  static const String domain = 'https://jag-spoor.co.za';
 
-  /// The path prefix used for referral links (`https://jagspoor.co.za/r/CODE`).
+  /// The path prefix used for referral links (`https://jag-spoor.co.za/r/CODE`).
   static const String referralPathPrefix = '/r/';
 
   /// The custom URL scheme fallback (`jagspoor://referral?code=CODE`).
@@ -60,7 +60,7 @@ class ReferralLinkService {
   static const String shareSubject = 'Join me on JagSpoor!';
 
   /// Builds the canonical HTTPS App Link for [referralCode], e.g.
-  /// `https://jagspoor.co.za/r/JAGSPOOR7Q3X`.
+  /// `https://jag-spoor.co.za/r/JAGSPOOR7Q3X`.
   ///
   /// [referralCode] is trimmed + upper-cased; the path segment is
   /// percent-encoded via [Uri.encodeComponent] so a code carrying an unusual
@@ -117,7 +117,7 @@ class ReferralLinkService {
   /// URI is not a referral link.
   ///
   /// Handles BOTH shapes:
-  ///   * HTTPS App Link — `https://jagspoor.co.za/r/<CODE>`
+  ///   * HTTPS App Link — `https://jag-spoor.co.za/r/<CODE>`
   ///     (the code is the final path segment).
   ///   * Custom scheme — `jagspoor://referral?code=<CODE>`
   ///     (the code is the `code` query parameter).
@@ -141,7 +141,7 @@ class ReferralLinkService {
       return null;
     }
 
-    // HTTPS App Link: https://jagspoor.co.za/r/CODE
+    // HTTPS App Link: https://jag-spoor.co.za/r/CODE
     final isHttps = uri.scheme == 'https' || uri.scheme == 'http';
     if (isHttps) {
       final segments = _nonEmptySegments(uri);

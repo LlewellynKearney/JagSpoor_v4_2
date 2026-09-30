@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/services/referral_link_service.dart';
 
 /// Verifies that the native share-sheet action produces the NEW
-/// `https://jagspoor.co.za/r/<CODE>` App Link and NEVER the dead
+/// `https://jag-spoor.co.za/r/<CODE>` App Link and NEVER the dead
 /// `jagspoor.page.link` domain (Firebase Dynamic Links was shut down by Google
 /// on 2025-08-25).
 void main() {
@@ -30,7 +30,7 @@ void main() {
     // transports it).
     final message =
         ReferralLinkService.buildShareMessage('JAGSPOOR7Q3X', userId: 'u1');
-    expect(message, contains('https://jagspoor.co.za/r/JAGSPOOR7Q3X'));
+    expect(message, contains('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'));
     expect(message.contains('page.link'), isFalse);
     expect(message, contains('1 month free'));
 

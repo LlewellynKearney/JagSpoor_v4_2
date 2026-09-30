@@ -113,8 +113,8 @@ Future<void> main() async {
 
     // --- Referral App Links listener (post-Dynamic-Links) ---
     // Firebase Dynamic Links was shut down on 2025-08-25, so referral sharing
-    // now uses standard HTTPS App Links on jagspoor.co.za:
-    //   * https://jagspoor.co.za/r/<CODE>   (Android App Link / iOS Universal
+    // now uses standard HTTPS App Links on jag-spoor.co.za:
+    //   * https://jag-spoor.co.za/r/<CODE>   (Android App Link / iOS Universal
     //     Link, verified via /.well-known/assetlinks.json)
     //   * jagspoor://referral?code=<CODE>   (custom-scheme fallback)
     // The handler validates the code against the `referralCodes/{code}`

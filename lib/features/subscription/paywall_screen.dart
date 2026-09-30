@@ -11,7 +11,7 @@ import 'services/subscription_pricing.dart';
 /// premium subscriber. Two actions:
 ///   1. Subscribe via Google Play (native in_app_purchase).
 ///   2. Manage subscription on the JagSpoor website
-///      (https://jagspoor.co.za/pricing — PayFast lives on the website,
+///      (https://jag-spoor.co.za/pricing — PayFast lives on the website,
 ///      deliberately NOT embedded in the app).
 class PaywallScreen extends StatefulWidget {
   final ThemeController theme;
@@ -19,7 +19,7 @@ class PaywallScreen extends StatefulWidget {
   const PaywallScreen({super.key, required this.theme});
 
   /// The pricing page hosted on the website (PayFast checkout).
-  static const String websitePricingUrl = 'https://jagspoor.co.za/pricing';
+  static const String websitePricingUrl = 'https://jag-spoor.co.za/pricing';
 
   /// Shown while the live Google Play catalog price has not resolved yet.
   static const String loadingPriceLabel = 'Loading price…';

@@ -780,7 +780,7 @@ service cloud.firestore {
 
     // `referralCodes/{code}` is the reverse index (CODE -> owner uid) that
     // the post-Dynamic-Links App Links referral flow reads directly: an
-    // incoming `https://jagspoor.co.za/r/<CODE>` resolves its owner with a
+    // incoming `https://jag-spoor.co.za/r/<CODE>` resolves its owner with a
     // single document read (no query / composite index). The document id IS
     // the upper-cased code, so uniqueness is enforced by construction.
     match /referralCodes/{code} {

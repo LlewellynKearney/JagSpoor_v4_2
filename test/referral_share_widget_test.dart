@@ -84,7 +84,7 @@ void main() {
       expect(codeText, findsWidgets);
       expect(find.text('COPY LINK'), findsOneWidget);
       expect(find.text('WHATSAPP'), findsOneWidget);
-      expect(find.textContaining('jagspoor.co.za/r/'), findsOneWidget);
+      expect(find.textContaining('jag-spoor.co.za/r/'), findsOneWidget);
     });
 
     testWidgets('loads + displays an existing stored code', (tester) async {
@@ -119,7 +119,7 @@ void main() {
       await tester.tap(find.text('COPY LINK'));
       await tester.pumpAndSettle();
 
-      expect(copiedText, startsWith('https://jagspoor.co.za/r/'));
+      expect(copiedText, startsWith('https://jag-spoor.co.za/r/'));
       expect(find.text('✓ Copied to clipboard'), findsOneWidget);
     });
 

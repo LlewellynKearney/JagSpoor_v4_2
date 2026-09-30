@@ -12,7 +12,7 @@ import 'package:jagspoor/services/referral_link_service.dart';
 /// Builds shareable referral strings + links for a referral code.
 ///
 /// The canonical share URL is now a plain HTTPS App Link on the owned
-/// `jagspoor.co.za` domain — `https://jagspoor.co.za/r/<CODE>` — because
+/// `jag-spoor.co.za` domain — `https://jag-spoor.co.za/r/<CODE>` — because
 /// Firebase Dynamic Links (`jagspoor.page.link`) was shut down by Google on
 /// 2025-08-25. The link is verified by Android App Links / iOS Universal
 /// Links and falls back to a website landing page when the app is not
@@ -34,10 +34,10 @@ class ReferralShareComposer {
   static const String kAppName = 'JagSpoor';
 
   /// The support / contact email appended to the share message.
-  static const String kSupportEmail = 'support@jagspoor.co.za';
+  static const String kSupportEmail = 'support@jag-spoor.co.za';
 
   /// Builds the shareable referral App Link for [code], e.g.
-  /// `https://jagspoor.co.za/r/JAGSPOOR7Q3X`.
+  /// `https://jag-spoor.co.za/r/JAGSPOOR7Q3X`.
   ///
   /// [code] is upper-cased + trimmed; a blank/null code yields an empty
   /// string (the caller should hide the share UI when there is no code).

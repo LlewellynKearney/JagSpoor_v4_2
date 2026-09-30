@@ -415,7 +415,7 @@ export const onGooglePlayRTDN = onMessagePublished(
 // ────────────────────────────────────────────────────────────────────────────
 // payfastITN - server-side (website-only) Instant Transaction Notification
 // webhook. JagSpoor deliberately does NOT embed PayFast in the Flutter app.
-// Afrihost-hosted https://jagspoor.co.za/pricing calls PayFast; PayFast then
+// Afrihost-hosted https://jag-spoor.co.za/pricing calls PayFast; PayFast then
 // POSTs the ITN to this endpoint. This function verifies the signature,
 // validates the amount against the published plan, looks the user up by
 // email, and grants the premium entitlement.

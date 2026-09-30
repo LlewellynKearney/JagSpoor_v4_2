@@ -1,4 +1,5 @@
 {
+  "_comment": "iOS Universal Links for https://jag-spoor.co.za/r/<CODE>. Replace REPLACE_WITH_TEAM_ID with the Apple Developer Team ID (Apple Developer -> Membership). Requires the Runner.entitlements Associated Domains entry applinks:jag-spoor.co.za and must be served over HTTPS with Content-Type application/json.",
   "applinks": {
     "apps": [],
     "details": [

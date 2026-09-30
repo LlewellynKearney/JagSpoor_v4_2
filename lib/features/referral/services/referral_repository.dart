@@ -226,7 +226,7 @@ class ReferralRepository {
           SetOptions(merge: true),
         );
     // Maintain the reverse code → owner index so an incoming App Link
-    // (`https://jagspoor.co.za/r/<CODE>`) resolves its owner with a direct
+    // (`https://jag-spoor.co.za/r/<CODE>`) resolves its owner with a direct
     // document read (O(1), no query / composite index). Best-effort: a
     // failure here must not fail profile creation (the profile-code query
     // fallback in findReferrerByCode still resolves the referrer).

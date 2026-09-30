@@ -3,7 +3,7 @@
 /// Replaces the dead Firebase Dynamic Links receiver with a plain
 /// `app_links` listener. On cold start and every subsequent launch it
 /// inspects the incoming URI for a referral code (either the HTTPS App Link
-/// `https://jagspoor.co.za/r/<CODE>` or the custom-scheme fallback
+/// `https://jag-spoor.co.za/r/<CODE>` or the custom-scheme fallback
 /// `jagspoor://referral?code=<CODE>`), extracts the code with
 /// [ReferralLinkService.extractReferralCode], validates it against the
 /// `referralCodes/{code}` reverse index, and caches it so the signup screen

@@ -19,7 +19,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 ///
 /// **Deploy requirement**: the [resetDeepLinkUrl] domain MUST be listed in the
 /// Firebase Console → Authentication → Settings → Authorized domains. The URL
-/// lives on the owned `jagspoor.co.za` domain (Firebase Dynamic Links — the
+/// lives on the owned `jag-spoor.co.za` domain (Firebase Dynamic Links — the
 /// old `*.page.link` domain — was shut down by Google on 2025-08-25, so it can
 /// no longer be used as a continue URL). Until the domain is authorized the
 /// reset call will return `auth/invalid-continue-uri`; the caller surfaces
@@ -32,7 +32,7 @@ class PasswordResetActionCodeSettings {
   /// on the owned domain — Firebase Dynamic Links (`*.page.link`) was shut
   /// down on 2025-08-25.
   static const String resetDeepLinkUrl =
-      'https://jagspoor.co.za/reset-password';
+      'https://jag-spoor.co.za/reset-password';
 
   /// Active Android application id (from `android/app/build.gradle.kts`).
   static const String androidPackageName = 'za.co.jagspoor.app';

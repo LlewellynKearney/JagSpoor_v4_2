@@ -52,9 +52,9 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- Referral App Links (post-Dynamic-Links).
-                 https://jagspoor.co.za/r/<CODE> is an Android App Link
+                 https://jag-spoor.co.za/r/<CODE> is an Android App Link
                  (autoVerify=true): Android checks
-                 https://jagspoor.co.za/.well-known/assetlinks.json against
+                 https://jag-spoor.co.za/.well-known/assetlinks.json against
                  this app's signing certificate before opening the app
                  directly. The jagspoor:// custom scheme is the fallback for
                  an installed app whose association has not been verified yet
@@ -66,8 +66,12 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
                     android:scheme="https"
-                    android:host="jagspoor.co.za"
-                    android:pathPrefix="/r/"/>
+                    android:host="jag-spoor.co.za"
+                    android:pathPrefix="/r"/>
+                <data
+                    android:scheme="https"
+                    android:host="jag-spoor.co.za"
+                    android:pathPrefix="/.well-known"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

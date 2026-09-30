@@ -8,20 +8,20 @@ void main() {
     test('builds the canonical /r/<CODE> App Link', () {
       expect(
         ReferralLinkService.generateReferralLink('uid-1', 'JAGSPOOR7Q3X'),
-        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
+        'https://jag-spoor.co.za/r/JAGSPOOR7Q3X',
       );
     });
 
     test('never emits the dead page.link domain', () {
       final link = ReferralLinkService.generateReferralLink('uid-1', 'ABC123');
       expect(link.contains('page.link'), isFalse);
-      expect(link.startsWith('https://jagspoor.co.za/r/'), isTrue);
+      expect(link.startsWith('https://jag-spoor.co.za/r/'), isTrue);
     });
 
     test('upper-cases + trims the code', () {
       expect(
         ReferralLinkService.generateReferralLink('uid-1', '  jagspoor7q3x '),
-        'https://jagspoor.co.za/r/JAGSPOOR7Q3X',
+        'https://jag-spoor.co.za/r/JAGSPOOR7Q3X',
       );
     });
 
@@ -57,7 +57,7 @@ void main() {
       final message =
           ReferralLinkService.buildShareMessage('JAGSPOOR7Q3X', userId: 'u1');
       expect(message, contains('1 month free'));
-      expect(message, contains('https://jagspoor.co.za/r/JAGSPOOR7Q3X'));
+      expect(message, contains('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'));
       expect(message.contains('page.link'), isFalse);
     });
 
@@ -70,7 +70,7 @@ void main() {
     test('extracts from an HTTPS App Link path', () {
       expect(
         ReferralLinkService.extractReferralCode(
-          Uri.parse('https://jagspoor.co.za/r/JAGSPOOR7Q3X'),
+          Uri.parse('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'),
         ),
         'JAGSPOOR7Q3X',
       );
@@ -88,14 +88,14 @@ void main() {
     test('tolerates a ?code= query on the HTTPS link (web redirect)', () {
       expect(
         ReferralLinkService.extractReferralCode(
-          Uri.parse('https://jagspoor.co.za/r/JAGSPOOR7Q3X?code=OTHER123'),
+          Uri.parse('https://jag-spoor.co.za/r/JAGSPOOR7Q3X?code=OTHER123'),
         ),
         // The path segment wins over the query param.
         'JAGSPOOR7Q3X',
       );
       expect(
         ReferralLinkService.extractReferralCode(
-          Uri.parse('https://jagspoor.co.za/somewhere?code=QUERY123'),
+          Uri.parse('https://jag-spoor.co.za/somewhere?code=QUERY123'),
         ),
         'QUERY123',
       );
@@ -104,7 +104,7 @@ void main() {
     test('upper-cases the extracted code', () {
       expect(
         ReferralLinkService.extractReferralCode(
-          Uri.parse('https://jagspoor.co.za/r/abc123'),
+          Uri.parse('https://jag-spoor.co.za/r/abc123'),
         ),
         'ABC123',
       );
@@ -113,7 +113,7 @@ void main() {
     test('returns null for a non-referral link', () {
       expect(
         ReferralLinkService.extractReferralCode(
-          Uri.parse('https://jagspoor.co.za/about'),
+          Uri.parse('https://jag-spoor.co.za/about'),
         ),
         isNull,
       );
@@ -131,12 +131,12 @@ void main() {
     test('isReferralLink reflects the extraction', () {
       expect(
         ReferralLinkService.isReferralLink(
-          Uri.parse('https://jagspoor.co.za/r/ABC123'),
+          Uri.parse('https://jag-spoor.co.za/r/ABC123'),
         ),
         isTrue,
       );
       expect(
-        ReferralLinkService.isReferralLink(Uri.parse('https://jagspoor.co.za')),
+        ReferralLinkService.isReferralLink(Uri.parse('https://jag-spoor.co.za')),
         isFalse,
       );
       expect(ReferralLinkService.isReferralLink(null), isFalse);
@@ -159,7 +159,7 @@ void main() {
 
   group('ReferralLinkService constants', () {
     test('the domain is the owned production domain', () {
-      expect(ReferralLinkService.domain, 'https://jagspoor.co.za');
+      expect(ReferralLinkService.domain, 'https://jag-spoor.co.za');
       expect(ReferralLinkService.referralPathPrefix, '/r/');
     });
 

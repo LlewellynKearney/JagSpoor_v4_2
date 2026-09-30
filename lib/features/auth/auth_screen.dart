@@ -82,7 +82,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void initState() {
     super.initState();
     // If the app was opened from a referral App Link
-    // (https://jagspoor.co.za/r/<CODE> or jagspoor://referral?code=<CODE>),
+    // (https://jag-spoor.co.za/r/<CODE> or jagspoor://referral?code=<CODE>),
     // pre-fill the referral field so the user only has to complete signup.
     _prefillReferralFromIncomingLink();
   }
