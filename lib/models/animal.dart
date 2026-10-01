@@ -60,20 +60,13 @@ class Animal {
   final int? longevityYears;
   final int? shoulderHeightMm;
 
-  /// Number of toes the track leaves (4 = paw carnivores, 2 = cloven-hoofed
-  /// ungulates / suids / giraffids, 1 = solid-hoofed equines). Null for
-  /// species that are not track-relevant (birds, reptiles, rodents, ...).
+  /// Morphological spoor attributes used by the Spoor Identifier validation
+  /// layer to cross-check camera classifications. All optional — legacy /
+  /// unpopulated documents resolve to null (validators fall back to the
+  /// built-in attribute table).
   final int? toeCount;
-
-  /// Typical track length range in millimetres (fore-print length, heel to
-  /// toe/pad tip). A single histogram value from the local spoor signature
-  /// table is stored as [trackLengthMinMm] == [trackLengthMaxMm] until a
-  /// wider field-measured range is validated.
   final double? trackLengthMinMm;
   final double? trackLengthMaxMm;
-
-  /// Typical track width range in millimetres (widest point across the
-  /// print). Mirrors the length-range semantics above.
   final double? trackWidthMinMm;
   final double? trackWidthMaxMm;
 
@@ -168,11 +161,29 @@ class Animal {
       socialStructure: json['socialStructure'] as String?,
       longevityYears: _intOrNull(json['longevityYears']),
       shoulderHeightMm: _intOrNull(json['shoulderHeightMm']),
-      toeCount: _intOrNull(json['toeCount']),
-      trackLengthMinMm: _doubleOrNull(json['trackLengthMinMm']),
-      trackLengthMaxMm: _doubleOrNull(json['trackLengthMaxMm']),
-      trackWidthMinMm: _doubleOrNull(json['trackWidthMinMm']),
-      trackWidthMaxMm: _doubleOrNull(json['trackWidthMaxMm']),
+      toeCount: _intOrNull(
+        json['toeCount'] ?? json['toe_count'] ?? json['hoofCount'],
+      ),
+      trackLengthMinMm: _doubleOrNull(
+        json['trackLengthMinMm'] ??
+            json['track_length_min_mm'] ??
+            json['printLengthMinMm'],
+      ),
+      trackLengthMaxMm: _doubleOrNull(
+        json['trackLengthMaxMm'] ??
+            json['track_length_max_mm'] ??
+            json['printLengthMaxMm'],
+      ),
+      trackWidthMinMm: _doubleOrNull(
+        json['trackWidthMinMm'] ??
+            json['track_width_min_mm'] ??
+            json['printWidthMinMm'],
+      ),
+      trackWidthMaxMm: _doubleOrNull(
+        json['trackWidthMaxMm'] ??
+            json['track_width_max_mm'] ??
+            json['printWidthMaxMm'],
+      ),
     );
   }
 
@@ -249,10 +260,18 @@ class Animal {
     if (longevityYears != null) 'longevityYears': longevityYears,
     if (shoulderHeightMm != null) 'shoulderHeightMm': shoulderHeightMm,
     if (toeCount != null) 'toeCount': toeCount,
+    // Dual-stamp camelCase + snake_case so legacy / third-party readers
+    // resolve the same morphometry regardless of spelling (mirrors the
+    // venison-permit dual-stamp pattern).
+    if (toeCount != null) 'toe_count': toeCount,
     if (trackLengthMinMm != null) 'trackLengthMinMm': trackLengthMinMm,
+    if (trackLengthMinMm != null) 'track_length_min_mm': trackLengthMinMm,
     if (trackLengthMaxMm != null) 'trackLengthMaxMm': trackLengthMaxMm,
+    if (trackLengthMaxMm != null) 'track_length_max_mm': trackLengthMaxMm,
     if (trackWidthMinMm != null) 'trackWidthMinMm': trackWidthMinMm,
+    if (trackWidthMinMm != null) 'track_width_min_mm': trackWidthMinMm,
     if (trackWidthMaxMm != null) 'trackWidthMaxMm': trackWidthMaxMm,
+    if (trackWidthMaxMm != null) 'track_width_max_mm': trackWidthMaxMm,
   };
 
   /// Typical live weight range for display, e.g. "40–65 kg".

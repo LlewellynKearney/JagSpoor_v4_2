@@ -1,250 +1,307 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:image/image.dart' as img;
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:jagspoor/features/track/data/services/spoor_validation_layer.dart';
 import 'package:jagspoor/features/track/data/spoor_track_attributes.dart';
-import 'package:jagspoor/features/track/data/spoor_validation_layer.dart';
 import 'package:jagspoor/features/track/data/track_taxonomy.dart';
 
-/// Builds a square image with a dark (track) shape on a light background.
-/// [shape] = 'round' (filled disc) or 'elongated' (tall filled rect).
-img.Image buildTrackImage(String shape) {
-  const size = 200;
-  final image = img.Image(width: size, height: size);
-  for (int y = 0; y < size; y++) {
-    for (int x = 0; x < size; x++) {
-      image.setPixelRgb(x, y, 210, 195, 160);
-    }
-  }
-  const cx = size ~/ 2;
-  const cy = size ~/ 2;
-  if (shape == 'round') {
-    const r = 40;
-    for (int y = 0; y < size; y++) {
-      for (int x = 0; x < size; x++) {
-        final dx = x - cx, dy = y - cy;
-        if (dx * dx + dy * dy <= r * r) {
-          image.setPixelRgb(x, y, 60, 50, 40);
-        }
-      }
-    }
-  } else {
-    for (int y = cy - 50; y < cy + 50; y++) {
-      for (int x = cx - 18; x < cx + 18; x++) {
-        image.setPixelRgb(x, y, 60, 50, 40);
-      }
-    }
-  }
-  return image;
-}
-
-/// A round paw-like track: high circularity, aspect ratio ~1.0.
-const roundPaw = SpoorTrackAttributes(
-  printLengthMm: 40,
-  printWidthMm: 40,
-  aspectRatio: 1.0,
-  circularity: 0.70,
-  toeAlignmentAngle: 0,
-  clawDeltaProfile: 0,
-  perimeterComplexity: 0.1,
-  boundingBoxWidthPx: 40,
-  boundingBoxHeightPx: 40,
-  contourPerimeterPx: 140,
-  contourAreaPx: 1600,
-);
-
-/// An elongated hoof-like track: low circularity, aspect ratio >1.4.
-const elongatedHoof = SpoorTrackAttributes(
-  printLengthMm: 60,
-  printWidthMm: 40,
-  aspectRatio: 1.45,
-  circularity: 0.40,
-  toeAlignmentAngle: 20,
-  clawDeltaProfile: 0,
-  perimeterComplexity: 0.1,
-  boundingBoxWidthPx: 20,
-  boundingBoxHeightPx: 60,
-  contourPerimeterPx: 140,
-  contourAreaPx: 1200,
-);
-
 void main() {
-  group('SpoorTrackAttributes', () {
-    test('hasUsableContour is true only when a real contour exists', () {
-      expect(roundPaw.hasUsableContour, isTrue);
-      expect(elongatedHoof.hasUsableContour, isTrue);
-      const empty = SpoorTrackAttributes(
-        printLengthMm: 0,
-        printWidthMm: 0,
-        aspectRatio: 1,
-        circularity: 0,
-        toeAlignmentAngle: 0,
-        clawDeltaProfile: 0,
-        perimeterComplexity: 0,
-        boundingBoxWidthPx: 0,
-        boundingBoxHeightPx: 0,
-      );
-      expect(empty.hasUsableContour, isFalse);
+  setUp(() => SpoorValidationLayer.resetTestSeams());
+  tearDown(() => SpoorValidationLayer.resetTestSeams());
+
+  group('SpoorTrackAttributes fallback table', () {
+    test('covers the classifier species with toe counts + dimension ranges',
+        () {
+      // Paw/carnivore → 4 toes.
+      expect(spoorTrackAttributesFallback['Leopard']!.toeCount, 4);
+      expect(spoorTrackAttributesFallback['Lion']!.toeCount, 4);
+      expect(spoorTrackAttributesFallback['Cheetah']!.toeCount, 4);
+      // Cloven-hoofed → 2 cleaves.
+      expect(spoorTrackAttributesFallback['Kudu']!.toeCount, 2);
+      expect(spoorTrackAttributesFallback['Impala']!.toeCount, 2);
+      expect(spoorTrackAttributesFallback['Gemsbok']!.toeCount, 2);
+      // Solid-hoofed → 1 wall.
+      expect(spoorTrackAttributesFallback['Zebra']!.toeCount, 1);
+      expect(spoorTrackAttributesFallback['Donkey']!.toeCount, 1);
     });
 
-    test('fromImage extracts a usable contour for a round track', () {
-      final attrs = SpoorTrackAttributes.fromImage(buildTrackImage('round'));
-      expect(attrs.hasUsableContour, isTrue);
-      // A filled disc is near-circular.
-      expect(attrs.circularity, greaterThan(0.5));
-      expect(attrs.aspectRatio, closeTo(1.0, 0.35));
-      expect(attrs.boundingBoxWidthPx, greaterThan(0));
-      expect(attrs.boundingBoxHeightPx, greaterThan(0));
+    test('every fallback entry has a positive dimension range', () {
+      for (final entry in spoorTrackAttributesFallback.entries) {
+        final a = entry.value;
+        expect(a.lengthMaxMm, greaterThan(a.lengthMinMm),
+            reason: '${entry.key} length range');
+        expect(a.widthMaxMm, greaterThan(a.widthMinMm),
+            reason: '${entry.key} width range');
+        expect(a.toeCount, greaterThan(0), reason: '${entry.key} toes');
+      }
     });
 
-    test('fromImage elongated track has lower circularity than round', () {
-      final round = SpoorTrackAttributes.fromImage(buildTrackImage('round'));
-      final elong = SpoorTrackAttributes.fromImage(buildTrackImage('elongated'));
-      expect(elong.circularity, lessThan(round.circularity));
-      expect(elong.aspectRatio, greaterThan(round.aspectRatio));
+    test('fallback category matches the taxonomy map', () {
+      for (final entry in spoorTrackAttributesFallback.entries) {
+        expect(
+          entry.value.category,
+          categoryForSpecies(entry.key),
+          reason: '${entry.key} category mismatch',
+        );
+      }
     });
   });
 
-  group('SpoorValidationLayer', () {
-    test('empty predictions yield a neutral result', () {
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: const [],
-        attributes: roundPaw,
+  group('SpoorTrackAttributes.fromMap', () {
+    test('hydrates DB fields and prefers them over the fallback', () {
+      final attrs = SpoorTrackAttributes.fromMap(
+        {
+          'toeCount': 4,
+          'trackLengthMinMm': 90,
+          'trackLengthMaxMm': 110,
+          'trackWidthMinMm': 80,
+          'trackWidthMaxMm': 95,
+        },
+        species: 'Leopard',
       );
-      expect(result.reRankedPredictions, isEmpty);
-      expect(result.wasCorrected, isFalse);
-      expect(result.wasReRanked, isFalse);
-      expect(result.usedMorphology, isFalse);
-      expect(result.note, contains('No AI predictions'));
+      expect(attrs.toeCount, 4);
+      expect(attrs.lengthMinMm, 90);
+      expect(attrs.lengthMaxMm, 110);
+      expect(attrs.widthMinMm, 80);
+      expect(attrs.widthMaxMm, 95);
     });
 
-    test('no usable contour keeps the AI ranking as-is', () {
-      const empty = SpoorTrackAttributes(
-        printLengthMm: 0,
-        printWidthMm: 0,
-        aspectRatio: 1,
-        circularity: 0,
-        toeAlignmentAngle: 0,
-        clawDeltaProfile: 0,
-        perimeterComplexity: 0,
-        boundingBoxWidthPx: 0,
-        boundingBoxHeightPx: 0,
+    test('tolerates snake_case aliases', () {
+      final attrs = SpoorTrackAttributes.fromMap(
+        {
+          'toe_count': 2,
+          'track_length_min_mm': '50',
+          'track_length_max_mm': '65',
+          'track_width_min_mm': '32',
+          'track_width_max_mm': '42',
+        },
+        species: 'Impala',
       );
-      const raw = [
-        SpoorPrediction(species: 'Leopard', confidence: 0.8),
-        SpoorPrediction(species: 'Kudu', confidence: 0.2),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: empty,
-      );
-      expect(result.reRankedPredictions.map((p) => p.species),
-          ['Leopard', 'Kudu']);
-      expect(result.wasCorrected, isFalse);
-      expect(result.wasReRanked, isFalse);
-      expect(result.usedMorphology, isFalse);
-      expect(result.note, contains('No usable track contour'));
+      expect(attrs.toeCount, 2);
+      expect(attrs.lengthMinMm, 50);
+      expect(attrs.lengthMaxMm, 65);
+      expect(attrs.widthMinMm, 32);
+      expect(attrs.widthMaxMm, 42);
     });
 
-    test('round paw track corrects a raw ungulate top-1 to a carnivore', () {
-      // Raw AI ranks the ungulate first, but the measured geometry is a round
-      // paw — the validation layer should promote the carnivore.
-      const raw = [
-        SpoorPrediction(species: 'Kudu', confidence: 0.7),
-        SpoorPrediction(species: 'Leopard', confidence: 0.3),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: roundPaw,
+    test('falls back to the built-in table for a partial document', () {
+      final attrs = SpoorTrackAttributes.fromMap(
+        const {'toeCount': 2},
+        species: 'Kudu',
       );
-      expect(result.usedMorphology, isTrue);
-      expect(result.wasCorrected, isTrue);
-      expect(result.topSpecies, 'Leopard');
-      expect(result.reRankedPredictions.first.species, 'Leopard');
-      expect(result.note, contains('corrected'));
+      // Toe count from DB; dimensions from fallback.
+      expect(attrs.toeCount, 2);
+      expect(attrs.lengthMaxMm, greaterThan(0));
     });
 
-    test('elongated hoof track corrects a raw carnivore top-1 to an ungulate',
-        () {
-      const raw = [
-        SpoorPrediction(species: 'Leopard', confidence: 0.7),
-        SpoorPrediction(species: 'Kudu', confidence: 0.3),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: elongatedHoof,
+    test('anySpoorFieldPresent detects spoor fields', () {
+      expect(
+        SpoorTrackAttributes.anySpoorFieldPresent(const {'toeCount': 2}),
+        isTrue,
       );
-      expect(result.usedMorphology, isTrue);
-      expect(result.wasCorrected, isTrue);
-      expect(result.topSpecies, 'Kudu');
-      expect(result.note, contains('corrected'));
-    });
-
-    test('re-ranking keeps the top-1 but changes the order below it', () {
-      // A round-paw geometry scores both carnivores at 1.0 but the ungulate
-      // lower, so Wild Cat jumps above Kudu while the top-1 (Leopard) stays.
-      const raw = [
-        SpoorPrediction(species: 'Leopard', confidence: 0.7),
-        SpoorPrediction(species: 'Kudu', confidence: 0.2),
-        SpoorPrediction(species: 'Wild Cat', confidence: 0.1),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: roundPaw,
+      expect(
+        SpoorTrackAttributes.anySpoorFieldPresent(
+          const {'track_width_max_mm': 42},
+        ),
+        isTrue,
       );
-      expect(result.usedMorphology, isTrue);
-      expect(result.wasCorrected, isFalse);
-      expect(result.wasReRanked, isTrue);
-      expect(result.topSpecies, 'Leopard');
-      expect(result.reRankedPredictions.map((p) => p.species),
-          ['Leopard', 'Wild Cat', 'Kudu']);
-      expect(result.note, contains('re-ranked'));
-    });
-
-    test('matching morphology confirms the AI ranking (no change)', () {
-      const raw = [
-        SpoorPrediction(species: 'Kudu', confidence: 0.8),
-        SpoorPrediction(species: 'Impala', confidence: 0.2),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: elongatedHoof,
+      expect(
+        SpoorTrackAttributes.anySpoorFieldPresent(const {'name': 'Kudu'}),
+        isFalse,
       );
-      expect(result.usedMorphology, isTrue);
-      expect(result.wasCorrected, isFalse);
-      expect(result.wasReRanked, isFalse);
-      expect(result.topSpecies, 'Kudu');
-      expect(result.note, contains('confirmed'));
     });
+  });
 
-    test('topConfidence reflects the validated top-1', () {
-      const raw = [
-        SpoorPrediction(species: 'Kudu', confidence: 0.7),
-        SpoorPrediction(species: 'Leopard', confidence: 0.3),
-      ];
-      final result = SpoorValidationLayer.classifySpoorTrackValidated(
-        rawPredictions: raw,
-        attributes: roundPaw,
+  group('SpoorValidationLayer.estimateToeCount', () {
+    test('geometry toe count wins when present', () {
+      expect(
+        SpoorValidationLayer.estimateToeCount(
+          geometryToeCount: 4,
+          category: TrackCategory.clovenHoofUngulate,
+        ),
+        4,
       );
-      expect(result.topConfidence, closeTo(0.3, 0.001));
     });
 
-    test('renormalize scales confidences back to a 1.0 sum', () {
-      const raw = [
-        SpoorPrediction(species: 'Kudu', confidence: 0.7),
-        SpoorPrediction(species: 'Leopard', confidence: 0.3),
-      ];
-      final normalized = SpoorValidationLayer.renormalize(raw);
-      final sum =
-          normalized.fold<double>(0.0, (a, p) => a + p.confidence);
-      expect(sum, closeTo(1.0, 0.001));
-      expect(normalized.map((p) => p.species), ['Kudu', 'Leopard']);
+    test('category prior applies when geometry is unknown', () {
+      expect(
+        SpoorValidationLayer.estimateToeCount(
+          geometryToeCount: 0,
+          category: TrackCategory.pawCarnivore,
+        ),
+        4,
+      );
+      expect(
+        SpoorValidationLayer.estimateToeCount(
+          geometryToeCount: 0,
+          category: TrackCategory.clovenHoofUngulate,
+        ),
+        2,
+      );
+      expect(
+        SpoorValidationLayer.estimateToeCount(
+          geometryToeCount: 0,
+          category: TrackCategory.solidHoofEquine,
+        ),
+        1,
+      );
     });
 
-    test('renormalize is a no-op for an empty or zero-sum list', () {
-      expect(SpoorValidationLayer.renormalize(const []), isEmpty);
-      const zeroSum = [SpoorPrediction(species: 'Kudu', confidence: 0)];
-      final out = SpoorValidationLayer.renormalize(zeroSum);
-      expect(out.length, 1);
-      expect(out.first.confidence, 0);
+    test('null when both geometry and category are unknown', () {
+      expect(
+        SpoorValidationLayer.estimateToeCount(
+          geometryToeCount: 0,
+          category: null,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('SpoorValidationLayer.validateCandidate', () {
+    const leopard = SpoorTrackAttributes(
+      species: 'Leopard',
+      toeCount: 4,
+      lengthMinMm: 85,
+      lengthMaxMm: 105,
+      widthMinMm: 80,
+      widthMaxMm: 100,
+      category: TrackCategory.pawCarnivore,
+    );
+
+    test('passes when toe count + dimensions are compatible', () {
+      final m = SpoorValidationLayer.validateCandidate(
+        species: 'Leopard',
+        attributes: leopard,
+        estimatedToeCount: 4,
+        printLengthMm: 95,
+        printWidthMm: 90,
+      );
+      expect(m.passed, isTrue);
+      expect(m.checked, isTrue);
+    });
+
+    test('rejects a toe-count mismatch (the strongest discriminator)', () {
+      final m = SpoorValidationLayer.validateCandidate(
+        species: 'Leopard',
+        attributes: leopard,
+        estimatedToeCount: 2,
+        printLengthMm: 95,
+        printWidthMm: 90,
+      );
+      expect(m.passed, isFalse);
+      expect(m.reason, contains('toe count'));
+    });
+
+    test('rejects an out-of-range length', () {
+      final m = SpoorValidationLayer.validateCandidate(
+        species: 'Leopard',
+        attributes: leopard,
+        estimatedToeCount: 4,
+        printLengthMm: 200,
+        printWidthMm: 90,
+      );
+      expect(m.passed, isFalse);
+      expect(m.reason, contains('length'));
+    });
+
+    test('rejects an out-of-range width', () {
+      final m = SpoorValidationLayer.validateCandidate(
+        species: 'Leopard',
+        attributes: leopard,
+        estimatedToeCount: 4,
+        printLengthMm: 95,
+        printWidthMm: 180,
+      );
+      expect(m.passed, isFalse);
+      expect(m.reason, contains('width'));
+    });
+
+    test('unknown toe count (0) does not reject on toes', () {
+      final m = SpoorValidationLayer.validateCandidate(
+        species: 'Leopard',
+        attributes: leopard,
+        estimatedToeCount: 0,
+        printLengthMm: 95,
+        printWidthMm: 90,
+      );
+      expect(m.passed, isTrue);
+    });
+  });
+
+  group('SpoorValidationLayer.validatePredictions (re-ranking)', () {
+    test('keeps the raw top when it passes validation', () async {
+      final layer = SpoorValidationLayer.instance;
+      final outcome = await layer.validatePredictions(
+        predictions: const [
+          SpoorPrediction(species: 'Leopard', confidence: 0.9),
+          SpoorPrediction(species: 'Lion', confidence: 0.1),
+        ],
+        estimatedToeCount: 4,
+        printLengthMm: 95,
+        printWidthMm: 90,
+      );
+      expect(outcome.validatedTopSpecies, 'Leopard');
+      expect(outcome.reranked, isFalse);
+      expect(outcome.databaseChecked, isTrue);
+    });
+
+    test('re-ranks when the raw top fails toe-count validation', () async {
+      final layer = SpoorValidationLayer.instance;
+      final outcome = await layer.validatePredictions(
+        predictions: const [
+          // Leopard needs 4 toes but the track has 2 → rejected.
+          SpoorPrediction(species: 'Leopard', confidence: 0.9),
+          SpoorPrediction(species: 'Kudu', confidence: 0.1),
+        ],
+        estimatedToeCount: 2,
+        printLengthMm: 90,
+        printWidthMm: 60,
+      );
+      expect(outcome.validatedTopSpecies, 'Kudu');
+      expect(outcome.reranked, isTrue);
+      expect(outcome.note, contains('Leopard'));
+    });
+
+    test('database attributes are preferred over the fallback', () async {
+      final fs = FakeFirebaseFirestore();
+      await fs.collection('animals').add({
+        'name': 'Leopard',
+        'toeCount': 4,
+        'trackLengthMinMm': 90,
+        'trackLengthMaxMm': 110,
+      });
+      SpoorValidationLayer.firestoreForTesting = fs;
+
+      final layer = SpoorValidationLayer.instance;
+      final attrs = await layer.attributesForSpecies('Leopard');
+      expect(attrs, isNotNull);
+      // DB range wins over the fallback 85–105.
+      expect(attrs!.lengthMinMm, 90);
+      expect(attrs.lengthMaxMm, 110);
+    });
+
+    test('falls back to built-in attributes when Firestore has no record',
+        () async {
+      final fs = FakeFirebaseFirestore();
+      await fs.collection('animals').add({'name': 'Kudu'});
+      SpoorValidationLayer.firestoreForTesting = fs;
+
+      final layer = SpoorValidationLayer.instance;
+      final attrs = await layer.attributesForSpecies('Kudu');
+      expect(attrs, isNotNull);
+      expect(attrs!.toeCount, 2);
+    });
+
+    test('empty predictions produce an empty outcome', () async {
+      final layer = SpoorValidationLayer.instance;
+      final outcome = await layer.validatePredictions(
+        predictions: const [],
+        estimatedToeCount: 0,
+        printLengthMm: null,
+        printWidthMm: null,
+      );
+      expect(outcome.validatedTopSpecies, '');
+      expect(outcome.databaseChecked, isFalse);
     });
   });
 }
