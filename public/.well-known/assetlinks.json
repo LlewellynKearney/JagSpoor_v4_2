@@ -1,13 +1,12 @@
 [
   {
-    "_comment": "Android App Links verification for https://jag-spoor.co.za/r/<CODE>. Replace the two sha256_cert_fingerprints placeholders with the real values from Google Play Console -> Release -> Setup -> App integrity (App signing key certificate = Play App Signing SHA-256; upload/release keystore SHA-256). Until real fingerprints are present Android cannot verify the App Link and the jagspoor:// scheme fallback is used.",
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
       "package_name": "za.co.jagspoor.app",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_RELEASE_KEYSTORE_SHA256",
-        "REPLACE_WITH_PLAY_APP_SIGNING_SHA256"
+        "9B:53:63:98:D9:A0:7B:B8:CB:E7:06:FF:FD:8B:35:E6:10:B8:8D:57:42:33:A4:01:91:7D:84:58:51:EE:EC:47",
+        "DC:AD:A5:94:70:C2:10:4A:D3:F4:D1:8B:39:F0:AD:DC:88:7D:55:C5:24:87:B1:0E:00:A6:6E:FB:05:46:2C:9B"
       ]
     }
   }
