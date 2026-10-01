@@ -1,3 +1,8 @@
+import 'dart:math' as math;
+
+import 'package:camera/camera.dart';
+import 'package:image/image.dart' as img;
+
 import 'track_taxonomy.dart';
 
 /// Morphological spoor attributes for a species, used by the structured
@@ -12,7 +17,11 @@ import 'track_taxonomy.dart';
 ///
 /// Attributes may be hydrated from a Firestore `animals` document (so admins
 /// can refine them without a code change) or from the built-in fallback
-/// table when the database has no record / is unreachable.
+/// table when the database has no record / is unreachable. They may also be
+/// *measured* directly from a captured frame via [fromXFile], in which case
+/// the contour fields ([widthPx], [heightPx], [contourAreaPx],
+/// [contourPerimeterPx]) drive the [circularity] / [aspectRatio] getters the
+/// validation layer consumes.
 class SpoorTrackAttributes {
   final String species;
   final int toeCount;
@@ -22,6 +31,20 @@ class SpoorTrackAttributes {
   final double widthMaxMm;
   final TrackCategory category;
 
+  /// Measured contour geometry in image pixels (0 when the attributes were
+  /// hydrated from a species record rather than measured from a frame).
+  final double widthPx;
+  final double heightPx;
+  final double contourAreaPx;
+  final double contourPerimeterPx;
+
+  /// Toe/cleave count resolved from the measured contour lobes (0 = unknown).
+  final int estimatedToeCount;
+
+  /// The scale-reference length used to calibrate pixel → millimetre, when one
+  /// was supplied at measurement time.
+  final double? scaleReferenceMm;
+
   const SpoorTrackAttributes({
     required this.species,
     required this.toeCount,
@@ -30,7 +53,293 @@ class SpoorTrackAttributes {
     required this.widthMinMm,
     required this.widthMaxMm,
     this.category = TrackCategory.clovenHoofUngulate,
+    this.widthPx = 0,
+    this.heightPx = 0,
+    this.contourAreaPx = 0,
+    this.contourPerimeterPx = 0,
+    this.estimatedToeCount = 0,
+    this.scaleReferenceMm,
   });
+
+  /// Whether a usable dark-pixel contour was extracted from the frame.
+  ///
+  /// The validation layer treats a `false` here as "no opinion" and keeps the
+  /// raw AI ranking untouched.
+  bool get hasUsableContour =>
+      contourAreaPx > 0 && contourPerimeterPx > 0 && widthPx > 0 && heightPx > 0;
+
+  /// Contour circularity: 4π·area / perimeter² (1.0 = a perfect circle).
+  /// Returns 0 when no usable contour was measured.
+  double get circularity {
+    if (contourPerimeterPx <= 0 || contourAreaPx <= 0) return 0.0;
+    final value = 4.0 *
+        math.pi *
+        contourAreaPx /
+        (contourPerimeterPx * contourPerimeterPx);
+    return value.clamp(0.0, 1.0);
+  }
+
+  /// Bounding-box aspect ratio: height ÷ width (≈1.0 for a round felid paw,
+  /// >1.3 for an elongated hoof). Returns 0 when no contour was measured.
+  double get aspectRatio {
+    if (widthPx <= 0 || heightPx <= 0) return 0.0;
+    return heightPx / widthPx;
+  }
+
+  /// Measures the track geometry from a captured camera frame.
+  ///
+  /// The image is decoded, thresholded (Otsu — adaptive to the scene
+  /// lighting), reduced to its largest connected dark component (so soil
+  /// speckle / shadows are rejected) and reduced to its contour area +
+  /// perimeter. The returned attributes carry the measured [widthPx] /
+  /// [heightPx] / [contourAreaPx] / [contourPerimeterPx] plus the
+  /// [estimatedToeCount], and the calibrated print dimensions when a
+  /// [scaleReferenceMm] is supplied.
+  ///
+  /// Never throws: an undecodable frame yields an unusable (all-zero) contour
+  /// so the validation layer stays neutral.
+  static Future<SpoorTrackAttributes> fromXFile(
+    XFile file, {
+    double? scaleReferenceMm,
+  }) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        return _unusable(scaleReferenceMm: scaleReferenceMm);
+      }
+      return _measure(decoded, scaleReferenceMm: scaleReferenceMm);
+    } catch (_) {
+      return _unusable(scaleReferenceMm: scaleReferenceMm);
+    }
+  }
+
+  /// Builds an unusable (all-zero contour) attribute set — the neutral input
+  /// the validation layer interprets as "no morphology opinion".
+  static SpoorTrackAttributes _unusable({double? scaleReferenceMm}) =>
+      SpoorTrackAttributes(
+        species: '',
+        toeCount: 0,
+        lengthMinMm: 0,
+        lengthMaxMm: 0,
+        widthMinMm: 0,
+        widthMaxMm: 0,
+        scaleReferenceMm: scaleReferenceMm,
+      );
+
+  static SpoorTrackAttributes _measure(
+    img.Image image, {
+    double? scaleReferenceMm,
+  }) {
+    const sampleStep = 4;
+    final imgWidth = image.width;
+    final imgHeight = image.height;
+    final threshold = _otsuThreshold(image);
+
+    final grid = <List<bool>>[];
+    for (int y = 0; y < imgHeight; y += sampleStep) {
+      final row = <bool>[];
+      for (int x = 0; x < imgWidth; x += sampleStep) {
+        row.add(_luminanceAt(image, x, y) < threshold);
+      }
+      grid.add(row);
+    }
+
+    final gridW = grid.isNotEmpty ? grid.first.length : 0;
+    final gridH = grid.length;
+    final keepMask = _largestComponentMask(grid, gridW, gridH);
+
+    int minX = imgWidth, maxX = 0, minY = imgHeight, maxY = 0;
+    int area = 0;
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!keepMask[gy][gx]) continue;
+        final x = gx * sampleStep;
+        final y = gy * sampleStep;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        area++;
+      }
+    }
+
+    if (area == 0) return _unusable(scaleReferenceMm: scaleReferenceMm);
+
+    int perimeter = 0;
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (!keepMask[gy][gx]) continue;
+        final left = gx == 0 ? false : keepMask[gy][gx - 1];
+        final right = gx == gridW - 1 ? false : keepMask[gy][gx + 1];
+        final up = gy == 0 ? false : keepMask[gy - 1][gx];
+        final down = gy == gridH - 1 ? false : keepMask[gy + 1][gx];
+        if (!left || !right || !up || !down) perimeter++;
+      }
+    }
+
+    final widthPx = (maxX > minX ? (maxX - minX) : 0).toDouble();
+    final heightPx = (maxY > minY ? (maxY - minY) : 0).toDouble();
+    final contourPerimeterPx = perimeter * sampleStep.toDouble();
+    final contourAreaPx = area * (sampleStep * sampleStep);
+
+    final estimatedToeCount =
+        area > 12 ? _estimateToeLobes(keepMask, gridW, gridH) : 0;
+
+    // Pixel → millimetre calibration: a scale reference spanning the frame
+    // width, else the legacy focal-scaling constant.
+    final pxPerMm = (scaleReferenceMm != null && scaleReferenceMm > 0)
+        ? imgWidth / scaleReferenceMm
+        : 1.0 / 0.475;
+    final printWidthMm = (widthPx / pxPerMm).clamp(20.0, 300.0);
+    final printLengthMm = (heightPx / pxPerMm).clamp(20.0, 300.0);
+
+    return SpoorTrackAttributes(
+      species: '',
+      toeCount: estimatedToeCount,
+      lengthMinMm: printLengthMm,
+      lengthMaxMm: printLengthMm,
+      widthMinMm: printWidthMm,
+      widthMaxMm: printWidthMm,
+      widthPx: widthPx,
+      heightPx: heightPx,
+      contourAreaPx: contourAreaPx.toDouble(),
+      contourPerimeterPx: contourPerimeterPx,
+      estimatedToeCount: estimatedToeCount,
+      scaleReferenceMm: scaleReferenceMm,
+    );
+  }
+
+  /// Otsu's method: the luminance cut maximising between-class variance, so
+  /// the track/background split adapts to the actual scene illumination
+  /// (bright sand vs dark muddy soil) instead of a fixed threshold.
+  static int _otsuThreshold(img.Image image) {
+    const sampleStep = 4;
+    final histogram = List<int>.filled(256, 0);
+    int total = 0;
+    for (int y = 0; y < image.height; y += sampleStep) {
+      for (int x = 0; x < image.width; x += sampleStep) {
+        final lum = _luminanceAt(image, x, y).round().clamp(0, 255);
+        histogram[lum]++;
+        total++;
+      }
+    }
+    if (total == 0) return 140;
+
+    double sumAll = 0;
+    for (int i = 0; i < 256; i++) {
+      sumAll += i * histogram[i];
+    }
+
+    double sumB = 0;
+    int weightB = 0;
+    double maxVariance = -1;
+    int threshold = 140;
+    for (int t = 0; t < 256; t++) {
+      weightB += histogram[t];
+      if (weightB == 0) continue;
+      final weightF = total - weightB;
+      if (weightF == 0) break;
+      sumB += t * histogram[t];
+      final meanB = sumB / weightB;
+      final meanF = (sumAll - sumB) / weightF;
+      final variance = weightB * weightF * (meanB - meanF) * (meanB - meanF);
+      if (variance > maxVariance) {
+        maxVariance = variance;
+        threshold = t;
+      }
+    }
+    return threshold;
+  }
+
+  static double _luminanceAt(img.Image image, int x, int y) {
+    final pixel = image.getPixelSafe(x, y);
+    return 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+  }
+
+  /// Flood-fills the sampled grid and returns the mask of the largest
+  /// 4-connected dark component (soil speckle / shadows are discarded).
+  static List<List<bool>> _largestComponentMask(
+    List<List<bool>> grid,
+    int gridW,
+    int gridH,
+  ) {
+    final visited = List.generate(gridH, (_) => List<bool>.filled(gridW, false));
+    var bestMask = List.generate(gridH, (_) => List<bool>.filled(gridW, false));
+    int bestSize = 0;
+
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        if (visited[gy][gx] || !grid[gy][gx]) continue;
+        final component = <List<int>>[];
+        final stack = <List<int>>[
+          [gx, gy],
+        ];
+        visited[gy][gx] = true;
+        while (stack.isNotEmpty) {
+          final cell = stack.removeLast();
+          component.add(cell);
+          final cx = cell[0], cy = cell[1];
+          void push(int nx, int ny) {
+            if (nx < 0 || ny < 0 || nx >= gridW || ny >= gridH) return;
+            if (visited[ny][nx] || !grid[ny][nx]) return;
+            visited[ny][nx] = true;
+            stack.add([nx, ny]);
+          }
+
+          push(cx - 1, cy);
+          push(cx + 1, cy);
+          push(cx, cy - 1);
+          push(cx, cy + 1);
+        }
+        if (component.length > bestSize) {
+          bestSize = component.length;
+          final mask =
+              List.generate(gridH, (_) => List<bool>.filled(gridW, false));
+          for (final cell in component) {
+            mask[cell[1]][cell[0]] = true;
+          }
+          bestMask = mask;
+        }
+      }
+    }
+    return bestMask;
+  }
+
+  /// Estimates the toe/cleave count from the number of distinct dark lobes
+  /// projected onto the track's horizontal axis (a 2-cleaved hoof shows two
+  /// lobes, a 1-wall equine one broad lobe, a 4-toed paw up to four).
+  static int _estimateToeLobes(
+    List<List<bool>> mask,
+    int gridW,
+    int gridH,
+  ) {
+    final columnCounts = List<int>.filled(gridW, 0);
+    for (int gx = 0; gx < gridW; gx++) {
+      for (int gy = 0; gy < gridH; gy++) {
+        if (mask[gy][gx]) columnCounts[gx]++;
+      }
+    }
+    final maxCount =
+        columnCounts.fold<int>(0, (m, c) => c > m ? c : m);
+    if (maxCount == 0) return 0;
+
+    // Count contiguous runs of "populated" columns above a noise floor.
+    final floor = math.max(1, (maxCount * 0.25).round());
+    int lobes = 0;
+    bool inLobe = false;
+    for (final count in columnCounts) {
+      if (count >= floor) {
+        if (!inLobe) {
+          lobes++;
+          inLobe = true;
+        }
+      } else {
+        inLobe = false;
+      }
+    }
+    return lobes.clamp(0, 4);
+  }
 
   /// Hydrates attributes from a Firestore `animals` document map.
   ///

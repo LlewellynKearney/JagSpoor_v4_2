@@ -1,6 +1,102 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Restore SpoorTrackAttributes API for the validation layer + build 1.0.10+10 (added 2026-10-01)
+
+### Symptom
+`flutter build appbundle` failed to compile:
+- `SpoorTrackAttributes.fromXFile` not found in
+  `lib/features/track/presentation/spoor_detection_hud_screen.dart:217`.
+- `hasUsableContour`, `circularity`, `aspectRatio` not found on
+  `SpoorTrackAttributes` in `lib/features/track/data/spoor_validation_layer.dart`.
+
+### Root cause
+`spoor_track_attributes.dart` was a *species-record* model only
+(`species`/`toeCount`/dimension ranges + `fromMap`). A prior refactor moved
+the HUD's morphology validation onto `data/spoor_validation_layer.dart`
+(which consumes `attributes.hasUsableContour` / `.circularity` /
+`.aspectRatio`) and onto `SpoorTrackAttributes.fromXFile`, but the model was
+never extended with the measured-contour surface, so the call sites did not
+compile. `data/spoor_validation_layer.dart` declares its own
+`_SpeciesMorphology` with `expectedCircularity` / `expectedAspectRatio`
+(a private class — deliberately NOT renamed; it already carries both
+expected fields the task required).
+
+### Fix -- measured-contour surface on `SpoorTrackAttributes`
+`lib/features/track/data/spoor_track_attributes.dart`:
+- New optional contour fields on the const constructor (all defaulted, so
+  every existing `const SpoorTrackAttributes(...)` species literal and
+  `fromMap` hydration keep compiling unchanged): `widthPx`, `heightPx`,
+  `contourAreaPx`, `contourPerimeterPx`, `estimatedToeCount`,
+  `scaleReferenceMm`.
+- New `bool get hasUsableContour` — true iff area > 0 AND perimeter > 0 AND
+  width > 0 AND height > 0.
+- New `double get circularity` — `4π·area / perimeter²`, clamped [0,1],
+  0 when unusable.
+- New `double get aspectRatio` — `heightPx / widthPx`, 0 when unusable.
+- New `static Future<SpoorTrackAttributes> fromXFile(XFile, {scaleReferenceMm})`
+  (imports `package:camera/camera.dart` for `XFile` + `package:image` for the
+  decode). Decodes the frame, runs the same measurement pipeline the
+  identifier service uses (Otsu adaptive threshold → largest 4-connected dark
+  component → bounding box + contour area/perimeter → lobe-based toe count →
+  optional px→mm calibration) and returns the measured attributes. NEVER
+  throws — an undecodable frame / no dark component yields an all-zero
+  (unusable) contour so the validation layer stays neutral. `fromMap` and the
+  `spoorTrackAttributesFallback` table are untouched.
+
+### HUD screen import (why it was "not found" there too)
+`spoor_detection_hud_screen.dart` had NO import for
+`../data/spoor_validation_layer.dart`, so `SpoorValidationLayer.classifySpoorTrackValidated`
++ `SpoorValidationResult` were unresolved. Added the data-module import (the
+`data/services/spoor_validation_layer.dart` import is kept — the AI service
+re-export + the structured validator are separate concerns). No other change
+was needed; line ~217 already called
+`await SpoorTrackAttributes.fromXFile(image, scaleReferenceMm: _scaleReferenceMm)`
+with `image` from `CameraController.takePicture()` (a `camera` `XFile`).
+
+### Version 1.0.10+10 (the artifact must genuinely be build 10)
+`android/app/build.gradle.kts` HARDCODES `versionCode`/`versionName` and
+IGNORES `flutter build --build-number` (verified: a build with
+`--build-number=10` still produced versionCode 9). Per the documented
+hand-sync convention the Gradle values were bumped to `versionCode = 10` /
+`versionName = "1.0.10"`, plus the headless fallbacks in
+`lib/core/widgets/version_info.dart` (`'9'`/`'1.0.9'` → `'10'`/`'1.0.10'`)
+and their test expectations (`test/version_info_and_facebook_test.dart`,
+`test/force_update_service_test.dart`). `pubspec.yaml` was already
+`1.0.10+10` and left as-is.
+
+### Verification (real build in this sandbox)
+- Env rebuilt from scratch: Flutter **3.44.9** at `$HOME/flutter` (downloaded
+  + extracted; `/opt` is not writable, so it lives in `$HOME`), OpenJDK 21,
+  Android cmdline-tools + `platforms;android-36` + `build-tools;36.0.0` +
+  `ndk;27.0.12077973` under `$HOME/android-sdk`; `android/local.properties`
+  (gitignored) points at them; the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink + `LD_LIBRARY_PATH="$HOME/libs"`
+  for the sqflite-FFI suites.
+- `flutter analyze` on the changed files: only pre-existing info-level issues
+  (the `classification_result_widget.dart` `DropdownButtonFormField.value`
+  deprecation + 2 `unnecessary_const` in the version test, both pre-existing).
+- `flutter test` (full suite): **All 1965 tests passed**.
+- `flutter build appbundle --release --build-name=1.0.10 --build-number=10`:
+  **SUCCESS** (~227s) → `build/app/outputs/bundle/release/app-release.aab`
+  (126.8 MB). Merged release manifest verified:
+  `package="za.co.jagspoor.app"`, **`versionCode="10"`,
+  `versionName="1.0.10"`**.
+- `public/.well-known/assetlinks.json` deliberately NOT touched (already
+  verified with both SHA-256 fingerprints).
+- `pubspec.lock` drift from `pub get` (meta/test/test_api/test_core patch
+  bumps) was reverted to keep the change focused.
+
+### Files
+- MODIFIED: `lib/features/track/data/spoor_track_attributes.dart`
+  (contour fields + `hasUsableContour`/`circularity`/`aspectRatio` +
+  `fromXFile`), `lib/features/track/presentation/spoor_detection_hud_screen.dart`
+  (added the `data/spoor_validation_layer.dart` import),
+  `android/app/build.gradle.kts` (versionCode/Name → 10 / 1.0.10),
+  `lib/core/widgets/version_info.dart` (fallbacks → 10 / 1.0.10),
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+
 ## Phase -- Switch canonical referral domain to jag-spoor.co.za (Afrihost) + App Links manifest/entitlements (v10) (added 2026-09-30)
 
 ### Symptom

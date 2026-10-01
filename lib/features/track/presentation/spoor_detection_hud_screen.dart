@@ -5,6 +5,8 @@ import 'package:jagspoor/core/widgets/contextual_info_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/track_taxonomy.dart';
 import '../data/spoor_track_attributes.dart';
+// Provides `SpoorValidationLayer.classifySpoorTrackValidated` +
+// `SpoorValidationResult` (the pure morphology re-ranking module).
 import '../data/spoor_validation_layer.dart';
 import '../data/services/spoor_ai_service.dart';
 import 'classification_result_widget.dart';
