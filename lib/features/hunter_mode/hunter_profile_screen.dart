@@ -17,6 +17,7 @@ import '../auth/services/user_role_provider.dart';
 import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
+import 'models/hunter_profile.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
 import 'services/hunter_profile_completeness.dart';
@@ -259,32 +260,21 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
+        // Decode through the typed model so every date field (createdAt /
+        // updatedAt) is normalised via `parseTimestamp` — a Firestore
+        // Timestamp, DateTime, ISO string or epoch int all resolve safely.
+        final profile = HunterProfile.fromMap(data);
         setState(() {
-          // First / last name: prefer the explicit fields, fall back to the
-          // legacy single `fullName` (split on the first space) so a
-          // returning hunter who completed the pre-split form is not bounced
-          // back to onboarding.
-          final legacyFull = (data['fullName'] as String?)?.trim() ?? '';
-          _firstNameController.text = (data['firstName'] as String?)?.trim() ??
-              (data['first_name'] as String?)?.trim() ??
-              (data['name'] as String?)?.trim() ??
-              (legacyFull.contains(' ')
-                  ? legacyFull.substring(0, legacyFull.indexOf(' '))
-                  : legacyFull);
-          _lastNameController.text = (data['lastName'] as String?)?.trim() ??
-              (data['last_name'] as String?)?.trim() ??
-              (data['surname'] as String?)?.trim() ??
-              (legacyFull.contains(' ')
-                  ? legacyFull.substring(legacyFull.indexOf(' ') + 1)
-                  : '');
-          _fullNameController.text = legacyFull;
-          _phoneController.text = data['phone'] ?? data['phoneNumber'] ?? '';
-          _altContactController.text = data['altContact'] ?? '';
-          _emailController.text = data['email'] ?? '';
-          _addressController.text = data['address'] ?? '';
-          _farmNameController.text = data['farmName'] ?? '';
-          _latitudeController.text = data['latitude'] ?? '';
-          _longitudeController.text = data['longitude'] ?? '';
+          _firstNameController.text = profile.firstName;
+          _lastNameController.text = profile.lastName;
+          _fullNameController.text = profile.fullName;
+          _phoneController.text = profile.phoneNumber;
+          _altContactController.text = profile.altContact;
+          _emailController.text = profile.email;
+          _addressController.text = profile.address;
+          _farmNameController.text = profile.farmName;
+          _latitudeController.text = profile.latitude;
+          _longitudeController.text = profile.longitude;
           // POPIA-sensitive fields: read from the owner-only private
           // document, falling back to a legacy public copy on the first load
           // after the upgrade (the next save migrates it).
@@ -303,10 +293,13 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
           _provincialPermitsController.text =
               privateData['provincialPermits'] ?? data['provincialPermits'] ?? '';
           _hasFirstAid = privateData['hasFirstAid'] ?? data['hasFirstAid'] ?? false;
-          _profileImageUrl = data['profileImageUrl'];
+          _profileImageUrl = profile.profileImageUrl.isEmpty
+              ? null
+              : profile.profileImageUrl;
         });
 
-        // Cache the profile data
+        // Cache the profile data (public fields only — no plaintext
+        // health/ID data).
         await _cacheProfileData(data);
       }
     } catch (e) {
@@ -334,7 +327,13 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final safe = SensitivePersonalInformation.redact(data);
+    // POPIA: strip the sensitive fields first, then normalise every remaining
+    // value to a jsonEncode-safe form. The raw document map carries Firestore
+    // Timestamps (`createdAt` / `updatedAt`) which `jsonEncode` cannot encode —
+    // `encodeProfileCache` converts each Timestamp/DateTime to an ISO-8601
+    // string so the cache write can never throw the "Converting object to an
+    // encodable object failed: Instance of 'Timestamp'" error.
+    final safe = encodeProfileCache(SensitivePersonalInformation.redact(data));
     await prefs.setString('cached_profile_${user.uid}', jsonEncode(safe));
   }
 

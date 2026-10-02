@@ -1,6 +1,83 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Fix Hunter Profile Timestamp jsonEncode crash (added 2026-10-02)
+
+### Symptom
+Opening the Hunter Profile screen showed a black error banner:
+`Error loading profile: Converting object to an encodable object failed:
+Instance of 'Timestamp'` — blocking use of the app until contact info was
+completed.
+
+### Root cause
+`hunter_profile_screen.dart` `_cacheProfileData(data)` wrote the RAW
+`users/{uid}` document map to `SharedPreferences` via `jsonEncode`. Firestore
+stores `createdAt` / `updatedAt` as `Timestamp` objects, and `jsonEncode`
+cannot encode a `Timestamp` → `JsonUnsupportedObjectError` with the message
+above. The `try` in `_loadUserProfile` wrapped the cache write too, so the
+throw surfaced as the "Error loading profile" banner (the form fields were
+already populated, but the banner + blocked onboarding flow were the symptom).
+
+### Fix
+NEW `lib/features/hunter_mode/models/hunter_profile.dart`:
+- `parseTimestamp(dynamic)` — the requested helper: `Timestamp`→`toDate()`,
+  `DateTime` passthrough, `String`→`DateTime.tryParse`, `int`/`num`→
+  `fromMillisecondsSinceEpoch`, else `null`.
+- `HunterProfile` model (firstName / lastName / fullName / phoneNumber /
+  altContact / email / address / farmName / latitude / longitude /
+  profileImageUrl / unitPreference / darkModeAmbient / createdAt / updatedAt)
+  with three serialization surfaces:
+  - `fromMap` / `fromJson` — decode via `parseTimestamp`; tolerant of the
+    `phone`/`phoneNumber`, `surname`/`lastName`, `measurementUnit` aliases and
+    splits a legacy single `fullName` into first + last.
+  - `toFirestore({serverTimestamp})` — the Firebase write shape: `Timestamp`
+    (`createdAt`, `updatedAt`) / `FieldValue.serverTimestamp()`.
+  - `toJson()` — the cache shape: dates as `toIso8601String()` ONLY, never a
+    `Timestamp`.
+- `encodeProfileCache(Map)` — a raw-map safety net that converts every
+  `Timestamp`/`DateTime` to an ISO-8601 string and DROPS any `FieldValue`
+  sentinel (e.g. the `updatedAt: FieldValue.serverTimestamp()` the save path
+  builds), recursively through nested maps/lists — so the existing raw-map
+  cache write can never throw again.
+
+`hunter_profile_screen.dart`:
+- `_loadUserProfile` now decodes the doc through `HunterProfile.fromMap(data)`
+  (dates normalised via `parseTimestamp`) before populating the controllers.
+- `_cacheProfileData` now caches
+  `encodeProfileCache(SensitivePersonalInformation.redact(data))` (POPIA
+  redaction preserved) — the cache write is `jsonEncode`-safe. This also
+  fixes the SAVE path, which passed the public+private map containing
+  `FieldValue.serverTimestamp()` into the same `jsonEncode`.
+
+### Tests
+NEW `test/hunter_profile_model_test.dart` (19 tests, all pass): `parseTimestamp`
+matrix; `fromMap` (timestamps + aliases + legacy fullName split + defaults +
+no-throw on Timestamp); `toJson` contains NO `Timestamp`/`FieldValue` and
+`jsonEncode`s; `toFirestore` uses `Timestamp` / `FieldValue.serverTimestamp()`;
+`encodeProfileCache` converts nested Timestamps, drops sentinels, and a
+regression test proving the exact failing payload (a `users/{uid}` map with a
+`Timestamp`) throws on the raw `jsonEncode` but succeeds after
+`encodeProfileCache`. Timestamp expectations use `millisecondsSinceEpoch` /
+local `toIso8601String()` (Firestore `Timestamp.toDate()` returns local time).
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites):
+  **All 1984 tests passed**.
+- Version left at `1.0.10+10` (pubspec) / versionCode 10 / versionName 1.0.10
+  (build.gradle.kts). `public/.well-known/assetlinks.json` untouched.
+- `pubspec.lock` drift from `pub get` (meta/test/test_api/test_core patch
+  bumps) was reverted to keep the change focused.
+- Env: Flutter **3.44.9** at `/workspace/sdk/flutter` (downloaded + extracted;
+  the sandbox had no SDK).
+
+### Files
+- NEW: `lib/features/hunter_mode/models/hunter_profile.dart`,
+  `test/hunter_profile_model_test.dart`.
+- MODIFIED: `lib/features/hunter_mode/hunter_profile_screen.dart`, `AGENTS.md`.
+
 ## Phase -- Restore SpoorTrackAttributes API for the validation layer + build 1.0.10+10 (added 2026-10-01)
 
 ### Symptom
