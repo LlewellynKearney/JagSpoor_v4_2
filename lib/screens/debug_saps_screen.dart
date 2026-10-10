@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../features/hunter_mode/services/saps_cfr_scraper_client.dart';
+import '../features/hunter_mode/services/saps_status_classifier.dart'
+    show kSapsStageNeedSerialAndRef;
 
 /// DEBUG-ONLY screen that performs the real SAPS CFR enquiry against the
 /// official portal (`saps.gov.za`) directly from the device.
@@ -63,6 +65,14 @@ class _DebugSapsScreenState extends State<DebugSapsScreen> {
         serialNumber: serial,
       );
       if (!mounted) return;
+      // Log the portal HTML shape (first 500 chars) so the live response is
+      // visible in the console even when the parse yields nothing.
+      if (result != null && result.htmlSnippet.isNotEmpty) {
+        debugPrint(
+          'DebugSapsScreen: portal htmlSnippet '
+          '(${result.htmlSnippet.length} chars): ${result.htmlSnippet}',
+        );
+      }
       setState(() {
         _running = false;
         _result = result;
@@ -139,6 +149,26 @@ class _DebugSapsScreenState extends State<DebugSapsScreen> {
               prefixIcon: Icon(Icons.pin_outlined),
             ),
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'For firearm renewal: enter BOTH Ref + Serial. '
+                  'For competency: Ref only.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _running ? null : _enquire,
@@ -189,6 +219,24 @@ class _DebugSapsScreenState extends State<DebugSapsScreen> {
               result.sapsUpdatedAt?.toIso8601String() ?? '—',
             ),
             _row('NOT FOUND', result.notFound ? 'true' : 'false'),
+            if (result.stage == kSapsStageNeedSerialAndRef) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                  border:
+                      Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                ),
+                child: Text(
+                  'NEED_SERIAL_AND_REF — the portal requires BOTH a serial '
+                  'number AND a reference number for firearm applications. '
+                  'For a competency certificate, submit the reference alone.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
             if (result.applicationType.isNotEmpty)
               _row('TYPE', result.applicationType),
             if (result.applicationNumber.isNotEmpty)
@@ -208,6 +256,18 @@ class _DebugSapsScreenState extends State<DebugSapsScreen> {
               const SizedBox(height: 4),
               Text(
                 result.raw.toString(),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+            if (kDebugMode && result.htmlSnippet.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'PORTAL HTML SNIPPET (first 500 chars)',
+                style: theme.textTheme.labelMedium,
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                result.htmlSnippet,
                 style: theme.textTheme.bodySmall,
               ),
             ],

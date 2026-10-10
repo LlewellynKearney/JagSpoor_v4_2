@@ -126,6 +126,100 @@ void main() {
       expect(result.stage, -1);
       expect(result.sapsUpdatedAt, DateTime.parse('2026-10-10'));
     });
+
+    test('GET-first: a usable results page is parsed without a POST',
+        () async {
+      var postCount = 0;
+      final mock = MockClient((request) async {
+        if (request.method == 'GET') {
+          // The query-parameter GET returns the results page directly.
+          expect(request.url.queryParameters['fsref'], '10654672');
+          expect(request.url.queryParameters['fserial'], 'OB14468');
+          return http.Response(
+            '<b>Search Results:</b><table>'
+            '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
+            '<td>9001015009087</td><td>6MM MUSGRAVE</td><td>TIKKA T3X</td>'
+            '<td>OB14468</td><td>2026-10-01</td>'
+            '<td>Received at Licensing Section</td>'
+            '<td>For consideration by the Commissioner</td>'
+            '<td>Await decision</td></tr></table>',
+            200,
+          );
+        }
+        postCount++;
+        return http.Response('should not be reached', 500);
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: 'OB14468',
+      );
+      expect(result, isNotNull);
+      expect(result!.applicationNumber, '10654672');
+      expect(result.stage, 2);
+      expect(postCount, 0, reason: 'GET-first must not POST on success');
+    });
+
+    test('GET-first falls back to POST when the query GET has no results',
+        () async {
+      var posted = false;
+      final mock = MockClient((request) async {
+        if (request.method == 'GET') {
+          // First GET (query form) returns the bare form -> no results.
+          return http.Response(
+            '<input type="hidden" name="csrf" value="tok">form only',
+            200,
+            headers: {'set-cookie': 'csrf_token=cook; path=/'},
+          );
+        }
+        posted = true;
+        expect(request.body, contains('fsref=10654672'));
+        return http.Response(
+          '<table><tr><td colspan="9">No records to retrieve ...</td></tr>'
+          '</table>',
+          200,
+        );
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: 'OB14468',
+      );
+      expect(posted, isTrue);
+      expect(result, isNotNull);
+      expect(result!.notFound, isTrue);
+    });
+
+    test('parses the NEED_SERIAL_AND_REF validation prompt end-to-end',
+        () async {
+      final mock = MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(
+            '<i>The data on this page were updated on <b>2026-10-10</b>.</i>'
+            '<div>Please supply a Serial Number AND Reference Number</div>',
+            200,
+          );
+        }
+        return http.Response('unexpected POST', 500);
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: '',
+      );
+      expect(result, isNotNull);
+      expect(result!.stage, -2);
+      expect(result.rawStatus, SapsCfrScraperClient.kNeedSerialAndRefStatus);
+      // The portal banner date is still captured.
+      expect(result.sapsUpdatedAt, DateTime.parse('2026-10-10'));
+      expect(result.htmlSnippet, isNotEmpty);
+    });
   });
 
   group('SapsTrackerService webhook integration', () {

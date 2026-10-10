@@ -32,6 +32,15 @@ class SapsCfrScraperClient {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
+  /// The raw-status phrase attached to a portal response that demands BOTH a
+  /// serial number AND a reference number. Classified to
+  /// [kSapsStageNeedSerialAndRef] (-2) and displayed with an actionable hint.
+  static const String kNeedSerialAndRefStatus = 'NEED_SERIAL_AND_REF';
+
+  /// How many characters of the raw portal HTML are retained on the parsed
+  /// result for on-screen diagnostics.
+  static const int kHtmlSnippetMaxChars = 500;
+
   final http.Client _http;
   final String _webhookUrl;
 
@@ -132,25 +141,91 @@ class SapsCfrScraperClient {
     }
   }
 
+  /// Builds the enquiry URL with the direct query-parameter form the portal
+  /// ALSO accepts: `?fsref=REF&fserial=SERIAL&fid=&fref=&frid=&fiserial=`.
+  ///
+  /// Values are percent-encoded via [Uri]'s query encoding, so a reference or
+  /// serial containing reserved characters cannot corrupt the request.
+  @visibleForTesting
+  static Uri buildQueryEnquiryUri({
+    required String referenceNumber,
+    required String serialNumber,
+  }) {
+    return Uri.parse(enquiryUrl).replace(queryParameters: {
+      'fsref': referenceNumber,
+      'fserial': serialNumber,
+      'fid': '',
+      'fref': '',
+      'frid': '',
+      'fiserial': '',
+    });
+  }
+
+  /// Whether a portal body is empty / meaningless (no usable HTML), used to
+  /// decide whether the GET attempt should fall through to the POST path.
+  static bool _isEmptyBody(String html) {
+    final stripped = html
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return stripped.isEmpty;
+  }
+
   /// DEBUG-ONLY: performs the real enquiry against the official SAPS portal.
   ///
   /// Flow (mirrors the portal's browser form):
-  ///   1. GET the enquiry page to obtain the form + `csrf` token and the
-  ///      `csrf_token` cookie.
-  ///   2. POST `fsref` (reference) + `fserial` (serial) with the `csrf` token,
-  ///      the `csrf_token` cookie and a same-origin `Referer` header.
+  ///   1. GET the enquiry page with the direct query parameters
+  ///      (`?fsref=…&fserial=…&fid=&fref=&frid=&fiserial=`). When the portal
+  ///      answers with a usable results page (or an explicit NOT_FOUND /
+  ///      "Please supply…" notice) the enquiry is complete.
+  ///   2. Otherwise GET the bare form page to obtain the form + `csrf` token
+  ///      and the `csrf_token` cookie, then POST `fsref` + `fserial` with the
+  ///      `csrf` token, the `csrf_token` cookie and a same-origin `Referer`.
   ///   3. Follow any 3xx redirect (the `http` client follows automatically)
   ///      and parse the results page.
   ///
   /// Parses the "data on this page were updated on <b>DATE</b>" notice into
   /// [SapsCfrStatus.sapsUpdatedAt] and detects the "No records to retrieve…"
-  /// NOT_FOUND response.
+  /// NOT_FOUND response and the "Please supply a Serial Number AND Reference
+  /// Number" validation notice.
   Future<SapsCfrStatus?> _fetchDirectFromSaps({
     required String referenceNumber,
     required String serialNumber,
   }) async {
+    // 1. GET-first with the query parameters the portal also accepts. This is
+    //    the cheapest path — some portal builds answer the enquiry straight
+    //    from a GET without the csrf handshake.
     try {
-      // 1. GET the form page (captures the csrf token + cookie).
+      final getResponse = await _http
+          .get(
+            buildQueryEnquiryUri(
+              referenceNumber: referenceNumber,
+              serialNumber: serialNumber,
+            ),
+            headers: {
+              'User-Agent': userAgent,
+              'Accept': 'text/html,application/xhtml+xml',
+              'Accept-Language': 'en-ZA,en;q=0.9',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (getResponse.statusCode == 200 &&
+          !_isEmptyBody(getResponse.body)) {
+        final parsed = _parseEnquiryPage(getResponse.body);
+        // Only accept the GET result when it carries something meaningful —
+        // a results row, a NOT_FOUND notice, or the "Please supply…" prompt.
+        // The bare form page parses to null and falls through to the POST.
+        if (parsed != null) return parsed;
+      }
+    } catch (e) {
+      debugPrint('SapsCfrScraperClient: query GET failed, trying POST: $e');
+    }
+
+    try {
+      // 2. POST fallback. First GET the bare form page (captures the csrf
+      //    token + cookie).
       final formResponse = await _http.get(
         Uri.parse(enquiryUrl),
         headers: {
@@ -171,7 +246,7 @@ class SapsCfrScraperClient {
       final csrf = _extractCsrfField(formResponse.body);
       final cookie = _extractCsrfCookie(formResponse.headers);
 
-      // 2. POST the enquiry. The `http` client follows a 3xx redirect (the
+      // POST the enquiry. The `http` client follows a 3xx redirect (the
       // portal answers 303 on some paths, 200 with the results page on
       // others) so `response.body` is the results page either way.
       final response = await _http
@@ -210,10 +285,25 @@ class SapsCfrScraperClient {
     }
   }
 
+  /// The first [kHtmlSnippetMaxChars] characters of the portal HTML, for
+  /// on-screen diagnostics. Collapses whitespace so the fragment stays compact.
+  @visibleForTesting
+  static String htmlSnippetOf(String html) {
+    final normalized = html.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= kHtmlSnippetMaxChars) return normalized;
+    return normalized.substring(0, kHtmlSnippetMaxChars);
+  }
+
   /// Parses the SAPS results page into a [SapsCfrStatus].
   ///
-  /// Returns null when the page carries neither a results row nor the
-  /// not-found notice.
+  /// Order of detection:
+  ///   1. "Please supply a Serial Number AND Reference Number" -> the
+  ///      NEED_SERIAL_AND_REF prompt ([kSapsStageNeedSerialAndRef]).
+  ///   2. "No records to retrieve" -> NOT_FOUND ([kSapsStageNotFound]).
+  ///   3. The "Search Results" table -> the first data row.
+  ///
+  /// Returns null when the page carries none of the above (e.g. the bare form
+  /// page).
   @visibleForTesting
   static SapsCfrStatus? parseEnquiryPage(String html) =>
       _parseEnquiryPage(html);
@@ -221,10 +311,27 @@ class SapsCfrScraperClient {
   static SapsCfrStatus? _parseEnquiryPage(String html) {
     if (html.trim().isEmpty) return null;
 
+    final htmlSnippet = htmlSnippetOf(html);
     final sapsUpdatedAt = _parseUpdatedDate(html);
-    final notFound = _isNotFound(html);
 
-    if (notFound) {
+    // 1. Validation prompt: a firearm enquiry needs BOTH a serial number AND
+    //    a reference number (a competency-only application needs the ref).
+    if (_needsSerialAndRef(html)) {
+      return SapsCfrStatus(
+        rawStatus: kNeedSerialAndRefStatus,
+        stage: kSapsStageNeedSerialAndRef,
+        displayLabel: SapsStatusClassifier.displayLabel(kNeedSerialAndRefStatus),
+        sapsUpdatedAt: sapsUpdatedAt,
+        statusMessage:
+            'The portal requires BOTH a serial number and a reference number '
+            'for firearm applications (reference only for competency).',
+        htmlSnippet: htmlSnippet,
+        raw: {'needsSerialAndRef': true, 'htmlSnippet': htmlSnippet},
+      );
+    }
+
+    // 2. No records.
+    if (_isNotFound(html)) {
       final message = _firstMatch(
             html,
             RegExp(r'No records to retrieve[^<]*', caseSensitive: false),
@@ -236,16 +343,25 @@ class SapsCfrScraperClient {
         displayLabel: 'Status Unavailable',
         sapsUpdatedAt: sapsUpdatedAt,
         notFound: true,
-        raw: {'notFound': true, 'message': message.trim()},
+        htmlSnippet: htmlSnippet,
+        raw: {
+          'notFound': true,
+          'message': message.trim(),
+          'htmlSnippet': htmlSnippet,
+        },
       );
     }
 
+    // 3. The Search Results table.
     final row = _parseResultRow(html);
     if (row == null) return null;
 
-    final rawStatus = row.status.trim().isEmpty
-        ? row.statusDescription.trim()
-        : row.status.trim();
+    // Concatenate the Status + Status description columns so the classifier
+    // sees the full phrase the portal renders across both cells.
+    final rawStatus = <String>[
+      row.status.trim(),
+      row.statusDescription.trim(),
+    ].where((part) => part.isNotEmpty).join(' — ');
 
     return SapsCfrStatus(
       rawStatus: rawStatus,
@@ -260,6 +376,7 @@ class SapsCfrScraperClient {
       statusDate: row.statusDate,
       statusDescription: row.statusDescription,
       nextStep: row.nextStep,
+      htmlSnippet: htmlSnippet,
       raw: {
         'applicationType': row.applicationType,
         'applicationNumber': row.applicationNumber,
@@ -270,8 +387,20 @@ class SapsCfrScraperClient {
         'status': row.status,
         'statusDescription': row.statusDescription,
         'nextStep': row.nextStep,
+        'htmlSnippet': htmlSnippet,
       },
     );
+  }
+
+  /// True when the portal refused the enquiry because a firearm application
+  /// needs BOTH a serial number AND a reference number.
+  static bool _needsSerialAndRef(String html) {
+    final lower = html.toLowerCase();
+    return lower.contains('please supply a serial number and reference number') ||
+        lower.contains('please supply a serial') ||
+        (lower.contains('supply a serial number') &&
+            lower.contains('reference number')) ||
+        lower.contains('need_serial_and_ref');
   }
 
   /// Extracts the hidden `csrf` token from the enquiry form.
@@ -324,11 +453,21 @@ class SapsCfrScraperClient {
         lower.contains('no record found');
   }
 
-  /// Extracts the first data row from the results table (the portal emits a
-  /// `<thead>` header followed by `<tr>` rows of `<td>` cells).
+  /// Extracts the first data row from the results table.
+  ///
+  /// The portal emits a "Search Results:" heading followed by a table whose
+  /// header is a `<th>` row and whose first data row is a `<td>` row. The scope
+  /// is bounded to the results table (from "Search Results" to the next
+  /// `</table>`) so unrelated page tables are never parsed.
+  ///
+  /// Two column layouts are supported:
+  ///   * **10 columns** (the current portal): Type, App No, ID, Caliber, Make,
+  ///     Serial, Date, Status, Status description, Next step.
+  ///   * **8-9 columns** (legacy / compact): Type, App No, Caliber, Make,
+  ///     Serial, Date, Status, Status description [, Next step].
   static _SapsResultRow? _parseResultRow(String html) {
     final searchIdx = html.indexOf('Search Results');
-    final scope = searchIdx >= 0 ? html.substring(searchIdx) : html;
+    final scope = searchIdx >= 0 ? _resultsTableScope(html, searchIdx) : html;
 
     final rowRegex =
         RegExp(r'<tr[^>]*>(.*?)</tr>', dotAll: true, caseSensitive: false);
@@ -341,8 +480,24 @@ class SapsCfrScraperClient {
           .allMatches(rowHtml)
           .map((m) => _stripHtml(m.group(1) ?? ''))
           .toList();
-      // The header row uses <th>; a data row carries >= 8 <td> cells.
-      if (cells.length >= 8 && !rowHtml.toLowerCase().contains('<th')) {
+      if (rowHtml.toLowerCase().contains('<th')) continue;
+
+      if (cells.length >= 10) {
+        // Current portal layout (ID column present at index 2; index 9 = next).
+        return _SapsResultRow(
+          applicationType: cells[0],
+          applicationNumber: cells[1],
+          calibre: cells[3],
+          make: cells[4],
+          serialNumber: cells[5],
+          statusDate: cells[6],
+          status: cells[7],
+          statusDescription: cells[8],
+          nextStep: cells[9],
+        );
+      }
+      if (cells.length >= 8) {
+        // Legacy / compact layout (no ID column).
         return _SapsResultRow(
           applicationType: cells[0],
           applicationNumber: cells[1],
@@ -357,6 +512,15 @@ class SapsCfrScraperClient {
       }
     }
     return null;
+  }
+
+  /// Bounds the results scope from the "Search Results" marker to the end of
+  /// that table (`</table>`), so the row scan never wanders past the section.
+  static String _resultsTableScope(String html, int searchIdx) {
+    final endIdx = html.indexOf('</table>', searchIdx);
+    return endIdx > searchIdx
+        ? html.substring(searchIdx, endIdx)
+        : html.substring(searchIdx);
   }
 
   static String _stripHtml(String value) {
@@ -450,6 +614,11 @@ class SapsCfrStatus {
   /// The full unparsed payload (for diagnostics / future fields).
   final Map<String, dynamic>? raw;
 
+  /// The first [SapsCfrScraperClient.kHtmlSnippetMaxChars] characters of the
+  /// portal HTML (whitespace-collapsed), for on-screen diagnostics in the
+  /// debug screen. Empty on the webhook path.
+  final String htmlSnippet;
+
   const SapsCfrStatus({
     required this.rawStatus,
     this.stage = kSapsStageDfo,
@@ -470,5 +639,6 @@ class SapsCfrStatus {
     this.statusDescription = '',
     this.nextStep = '',
     this.raw,
+    this.htmlSnippet = '',
   });
 }

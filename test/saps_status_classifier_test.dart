@@ -252,7 +252,12 @@ void main() {
       ''';
       final status = SapsCfrScraperClient.parseEnquiryPage(html);
       expect(status, isNotNull);
-      expect(status!.rawStatus, 'Sent to Provincial DFO');
+      // Status + Status description are concatenated for the classifier.
+      expect(
+        status!.rawStatus,
+        'Sent to Provincial DFO — The application was send to the Provincial '
+        'DFO by the DFO',
+      );
       expect(status.stage, kSapsStageProvincial);
       expect(status.displayLabel, 'At Provincial Office');
       expect(status.sapsUpdatedAt, DateTime.parse('2026-10-10'));
@@ -301,6 +306,121 @@ void main() {
         SapsCfrScraperClient.parseEnquiryPage('<html><body>nothing</body></html>'),
         isNull,
       );
+    });
+  });
+
+  group('SAPS NEED_SERIAL_AND_REF + Search Results parsing', () {
+    test('classifies the "Please supply a Serial Number AND Reference Number" '
+        'prompt to the validation stage', () {
+      expect(
+        SapsStatusClassifier.classify(
+          'Please supply a Serial Number AND Reference Number',
+        ),
+        kSapsStageNeedSerialAndRef,
+      );
+      expect(
+        SapsStatusClassifier.classify(SapsCfrScraperClient.kNeedSerialAndRefStatus),
+        kSapsStageNeedSerialAndRef,
+      );
+    });
+
+    test('displayLabel for the validation prompt is the actionable hint', () {
+      expect(
+        SapsStatusClassifier.displayLabel(
+          SapsCfrScraperClient.kNeedSerialAndRefStatus,
+        ),
+        'Enter both Serial + Reference for firearm apps '
+        '(Ref only for competency)',
+      );
+    });
+
+    test('parseEnquiryPage detects NEED_SERIAL_AND_REF + keeps the banner date',
+        () {
+      const html = '''
+        <i>The data on this page were updated on <b>2026-10-10</b>.</i>
+        <div class="error">Please supply a Serial Number AND Reference Number
+        for a firearm application.</div>
+      ''';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      expect(status!.rawStatus, SapsCfrScraperClient.kNeedSerialAndRefStatus);
+      expect(status.stage, kSapsStageNeedSerialAndRef);
+      expect(status.notFound, isFalse);
+      expect(status.sapsUpdatedAt, DateTime.parse('2026-10-10'));
+      expect(status.htmlSnippet, isNotEmpty);
+    });
+
+    test('parseEnquiryPage parses the 10-column Search Results row and '
+        'concatenates Status + Status description', () {
+      const html = '''
+        <i>The data on this page were updated on <b>2026-10-10</b>.</i>
+        <h3>Search Results:</h3>
+        <table>
+          <tr><th>Type</th><th>App No</th><th>ID</th><th>Caliber</th>
+              <th>Make</th><th>Serial</th><th>Date</th><th>Status</th>
+              <th>Status description</th><th>Next step</th></tr>
+          <tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>
+              <td>9001015009087</td><td>6MM MUSGRAVE</td><td>TIKKA T3X</td>
+              <td>OB14468</td><td>2026-10-01</td><td>Received at Licensing
+              Section</td><td>For consideration by the Commissioner</td>
+              <td>Await decision</td></tr>
+        </table>
+      ''';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      // Status + Status description concatenated for the classifier.
+      expect(status!.rawStatus, contains('Received at Licensing Section'));
+      expect(status.rawStatus, contains('For consideration by the Commissioner'));
+      expect(status.applicationType, 'Section 16 Dedicated Hunting');
+      expect(status.applicationNumber, '10654672');
+      expect(status.calibre, '6MM MUSGRAVE');
+      expect(status.make, 'TIKKA T3X');
+      expect(status.serialNumber, 'OB14468');
+      expect(status.statusDate, '2026-10-01');
+      expect(status.nextStep, 'Await decision');
+      // CFR stage from the Licensing Section phrase.
+      expect(status.stage, kSapsStageCfr);
+    });
+
+    test('parseEnquiryPage still parses the legacy 8-column layout', () {
+      const html = '''
+        <h3>Search Results:</h3>
+        <table>
+          <tr><td>Competency Certificate</td><td>10470664</td>
+              <td>9mm</td><td>GLOCK</td><td>ABC123</td><td>2026-09-01</td>
+              <td>Approved</td><td>Ready for collection</td>
+              <td>Collect at DFO</td></tr>
+        </table>
+      ''';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      expect(status!.applicationType, 'Competency Certificate');
+      expect(status.calibre, '9mm');
+      expect(status.make, 'GLOCK');
+      expect(status.serialNumber, 'ABC123');
+      expect(status.stage, kSapsStagePrinted);
+    });
+
+    test('htmlSnippetOf collapses whitespace and truncates to 500 chars', () {
+      final long = '<div>${'x' * 900}</div>';
+      final snippet = SapsCfrScraperClient.htmlSnippetOf(long);
+      expect(snippet.length, SapsCfrScraperClient.kHtmlSnippetMaxChars);
+      expect(
+        SapsCfrScraperClient.htmlSnippetOf('  a \n  b  '),
+        'a b',
+      );
+    });
+
+    test('buildQueryEnquiryUri emits the portal query parameters', () {
+      final uri = SapsCfrScraperClient.buildQueryEnquiryUri(
+        referenceNumber: '10654672',
+        serialNumber: 'OB14468',
+      );
+      expect(uri.queryParameters['fsref'], '10654672');
+      expect(uri.queryParameters['fserial'], 'OB14468');
+      expect(uri.queryParameters.containsKey('fid'), isTrue);
+      expect(uri.queryParameters.containsKey('fiserial'), isTrue);
+      expect(uri.host, 'www.saps.gov.za');
     });
   });
 }
