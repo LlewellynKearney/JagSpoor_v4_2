@@ -417,9 +417,11 @@ void main() {
         serialNumber: 'OB14468',
       );
       expect(uri.queryParameters['fsref'], '10654672');
+      expect(uri.queryParameters['fref'], '10654672');
       expect(uri.queryParameters['fserial'], 'OB14468');
+      expect(uri.queryParameters['fiserial'], 'OB14468');
       expect(uri.queryParameters.containsKey('fid'), isTrue);
-      expect(uri.queryParameters.containsKey('fiserial'), isTrue);
+      expect(uri.queryParameters.containsKey('frid'), isTrue);
       expect(uri.host, 'www.saps.gov.za');
     });
   });

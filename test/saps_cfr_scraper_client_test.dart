@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_cfr_scraper_client.dart';
+import 'package:jagspoor/features/hunter_mode/services/saps_status_classifier.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_tracker_service.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
@@ -101,8 +102,13 @@ void main() {
         expect(request.url.toString(),
             'https://www.saps.gov.za/services/firearm_status_enquiry.php');
         final body = request.body;
+        // The POST must carry ALL six enquiry fields.
         expect(body, contains('fsref=10470664'));
+        expect(body, contains('fref=10470664'));
         expect(body, contains('fserial=OB14468'));
+        expect(body, contains('fiserial=OB14468'));
+        expect(body, contains('fid='));
+        expect(body, contains('frid='));
         return http.Response(
           '<i>The data on this page were updated on <b>2026-10-10</b>.</i>'
           '<table><tr><td colspan="9">No records to retrieve for your '
@@ -132,9 +138,15 @@ void main() {
       var postCount = 0;
       final mock = MockClient((request) async {
         if (request.method == 'GET') {
-          // The query-parameter GET returns the results page directly.
+          // The query-parameter GET carries ALL six fields (ref duplicated
+          // into fsref/fref, serial into fserial/fiserial) and returns the
+          // results page directly.
           expect(request.url.queryParameters['fsref'], '10654672');
+          expect(request.url.queryParameters['fref'], '10654672');
           expect(request.url.queryParameters['fserial'], 'OB14468');
+          expect(request.url.queryParameters['fiserial'], 'OB14468');
+          expect(request.url.queryParameters.containsKey('fid'), isTrue);
+          expect(request.url.queryParameters.containsKey('frid'), isTrue);
           return http.Response(
             '<b>Search Results:</b><table>'
             '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
@@ -167,15 +179,24 @@ void main() {
       var posted = false;
       final mock = MockClient((request) async {
         if (request.method == 'GET') {
-          // First GET (query form) returns the bare form -> no results.
+          // The GET returns the "Please supply" page (no results table), so it
+          // must be treated as empty and force the POST.
           return http.Response(
-            '<input type="hidden" name="csrf" value="tok">form only',
+            '<input type="hidden" name="csrf" value="tok">'
+            '<div>Please supply a Serial Number AND Reference Number</div>',
             200,
             headers: {'set-cookie': 'csrf_token=cook; path=/'},
           );
         }
         posted = true;
+        // The POST must carry ALL six fields plus the csrf handshake.
         expect(request.body, contains('fsref=10654672'));
+        expect(request.body, contains('fref=10654672'));
+        expect(request.body, contains('fserial=OB14468'));
+        expect(request.body, contains('fiserial=OB14468'));
+        expect(request.body, contains('fid='));
+        expect(request.body, contains('frid='));
+        expect(request.body, contains('csrf=tok'));
         return http.Response(
           '<table><tr><td colspan="9">No records to retrieve ...</td></tr>'
           '</table>',
@@ -189,22 +210,138 @@ void main() {
         idNumber: '',
         serialNumber: 'OB14468',
       );
-      expect(posted, isTrue);
+      expect(posted, isTrue, reason: 'a no-results GET must force the POST');
       expect(result, isNotNull);
       expect(result!.notFound, isTrue);
     });
 
-    test('parses the NEED_SERIAL_AND_REF validation prompt end-to-end',
+    test('GET with all six params is used and only a results table is accepted',
+        () {
+      final uri = SapsCfrScraperClient.buildQueryEnquiryUri(
+        referenceNumber: '10654672',
+        serialNumber: 'OB14468',
+      );
+      expect(uri.queryParameters['fsref'], '10654672');
+      expect(uri.queryParameters['fref'], '10654672');
+      expect(uri.queryParameters['fserial'], 'OB14468');
+      expect(uri.queryParameters['fiserial'], 'OB14468');
+      expect(uri.queryParameters['fid'], '');
+      expect(uri.queryParameters['frid'], '');
+      // The six-field body shares the same shape (csrf appended by callers).
+      final fields = SapsCfrScraperClient.enquiryFormFields(
+        referenceNumber: '10654672',
+        serialNumber: 'OB14468',
+      );
+      expect(fields['fsref'], '10654672');
+      expect(fields['fref'], '10654672');
+      expect(fields['fserial'], 'OB14468');
+      expect(fields['fiserial'], 'OB14468');
+      expect(fields['fid'], '');
+      expect(fields['frid'], '');
+    });
+
+    test('a bare DOCTYPE page with no results table forces the POST',
         () async {
+      var getCount = 0;
+      var posted = false;
       final mock = MockClient((request) async {
         if (request.method == 'GET') {
+          getCount++;
           return http.Response(
-            '<i>The data on this page were updated on <b>2026-10-10</b>.</i>'
-            '<div>Please supply a Serial Number AND Reference Number</div>',
+            '<!DOCTYPE html><html><body>'
+            '<input type="hidden" name="csrf" value="tok">'
+            '</body></html>',
+            200,
+            headers: {'set-cookie': 'csrf_token=cook; path=/'},
+          );
+        }
+        posted = true;
+        return http.Response(
+          '<b>Search Results:</b><table>'
+          '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
+          '<td>9001015009087</td><td>6MM MUSGRAVE</td><td>TIKKA T3X</td>'
+          '<td>OB14468</td><td>2026-10-01</td>'
+          '<td>Received at Licensing Section</td>'
+          '<td>For consideration by the Commissioner</td>'
+          '<td>Await decision</td></tr></table>',
+          200,
+        );
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: 'OB14468',
+      );
+      expect(getCount, greaterThanOrEqualTo(2),
+          reason: 'query GET + form GET before the POST');
+      expect(posted, isTrue);
+      expect(result, isNotNull);
+      expect(result!.applicationNumber, '10654672');
+    });
+
+    test('POST 303 follows the Location header then parses the results',
+        () async {
+      var redirected = false;
+      final mock = MockClient((request) async {
+        if (request.method == 'POST') {
+          return http.Response('', 303, headers: {
+            'location': '/services/firearm_status_results.php',
+          });
+        }
+        // GETs: form (with csrf), then the redirect target.
+        if (request.url.path.contains('firearm_status_results')) {
+          redirected = true;
+          return http.Response(
+            '<b>Search Results:</b><table>'
+            '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
+            '<td>9001015009087</td><td>6MM MUSGRAVE</td><td>TIKKA T3X</td>'
+            '<td>OB14468</td><td>2026-10-01</td>'
+            '<td>Received at Licensing Section</td>'
+            '<td>For consideration by the Commissioner</td>'
+            '<td>Await decision</td></tr></table>',
             200,
           );
         }
-        return http.Response('unexpected POST', 500);
+        return http.Response(
+          '<input type="hidden" name="csrf" value="tok">'
+          '<div>Please supply a Serial Number AND Reference Number</div>',
+          200,
+          headers: {'set-cookie': 'csrf_token=cook; path=/'},
+        );
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: 'OB14468',
+      );
+      expect(redirected, isTrue, reason: '303 Location must be followed');
+      expect(result, isNotNull);
+      expect(result!.applicationNumber, '10654672');
+    });
+
+    test('parses the NEED_SERIAL_AND_REF validation prompt end-to-end',
+        () async {
+      // The GET has no results table -> the POST is forced. The POST response
+      // carries the "Please supply" banner (still no results table), so the
+      // parse surfaces the actionable NEED_SERIAL prompt.
+      final mock = MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(
+            '<input type="hidden" name="csrf" value="tok">'
+            '<div>Please supply a Serial Number AND Reference Number</div>',
+            200,
+            headers: {'set-cookie': 'csrf_token=cook; path=/'},
+          );
+        }
+        return http.Response(
+          '<i>The data on this page were updated on <b>2026-10-10</b>.</i>'
+          '<div>Please supply a Serial Number AND Reference Number</div>',
+          200,
+        );
       });
 
       final client = SapsCfrScraperClient(httpClient: mock);
@@ -219,6 +356,23 @@ void main() {
       // The portal banner date is still captured.
       expect(result.sapsUpdatedAt, DateTime.parse('2026-10-10'));
       expect(result.htmlSnippet, isNotEmpty);
+    });
+
+    test('a results table wins even when the Please-supply banner is present',
+        () {
+      const html =
+          '<div>Please supply a Serial Number AND Reference Number</div>'
+          '<b>Search Results:</b><table>'
+          '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
+          '<td>9001015009087</td><td>6MM MUSGRAVE</td><td>TIKKA T3X</td>'
+          '<td>OB14468</td><td>2026-10-01</td>'
+          '<td>Received at Licensing Section</td>'
+          '<td>For consideration by the Commissioner</td>'
+          '<td>Await decision</td></tr></table>';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      expect(status!.applicationNumber, '10654672');
+      expect(status.stage, isNot(kSapsStageNeedSerialAndRef));
     });
   });
 
