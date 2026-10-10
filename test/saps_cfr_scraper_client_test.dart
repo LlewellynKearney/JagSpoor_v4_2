@@ -290,4 +290,59 @@ void main() {
       expect(result, isNull);
     });
   });
+
+  group('SapsCfrScraperClient cert bypass (Android debug) ', () {
+    test('bypasses certificate verification for saps.gov.za', () {
+      // The test runner is a debug build, so certBypassForHost mirrors the
+      // production kDebugMode behaviour.
+      expect(
+        SapsCfrScraperClient.certBypassForHost('www.saps.gov.za'),
+        isTrue,
+      );
+      expect(
+        SapsCfrScraperClient.certBypassForHost('saps.gov.za'),
+        isTrue,
+      );
+    });
+
+    test('does NOT bypass certificate verification for other hosts', () {
+      // The host gate is the security boundary — every non-SAPS host keeps
+      // full verification even in a debug build.
+      expect(
+        SapsCfrScraperClient.certBypassForHost('example.com'),
+        isFalse,
+      );
+      expect(
+        SapsCfrScraperClient.certBypassForHost('gov.za.evil.example'),
+        isFalse,
+      );
+      expect(
+        SapsCfrScraperClient.certBypassForHost('hook.example.com'),
+        isFalse,
+      );
+    });
+
+    test('an injected client still drives the direct portal path', () async {
+      // Regression guard: the test seam must win over the cert-bypass client,
+      // so a mocked transport never reaches the live portal.
+      var getCount = 0;
+      final mock = MockClient((request) async {
+        getCount++;
+        return http.Response(
+          '<i>updated on <b>2026-10-10</b></i>'
+          '<div>Please supply a Serial Number AND Reference Number</div>',
+          200,
+        );
+      });
+      final client = SapsCfrScraperClient(httpClient: mock);
+      final result = await client.fetchStatus(
+        referenceNumber: '10654672',
+        idNumber: '',
+        serialNumber: '',
+      );
+      expect(result, isNotNull);
+      expect(result!.stage, -2);
+      expect(getCount, greaterThan(0));
+    });
+  });
 }

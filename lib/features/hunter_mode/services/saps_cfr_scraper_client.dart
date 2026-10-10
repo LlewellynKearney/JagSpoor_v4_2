@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart' as http;
 import 'saps_status_classifier.dart';
 
 /// HTTP client for the SAPS Central Firearms Register (CFR) firearm /
@@ -44,13 +46,51 @@ class SapsCfrScraperClient {
   final http.Client _http;
   final String _webhookUrl;
 
+  /// True when [httpClient] was supplied (the test seam). When set, the direct
+  /// portal path reuses [_http] instead of building the cert-bypass client, so
+  /// a mocked transport can drive the enquiry with no live network.
+  final bool _httpInjected;
+
   /// Creates the client. [webhookUrl] may be empty when the webhook is not
   /// configured; [isConfigured] then reports false and, in a release build,
   /// [fetchStatus] refuses (returns null). In a debug build with no webhook,
   /// [fetchStatus] uses the direct portal path instead.
   SapsCfrScraperClient({String webhookUrl = '', http.Client? httpClient})
       : _webhookUrl = webhookUrl,
-        _http = httpClient ?? http.Client();
+        _http = httpClient ?? http.Client(),
+        _httpInjected = httpClient != null;
+
+  /// The HTTP client used for the DIRECT (device → saps.gov.za) path.
+  ///
+  /// The injected test client wins when supplied (unit tests). Otherwise a
+  /// dedicated [io.HttpClient] is created whose certificate validation is
+  /// bypassed for `saps.gov.za` in debug builds only — saps.gov.za presents a
+  /// chain the Android trust store rejects on some devices/emulators, which
+  /// otherwise fails the handshake. In a release build the callback always
+  /// returns false, so the default verified transport is used.
+  http.Client _buildDirectClient() {
+    if (_httpInjected) return _http;
+    final io.HttpClient ioClient = io.HttpClient()
+      ..badCertificateCallback = (io.X509Certificate cert, String host, int port) {
+        final bypass = certBypassForHost(host);
+        if (bypass) {
+          debugPrint(
+            'SapsCfrScraperClient: cert verify BYPASSED for $host '
+            '(kDebugMode + saps.gov.za)',
+          );
+        }
+        return bypass;
+      };
+    return http.IOClient(ioClient);
+  }
+
+  /// Whether certificate verification should be bypassed for [host].
+  ///
+  /// Only `saps.gov.za` (and its subdomains) in a debug build — every other
+  /// host keeps full verification, and a release build always verifies.
+  @visibleForTesting
+  static bool certBypassForHost(String host) =>
+      host.contains('saps.gov.za') && kDebugMode;
 
   bool get isConfigured => _webhookUrl.trim().isNotEmpty;
 
@@ -193,95 +233,111 @@ class SapsCfrScraperClient {
     required String referenceNumber,
     required String serialNumber,
   }) async {
-    // 1. GET-first with the query parameters the portal also accepts. This is
-    //    the cheapest path — some portal builds answer the enquiry straight
-    //    from a GET without the csrf handshake.
-    try {
-      final getResponse = await _http
-          .get(
-            buildQueryEnquiryUri(
-              referenceNumber: referenceNumber,
-              serialNumber: serialNumber,
-            ),
-            headers: {
-              'User-Agent': userAgent,
-              'Accept': 'text/html,application/xhtml+xml',
-              'Accept-Language': 'en-ZA,en;q=0.9',
-            },
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (getResponse.statusCode == 200 &&
-          !_isEmptyBody(getResponse.body)) {
-        final parsed = _parseEnquiryPage(getResponse.body);
-        // Only accept the GET result when it carries something meaningful —
-        // a results row, a NOT_FOUND notice, or the "Please supply…" prompt.
-        // The bare form page parses to null and falls through to the POST.
-        if (parsed != null) return parsed;
-      }
-    } catch (e) {
-      debugPrint('SapsCfrScraperClient: query GET failed, trying POST: $e');
-    }
+    // saps.gov.za presents a certificate chain the Android system trust store
+    // (and some emulators / older devices) rejects, which surfaced as a
+    // handshake failure. In a DEBUG build we bypass certificate validation for
+    // saps.gov.za ONLY (the host check keeps every other host verified); a
+    // release build always uses the default, verified transport. The webhook
+    // path continues to use the injected _http client, so its cert handling is
+    // untouched. [client] is our own socket pool and is closed below; the
+    // injected test client is left open.
+    final http.Client client = _buildDirectClient();
 
     try {
-      // 2. POST fallback. First GET the bare form page (captures the csrf
-      //    token + cookie).
-      final formResponse = await _http.get(
-        Uri.parse(enquiryUrl),
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': 'text/html,application/xhtml+xml',
-          'Accept-Language': 'en-ZA,en;q=0.9',
-        },
-      ).timeout(const Duration(seconds: 30));
+      // 1. GET-first with the query parameters the portal also accepts. This is
+      //    the cheapest path — some portal builds answer the enquiry straight
+      //    from a GET without the csrf handshake.
+      try {
+        final getResponse = await client
+            .get(
+              buildQueryEnquiryUri(
+                referenceNumber: referenceNumber,
+                serialNumber: serialNumber,
+              ),
+              headers: {
+                'User-Agent': userAgent,
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'en-ZA,en;q=0.9',
+              },
+            )
+            .timeout(const Duration(seconds: 30));
 
-      if (formResponse.statusCode != 200) {
-        debugPrint(
-          'SapsCfrScraperClient: form GET returned HTTP '
-          '${formResponse.statusCode}',
-        );
-        return null;
+        if (getResponse.statusCode == 200 &&
+            !_isEmptyBody(getResponse.body)) {
+          final parsed = _parseEnquiryPage(getResponse.body);
+          // Only accept the GET result when it carries something meaningful —
+          // a results row, a NOT_FOUND notice, or the "Please supply…" prompt.
+          // The bare form page parses to null and falls through to the POST.
+          if (parsed != null) return parsed;
+        }
+      } catch (e) {
+        debugPrint('SapsCfrScraperClient: query GET failed, trying POST: $e');
       }
 
-      final csrf = _extractCsrfField(formResponse.body);
-      final cookie = _extractCsrfCookie(formResponse.headers);
+      try {
+        // 2. POST fallback. First GET the bare form page (captures the csrf
+        //    token + cookie).
+        final formResponse = await client.get(
+          Uri.parse(enquiryUrl),
+          headers: {
+            'User-Agent': userAgent,
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-ZA,en;q=0.9',
+          },
+        ).timeout(const Duration(seconds: 30));
 
-      // POST the enquiry. The `http` client follows a 3xx redirect (the
-      // portal answers 303 on some paths, 200 with the results page on
-      // others) so `response.body` is the results page either way.
-      final response = await _http
-          .post(
-            Uri.parse(enquiryUrl),
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': userAgent,
-              'Accept': 'text/html,application/xhtml+xml',
-              'Accept-Language': 'en-ZA,en;q=0.9',
-              'Referer': enquiryUrl,
-              if (cookie != null) 'Cookie': 'csrf_token=$cookie',
-            },
-            body: {
-              'csrf': csrf ?? '',
-              'csrf_token': '',
-              'fsref': referenceNumber,
-              'fserial': serialNumber,
-            },
-          )
-          .timeout(const Duration(seconds: 30));
+        if (formResponse.statusCode != 200) {
+          debugPrint(
+            'SapsCfrScraperClient: form GET returned HTTP '
+            '${formResponse.statusCode}',
+          );
+          return null;
+        }
 
-      if (response.statusCode != 200) {
-        debugPrint(
-          'SapsCfrScraperClient: enquiry POST returned HTTP '
-          '${response.statusCode}',
-        );
+        final csrf = _extractCsrfField(formResponse.body);
+        final cookie = _extractCsrfCookie(formResponse.headers);
+
+        // POST the enquiry. The `http` client follows a 3xx redirect (the
+        // portal answers 303 on some paths, 200 with the results page on
+        // others) so `response.body` is the results page either way.
+        final response = await client
+            .post(
+              Uri.parse(enquiryUrl),
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': userAgent,
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'en-ZA,en;q=0.9',
+                'Referer': enquiryUrl,
+                if (cookie != null) 'Cookie': 'csrf_token=$cookie',
+              },
+              body: {
+                'csrf': csrf ?? '',
+                'csrf_token': '',
+                'fsref': referenceNumber,
+                'fserial': serialNumber,
+              },
+            )
+            .timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200) {
+          debugPrint(
+            'SapsCfrScraperClient: enquiry POST returned HTTP '
+            '${response.statusCode}',
+          );
+          return null;
+        }
+
+        // 3. Parse the results page.
+        return _parseEnquiryPage(response.body);
+      } catch (e) {
+        debugPrint('SapsCfrScraperClient: direct enquiry failed: $e');
         return null;
       }
-
-      // 3. Parse the results page.
-      return _parseEnquiryPage(response.body);
-    } catch (e) {
-      debugPrint('SapsCfrScraperClient: direct enquiry failed: $e');
-      return null;
+    } finally {
+      // Release the socket pool for this enquiry — but only when we created it.
+      // The injected test client is shared across calls, so leave it open.
+      if (!_httpInjected) client.close();
     }
   }
 
