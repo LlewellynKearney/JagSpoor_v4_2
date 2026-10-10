@@ -85,15 +85,46 @@ void main() {
       );
     });
 
-    test('fetchStatus refuses when the webhook is not configured', () async {
-      final client = SapsCfrScraperClient();
-      expect(
-        await client.fetchStatus(
-          referenceNumber: 'REF-1',
-          idNumber: '9001015009087',
-        ),
-        isNull,
+    test('debug build with no webhook uses the direct portal path', () async {
+      // In a kDebugMode test run (which this is), a client with no webhook
+      // configured performs the real device -> portal enquiry. Drive it with
+      // a mocked transport so no live network is touched: the GET returns the
+      // form (csrf token + cookie) and the POST returns the NOT_FOUND page.
+      final mock = MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(
+            '<input type="hidden" name="csrf" value="tok123">',
+            200,
+            headers: {'set-cookie': 'csrf_token=cook123; path=/; HttpOnly'},
+          );
+        }
+        expect(request.url.toString(),
+            'https://www.saps.gov.za/services/firearm_status_enquiry.php');
+        final body = request.body;
+        expect(body, contains('fsref=10470664'));
+        expect(body, contains('fserial=OB14468'));
+        return http.Response(
+          '<i>The data on this page were updated on <b>2026-10-10</b>.</i>'
+          '<table><tr><td colspan="9">No records to retrieve for your '
+          'selected Reference Number (10470664) and Serial Number '
+          '(OB14468) ...</td></tr></table>',
+          200,
+        );
+      });
+
+      final client = SapsCfrScraperClient(httpClient: mock);
+      expect(client.isConfigured, isFalse);
+      expect(client.isDirectDebugEnabled, isTrue);
+
+      final result = await client.fetchStatus(
+        referenceNumber: '10470664',
+        idNumber: '9001015009087',
+        serialNumber: 'OB14468',
       );
+      expect(result, isNotNull);
+      expect(result!.notFound, isTrue);
+      expect(result.stage, -1);
+      expect(result.sapsUpdatedAt, DateTime.parse('2026-10-10'));
     });
   });
 

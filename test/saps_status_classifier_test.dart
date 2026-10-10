@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jagspoor/features/hunter_mode/services/saps_cfr_scraper_client.dart';
+import 'package:jagspoor/features/hunter_mode/services/saps_sms_parser.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_status_classifier.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_tracker_service.dart';
 
@@ -190,6 +192,114 @@ void main() {
       expect(
         SapsTrackerService.convertRawStatusToDisplay('Not Found'),
         'Status Unavailable',
+      );
+    });
+  });
+
+  group('SapsSmsParser uses SapsStatusClassifier (single source of truth)', () {
+    test('status stage matches the classifier for the detected phrase', () {
+      const samples = <String, String>{
+        'Ref 10470664 application received at DFO.':
+            'Application received at DFO',
+        'Ref 10470664 forwarded to Provincial Office.': 'Submitted to Provincial',
+        'Ref 10470664 is now at the Central Firearms Registry.':
+            'Central Firearms Registry',
+        'SAPS: Your licence collection notice for Ref 10470664 is ready.':
+            'Ready for collection',
+      };
+      samples.forEach((message, phrase) {
+        final parsed = SapsSmsParser.parse(message);
+        expect(
+          parsed.statusStage,
+          SapsStatusClassifier.classify(phrase),
+          reason: 'stage for "$message"',
+        );
+      });
+    });
+
+    test('matchedStatusPattern is the classifier display label', () {
+      final parsed = SapsSmsParser.parse(
+        'Ref 10470664 application received at DFO.',
+      );
+      expect(
+        parsed.matchedStatusPattern,
+        SapsStatusClassifier.displayLabel('Application received at DFO'),
+      );
+    });
+
+    test('no detected status -> null stage (nothing to classify)', () {
+      final parsed = SapsSmsParser.parse(
+        'Ref 10470664 calibre 6MM MUSGRAVE s/n OB14468',
+      );
+      expect(parsed.statusStage, isNull);
+      expect(parsed.matchedStatusPattern, isNull);
+    });
+  });
+
+  group('SapsCfrScraperClient direct portal parsing', () {
+    test('parses the results row + the updated-on notice', () {
+      const html = '''
+        <i>Take note: The data on this page were updated on <b>2026-10-10</b>.</i>
+        <b>Search Results:</b>
+        <table><thead><tr><th>Application Type</th><th>Application Number</th>
+        <th>Calibre</th><th>Make</th><th>Serial Number</th><th>Status Date</th>
+        <th>Status</th><th>Status Description</th><th>Next Step</th></tr></thead>
+        <tr><td>Licence</td><td>10470664</td><td>6MM MUSGRAVE</td>
+        <td>TIKKA</td><td>OB14468</td><td>2026-09-01</td>
+        <td>Sent to Provincial DFO</td>
+        <td>The application was send to the Provincial DFO by the DFO</td>
+        <td>Await CFR</td></tr></table>
+      ''';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      expect(status!.rawStatus, 'Sent to Provincial DFO');
+      expect(status.stage, kSapsStageProvincial);
+      expect(status.displayLabel, 'At Provincial Office');
+      expect(status.sapsUpdatedAt, DateTime.parse('2026-10-10'));
+      expect(status.notFound, isFalse);
+      expect(status.calibre, '6MM MUSGRAVE');
+      expect(status.serialNumber, 'OB14468');
+      expect(status.nextStep, 'Await CFR');
+    });
+
+    test('detects the NOT_FOUND response', () {
+      const html = '''
+        <i>The data on this page were updated on <b>2026-10-10</b>.</i>
+        <table><tr><td colspan="9">No records to retrieve for your selected
+        Reference Number (10470664) and Serial Number (OB14468) ...</td></tr>
+        </table>
+      ''';
+      final status = SapsCfrScraperClient.parseEnquiryPage(html);
+      expect(status, isNotNull);
+      expect(status!.notFound, isTrue);
+      expect(status.stage, kSapsStageNotFound);
+      expect(status.displayLabel, 'Status Unavailable');
+      expect(status.sapsUpdatedAt, DateTime.parse('2026-10-10'));
+    });
+
+    test('extracts the csrf form token + cookie + updated date', () {
+      const html =
+          '<input type="hidden" name="csrf" value="abc123">'
+          '<i>were updated on <b>2026-10-10</b></i>';
+      expect(SapsCfrScraperClient.extractCsrfField(html), 'abc123');
+      expect(
+        SapsCfrScraperClient.parseUpdatedDate(html),
+        DateTime.parse('2026-10-10'),
+      );
+      expect(
+        SapsCfrScraperClient.extractCsrfCookie(
+          {'set-cookie': 'csrf_token=deadbeef; path=/; HttpOnly'},
+        ),
+        'deadbeef',
+      );
+      expect(SapsCfrScraperClient.extractCsrfCookie(const {}), isNull);
+    });
+
+    test('returns null for an empty / shapeless page', () {
+      expect(SapsCfrScraperClient.parseEnquiryPage(''), isNull);
+      expect(
+        SapsCfrScraperClient.parseEnquiryPage('<html><body>nothing</body></html>'),
+        isNull,
       );
     });
   });
