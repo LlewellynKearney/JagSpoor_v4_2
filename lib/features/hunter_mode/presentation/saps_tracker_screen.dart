@@ -157,9 +157,12 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
     }
   }
 
-  /// Finds the tracked application matching this enquiry (same reference
-  /// number, and same normalised serial when one was supplied) and persists
-  /// the live CFR payload onto it via [SapsTrackerService.applyLiveStatus].
+  /// Finds the tracked application matching this enquiry and persists the
+  /// live CFR payload onto it via [SapsTrackerService.applyLiveStatus].
+  ///
+  /// Matching is tolerant so a corrected serial (the `F0004574` -> `F004574`
+  /// typo class) still updates the SAME tracked doc: the reference+serial pair
+  /// is preferred, then reference-only, then serial-only.
   ///
   /// Best-effort: a null user / no match / Firestore failure is swallowed so
   /// the enquiry result card still renders.
@@ -177,27 +180,36 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
           .where('hunterId', isEqualTo: uid)
           .get();
       final wantedRef = ref.trim();
-      final wantedSerial = SapsStatusClassifier.normalizeSerial(serial);
+      // Prefer the portal's own serial when the enquiry echoed one.
+      final wantedSerial = SapsStatusClassifier.normalizeSerial(
+        serial.isNotEmpty ? serial : result.serialNumber,
+      );
       if (wantedRef.isEmpty && wantedSerial.isEmpty) return;
 
-      DocumentSnapshot<Map<String, dynamic>>? match;
+      // Rank each candidate: ref+serial (2) > ref-only (1) > serial-only (1),
+      // keeping the best match instead of requiring an exact pair.
+      DocumentSnapshot<Map<String, dynamic>>? best;
+      var bestScore = 0;
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final docRef = (data['referenceNumber'] as String?)?.trim() ?? '';
         final docSerial = SapsStatusClassifier.normalizeSerial(
           (data['serialNumber'] as String?) ?? (data['serial'] as String?),
         );
-        final refMatches = wantedRef.isEmpty || docRef == wantedRef;
+        final refMatches = wantedRef.isNotEmpty && docRef == wantedRef;
         final serialMatches =
-            wantedSerial.isEmpty || docSerial == wantedSerial;
-        if (refMatches && serialMatches) {
-          match = doc;
-          break;
+            wantedSerial.isNotEmpty && docSerial == wantedSerial;
+        final score =
+            (refMatches && serialMatches) ? 2 : (refMatches || serialMatches ? 1 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = doc;
+          if (score == 2) break;
         }
       }
-      if (match != null) {
+      if (best != null) {
         await _trackerService.applyLiveStatus(
-          match.id,
+          best.id,
           result,
           hunterId: uid,
           referenceNumber: wantedRef.isEmpty ? null : wantedRef,
@@ -205,6 +217,17 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
       }
     } catch (e) {
       debugPrint('SapsTrackerScreen: upsert live status failed: $e');
+    }
+  }
+
+  /// Pre-fills the live-enquiry inputs from a tracked application's card
+  /// (its edit action) so the hunter can re-run the enquiry with the
+  /// corrected reference / serial in one tap.
+  void _prefillEnquiryFrom(SapsApplication app) {
+    _enquiryRefController.text = app.referenceNumber;
+    _enquirySerialController.text = app.serialNumber;
+    if (!_registerExpanded) {
+      setState(() => _registerExpanded = true);
     }
   }
 
@@ -1211,6 +1234,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                           ),
                           trackerService: _trackerService,
                           enquiryClientFactory: widget.enquiryClientFactory,
+                          onEdited: _prefillEnquiryFrom,
                         ),
                       ),
                   ],
@@ -1319,11 +1343,17 @@ class SapsApplicationCard extends StatefulWidget {
   /// with a mocked transport. Defaults to a real [SapsCfrScraperClient].
   final SapsCfrScraperClient Function()? enquiryClientFactory;
 
+  /// Optional callback invoked after a successful edit so the parent screen
+  /// can pre-fill the top "Check Live Status" enquiry inputs with the
+  /// corrected reference / serial.
+  final void Function(SapsApplication application)? onEdited;
+
   const SapsApplicationCard({
     super.key,
     required this.application,
     required this.trackerService,
     this.enquiryClientFactory,
+    this.onEdited,
   });
 
   @override
@@ -1410,6 +1440,13 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
       referenceNumber: newRef,
       serialNumber: newSerial,
     );
+
+    // Let the parent screen pre-fill its top enquiry inputs with the
+    // corrected values so a re-enquiry is one tap away.
+    widget.onEdited?.call(application.copyWith(
+      referenceNumber: newRef,
+      serialNumber: newSerial,
+    ));
 
     // Re-run the live enquiry so the card shows the corrected live status.
     try {

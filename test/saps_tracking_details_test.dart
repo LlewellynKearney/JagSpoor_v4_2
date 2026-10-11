@@ -436,6 +436,32 @@ void main() {
         expect(result.success, isFalse);
         expect(result.message, isNotEmpty);
       });
+
+      test('refresh NEVER downgrades a doc that already carries a live CFR '
+          'payload (no configured webhook)', () async {
+        final fake = FakeFirebaseFirestore();
+        await fake.collection('license_applications').doc('app-live').set({
+          'hunterId': 'u1',
+          'referenceNumber': '10654672',
+          'serialNumber': 'F004574',
+          'rawStatus': 'IN PREPARATION FOR CONSIDERATION',
+          'liveStage': 2,
+          'currentStatus': 'At Central Registry',
+        });
+        final service = SapsTrackerService.forTesting(fake);
+
+        final result = await service.refreshApplication('app-live');
+        expect(result.success, isTrue);
+        expect(result.statusStage, 2);
+        expect(result.statusMessage, contains('IN PREPARATION'));
+
+        // The stored live status must be preserved verbatim (the offline mock
+        // must not overwrite it).
+        final doc =
+            await fake.collection('license_applications').doc('app-live').get();
+        expect(doc.data()!['rawStatus'], 'IN PREPARATION FOR CONSIDERATION');
+        expect(doc.data()!['statusCode'], 2);
+      });
     },
   );
 }

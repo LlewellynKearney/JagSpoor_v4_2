@@ -742,6 +742,47 @@ void main() {
       final days = app.calculateWorkdaysSince(DateTime(2026, 10, 12));
       assert(days == 2, 'expected 2 workdays from SAPS date, got $days');
     });
+
+    test('fromJson hydrates the live fields from a nested rawPayload map '
+        'using camelCase keys', () {
+      // The exact shape the debug enquiry screen / portal produce.
+      final json = <String, dynamic>{
+        'hunterId': 'h',
+        'applicationType': 'Section 16 Dedicated Hunting',
+        'currentStatus': 'Application received at DFO',
+        'rawPayload': <String, dynamic>{
+          'applicationType': 'Section 16 Dedicated Hunting',
+          'applicationNumber': '10654672',
+          'calibre': '.338 WIN MAG',
+          'make': 'HOWA',
+          'serialNumber': 'F004574',
+          'statusDate': '2026/10/09',
+          'status': 'IN PREPARATION FOR CONSIDERATION',
+          'statusDescription': 'No status available contact the DFO',
+          'nextStep': 'No status available contact the DFO',
+        },
+        'liveStage': 2,
+        'lastChecked': '2026-10-11T00:00:00.000',
+      };
+      final app = SapsApplication.fromJson(json, id: 'app-1');
+
+      assert(app.rawStatus == 'IN PREPARATION FOR CONSIDERATION',
+          'rawStatus must read rawPayload.status, got "${app.rawStatus}"');
+      assert(app.liveStage == 2, 'liveStage must hydrate');
+      assert(app.statusDate == '2026/10/09', 'statusDate must hydrate');
+      assert(app.calibre == '.338 WIN MAG', 'calibre must read rawPayload');
+      assert(app.firearmMake == 'HOWA', 'make must read rawPayload.make');
+      assert(app.serialNumber == 'F004574', 'serial must hydrate');
+      assert(app.applicationType == 'Section 16 Dedicated Hunting');
+      assert(app.referenceNumber == '10654672',
+          'referenceNumber must backfill from rawPayload.applicationNumber');
+      assert(app.currentProgressLabel == 'At Central Registry',
+          'live phrase must classify to At Central Registry');
+      assert(app.effectiveStage == 2, 'effectiveStage must be stage 2');
+      assert(app.nextStepLabel == 'Printed / Ready for Collection',
+          'stage 2 next step');
+      assert(app.statusDescription == 'No status available contact the DFO');
+    });
   });
 
   group('SapsScraperResult Tests', () {
