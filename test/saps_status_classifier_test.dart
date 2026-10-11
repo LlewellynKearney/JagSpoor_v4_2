@@ -234,10 +234,10 @@ void main() {
     test('maps each stage to the next workflow step', () {
       expect(SapsStatusClassifier.nextStepForStage(kSapsStageDfo), 'Provincial');
       expect(SapsStatusClassifier.nextStepForStage(kSapsStageProvincial), 'CFR');
-      // Stage 2 (CFR) -> printed / collection (NOT "Provincial").
+      // Stage 2 (CFR) -> CFR processing (the authoritative forward step).
       expect(
         SapsStatusClassifier.nextStepForStage(kSapsStageCfr),
-        'Printed / Ready for Collection',
+        'Central Firearms Register (CFR) Processing',
       );
       expect(
         SapsStatusClassifier.nextStepForStage(kSapsStagePrinted),

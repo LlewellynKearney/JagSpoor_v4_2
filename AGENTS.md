@@ -1,6 +1,93 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SAPS tracked card HARD refactor: eliminate the offline-mock root cause (added 2026-10-11)
+
+### Symptom
+The tracked card for `10654672` / `F004574` showed **"Processing at District
+Office"**, 0 workdays, "Next Provincial" even though the live portal returns
+`IN PREPARATION FOR CONSIDERATION` (stage 2, "At Central Registry",
+`2026/10/09`, HOWA `.338 WIN MAG`).
+
+### True root cause
+`SapsTrackerScreen` built its service as `SapsTrackerService()` with **no
+scraper**. So `triggerRemoteScraperCheck` always fell through to
+`_generateMockStatus()` when no webhook was configured — and the manual
+refresh buttons (`refreshApplication` / `refreshAllApplications`) *persisted
+that mock* onto `license_applications/{id}.currentStatus`. Because `rawStatus`
+stayed empty, the card's `currentProgressLabel` fell back to the stored mock
+`currentStatus` ("Processing at District Office"). Neither the previous
+`_generateMockStatus()`-only path nor card rendering was wrong in isolation —
+the mock simply was the only thing ever writing the doc.
+
+### Fixes
+- **`saps_tracker_service.dart`**:
+  - New ctor flag `enableDebugFallback`; when true it installs a
+    `SapsCfrScraperClient()` so the refresh paths run a **REAL** CFR enquiry
+    instead of the mock. The client itself only activates on a `kDebugMode`
+    build with an `saps.gov.za` host, so release builds never hit the portal.
+  - New `_liveEnquiryFor(applicationId)` — runs the webhook/direct-debug
+    client and persists the **FULL** payload via `applyLiveStatus`.
+  - `triggerRemoteScraperCheck` priority is now: (1) an existing `rawStatus`
+    is returned VERBATIM (the mock can never overwrite live data); (2) the
+    live client; (3) the mock ONLY for a doc with no live payload AND no
+    client.
+  - `refreshApplication` / `refreshAllApplications` prefer
+    `_liveEnquiryFor` (full payload) and fall back to the (now-safe)
+    `triggerRemoteScraperCheck`. New `_persistStatus` helper routes through
+    the `statusPersisterForTesting` seam.
+  - New test seams: `statusPersisterForTesting`, `scraperFactoryForTesting`.
+- **`saps_tracker_screen.dart`**: the screen service is now
+  `SapsTrackerService(enableDebugFallback: kDebugMode)` so a manual refresh
+  does a real enquiry (no mock) in debug builds.
+- **`saps_status_classifier.dart`**: `nextStepForStage(kSapsStageCfr)` is now
+  `'Central Firearms Register (CFR) Processing'` (per the task spec). The CFR
+  phrase patterns (`in preparation for consideration`,
+  `no status available contact the dfo`) were already present from the prior
+  phase; `displayLabel(stage 2)` remains `'At Central Registry'`.
+- **`saps_application_model.dart`**: new `sapsStatusDateLabel` getter
+  (`09 Oct 2026`) so the workdays pill reads
+  `"2 workdays since 09 Oct 2026"` instead of the vague "since submission".
+
+### Tests
+- `test/saps_tracking_details_test.dart` (+1, the ROOT-CAUSE regression):
+  with a live client installed, `refreshApplication` runs a real enquiry and
+  persists the FULL live payload (`rawStatus`/`liveStage`/`statusCode`/
+  `calibre`/`firearmMake`/`serialNumber`/`statusDate`/`currentStatus` = "At
+  Central Registry"/`rawPayload`) and NEVER a mock "District Office" phrase.
+- `test/saps_status_classifier_test.dart` / `test/features/hunter_mode/
+  saps_tracker_test.dart` / `test/saps_application_card_widget_test.dart`:
+  updated the stage-2 next-step expectation to
+  `'Central Firearms Register (CFR) Processing'`; the card tests still assert
+  the `10654672` payload renders **"At Central Registry"** with HOWA /
+  `.338 WIN MAG` / `s/n F004574`.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing
+  info-level; the sole `DropdownButtonFormField.value` info is the deliberate
+  cross-version pin).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 2052
+  tests passed**. SAPS group: 207.
+
+### Operator note
+After pulling, open the tracked card and tap its **refresh** icon (or
+refresh-all). With the debug client this performs a real CFR enquiry and
+writes the full live payload onto the doc — the card then shows "At Central
+Registry", the SAPS status date, and the HOWA `.338 WIN MAG` details. The
+offline mock can no longer write a stale stage.
+
+### Files
+- `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `lib/features/hunter_mode/services/saps_status_classifier.dart`,
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `lib/features/ballistics/data/models/saps_application_model.dart`,
+  `test/saps_tracking_details_test.dart`,
+  `test/saps_status_classifier_test.dart`,
+  `test/features/hunter_mode/saps_tracker_test.dart`,
+  `test/saps_application_card_widget_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
+
 ## Phase -- SAPS tracked card LIVE payload fix + dashboard debug cleanup (added 2026-10-11)
 
 ### Symptom

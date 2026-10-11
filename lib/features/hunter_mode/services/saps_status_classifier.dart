@@ -209,7 +209,7 @@ class SapsStatusClassifier {
       case kSapsStageProvincial:
         return 'CFR';
       case kSapsStageCfr:
-        return 'Printed / Ready for Collection';
+        return 'Central Firearms Register (CFR) Processing';
       case kSapsStagePrinted:
         return 'Licence Collected';
       default:

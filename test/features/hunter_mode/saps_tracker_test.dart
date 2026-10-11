@@ -702,8 +702,8 @@ void main() {
       assert(app.effectiveStage == 2, 'effectiveStage must be the live stage');
       assert(app.currentProgressLabel == 'At Central Registry',
           'progress label must classify the live phrase');
-      assert(app.nextStepLabel == 'Printed / Ready for Collection',
-          'stage 2 next step must be printed/collection');
+      assert(app.nextStepLabel == 'Central Firearms Register (CFR) Processing',
+          'stage 2 next step must be CFR processing');
     });
 
     test('legacy doc with no live payload falls back to derived values', () {
@@ -779,7 +779,7 @@ void main() {
       assert(app.currentProgressLabel == 'At Central Registry',
           'live phrase must classify to At Central Registry');
       assert(app.effectiveStage == 2, 'effectiveStage must be stage 2');
-      assert(app.nextStepLabel == 'Printed / Ready for Collection',
+      assert(app.nextStepLabel == 'Central Firearms Register (CFR) Processing',
           'stage 2 next step');
       assert(app.statusDescription == 'No status available contact the DFO');
     });

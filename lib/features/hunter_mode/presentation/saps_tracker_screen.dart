@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import '../../ballistics/data/models/saps_application_model.dart';
 import '../../hunter_mode/models/saps_tracking_details.dart';
@@ -58,7 +59,12 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
   SapsCfrStatus? _enquiryResult;
   bool _enquiryPayloadExpanded = false;
 
-  final SapsTrackerService _trackerService = SapsTrackerService();
+  /// `enableDebugFallback` installs the direct portal client in a debug build
+  /// so the manual refresh performs a REAL CFR enquiry (never the offline
+  /// mock) whenever a tracked app is refreshed.
+  final SapsTrackerService _trackerService = SapsTrackerService(
+    enableDebugFallback: kDebugMode,
+  );
   final FirearmSafeRepository _safeRepository = FirearmSafeRepository();
 
   /// Adds the approved firearm from the current live-enquiry result to the
@@ -1755,8 +1761,9 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                       theme: hunterTheme,
                       pill: HunterMediaPill(
                         icon: Icons.work_outline,
-                        label:
-                            '${application.calculateWorkdaysSince(now)} workdays since submission',
+                        label: application.sapsStatusDateLabel.isNotEmpty
+                            ? '${application.calculateWorkdaysSince(now)} workdays since ${application.sapsStatusDateLabel}'
+                            : '${application.calculateWorkdaysSince(now)} workdays since submission',
                         amber: true,
                       ),
                     ),
