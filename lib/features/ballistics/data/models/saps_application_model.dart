@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../../hunter_mode/services/sa_working_days.dart';
+import '../../../hunter_mode/services/saps_status_classifier.dart';
 
 /// Tracks SAPS firearm license and competency application status.
 class SapsApplication {
@@ -55,6 +56,45 @@ class SapsApplication {
 
   final DateTime? statusUpdatedAt;
 
+  /// Raw CFR status phrase from the last LIVE enquiry (e.g.
+  /// `IN PREPARATION FOR CONSIDERATION`). Empty for legacy / mock docs.
+  final String rawStatus;
+
+  /// Classified CFR stage from the last live enquiry (one of the
+  /// `kSapsStage*` constants, incl. the -1 NOT_FOUND / -2 NEED_SERIAL
+  /// sentinels). `null` when the app has never seen a live enquiry for this
+  /// application (the UI then falls back to the derived [stageIndex]).
+  final int? liveStage;
+
+  /// SAPS status date from the portal (`yyyy/MM/dd`, e.g. `2026/10/09`).
+  /// This is the authoritative submission / status date SAPS publishes -- the
+  /// card tallies working days from it rather than from the app-recorded
+  /// timestamps. Empty when unknown.
+  final String statusDate;
+
+  /// Raw CFR status description from the portal (e.g.
+  /// `No status available contact the DFO`). Empty when unknown.
+  final String statusDescription;
+
+  /// Portal-provided next-step text (e.g. `No status available contact the
+  /// DFO`). Empty when unknown -- the UI then falls back to the classifier's
+  /// stage-derived next step.
+  final String nextStep;
+
+  /// Full raw payload map from the last live enquiry (applicationType,
+  /// applicationNumber, calibre, make, serialNumber, statusDate, status,
+  /// statusDescription, nextStep, htmlSnippet). `null` when never enquired.
+  final Map<String, dynamic>? rawPayload;
+
+  /// Whether this application currently carries an approved / finalised
+  /// status (drives the "Add to Digital Firearm Safe" affordance). Derived
+  /// from the raw status phrase.
+  final bool approved;
+
+  /// The date the SAPS portal reports its data was last updated (from the
+  /// `data on this page were updated on DATE` notice). Null when unknown.
+  final DateTime? sapsUpdatedAt;
+
   const SapsApplication({
     required this.id,
     required this.hunterId,
@@ -72,6 +112,14 @@ class SapsApplication {
     this.createdAt,
     this.provincialDfoReceivedAt,
     this.statusUpdatedAt,
+    this.rawStatus = '',
+    this.liveStage,
+    this.statusDate = '',
+    this.statusDescription = '',
+    this.nextStep = '',
+    this.rawPayload,
+    this.approved = false,
+    this.sapsUpdatedAt,
   });
 
   factory SapsApplication.fromFirestore(
@@ -121,7 +169,9 @@ class SapsApplication {
           (json['firearm_make'] as String?) ??
           '',
       calibre: (json['calibre'] as String?) ?? '',
-      serialNumber: (json['serialNumber'] as String?) ?? '',
+      serialNumber: SapsStatusClassifier.normalizeSerial(
+        (json['serialNumber'] as String?) ?? (json['serial'] as String?),
+      ),
       statusMessage: (json['statusMessage'] as String?) ?? '',
       batchNumber: (json['batchNumber'] as String?) ?? '',
       submittedAt: _dateTimeOrNull(json['submittedAt']),
@@ -131,6 +181,14 @@ class SapsApplication {
         json['provincialDfoReceivedAt'] ?? json['dfoReceivedAt'],
       ),
       statusUpdatedAt: _dateTimeOrNull(json['statusUpdatedAt']),
+      rawStatus: (json['rawStatus'] as String?) ?? '',
+      liveStage: _intOrNull(json['liveStage']),
+      statusDate: (json['statusDate'] as String?) ?? '',
+      statusDescription: (json['statusDescription'] as String?) ?? '',
+      nextStep: (json['nextStep'] as String?) ?? '',
+      rawPayload: _mapOrNull(json['rawPayload']),
+      approved: (json['approved'] as bool?) ?? false,
+      sapsUpdatedAt: _dateTimeOrNull(json['sapsUpdatedAt']),
       lastChecked: _dateTimeOrDefault(json['lastChecked']),
     );
   }
@@ -157,6 +215,15 @@ class SapsApplication {
           'provincialDfoReceivedAt': provincialDfoReceivedAt!.toIso8601String(),
         if (statusUpdatedAt != null)
           'statusUpdatedAt': statusUpdatedAt!.toIso8601String(),
+        'rawStatus': rawStatus,
+        if (liveStage != null) 'liveStage': liveStage,
+        'statusDate': statusDate,
+        'statusDescription': statusDescription,
+        'nextStep': nextStep,
+        if (rawPayload != null) 'rawPayload': rawPayload,
+        'approved': approved,
+        if (sapsUpdatedAt != null)
+          'sapsUpdatedAt': sapsUpdatedAt!.toIso8601String(),
         'lastChecked': lastChecked.toIso8601String(),
       };
 
@@ -185,6 +252,22 @@ class SapsApplication {
     return null;
   }
 
+  /// Parses a nullable int value (tolerating numeric strings).
+  static int? _intOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  /// Parses a nullable map value (raw payload); non-map shapes are ignored.
+  static Map<String, dynamic>? _mapOrNull(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
   SapsApplication copyWith({
     String? id,
     String? hunterId,
@@ -202,10 +285,20 @@ class SapsApplication {
     DateTime? createdAt,
     DateTime? provincialDfoReceivedAt,
     DateTime? statusUpdatedAt,
+    String? rawStatus,
+    int? liveStage,
+    String? statusDate,
+    String? statusDescription,
+    String? nextStep,
+    Map<String, dynamic>? rawPayload,
+    bool? approved,
+    DateTime? sapsUpdatedAt,
     bool clearSubmittedAt = false,
     bool clearCreatedAt = false,
     bool clearProvincialDfoReceivedAt = false,
     bool clearStatusUpdatedAt = false,
+    bool clearRawPayload = false,
+    bool clearSapsUpdatedAt = false,
   }) {
     return SapsApplication(
       id: id ?? this.id,
@@ -227,6 +320,15 @@ class SapsApplication {
       statusUpdatedAt: clearStatusUpdatedAt
           ? null
           : (statusUpdatedAt ?? this.statusUpdatedAt),
+      rawStatus: rawStatus ?? this.rawStatus,
+      liveStage: liveStage ?? this.liveStage,
+      statusDate: statusDate ?? this.statusDate,
+      statusDescription: statusDescription ?? this.statusDescription,
+      nextStep: nextStep ?? this.nextStep,
+      rawPayload: clearRawPayload ? null : (rawPayload ?? this.rawPayload),
+      approved: approved ?? this.approved,
+      sapsUpdatedAt:
+          clearSapsUpdatedAt ? null : (sapsUpdatedAt ?? this.sapsUpdatedAt),
       lastChecked: lastChecked ?? this.lastChecked,
     );
   }
@@ -259,6 +361,81 @@ class SapsApplication {
   /// day tally is always computable and displayed for every application.
 
   DateTime? get effectiveSubmissionDate => submittedAt ?? createdAt;
+
+  /// The SAPS portal status date parsed from [statusDate] (`yyyy/MM/dd`).
+  /// Returns `null` when unset / unparseable. This is the authoritative date
+  /// the working-day tally counts from when present.
+  DateTime? get sapsStatusDate => _parsePortalDate(statusDate);
+
+  /// Whether a live CFR enquiry has ever populated this application.
+  bool get hasLiveStatus => (liveStage != null) || rawStatus.trim().isNotEmpty;
+
+  /// The classified stage for the card's progress bar / next-step indicator:
+  /// the live enquiry stage when present, else the derived [stageIndex].
+  /// Live sentinels (-1 NOT_FOUND / -2 NEED_SERIAL) collapse to DFO (0) so
+  /// the bar never renders a negative / out-of-range node; the sentinel
+  /// messaging is surfaced separately by [liveStage].
+  int get effectiveStage {
+    final stage = liveStage;
+    if (stage == null || stage < 0) return stageIndex;
+    return stage;
+  }
+
+  /// The display label for the current progress, preferring the live
+  /// classified phrase (e.g. `At Central Registry`) over the stored
+  /// [currentStatus] word.
+  String get currentProgressLabel {
+    if (rawStatus.trim().isNotEmpty) {
+      return SapsStatusClassifier.displayLabel(rawStatus);
+    }
+    return currentStatus;
+  }
+
+  /// The predictive next workflow step for the card's `Next:` indicator: the
+  /// classifier's stage-derived step (e.g. stage 2 -> "Printed / Ready for
+  /// Collection") whenever a live / derived stage is known, else the stored
+  /// [nextStatusLabel] fallback (legacy docs).
+  ///
+  /// The portal's own `nextStep` text (often "No status available contact the
+  /// DFO") is surfaced separately as [portalNextStep] / the status description
+  /// -- it is a portal note, not the forward workflow step.
+  String get nextStepLabel {
+    if (hasLiveStatus || currentStatus.trim().isNotEmpty) {
+      return SapsStatusClassifier.nextStepForStage(effectiveStage);
+    }
+    return nextStatusLabel;
+  }
+
+  /// The portal-provided next-step text (e.g. "No status available contact
+  /// the DFO"), empty when unknown.
+  String get portalNextStep => nextStep.trim();
+
+  /// Working days elapsed since the SAPS status date ([statusDate]) when
+  /// present, else since the app-recorded [effectiveSubmissionDate]. This
+  /// satisfies the requirement that the tally count from the authoritative
+  /// SAPS date (2026/10/09) rather than the tracking-added date.
+  int? calculateWorkdaysSince(DateTime now) {
+    final anchor = sapsStatusDate ?? effectiveSubmissionDate;
+    return SaWorkingDays.workingDaysSince(anchor, now);
+  }
+
+  /// Display label for the portal "data updated on" date (e.g. `2026-10-10`),
+  /// empty when unknown. Used by the card's `Updated:` detail row.
+  String get sapsUpdatedAtLabel {
+    final date = sapsUpdatedAt;
+    if (date == null) return '';
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$m-$d';
+  }
+
+  /// Parses a `yyyy/MM/dd` (also tolerates `yyyy-MM-dd`) portal date string.
+  static DateTime? _parsePortalDate(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    final normalized = trimmed.replaceAll('/', '-');
+    return DateTime.tryParse(normalized);
+  }
 
   /// Working days (weekends + SA public holidays excluded) elapsed since the
   /// application's [effectiveSubmissionDate]. Returns `null` when the effective
