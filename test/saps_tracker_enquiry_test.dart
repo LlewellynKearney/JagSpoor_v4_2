@@ -85,6 +85,9 @@ void main() {
     expect(find.text('F004574'), findsWidgets);
     expect(find.text('STATUS DATE'), findsOneWidget);
     expect(find.text('2026/10/09'), findsWidgets);
+    // The raw "Received at Licensing Section / For consideration…" phrase
+    // classifies to the CFR stage -> label "At Central Registry".
+    expect(find.text('At Central Registry'), findsWidgets);
     // NOT an approved status -> no Add-to-Safe button.
     expect(find.text('Add to Digital Firearm Safe'), findsNothing);
   });

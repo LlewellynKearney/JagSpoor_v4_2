@@ -651,6 +651,97 @@ void main() {
       assert(updated.firearmMake == 'HOWA 1500', 'copyWith make mismatch');
       assert(base.firearmMake == '', 'original must stay empty');
     });
+
+    test('should round-trip the live payload fields', () {
+      final app = SapsApplication(
+        id: 'app-live',
+        hunterId: 'h',
+        referenceNumber: '10654672',
+        idNumber: '9001015009087',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'At Central Registry',
+        firearmMake: 'HOWA',
+        calibre: '.338 WIN MAG',
+        serialNumber: 'F004574',
+        rawStatus: 'IN PREPARATION FOR CONSIDERATION',
+        liveStage: 2,
+        statusDate: '2026/10/09',
+        statusDescription: 'No status available contact the DFO',
+        nextStep: 'No status available contact the DFO',
+        rawPayload: const {'applicationNumber': '10654672', 'make': 'HOWA'},
+        sapsUpdatedAt: DateTime(2026, 10, 10),
+        lastChecked: DateTime(2026, 10, 11),
+      );
+      final restored =
+          SapsApplication.fromJson(app.toFirestore(), id: 'app-live');
+
+      assert(restored.rawStatus == 'IN PREPARATION FOR CONSIDERATION');
+      assert(restored.liveStage == 2);
+      assert(restored.statusDate == '2026/10/09');
+      assert(restored.statusDescription == 'No status available contact the DFO');
+      assert(restored.nextStep == 'No status available contact the DFO');
+      assert(restored.rawPayload?['make'] == 'HOWA');
+      assert(restored.sapsUpdatedAtLabel == '2026-10-10');
+    });
+
+    test('effectiveStage + progress label prefer the live payload', () {
+      final app = SapsApplication(
+        id: 'x',
+        hunterId: 'h',
+        referenceNumber: 'r',
+        idNumber: 'i',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'Application received at DFO',
+        rawStatus:
+            'Received at Licensing Section — For consideration by the '
+            'Commissioner',
+        liveStage: 2,
+        lastChecked: DateTime(2026, 10, 11),
+      );
+      assert(app.hasLiveStatus, 'hasLiveStatus must be true');
+      assert(app.effectiveStage == 2, 'effectiveStage must be the live stage');
+      assert(app.currentProgressLabel == 'At Central Registry',
+          'progress label must classify the live phrase');
+      assert(app.nextStepLabel == 'Printed / Ready for Collection',
+          'stage 2 next step must be printed/collection');
+    });
+
+    test('legacy doc with no live payload falls back to derived values', () {
+      final app = SapsApplication(
+        id: 'x',
+        hunterId: 'h',
+        referenceNumber: 'r',
+        idNumber: 'i',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'Provincial',
+        lastChecked: DateTime(2026, 10, 11),
+      );
+      assert(!app.hasLiveStatus);
+      assert(app.effectiveStage == app.stageIndex);
+      assert(app.currentProgressLabel == 'Provincial');
+      assert(app.nextStepLabel == app.nextStatusLabel);
+    });
+
+    test('calculateWorkdaysSince tallies from the SAPS status date', () {
+      final app = SapsApplication(
+        id: 'x',
+        hunterId: 'h',
+        referenceNumber: 'r',
+        idNumber: 'i',
+        applicationType: 'Section 16 Dedicated Hunting',
+        currentStatus: 'At Central Registry',
+        statusDate: '2026/10/09', // Friday
+        // App-recorded date is much later; the SAPS date must win.
+        createdAt: DateTime(2026, 9, 1),
+        lastChecked: DateTime(2026, 10, 11),
+      );
+      assert(app.sapsStatusDate == DateTime(2026, 10, 9),
+          'statusDate must parse');
+      // Fri 09 Oct counts (inclusive first day), Sat/Sun excluded, Mon 12
+      // counts -> 2 working days. The later createdAt (1 Sep) must be ignored.
+      final days = app.calculateWorkdaysSince(DateTime(2026, 10, 12));
+      assert(days == 2, 'expected 2 workdays from SAPS date, got $days');
+    });
   });
 
   group('SapsScraperResult Tests', () {

@@ -244,6 +244,143 @@ class SapsTrackerService {
     }
   }
 
+  /// Applies a LIVE [SapsCfrStatus] enquiry result onto a tracked
+  /// application, persisting the full portal payload (raw status + classified
+  /// stage + display label + SAPS status date + description + next step +
+  /// the raw payload map) so the tracked card renders the live CFR
+  /// information instead of the stale mock stage.
+  ///
+  /// Best-effort: returns `false` (never throws) when the application id is
+  /// empty or the write fails (offline / permissions).
+  Future<bool> applyLiveStatus(
+    String applicationId,
+    SapsCfrStatus status, {
+    String? hunterId,
+    String? referenceNumber,
+    DateTime? lastChecked,
+  }) async {
+    if (applicationId.isEmpty) return false;
+    try {
+      final raw = <String, dynamic>{
+        'applicationType': status.applicationType,
+        'applicationNumber': status.applicationNumber,
+        'calibre': status.calibre,
+        'make': status.make,
+        'serialNumber': SapsStatusClassifier.normalizeSerial(
+          status.serialNumber,
+        ),
+        'statusDate': status.statusDate,
+        'status': status.rawStatus,
+        'statusDescription': status.statusDescription,
+        'nextStep': status.nextStep,
+        'htmlSnippet': status.htmlSnippet,
+      };
+      await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .set({
+        if (hunterId != null && hunterId.isNotEmpty) 'hunterId': hunterId,
+        if (referenceNumber != null && referenceNumber.isNotEmpty)
+          'referenceNumber': referenceNumber,
+        'currentStatus': status.displayLabel.isNotEmpty
+            ? status.displayLabel
+            : status.rawStatus,
+        'rawStatus': status.rawStatus,
+        'liveStage': status.stage,
+        'statusCode': status.stage,
+        'statusDate': status.statusDate,
+        'statusDescription': status.statusDescription,
+        'nextStep': status.nextStep,
+        'approved': SapsStatusClassifier.isApproved(status.rawStatus),
+        'rawPayload': raw,
+        if (status.applicationType.isNotEmpty)
+          'applicationType': status.applicationType,
+        if (status.calibre.isNotEmpty) 'calibre': status.calibre,
+        if (status.make.isNotEmpty)
+          'firearmMake': status.make,
+        if (status.make.isNotEmpty) 'make': status.make,
+        if (status.serialNumber.isNotEmpty)
+          'serialNumber': SapsStatusClassifier.normalizeSerial(
+            status.serialNumber,
+          ),
+        'lastChecked': (lastChecked ?? DateTime.now()).toIso8601String(),
+      }, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      debugPrint('SapsTrackerService: applyLiveStatus failed: $e');
+      return false;
+    }
+  }
+
+  /// Updates a tracked application's reference / serial (used by the card's
+  /// edit action) via the injected Firestore. Returns true on success.
+  Future<bool> updateReferenceAndSerial(
+    String applicationId, {
+    required String referenceNumber,
+    required String serialNumber,
+  }) async {
+    if (applicationId.isEmpty) return false;
+    try {
+      await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .set({
+        'referenceNumber': referenceNumber,
+        'serialNumber': SapsStatusClassifier.normalizeSerial(serialNumber),
+        'lastChecked': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      debugPrint(
+        'SapsTrackerService: updateReferenceAndSerial failed: $e',
+      );
+      return false;
+    }
+  }
+
+  /// Deletes a tracked application from Firestore (used by the card's delete
+  /// action). The full document map is returned first so the caller can offer
+  /// an undo that restores it verbatim. Returns the deleted map, or null when
+  /// the id is empty / the document does not exist / the delete failed.
+  Future<Map<String, dynamic>?> deleteApplication(String applicationId) async {
+    if (applicationId.isEmpty) return null;
+    try {
+      final doc = await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .get();
+      if (!doc.exists) return null;
+      final data = doc.data();
+      await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .delete();
+      return data;
+    } catch (e) {
+      debugPrint('SapsTrackerService: deleteApplication failed: $e');
+      return null;
+    }
+  }
+
+  /// Restores a previously-deleted application document verbatim (the undo
+  /// path for [deleteApplication]). Returns true on success.
+  Future<bool> restoreApplication(
+    String applicationId,
+    Map<String, dynamic> data,
+  ) async {
+    if (applicationId.isEmpty) return false;
+    try {
+      await _firestore
+          .collection('license_applications')
+          .doc(applicationId)
+          .set(data);
+      return true;
+    } catch (e) {
+      debugPrint('SapsTrackerService: restoreApplication failed: $e');
+      return false;
+    }
+  }
+
   /// Fetches comprehensive tracking details (status timeline, waiting-period
   /// estimates, batch details, current progress stage) for an application.
   ///

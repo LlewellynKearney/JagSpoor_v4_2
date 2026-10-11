@@ -1,9 +1,12 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:jagspoor/features/ballistics/data/models/saps_application_model.dart';
 import 'package:jagspoor/features/hunter_mode/presentation/saps_tracker_screen.dart';
+import 'package:jagspoor/features/hunter_mode/services/saps_cfr_scraper_client.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_tracker_service.dart';
 import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 
@@ -18,6 +21,7 @@ void main() {
     String calibre = '6MM MUSGRAVE',
     String serialNumber = 'OB14468',
     String status = 'Provincial',
+    String rawStatus = '',
   }) {
     return SapsApplication(
       id: 'app-1',
@@ -29,6 +33,7 @@ void main() {
       firearmMake: firearmMake,
       calibre: calibre,
       serialNumber: serialNumber,
+      rawStatus: rawStatus,
       submittedAt: submittedAt,
       createdAt: createdAt,
       provincialDfoReceivedAt: provincialDfoReceivedAt,
@@ -36,13 +41,20 @@ void main() {
     );
   }
 
-  Widget wrap(SapsApplication app) {
-    final firestore = FakeFirebaseFirestore();
+  Widget wrap(
+    SapsApplication app, {
+    FakeFirebaseFirestore? firestore,
+    SapsCfrScraperClient Function()? enquiryClientFactory,
+  }) {
+    final fs = firestore ?? FakeFirebaseFirestore();
     return MaterialApp(
       home: Scaffold(
-        body: SapsApplicationCard(
-          application: app,
-          trackerService: SapsTrackerService.forTesting(firestore),
+        body: SingleChildScrollView(
+          child: SapsApplicationCard(
+            application: app,
+            trackerService: SapsTrackerService.forTesting(fs),
+            enquiryClientFactory: enquiryClientFactory,
+          ),
         ),
       ),
     );
@@ -152,17 +164,16 @@ void main() {
     await tester.tap(find.text('Section 16 Dedicated Hunting'));
     await tester.pumpAndSettle();
 
-    // Expanded: the FIREARM DETAILS section shows the composed firearm label
-    // plus the individual make / calibre / serial chips (each chip also keeps
-    // its collapsed-pill copy, so findsWidgets rather than findsOneWidget).
+    // Expanded: the FIREARM DETAILS section shows explicit labelled rows for
+    // serial / calibre / make / type / app no.
     expect(find.text('FIREARM DETAILS'), findsOneWidget);
-    expect(
-      find.text('TIKKA T3X • 6MM MUSGRAVE • s/n OB14468'),
-      findsOneWidget,
-    );
+    expect(find.text('Make'), findsOneWidget);
+    expect(find.text('Calibre'), findsOneWidget);
+    expect(find.text('s/n'), findsOneWidget);
+    expect(find.text('App No'), findsOneWidget);
     expect(find.text('TIKKA T3X'), findsWidgets);
     expect(find.text('6MM MUSGRAVE'), findsWidgets);
-    expect(find.text('s/n OB14468'), findsWidgets);
+    expect(find.text('OB14468'), findsWidgets);
   });
 
   testWidgets('firearm details section degrades gracefully when all firearm '
@@ -190,5 +201,146 @@ void main() {
 
     expect(find.textContaining('workdays since submission'), findsOneWidget);
     expect(find.textContaining('workdays at provincial DFO'), findsOneWidget);
+  });
+
+  testWidgets('renders the LIVE payload: At Central Registry + SAPS status '
+      'date + firearm details + raw response', (tester) async {
+    final app = SapsApplication(
+      id: 'app-2',
+      hunterId: 'hunter-1',
+      referenceNumber: '10654672',
+      idNumber: '9001015009087',
+      applicationType: 'Section 16 Dedicated Hunting',
+      currentStatus: 'At Central Registry',
+      firearmMake: 'HOWA',
+      calibre: '.338 WIN MAG',
+      serialNumber: 'F004574',
+      rawStatus: 'IN PREPARATION FOR CONSIDERATION',
+      liveStage: 2,
+      statusDate: '2026/10/09',
+      statusDescription: 'No status available contact the DFO',
+      nextStep: 'No status available contact the DFO',
+      rawPayload: const {
+        'applicationNumber': '10654672',
+        'calibre': '.338 WIN MAG',
+        'make': 'HOWA',
+        'serialNumber': 'F004574',
+        'statusDate': '2026/10/09',
+        'status': 'IN PREPARATION FOR CONSIDERATION',
+      },
+      lastChecked: DateTime(2026, 10, 11, 7, 11),
+    );
+    await tester.pumpWidget(wrap(app));
+
+    // Collapsed: progress badge + SAPS status date + next-step indicator.
+    expect(find.text('At Central Registry'), findsWidgets);
+    expect(find.textContaining('SAPS Status Date:'), findsOneWidget);
+    // Stage 2 -> next step is the stage-derived CFR next step.
+    expect(find.text('Next: Printed / Ready for Collection'), findsOneWidget);
+
+    await tester.tap(find.text('Section 16 Dedicated Hunting'));
+    await tester.pumpAndSettle();
+
+    // Expanded: labelled firearm rows + raw SAPS response section.
+    expect(find.text('FIREARM DETAILS'), findsOneWidget);
+    expect(find.text('HOWA'), findsWidgets);
+    expect(find.text('.338 WIN MAG'), findsWidgets);
+    expect(find.text('F004574'), findsWidgets);
+    expect(find.text('RAW SAPS RESPONSE'), findsOneWidget);
+  });
+
+  testWidgets('edit + delete actions render on the card header',
+      (tester) async {
+    await tester.pumpWidget(wrap(buildApp()));
+    expect(find.byIcon(Icons.edit), findsOneWidget);
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+  });
+
+  testWidgets('delete confirms then shows a Deleted snackbar with undo',
+      (tester) async {
+    final fs = FakeFirebaseFirestore();
+    await fs.collection('license_applications').doc('app-1').set({
+      'hunterId': 'hunter-1',
+      'referenceNumber': '10470664',
+      'serialNumber': 'OB14468',
+    });
+    await tester.pumpWidget(wrap(buildApp(), firestore: fs));
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+
+    // Confirmation dialog.
+    expect(find.text('Delete application?'), findsOneWidget);
+    await tester.tap(find.text('DELETE'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Deleted'), findsOneWidget);
+    expect(find.text('UNDO'), findsOneWidget);
+    // The document is gone from Firestore.
+    final doc = await fs.collection('license_applications').doc('app-1').get();
+    expect(doc.exists, isFalse);
+  });
+
+  testWidgets('the approved card shows the Add-to-Safe action',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(buildApp(status: 'Approved')),
+    );
+    expect(find.text('Add to Digital Firearm Safe'), findsOneWidget);
+  });
+
+  testWidgets('edit re-runs the live enquiry and persists the corrected '
+      'serial + live status', (tester) async {
+    const resultsHtml =
+        '<b>Search Results:</b><table>'
+        '<tr><td>Section 16 Dedicated Hunting</td><td>10654672</td>'
+        '<td>9001015009087</td><td>.338 WIN MAG</td><td>HOWA</td>'
+        '<td>F004574</td><td>2026/10/09</td>'
+        '<td>Received at Licensing Section</td>'
+        '<td>For consideration by the Commissioner</td>'
+        '<td>Await decision</td></tr></table>';
+    final mock = MockClient((_) async => http.Response(resultsHtml, 200));
+    final fs = FakeFirebaseFirestore();
+    // Start the card with the typo'd serial (F0004574) that produced the
+    // stale "no records" result; the edit corrects it to F004574.
+    await fs.collection('license_applications').doc('app-1').set({
+      'hunterId': 'hunter-1',
+      'referenceNumber': '10654672',
+      'serialNumber': 'F0004574',
+    });
+    final app = SapsApplication(
+      id: 'app-1',
+      hunterId: 'hunter-1',
+      referenceNumber: '10654672',
+      idNumber: '9001015009087',
+      applicationType: 'Section 16 Dedicated Hunting',
+      currentStatus: 'Application received at DFO',
+      serialNumber: 'F0004574',
+      lastChecked: DateTime(2026, 10, 11),
+    );
+    await tester.pumpWidget(wrap(
+      app,
+      firestore: fs,
+      enquiryClientFactory: () => SapsCfrScraperClient(httpClient: mock),
+    ));
+
+    await tester.tap(find.byIcon(Icons.edit));
+    await tester.pumpAndSettle();
+
+    // Correct the serial in the edit dialog, then save.
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Firearm Serial Number'),
+      'F004574',
+    );
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    // The doc now carries the corrected serial + the live classified status.
+    final data =
+        (await fs.collection('license_applications').doc('app-1').get())
+            .data()!;
+    expect(data['serialNumber'], 'F004574');
+    expect(data['liveStage'], 2);
+    expect(data['statusDate'], '2026/10/09');
+    expect('${data['rawStatus']}', contains('For consideration'));
   });
 }

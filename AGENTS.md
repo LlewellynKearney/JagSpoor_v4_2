@@ -1,6 +1,106 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SAPS tracked card: live CFR payload + edit/delete (added 2026-10-11)
+
+### Symptom (Phase 2 bug)
+The SAPS tracked-application card for ref `10654672` / serial `F0004574`
+(a typo for `F004574`) showed the STALE mock stage: "Application received at
+DFO", "Next: Provincial", "Submitted 11 Oct 2026 — 0 workdays", while the live
+SAPS debug enquiry showed `IN PREPARATION FOR CONSIDERATION` (stage 2,
+"At Central Registry"). The card had no way to show the live payload and no
+edit/delete actions.
+
+### Fix — live payload on the model
+`SapsApplication` (`lib/features/ballistics/data/models/saps_application_model.dart`)
+gained live-payload fields — `rawStatus`, `liveStage`, `statusDate`,
+`statusDescription`, `nextStep`, `rawPayload` (Map), `approved`,
+`sapsUpdatedAt` — all read in `fromJson`, written in `toJson`, round-tripped in
+`copyWith` (with `clear*` guards). New getters:
+- `hasLiveStatus`, `sapsStatusDate` (parses `yyyy/MM/dd`),
+  `effectiveStage` (live stage, collapsing sentinels to `stageIndex`),
+  `currentProgressLabel` (classifier label of `rawStatus`),
+  `nextStepLabel` (stage-derived via `SapsStatusClassifier.nextStepForStage`;
+  the portal's own `nextStep` text is surfaced separately as
+  `portalNextStep`), `calculateWorkdaysSince(now)` (tallies from the SAPS
+  status date when present, else `effectiveSubmissionDate`),
+  `sapsUpdatedAtLabel` (`yyyy-MM-dd`).
+
+### Fix — classifier + service
+- `SapsStatusClassifier`: `nextStepForStage(stage)` (DFO→Provincial→
+  CFR→Printed/Ready for Collection→Licence Collected) and
+  `normalizeSerial` (trim + upper + strip interior whitespace).
+- `SapsTrackerService`: `applyLiveStatus` (persists the full live payload
+  incl. the `rawPayload` map + `rawStatus`/`liveStage`/`statusDate`/
+  `statusDescription`/`nextStep`/`approved` + make/calibre/serial),
+  `updateReferenceAndSerial`, `deleteApplication` (returns the removed map)
+  + `restoreApplication` (undo). All best-effort / never throw; all use the
+  injectable `_firestore` so tests are deterministic.
+
+### Fix — tracker screen
+- The live ENQUIRE result is upserted onto the matching tracked application
+  (`_upsertEnquiryToTracker` — match by ref + normalised serial) so its card
+  shows the live CFR status immediately.
+- The tracked card (`SapsApplicationCard`) header now shows `Ref <n>` +
+  submission date + edit/delete icons; the progress badge uses
+  `currentProgressLabel`; a SAPS-status-date milestone row appears when the
+  live enquiry surfaced one; "Next: <stage-derived>" replaces the stale
+  next; the description prefers the live portal text; the stage bar uses
+  `effectiveStage`; an approved status shows the "Add to Digital Firearm
+  Safe" action; workday pills tally via `calculateWorkdaysSince`.
+- Expanded view: labelled FIREARM DETAILS rows + CURRENT PROGRESS + STATUS
+  TIMELINE (live entries) + a collapsible RAW SAPS RESPONSE (the full
+  `rawPayload` map).
+- Edit = a self-disposing `_EditApplicationDialog` (controllers owned +
+  disposed in the State — fixes the "used after dispose during dialog exit
+  animation" crash) → persists via `updateReferenceAndSerial` → re-runs the
+  live enquiry so the corrected ref/serial resolves the live status.
+- Delete = confirm dialog → `deleteApplication` → "Deleted … UNDO" snackbar
+  (undo = `restoreApplication`).
+- `SapsApplicationCard` gained an optional `enquiryClientFactory` test seam
+  wired from the screen.
+
+### Tests
+- `test/saps_application_card_widget_test.dart` (14): submitted-date, firearm
+  pills, working-day pills, LIVE payload (At Central Registry + SAPS status
+  date + labelled rows + RAW SAPS RESPONSE), edit/delete icons, delete+undo
+  (fake Firestore), approved Add-to-Safe, edit re-enquiry + persisted
+  corrected serial/live status.
+- `test/saps_tracking_details_test.dart` (+9): `applyLiveStatus` full-payload
+  persistence + approved flag + empty-id; `deleteApplication`/`restore`.
+- `test/saps_status_classifier_test.dart` (+4): `nextStepForStage`,
+  `normalizeSerial`, the live 10654672 phrase is NOT approved.
+- `test/features/hunter_mode/saps_tracker_test.dart` (+5 model): live-payload
+  round-trip, effectiveStage/progress/nextStep preference, legacy fallback,
+  `calculateWorkdaysSince` from the SAPS status date.
+- `test/saps_tracker_enquiry_test.dart`: result card asserts "At Central
+  Registry".
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing
+  info-level issues; the single `DropdownButtonFormField.value` info in the
+  tracker is the deliberate cross-version pin — CI is Flutter 3.29.1 where
+  `initialValue` does not exist).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 2048
+  tests passed**.
+- Commit `ba6f1c3` pushed to `origin/fix/saps-accuracy-1.0.11`
+  (`33c56ff..ba6f1c3`).
+
+### Files
+- `lib/features/ballistics/data/models/saps_application_model.dart`,
+  `lib/features/hunter_mode/services/saps_status_classifier.dart`,
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `test/saps_application_card_widget_test.dart`,
+  `test/saps_tracking_details_test.dart`,
+  `test/saps_status_classifier_test.dart`,
+  `test/saps_tracker_enquiry_test.dart`,
+  `test/features/hunter_mode/saps_tracker_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (the
+  live payload writes go to the owner-scoped `license_applications` doc,
+  already covered by the existing rules).
+
+
 ## Phase -- Fix Hunter Profile Timestamp jsonEncode crash (added 2026-10-02)
 
 ### Symptom

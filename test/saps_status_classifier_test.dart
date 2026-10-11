@@ -211,6 +211,46 @@ void main() {
     });
   });
 
+  group('SapsStatusClassifier.nextStepForStage', () {
+    test('maps each stage to the next workflow step', () {
+      expect(SapsStatusClassifier.nextStepForStage(kSapsStageDfo), 'Provincial');
+      expect(SapsStatusClassifier.nextStepForStage(kSapsStageProvincial), 'CFR');
+      // Stage 2 (CFR) -> printed / collection (NOT "Provincial").
+      expect(
+        SapsStatusClassifier.nextStepForStage(kSapsStageCfr),
+        'Printed / Ready for Collection',
+      );
+      expect(
+        SapsStatusClassifier.nextStepForStage(kSapsStagePrinted),
+        'Licence Collected',
+      );
+    });
+
+    test('returns Status Unavailable for sentinel / unknown stages', () {
+      expect(
+        SapsStatusClassifier.nextStepForStage(kSapsStageNotFound),
+        'Status Unavailable',
+      );
+      expect(
+        SapsStatusClassifier.nextStepForStage(kSapsStageNeedSerialAndRef),
+        'Status Unavailable',
+      );
+    });
+  });
+
+  group('SapsStatusClassifier.normalizeSerial', () {
+    test('upper-cases and strips whitespace', () {
+      expect(SapsStatusClassifier.normalizeSerial(' f004574 '), 'F004574');
+      expect(SapsStatusClassifier.normalizeSerial('F0004574'), 'F0004574');
+      expect(SapsStatusClassifier.normalizeSerial('ob 14 46 8'), 'OB14468');
+    });
+
+    test('null / blank -> empty', () {
+      expect(SapsStatusClassifier.normalizeSerial(null), '');
+      expect(SapsStatusClassifier.normalizeSerial('   '), '');
+    });
+  });
+
   group('SapsTrackerService delegation (legacy API preserved)', () {
     test('convertRawStatusToStage delegates to the classifier', () {
       expect(

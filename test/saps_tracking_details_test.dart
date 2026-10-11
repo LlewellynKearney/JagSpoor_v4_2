@@ -3,6 +3,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/features/hunter_mode/models/saps_tracking_details.dart';
+import 'package:jagspoor/features/hunter_mode/services/saps_cfr_scraper_client.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_tracker_service.dart';
 
 void main() {
@@ -266,6 +267,137 @@ void main() {
       expect(details!.timeline, isNotEmpty);
       expect(details.batches.single.batchNumber, 'B-9');
       expect(details.currentProgressLabel, 'At Central Registry');
+    });
+  });
+
+  group('SapsTrackerService.applyLiveStatus', () {
+    SapsCfrStatus liveStatus() => const SapsCfrStatus(
+          rawStatus:
+              'Received at Licensing Section — For consideration by the '
+              'Commissioner',
+          stage: 2,
+          displayLabel: 'At Central Registry',
+          applicationType: 'Section 16 Dedicated Hunting',
+          applicationNumber: '10654672',
+          calibre: '.338 WIN MAG',
+          make: 'HOWA',
+          serialNumber: 'F004574',
+          statusDate: '2026/10/09',
+          statusDescription: 'No status available contact the DFO',
+          nextStep: 'No status available contact the DFO',
+          htmlSnippet: '<table>…</table>',
+        );
+
+    test('persists the full live payload onto the tracked application',
+        () async {
+      final fake = FakeFirebaseFirestore();
+      await fake.collection('license_applications').doc('app-1').set({
+        'hunterId': 'u1',
+        'referenceNumber': '10654672',
+        'serialNumber': 'F004574',
+        'currentStatus': 'Application received at DFO',
+      });
+      final service = SapsTrackerService.forTesting(fake);
+
+      final ok = await service.applyLiveStatus(
+        'app-1',
+        liveStatus(),
+        hunterId: 'u1',
+        referenceNumber: '10654672',
+      );
+      expect(ok, isTrue);
+
+      final data =
+          (await fake.collection('license_applications').doc('app-1').get())
+              .data()!;
+      expect(data['rawStatus'],
+          'Received at Licensing Section — For consideration by the Commissioner');
+      expect(data['liveStage'], 2);
+      expect(data['statusDate'], '2026/10/09');
+      expect(data['statusDescription'], 'No status available contact the DFO');
+      expect(data['nextStep'], 'No status available contact the DFO');
+      expect(data['make'], 'HOWA');
+      expect(data['calibre'], '.338 WIN MAG');
+      expect(data['serialNumber'], 'F004574');
+      expect(data['approved'], isFalse);
+      final payload = data['rawPayload'] as Map<String, dynamic>;
+      expect(payload['applicationNumber'], '10654672');
+      expect(payload['make'], 'HOWA');
+      expect(payload['status'], contains('For consideration'));
+    });
+
+    test('marks an approved status as approved', () async {
+      final fake = FakeFirebaseFirestore();
+      await fake.collection('license_applications').doc('app-2').set({
+        'hunterId': 'u1',
+        'referenceNumber': '10654672',
+      });
+      final service = SapsTrackerService.forTesting(fake);
+
+      await service.applyLiveStatus(
+        'app-2',
+        const SapsCfrStatus(
+          rawStatus: 'Licence approved and printed — ready for collection',
+          stage: 3,
+          displayLabel: 'Ready for Collection',
+          applicationNumber: '10654672',
+          serialNumber: 'F004574',
+        ),
+      );
+
+      final data =
+          (await fake.collection('license_applications').doc('app-2').get())
+              .data()!;
+      expect(data['approved'], isTrue);
+    });
+
+    test('empty id -> false (never throws)', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = SapsTrackerService.forTesting(fake);
+      expect(await service.applyLiveStatus('', liveStatus()), isFalse);
+    });
+  });
+
+  group('SapsTrackerService.deleteApplication / restoreApplication', () {
+    test('delete returns the removed document and removes it', () async {
+      final fake = FakeFirebaseFirestore();
+      await fake.collection('license_applications').doc('app-1').set({
+        'hunterId': 'u1',
+        'referenceNumber': '10654672',
+        'serialNumber': 'F004574',
+      });
+      final service = SapsTrackerService.forTesting(fake);
+
+      final removed = await service.deleteApplication('app-1');
+      expect(removed, isNotNull);
+      expect(removed!['referenceNumber'], '10654672');
+
+      final doc =
+          await fake.collection('license_applications').doc('app-1').get();
+      expect(doc.exists, isFalse);
+    });
+
+    test('restore re-creates the document verbatim', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = SapsTrackerService.forTesting(fake);
+
+      final ok = await service.restoreApplication('app-9', {
+        'hunterId': 'u1',
+        'referenceNumber': '10470664',
+        'serialNumber': 'OB14468',
+      });
+      expect(ok, isTrue);
+
+      final doc =
+          await fake.collection('license_applications').doc('app-9').get();
+      expect(doc.exists, isTrue);
+      expect(doc.data()!['serialNumber'], 'OB14468');
+    });
+
+    test('delete of a missing app returns null', () async {
+      final fake = FakeFirebaseFirestore();
+      final service = SapsTrackerService.forTesting(fake);
+      expect(await service.deleteApplication('nope'), isNull);
     });
   });
 

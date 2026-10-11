@@ -143,12 +143,68 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
             ? 'No response parsed. Check connectivity and try again.'
             : null;
       });
+      // Persist the live payload onto the matching tracked application (best
+      // effort) so its card shows the live CFR status, not the stale mock.
+      if (result != null) {
+        await _upsertEnquiryToTracker(result, ref, serial);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _enquiryRunning = false;
         _enquiryError = 'Enquiry failed: $e';
       });
+    }
+  }
+
+  /// Finds the tracked application matching this enquiry (same reference
+  /// number, and same normalised serial when one was supplied) and persists
+  /// the live CFR payload onto it via [SapsTrackerService.applyLiveStatus].
+  ///
+  /// Best-effort: a null user / no match / Firestore failure is swallowed so
+  /// the enquiry result card still renders.
+  Future<void> _upsertEnquiryToTracker(
+    SapsCfrStatus result,
+    String ref,
+    String serial,
+  ) async {
+    final uid = _currentUserId;
+    if (uid == null) return;
+    if (result.stage == kSapsStageNeedSerialAndRef) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('license_applications')
+          .where('hunterId', isEqualTo: uid)
+          .get();
+      final wantedRef = ref.trim();
+      final wantedSerial = SapsStatusClassifier.normalizeSerial(serial);
+      if (wantedRef.isEmpty && wantedSerial.isEmpty) return;
+
+      DocumentSnapshot<Map<String, dynamic>>? match;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final docRef = (data['referenceNumber'] as String?)?.trim() ?? '';
+        final docSerial = SapsStatusClassifier.normalizeSerial(
+          (data['serialNumber'] as String?) ?? (data['serial'] as String?),
+        );
+        final refMatches = wantedRef.isEmpty || docRef == wantedRef;
+        final serialMatches =
+            wantedSerial.isEmpty || docSerial == wantedSerial;
+        if (refMatches && serialMatches) {
+          match = doc;
+          break;
+        }
+      }
+      if (match != null) {
+        await _trackerService.applyLiveStatus(
+          match.id,
+          result,
+          hunterId: uid,
+          referenceNumber: wantedRef.isEmpty ? null : wantedRef,
+        );
+      }
+    } catch (e) {
+      debugPrint('SapsTrackerScreen: upsert live status failed: $e');
     }
   }
 
@@ -1154,6 +1210,7 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                             doc as DocumentSnapshot<Map<String, dynamic>>,
                           ),
                           trackerService: _trackerService,
+                          enquiryClientFactory: widget.enquiryClientFactory,
                         ),
                       ),
                   ],
@@ -1167,16 +1224,106 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
   }
 }
 
+/// Result of the tracked-application edit dialog.
+class _EditResult {
+  final String referenceNumber;
+  final String serialNumber;
+
+  const _EditResult({required this.referenceNumber, required this.serialNumber});
+}
+
+/// Self-disposing edit dialog for a tracked application's reference / serial.
+/// Owns (and disposes) its controllers in the State so they are never used
+/// after dispose during the dialog exit animation.
+class _EditApplicationDialog extends StatefulWidget {
+  final SapsApplication application;
+
+  const _EditApplicationDialog({required this.application});
+
+  @override
+  State<_EditApplicationDialog> createState() => _EditApplicationDialogState();
+}
+
+class _EditApplicationDialogState extends State<_EditApplicationDialog> {
+  late final TextEditingController _refController;
+  late final TextEditingController _serialController;
+
+  @override
+  void initState() {
+    super.initState();
+    _refController =
+        TextEditingController(text: widget.application.referenceNumber);
+    _serialController =
+        TextEditingController(text: widget.application.serialNumber);
+  }
+
+  @override
+  void dispose() {
+    _refController.dispose();
+    _serialController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit application'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _refController,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Application Reference Code',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _serialController,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Firearm Serial Number',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _EditResult(
+              referenceNumber: _refController.text.trim(),
+              serialNumber: _serialController.text.trim(),
+            ),
+          ),
+          child: const Text('SAVE'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Card widget displaying a single tracked application with stage progress
 /// bar and an expandable detailed view.
 class SapsApplicationCard extends StatefulWidget {
   final SapsApplication application;
   final SapsTrackerService trackerService;
 
+  /// Optional test seam: overrides the live-enquiry client factory used by
+  /// the edit dialog's re-enquiry so a widget test can drive the edit flow
+  /// with a mocked transport. Defaults to a real [SapsCfrScraperClient].
+  final SapsCfrScraperClient Function()? enquiryClientFactory;
+
   const SapsApplicationCard({
     super.key,
     required this.application,
     required this.trackerService,
+    this.enquiryClientFactory,
   });
 
   @override
@@ -1241,11 +1388,155 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
     }
   }
 
+  /// Opens the edit dialog (Reference + Serial), persists the edited values
+  /// and immediately re-runs the live CFR enquiry so the card reflects the
+  /// corrected reference / serial.
+  Future<void> _editApplication() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final result = await showDialog<_EditResult>(
+      context: context,
+      builder: (_) => _EditApplicationDialog(application: application),
+    );
+    if (result == null) return;
+
+    final newRef = result.referenceNumber;
+    final newSerial = SapsStatusClassifier.normalizeSerial(result.serialNumber);
+
+    // Persist the corrected ref / serial onto the doc (via the injected
+    // Firestore so tests are deterministic).
+    await widget.trackerService.updateReferenceAndSerial(
+      application.id,
+      referenceNumber: newRef,
+      serialNumber: newSerial,
+    );
+
+    // Re-run the live enquiry so the card shows the corrected live status.
+    try {
+      final client = widget.enquiryClientFactory?.call() ??
+          SapsCfrScraperClient();
+      final live = await client.fetchStatus(
+        referenceNumber: newRef,
+        idNumber: '',
+        serialNumber: newSerial,
+      );
+      if (live != null) {
+        final ok = await widget.trackerService.applyLiveStatus(
+          application.id,
+          live,
+          referenceNumber: newRef,
+        );
+        if (mounted) {
+          await _loadDetails();
+          messenger
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(
+                  ok
+                      ? 'Updated — ${live.displayLabel}'
+                      : 'Updated locally; live status could not be saved.',
+                ),
+                backgroundColor:
+                    ok ? Colors.green.shade700 : Colors.orange.shade800,
+              ),
+            );
+        }
+      } else if (mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Saved, but the live enquiry returned no status.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Saved, but the live enquiry failed: $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+      }
+    }
+  }
+
+  /// Confirms + deletes the tracked application, then offers an undo that
+  /// restores it verbatim.
+  Future<void> _deleteApplication() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete application?'),
+        content: Text(
+          'Remove ${application.referenceNumber} '
+          '${application.serialNumber.isNotEmpty ? '(${application.serialNumber}) ' : ''}'
+          'from your tracked applications?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('DELETE'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final removed =
+        await widget.trackerService.deleteApplication(application.id);
+    if (removed == null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Could not delete ${application.referenceNumber}'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      return;
+    }
+
+    final label = application.serialNumber.isNotEmpty
+        ? application.serialNumber
+        : application.referenceNumber;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Deleted $label'),
+          action: SnackBarAction(
+            label: 'UNDO',
+            onPressed: () {
+              widget.trackerService.restoreApplication(
+                application.id,
+                removed,
+              );
+            },
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hunterTheme = ThemeController.instance;
     final now = DateTime.now();
+    final approved = application.approved ||
+        SapsStatusClassifier.isApproved(application.rawStatus) ||
+        SapsStatusClassifier.isApproved(application.currentStatus);
 
     return Card(
       color: HunterUi.cardColor(hunterTheme),
@@ -1263,11 +1554,65 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row. The application type is Expanded and the status
-              // badge is Flexible so a long status string (e.g. the real CFR
-              // phrase "Application received at DFO") can never overflow the
-              // card width at large text scales -- the badge shrinks and
-              // ellipsizes instead of pushing a yellow RenderFlex stripe.
+              // Header row: Ref + submitted date on the left, edit + delete
+              // on the right. The status badge (classified live label) sits
+              // on its own row below so neither the ref nor the badge can
+              // overflow the card width at large text scales.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ref ${application.referenceNumber}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _submissionDateLabel(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.hintColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Edit reference / serial',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _editApplication,
+                    icon: Icon(
+                      Icons.edit,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete application',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _deleteApplication,
+                    icon: Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Application type + current progress badge.
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1278,7 +1623,7 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
@@ -1297,7 +1642,7 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        application.currentStatus,
+                        application.currentProgressLabel,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
@@ -1311,35 +1656,31 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              // Prominent submission date milestone. Falls back to the record's
-              // creation timestamp (createdAt) when the official submittedAt is
-              // missing / unrecorded so the tally + this row always render.
-              Row(
-                children: [
-                  Icon(
-                    Icons.event_available,
-                    size: 15,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _submissionDateLabel(),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
+              // SAPS portal status date milestone (authoritative) when the
+              // live enquiry surfaced one.
+              if (application.statusDate.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.event_note,
+                      size: 15,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'SAPS Status Date: ${_displaySapsStatusDate()}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Ref: ${application.referenceNumber}',
-                style: TextStyle(fontSize: 12, color: theme.hintColor),
-              ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
               // Firearm details + working-day milestone tallies as pills.
               Wrap(
@@ -1372,13 +1713,13 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                         label: 's/n ${application.serialNumber}',
                       ),
                     ),
-                  if (application.workingDaysSinceSubmitted(now) != null)
+                  if (application.calculateWorkdaysSince(now) != null)
                     HunterDataPill(
                       theme: hunterTheme,
                       pill: HunterMediaPill(
                         icon: Icons.work_outline,
                         label:
-                            '${application.workingDaysSinceSubmitted(now)} workdays since submission',
+                            '${application.calculateWorkdaysSince(now)} workdays since submission',
                         amber: true,
                       ),
                     ),
@@ -1394,7 +1735,8 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                 ],
               ),
               const SizedBox(height: 12),
-              // Next anticipated status indicator.
+              // Next anticipated status indicator (stage-derived for stage 2:
+              // "Printed / Ready for Collection", not the stale "Provincial").
               Row(
                 children: [
                   Icon(
@@ -1405,7 +1747,7 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Next: ${application.nextStatusLabel}',
+                      'Next: ${application.nextStepLabel}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1416,17 +1758,36 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
                 ],
               ),
               const SizedBox(height: 8),
-              // Current status stage description.
+              // Current status description: prefer the live portal
+              // description, else the stored-phrase narrative.
               Text(
-                application.currentStatusDescription,
+                application.statusDescription.trim().isNotEmpty
+                    ? application.statusDescription.trim()
+                    : application.currentStatusDescription,
                 style: TextStyle(fontSize: 12, color: theme.hintColor),
               ),
               const SizedBox(height: 12),
-              // Stage Progress Tracker Bar
+              // Stage Progress Tracker Bar (live stage when available).
               _StageProgressBar(
-                currentStage: application.stageIndex,
+                currentStage: application.effectiveStage,
                 stages: SapsApplication.statusStages,
               ),
+              // Approved -> Digital Firearm Safe action.
+              if (approved) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _addToFirearmSafe,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.shield),
+                    label: const Text('Add to Digital Firearm Safe'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -1479,52 +1840,52 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
     );
   }
 
-  /// Comprehensive tracking details pulled from the tracking system:
-  /// status timeline, waiting-period estimates, batch details, and the current
-  /// progress stage.
+  /// Comprehensive tracking details: the firearm details block (from the
+  /// live payload), the live/derived current progress, the status timeline,
+  /// waiting-period estimates, batch details, and the collapsible raw payload.
   Widget _buildExpandedDetails(ThemeData theme) {
     // The firearm details section renders immediately (from the card's model)
     // while the tracking details are still loading / unavailable, so the
-    // make / calibre / serial pills appear as soon as the card is expanded.
+    // full field list appears as soon as the card is expanded.
     final firearmSection = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionTitle(theme, 'FIREARM DETAILS'),
         const SizedBox(height: 8),
-        _detailRow(
-          theme,
-          Icons.gps_fixed,
-          application.firearmLabel,
-          null,
-        ),
-        if (application.firearmMake.trim().isNotEmpty ||
-            application.calibre.isNotEmpty ||
-            application.serialNumber.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                if (application.firearmMake.trim().isNotEmpty)
-                  _expandedPill(
-                    theme,
-                    Icons.precision_manufacturing_outlined,
-                    application.firearmMake.trim(),
-                  ),
-                if (application.calibre.isNotEmpty)
-                  _expandedPill(theme, Icons.gps_fixed, application.calibre),
-                if (application.serialNumber.isNotEmpty)
-                  _expandedPill(
-                    theme,
-                    Icons.pin_outlined,
-                    's/n ${application.serialNumber}',
-                  ),
-              ],
-            ),
+        if (application.serialNumber.isNotEmpty)
+          _detailRow(theme, Icons.pin_outlined, 's/n', application.serialNumber),
+        if (application.calibre.isNotEmpty)
+          _detailRow(theme, Icons.gps_fixed, 'Calibre', application.calibre),
+        if (application.firearmMake.trim().isNotEmpty)
+          _detailRow(
+            theme,
+            Icons.precision_manufacturing_outlined,
+            'Make',
+            application.firearmMake.trim(),
           ),
+        if (application.applicationType.isNotEmpty)
+          _detailRow(theme, Icons.badge_outlined, 'Type',
+              'LICENCE · ${application.applicationType}'),
+        if (application.referenceNumber.isNotEmpty)
+          _detailRow(theme, Icons.tag, 'App No', application.referenceNumber),
+        if (application.statusDate.trim().isNotEmpty)
+          _detailRow(theme, Icons.event_note, 'Status Date',
+              _displaySapsStatusDate()),
+        if (application.sapsUpdatedAtLabel.isNotEmpty)
+          _detailRow(theme, Icons.update, 'Updated',
+              application.sapsUpdatedAtLabel),
+        if (application.rawStatus.trim().isNotEmpty)
+          _detailRow(theme, Icons.receipt_long, 'SAPS Raw', application.rawStatus),
+        if (application.serialNumber.isEmpty &&
+            application.calibre.isEmpty &&
+            application.firearmMake.trim().isEmpty)
+          _detailRow(theme, Icons.gps_fixed, application.firearmLabel, null),
       ],
     );
+
+    final rawSection = application.rawPayload != null
+        ? _buildRawPayload(theme, application.rawPayload!)
+        : const SizedBox.shrink();
 
     if (!_detailsLoaded) {
       return Column(
@@ -1532,6 +1893,9 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
         children: [
           const Divider(height: 24),
           firearmSection,
+          const SizedBox(height: 16),
+          _buildLiveProgress(theme),
+          rawSection,
           const SizedBox(height: 16),
           const Center(
             child: SizedBox(
@@ -1552,6 +1916,9 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
           const Divider(height: 24),
           firearmSection,
           const SizedBox(height: 16),
+          _buildLiveProgress(theme),
+          rawSection,
+          const SizedBox(height: 16),
           Text(
             'Tracking details are not available for this application.',
             style: TextStyle(fontSize: 12, color: theme.hintColor),
@@ -1566,15 +1933,15 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
         const Divider(height: 24),
         firearmSection,
         const SizedBox(height: 16),
-        _sectionTitle(theme, 'CURRENT PROGRESS'),
-        const SizedBox(height: 8),
-        _detailRow(
-          theme,
-          Icons.track_changes,
-          details.currentProgressLabel ?? application.currentStatus,
-          details.currentProgressDetail,
-        ),
-        if (details.timeline.isNotEmpty) ...[
+        _buildLiveProgress(theme),
+        // Live timeline (submission + last checked) takes precedence when the
+        // app has a live payload; otherwise the tracking-system timeline.
+        if (application.hasLiveStatus) ...[
+          const SizedBox(height: 16),
+          _sectionTitle(theme, 'STATUS TIMELINE'),
+          const SizedBox(height: 8),
+          ..._liveTimeline(theme),
+        ] else if (details.timeline.isNotEmpty) ...[
           const SizedBox(height: 16),
           _sectionTitle(theme, 'STATUS TIMELINE'),
           const SizedBox(height: 8),
@@ -1598,12 +1965,128 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
             (batch) => _batchRow(theme, batch),
           ),
         ],
+        rawSection,
         const SizedBox(height: 12),
         Text(
           'Refreshed: ${details.refreshedAt != null ? _formatDate(details.refreshedAt!) : _formatDate(application.lastChecked)}',
           style: TextStyle(fontSize: 11, color: theme.hintColor),
         ),
       ],
+    );
+  }
+
+  /// CURRENT PROGRESS section: prefers the live classified label + portal
+  /// description (e.g. "At Central Registry" / "No status available contact
+  /// the DFO"), falling back to the tracking-system progress label.
+  Widget _buildLiveProgress(ThemeData theme) {
+    final details = _details;
+    final label = application.hasLiveStatus
+        ? application.currentProgressLabel
+        : (details?.currentProgressLabel ?? application.currentProgressLabel);
+    final description = application.statusDescription.trim().isNotEmpty
+        ? application.statusDescription.trim()
+        : details?.currentProgressDetail;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(theme, 'CURRENT PROGRESS'),
+        const SizedBox(height: 8),
+        _detailRow(theme, Icons.track_changes, label, description),
+        if (application.rawStatus.trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            application.rawStatus.trim(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+              color: theme.hintColor,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// The two live timeline entries: the SAPS submission date (from the portal
+  /// status date) and the last-checked timestamp.
+  List<Widget> _liveTimeline(ThemeData theme) {
+    final statusDate = application.sapsStatusDate;
+    return [
+      if (statusDate != null)
+        _timelineRow(
+          theme,
+          SapsStatusTimelineEntry(
+            label: 'Application submitted '
+                '(SAPS date ${_formatDateOnly(statusDate)} – from portal)',
+            timestamp: statusDate,
+            detail: application.currentProgressLabel,
+          ),
+        ),
+      _timelineRow(
+        theme,
+        SapsStatusTimelineEntry(
+          label: 'Last checked ${_formatDate(application.lastChecked)}',
+          timestamp: application.lastChecked,
+          detail: application.rawStatus.trim().isEmpty
+              ? null
+              : application.rawStatus.trim(),
+        ),
+      ),
+    ];
+  }
+
+  /// Collapsible RAW SAPS RESPONSE showing the full portal payload.
+  Widget _buildRawPayload(ThemeData theme, Map<String, dynamic> payload) {
+    final entries = payload.entries
+        .where((e) => e.value != null && '${e.value}'.trim().isNotEmpty)
+        .toList();
+    return Material(
+      type: MaterialType.transparency,
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          title: Text(
+            'RAW SAPS RESPONSE',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.secondary,
+              letterSpacing: 1.1,
+            ),
+          ),
+          children: [
+            for (final e in entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 110,
+                      child: Text(
+                        e.key,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: theme.hintColor,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: SelectableText(
+                        '${e.value}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1619,34 +2102,80 @@ class _ApplicationCardState extends State<SapsApplicationCard> {
     );
   }
 
-  /// Compact themed pill used inside the expanded details view (e.g. the
-  /// firearm make / calibre / serial chips under the FIREARM DETAILS section).
-  Widget _expandedPill(ThemeData theme, IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.25),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: theme.colorScheme.primary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-        ],
-      ),
+  /// Adds the application's firearm to the Digital Firearm Safe (de-duplicated
+  /// by serial) and surfaces the result. Invoked from the approved card's
+  /// "Add to Digital Firearm Safe" action.
+  Future<void> _addToFirearmSafe() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final firearm = Firearm.fromSaps(
+      make: application.firearmMake,
+      calibre: application.calibre,
+      serial: application.serialNumber,
+      appNo: application.referenceNumber,
+      type: application.applicationType,
+      status: application.rawStatus.isEmpty
+          ? application.currentStatus
+          : application.rawStatus,
+      statusDate: application.statusDate,
+      rawPayload: application.rawPayload,
     );
+    final safeRepo = FirearmSafeRepository();
+    final label = firewallSafeLabel(application);
+    try {
+      if (await safeRepo.existsBySerial(firearm.serial)) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('$label is already in your Digital Firearm Safe'),
+              backgroundColor: Colors.orange.shade800,
+            ),
+          );
+        return;
+      }
+      final id = await safeRepo.addFirearm(firearm);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              id != null
+                  ? 'Added $label to Safe'
+                  : 'Could not add $label to Safe',
+            ),
+            backgroundColor:
+                id != null ? Colors.green.shade700 : Colors.red.shade700,
+          ),
+        );
+    } catch (e) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Failed to add to Safe: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+    }
+  }
+
+  /// Composes the "MAKE CALIBRE (SERIAL)" label used in the Safe-add snackbar.
+  static String firewallSafeLabel(SapsApplication app) {
+    final parts = <String>[
+      if (app.firearmMake.trim().isNotEmpty) app.firearmMake.trim(),
+      if (app.calibre.isNotEmpty) app.calibre,
+      if (app.serialNumber.isNotEmpty) '(${app.serialNumber})',
+    ];
+    return parts.isEmpty ? app.referenceNumber : parts.join(' ');
+  }
+
+  /// Displays the SAPS portal status date (`yyyy/MM/dd`) either verbatim when
+  /// unparseable or as a friendly `dd MMM yyyy` when it parses.
+  String _displaySapsStatusDate() {
+    final raw = application.statusDate.trim();
+    final parsed = application.sapsStatusDate;
+    if (parsed == null) return raw;
+    return '${_formatDateOnly(parsed)} ($raw)';
   }
 
   Widget _detailRow(

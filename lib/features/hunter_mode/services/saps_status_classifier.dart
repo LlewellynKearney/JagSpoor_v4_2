@@ -192,6 +192,37 @@ class SapsStatusClassifier {
         normalized.contains('finalized');
   }
 
+  /// The next anticipated stage label in the SAPS licensing workflow for a
+  /// given [stage]: DFO -> Provincial -> CFR -> Printed / Ready for
+  /// Collection -> Licence Collected (for the terminal stages). Used to
+  /// render the card's `Next:` indicator from a classified en-memory stage
+  /// rather than re-parsing the raw phrase.
+  static String nextStepForStage(int stage) {
+    switch (stage) {
+      case kSapsStageDfo:
+        return 'Provincial';
+      case kSapsStageProvincial:
+        return 'CFR';
+      case kSapsStageCfr:
+        return 'Printed / Ready for Collection';
+      case kSapsStagePrinted:
+        return 'Licence Collected';
+      default:
+        // NOT_FOUND / NEED_SERIAL / unknown -> no forward step.
+        return 'Status Unavailable';
+    }
+  }
+
+  /// Normalizes a firearm serial number to its canonical form: trimmed and
+  /// upper-cased, with interior whitespace removed. This prevents the
+  /// hand-entry typo class seen live (`F0004574` instead of `F004574`) from
+  /// being stored / compared verbatim -- leading zeros are NOT invented or
+  /// stripped (the serial is opaque), only case / whitespace are normalised.
+  static String normalizeSerial(String? raw) {
+    if (raw == null) return '';
+    return raw.replaceAll(RegExp(r'\s+'), '').trim().toUpperCase();
+  }
+
   /// Maps a raw CFR status phrase to a human-friendly display label (used on
   /// the card status badge / detail view).
   static String displayLabel(String? rawStatus) {
