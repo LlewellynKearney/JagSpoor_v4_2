@@ -166,6 +166,51 @@ void main() {
     });
   });
 
+  group('SapsStatusClassifier.isApproved (Add to Safe trigger)', () {
+    test('true for approved / finalised / printed phrases', () {
+      expect(SapsStatusClassifier.isApproved('Approved'), isTrue);
+      expect(SapsStatusClassifier.isApproved('Licence approved and printed'),
+          isTrue);
+      expect(SapsStatusClassifier.isApproved('Ready for Collection'), isTrue);
+      expect(SapsStatusClassifier.isApproved('Card printed'), isTrue);
+      expect(SapsStatusClassifier.isApproved('Application finalised'), isTrue);
+      expect(SapsStatusClassifier.isApproved('Licence collected'), isTrue);
+    });
+
+    test('false for in-progress stages (CFR consideration is NOT approved)',
+        () {
+      expect(
+        SapsStatusClassifier.isApproved(
+          'For consideration by the Commissioner',
+        ),
+        isFalse,
+      );
+      expect(SapsStatusClassifier.isApproved('CFR Processing'), isFalse);
+      expect(
+        SapsStatusClassifier.isApproved('Application received at DFO'),
+        isFalse,
+      );
+      expect(SapsStatusClassifier.isApproved('At Provincial Office'), isFalse);
+      expect(SapsStatusClassifier.isApproved('Not found in system'), isFalse);
+    });
+
+    test('false for null / blank', () {
+      expect(SapsStatusClassifier.isApproved(null), isFalse);
+      expect(SapsStatusClassifier.isApproved('   '), isFalse);
+    });
+
+    test('the live 10654672 CFR phrase is NOT approved', () {
+      // The real portal phrase from the verification run (stage 2).
+      expect(
+        SapsStatusClassifier.isApproved(
+          'Received at Licensing Section — For consideration by the '
+          'Commissioner',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('SapsTrackerService delegation (legacy API preserved)', () {
     test('convertRawStatusToStage delegates to the classifier', () {
       expect(

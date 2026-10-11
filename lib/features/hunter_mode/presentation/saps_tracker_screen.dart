@@ -3,10 +3,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../ballistics/data/models/saps_application_model.dart';
 import '../../hunter_mode/models/saps_tracking_details.dart';
+import '../../hunter_mode/services/saps_cfr_scraper_client.dart';
 import '../../hunter_mode/services/saps_sms_parser.dart';
+import '../../hunter_mode/services/saps_status_classifier.dart';
 import '../../hunter_mode/services/saps_tracker_service.dart';
+import '../../firearm_safe/data/models/firearm.dart';
+import '../../firearm_safe/data/services/firearm_safe_repository.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/hunter_mode/firearm_safe_screen.dart';
 import 'package:jagspoor/features/shared/widgets/hunter_media_card.dart';
 import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
 
@@ -14,7 +19,15 @@ import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
 /// Provides a dashboard for registering and monitoring firearm license
 /// and competency application statuses.
 class SapsTrackerScreen extends StatefulWidget {
-  const SapsTrackerScreen({super.key});
+  /// Test seam: overrides the CFR enquiry client factory so the result-card
+  /// states (loading / NEED_SERIAL / NOT_FOUND / full result / approved) can
+  /// be widget-tested with a mocked transport and no live network. Defaults
+  /// to a real [SapsCfrScraperClient] (webhook in production, direct portal
+  /// path in a debug build).
+  @visibleForTesting
+  final SapsCfrScraperClient Function()? enquiryClientFactory;
+
+  const SapsTrackerScreen({super.key, this.enquiryClientFactory});
 
   @override
   State<SapsTrackerScreen> createState() => _SapsTrackerScreenState();
@@ -27,12 +40,47 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
   final _makeController = TextEditingController();
   final _calibreController = TextEditingController();
   final _serialNumberController = TextEditingController();
+
+  /// Live CFR enquiry inputs (the 6-field reference + serial POST). Kept
+  /// separate from the registration form so a hunter can look up ANY
+  /// reference without first creating a tracked application.
+  final _enquiryRefController = TextEditingController();
+  final _enquirySerialController = TextEditingController();
+
   String _selectedApplicationType = SapsApplication.applicationTypes.first;
   bool _isLoading = false;
   bool _isRefreshingAll = false;
   bool _registerExpanded = false;
 
+  /// Live-enquiry state.
+  bool _enquiryRunning = false;
+  String? _enquiryError;
+  SapsCfrStatus? _enquiryResult;
+  bool _enquiryPayloadExpanded = false;
+
   final SapsTrackerService _trackerService = SapsTrackerService();
+  final FirearmSafeRepository _safeRepository = FirearmSafeRepository();
+
+  /// Adds the approved firearm from the current live-enquiry result to the
+  /// Digital Firearm Safe (de-duplicated by serial). Returns true when a
+  /// firearm was added (false when it already existed / nothing to add).
+  Future<bool> _addEnquiryResultToSafe(SapsCfrStatus result) async {
+    final firearm = Firearm.fromSaps(
+      make: result.make,
+      calibre: result.calibre,
+      serial: result.serialNumber,
+      appNo: result.applicationNumber,
+      type: result.applicationType,
+      status: result.rawStatus,
+      statusDate: result.statusDate,
+      rawPayload: result.raw,
+    );
+    if (await _safeRepository.existsBySerial(firearm.serial)) {
+      return false;
+    }
+    final id = await _safeRepository.addFirearm(firearm);
+    return id != null;
+  }
 
   @override
   void dispose() {
@@ -42,6 +90,8 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
     _makeController.dispose();
     _calibreController.dispose();
     _serialNumberController.dispose();
+    _enquiryRefController.dispose();
+    _enquirySerialController.dispose();
     super.dispose();
   }
 
@@ -55,6 +105,53 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
       return null;
     }
   }
+
+  /// Runs the live CFR enquiry (the 6-field reference + serial POST against
+  /// the official portal in a debug build, or the configured webhook in
+  /// production) and renders the result card.
+  Future<void> _runEnquiry() async {
+    final ref = _enquiryRefController.text.trim();
+    final serial = _enquirySerialController.text.trim();
+    if (ref.isEmpty && serial.isEmpty) {
+      setState(() {
+        _enquiryError = 'Enter a Reference Number (and Serial Number for '
+            'firearm applications).';
+        _enquiryResult = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _enquiryRunning = true;
+      _enquiryError = null;
+      _enquiryResult = null;
+    });
+
+    try {
+      final client =
+          widget.enquiryClientFactory?.call() ?? SapsCfrScraperClient();
+      final result = await client.fetchStatus(
+        referenceNumber: ref,
+        idNumber: '',
+        serialNumber: serial,
+      );
+      if (!mounted) return;
+      setState(() {
+        _enquiryRunning = false;
+        _enquiryResult = result;
+        _enquiryError = result == null
+            ? 'No response parsed. Check connectivity and try again.'
+            : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _enquiryRunning = false;
+        _enquiryError = 'Enquiry failed: $e';
+      });
+    }
+  }
+
 
   /// Parses the pasted SAPS notification SMS and pre-populates the
   /// registration form fields, then lets the user review before registering.
@@ -223,6 +320,410 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
       SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Live CFR enquiry panel + result card
+  // ---------------------------------------------------------------------------
+
+  /// The live "Check Status" panel: reference (required) + serial (required
+  /// for firearm applications, optional for competency), the hint, and the
+  /// ENQUIRE action. Uses the same 6-field scraper client as the debug
+  /// screen, so a debug build queries the real portal and a release build
+  /// uses the configured webhook.
+  Widget _buildEnquiryPanel(ThemeData theme, ThemeController hunterTheme) {
+    return Card(
+      color: HunterUi.cardColor(hunterTheme),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.travel_explore, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'CHECK LIVE STATUS',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                      color: HunterUi.titleColor(hunterTheme),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _enquiryRefController,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                labelText: 'Reference Number',
+                hintText: 'e.g. 10654672',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                prefixIcon: const Icon(Icons.tag),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _enquirySerialController,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                labelText: 'Firearm Serial Number',
+                hintText: 'e.g. F004574',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                prefixIcon: const Icon(Icons.pin_outlined),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: theme.hintColor,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'For firearm renewal: enter BOTH Ref + Serial. '
+                    'For competency: Ref only.',
+                    style: TextStyle(fontSize: 12, color: theme.hintColor),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _enquiryRunning ? null : _runEnquiry,
+              icon: _enquiryRunning
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search),
+              label: Text(_enquiryRunning ? 'ENQUIRING…' : 'ENQUIRE'),
+            ),
+            if (_enquiryError != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
+                ),
+                child: Text(
+                  _enquiryError!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ),
+            ],
+            if (_enquiryResult != null)
+              _buildEnquiryResult(theme, _enquiryResult!),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The live-enquiry result card. Branches on the classified stage:
+  ///   * NEED_SERIAL_AND_REF (-2) -> amber "enter both" banner;
+  ///   * NOT_FOUND (-1) -> grey "no records" card + collapsed HTML snippet;
+  ///   * stage >= 0 -> the full result card (RAW / STAGE / LABEL / UPDATED /
+  ///     NOT FOUND / TYPE / APP NO / CALIBRE / MAKE / SERIAL / STATUS DATE /
+  ///     DESCRIPTION / NEXT STEP + the collapsible raw payload), plus the
+  ///     "Add to Digital Firearm Safe" action when the status is approved.
+  Widget _buildEnquiryResult(ThemeData theme, SapsCfrStatus result) {
+    if (result.stage == kSapsStageNeedSerialAndRef) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+        ),
+        child: Text(
+          'Enter both Serial + Reference for firearm apps '
+          '(Ref only for competency)',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      );
+    }
+
+    if (result.stage == kSapsStageNotFound || result.notFound) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.hintColor.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.search_off, color: theme.hintColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No records to retrieve for your selected Reference '
+                    'Number (REF) and Serial Number (SERIAL)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (result.htmlSnippet.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildHtmlSnippet(theme, result.htmlSnippet),
+            ],
+          ],
+        ),
+      );
+    }
+
+    // stage >= 0 -> the full result card.
+    final approved = SapsStatusClassifier.isApproved(result.rawStatus);
+    return Card(
+      margin: const EdgeInsets.only(top: 16),
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'RESULT',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: HunterUi.titleColor(ThemeController.instance),
+              ),
+            ),
+            const Divider(height: 20),
+            _resultRow(theme, 'RAW', result.rawStatus),
+            _resultRow(theme, 'STAGE', result.stage.toString()),
+            _resultRow(theme, 'LABEL', result.displayLabel),
+            _resultRow(
+              theme,
+              'UPDATED',
+              result.sapsUpdatedAt != null
+                  ? _formatIsoDate(result.sapsUpdatedAt!)
+                  : '—',
+            ),
+            _resultRow(theme, 'NOT FOUND', result.notFound ? 'true' : 'false'),
+            if (result.applicationType.isNotEmpty)
+              _resultRow(theme, 'TYPE', result.applicationType),
+            if (result.applicationNumber.isNotEmpty)
+              _resultRow(theme, 'APP NO', result.applicationNumber),
+            if (result.calibre.isNotEmpty)
+              _resultRow(theme, 'CALIBRE', result.calibre),
+            if (result.make.isNotEmpty)
+              _resultRow(theme, 'MAKE', result.make),
+            if (result.serialNumber.isNotEmpty)
+              _resultRow(theme, 'SERIAL', result.serialNumber),
+            if (result.statusDate.isNotEmpty)
+              _resultRow(theme, 'STATUS DATE', result.statusDate),
+            if (result.statusDescription.isNotEmpty)
+              _resultRow(theme, 'DESCRIPTION', result.statusDescription),
+            if (result.nextStep.isNotEmpty)
+              _resultRow(theme, 'NEXT STEP', result.nextStep),
+            if (approved) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: () => _importToSafe(result),
+                  icon: const Icon(Icons.shield),
+                  label: const Text(
+                    'Add to Digital Firearm Safe',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+            if (result.raw != null) ...[
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () => setState(
+                  () => _enquiryPayloadExpanded = !_enquiryPayloadExpanded,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _enquiryPayloadExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'RAW PAYLOAD',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_enquiryPayloadExpanded) ...[
+                const SizedBox(height: 6),
+                SelectableText(
+                  result.raw.toString(),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Collapsible first-500-char portal HTML snippet (diagnostics for the
+  /// NOT_FOUND card).
+  Widget _buildHtmlSnippet(ThemeData theme, String snippet) {
+    // Wrap in a transparent Material: the ExpansionTile renders a ListTile,
+    // and the NOT_FOUND card's coloured Container ancestor would otherwise
+    // trip Flutter's "ListTile ink splashes may be invisible" assertion.
+    return Material(
+      type: MaterialType.transparency,
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          title: Text(
+            'PORTAL HTML SNIPPET (first 500 chars)',
+            style: TextStyle(fontSize: 11, color: theme.hintColor),
+          ),
+          children: [
+            SelectableText(snippet, style: theme.textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Handles the "Add to Digital Firearm Safe" tap: skips when the serial
+  /// already exists, otherwise adds the firearm, surfaces the result, and
+  /// navigates into the Digital Firearm Safe so the hunter sees it land.
+  Future<void> _importToSafe(SapsCfrStatus result) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final label = [
+      result.make,
+      result.calibre,
+      if (result.serialNumber.isNotEmpty) '(${result.serialNumber})',
+    ].where((s) => s.isNotEmpty).join(' ');
+    try {
+      final added = await _addEnquiryResultToSafe(result);
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              added
+                  ? 'Added $label to Safe'
+                  : '$label is already in your Digital Firearm Safe',
+            ),
+            backgroundColor:
+                added ? Colors.green.shade700 : Colors.orange.shade800,
+          ),
+        );
+      if (added) {
+        navigator.push(
+          MaterialPageRoute(
+            builder: (context) =>
+                FirearmSafeScreen(theme: ThemeController.instance),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Failed to add to Safe: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+    }
+  }
+
+  Widget _resultRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: theme.hintColor,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ISO date (e.g. `2026-10-10`) for the portal UPDATED row.
+  String _formatIsoDate(DateTime date) {
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$m-$d';
+  }
+
 
   /// Collapsible "Register New Application" accordion. Collapsed by default so
   /// tracked applications dominate the screen; tapping the header expands the
@@ -531,6 +1032,11 @@ class _SapsTrackerScreenState extends State<SapsTrackerScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                     child: _buildRegisterAccordion(theme, hunterTheme),
+                  ),
+                  // Live CFR status enquiry (reference + serial).
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: _buildEnquiryPanel(theme, hunterTheme),
                   ),
                   // Active Tracker header + manual refresh button
                   Padding(

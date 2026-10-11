@@ -15029,3 +15029,73 @@ Android cmdline-tools/SDK 36/NDK 27.0.12077973 for the build below).
 - Files: `pubspec.yaml`, `pubspec.lock`, `android/app/build.gradle.kts`,
   `android/settings.gradle.kts`, `MainActivity.kt`, `AGENTS.md`.
 - Uncommitted in working tree (commit/push left to the requester unless asked).
+## Phase -- Wire live 6-field SAPS scraper to the tracker UI + approved -> Digital Firearm Safe (added 2026-10-11)
+
+### Context
+The debug screen (`lib/screens/debug_saps_screen.dart`) already proved the
+live CFR enquiry works from the device: the 6-field POST
+(`fsref`=`fref`=REF, `fserial`=`fiserial`=SERIAL, `fid`/`frid` empty) plus the
+SAPS cert bypass (`certBypassForHost`, kDebugMode + saps.gov.za only) and the
+GET guard (`_hasResultsTable` — a real results table wins over the
+"Please supply..." banner). Verified live: `10654672` + `F004574` ->
+Provincial stage 2, HOWA .338 WIN MAG, STATUS DATE 2026/10/09; `10470664` +
+`OB14468` -> NOT_FOUND. This phase moves that logic into the real tracker
+screen, removes the temporary dashboard button, and wires the approved -> Safe
+path.
+
+### 1. Live enquiry panel now IN the tracker screen
+`lib/features/hunter_mode/presentation/saps_tracker_screen.dart`:
+- New `_buildEnquiryPanel` (Card "CHECK LIVE STATUS") rendered in build()'s
+  item 0 directly below the register accordion: Reference Number (required) +
+  "Firearm Serial Number" (required for firearm apps, optional for competency)
+  + the hint "For firearm renewal: enter BOTH Ref + Serial. For competency: Ref
+  only." + ENQUIRE. Uses the SAME code path as the debug screen:
+  `SapsCfrScraperClient().fetchStatus(...)` (the client owns the cert bypass +
+  GET guard internally — did NOT reimplement `_buildDirectClient`).
+- `@visibleForTesting enquiryClientFactory` ctor seam so widget tests drive the
+  result-card states with a `MockClient` (no network).
+- `_buildEnquiryResult` branches on the classified stage:
+  - `kSapsStageNeedSerialAndRef` (-2) -> amber banner "Enter both Serial +
+    Reference for firearm apps (Ref only for competency)".
+  - `kSapsStageNotFound` (-1) / `notFound` -> grey card "No records to retrieve
+    for your selected Reference Number (REF) and Serial Number (SERIAL)" + a
+    collapsed `ExpansionTile` (first-500-char portal HTML snippet, wrapped in a
+    transparent `Material`).
+  - stage >= 0 -> the full RESULT card: RAW, STAGE, LABEL, UPDATED (ISO),
+    NOT FOUND, TYPE, APP NO, CALIBRE, MAKE, SERIAL, STATUS DATE, DESCRIPTION,
+    NEXT STEP + a collapsible RAW PAYLOAD.
+
+### 2. Approved -> Digital Firearm Safe
+- NEW `lib/features/firearm_safe/data/models/firearm.dart` (`Firearm`) with a
+  `Firearm.fromSaps(...)` factory (normalises the portal `yyyy/MM/dd` date).
+- NEW `lib/features/firearm_safe/data/services/firearm_safe_repository.dart`
+  (`FirearmSafeRepository`) over the owner-scoped `firearms` Firestore
+  collection (same collection as the Digital Firearm Safe; no Hive/SQL).
+  `existsBySerial` (case/space-insensitive, own-user-scoped) + `addFirearm`.
+- `SapsStatusClassifier.isApproved(String?)` (NEW): true for printed/final
+  stage or approved / card printed / finalised; false for in-progress phrases
+  (the live `10654672` stage-2 phrase is NOT approved). When approved, a green
+  `Icons.shield` "Add to Digital Firearm Safe" button renders; `_importToSafe`
+  skips an existing serial, else adds + navigates into `FirearmSafeScreen`.
+
+### 3. Cleanup
+- `hunter_dashboard.dart`: the temporary "DEBUG SAPS - TEST 10654672" button
+  replaced with a subtle, left-aligned kDebugMode-gated `TextButton.icon`
+  "SAPS Debug Tracker (dev only)". The `/debug_saps` route stays kDebugMode-gated.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing infos).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 2029 tests
+  passed** (+59 net: 4 isApproved + 14 firearm/repo + 6 enquiry widget + the
+  existing saps suites green).
+- Env: Flutter **3.44.9** downloaded + extracted to `/tmp/fl/flutter`;
+  `pubspec.lock` drift from `pub get` (meta/test/test_api/test_core patch
+  bumps) was reverted.
+- Files: `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `lib/features/hunter_mode/services/saps_status_classifier.dart`,
+  `lib/features/firearm_safe/data/models/firearm.dart` (NEW),
+  `lib/features/firearm_safe/data/services/firearm_safe_repository.dart` (NEW),
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `test/saps_status_classifier_test.dart`, `test/firearm_safe_import_test.dart`
+  (NEW), `test/saps_tracker_enquiry_test.dart` (NEW), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.

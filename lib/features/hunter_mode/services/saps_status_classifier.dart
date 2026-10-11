@@ -173,6 +173,25 @@ class SapsStatusClassifier {
     return kSapsStageDfo;
   }
 
+  /// Whether a raw CFR status phrase represents an APPROVED / finalised
+  /// application — the trigger for the "Add to Digital Firearm Safe" flow.
+  ///
+  /// True when the phrase classifies to the final stage ([kSapsStagePrinted],
+  /// i.e. printed / ready for collection / approved / collected) OR contains
+  /// an explicit approval keyword ("approved", "card printed", "finalised" /
+  /// "finalized", "ready for collection"). Deliberately narrow so an
+  /// in-progress CFR phrase ("For consideration by the Commissioner") never
+  /// reads as approved.
+  static bool isApproved(String? rawStatus) {
+    if (classify(rawStatus) == kSapsStagePrinted) return true;
+    final normalized = normalize(rawStatus);
+    if (normalized.isEmpty) return false;
+    return normalized.contains('approved') ||
+        normalized.contains('card printed') ||
+        normalized.contains('finalised') ||
+        normalized.contains('finalized');
+  }
+
   /// Maps a raw CFR status phrase to a human-friendly display label (used on
   /// the card status badge / detail view).
   static String displayLabel(String? rawStatus) {

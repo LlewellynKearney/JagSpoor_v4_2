@@ -590,17 +590,22 @@ class _HunterDashboardState extends State<HunterDashboard> {
               16 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
-              // DEBUG-ONLY: temporary shortcut into the live SAPS CFR enquiry
-              // screen for the 10654672 verification run. Reachable only from
-              // a kDebugMode build (the route is also gated in main.dart);
-              // release builds strip this entirely.
+              // DEV-ONLY: subtle shortcut into the live SAPS CFR enquiry
+              // screen (useful for verifying the portal form + results table
+              // during development). Reachable only from a kDebugMode build
+              // (the /debug_saps route is also gated in main.dart); release
+              // builds strip this entirely.
               if (kDebugMode)
                 Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: ElevatedButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/debug_saps'),
-                    child: const Text('DEBUG SAPS - TEST 10654672'),
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () =>
+                          Navigator.pushNamed(context, '/debug_saps'),
+                      icon: const Icon(Icons.bug_report_outlined, size: 16),
+                      label: const Text('SAPS Debug Tracker (dev only)'),
+                    ),
                   ),
                 ),
               // 🌟 Trial status banner (active trial only).
