@@ -8,7 +8,9 @@ when two business events happen:
    below).
 
 Delivery is SMTP via [nodemailer](https://nodemailer.com/), driven by four
-Cloud Functions in `functions/src/notifications.ts`.
+Cloud Functions in `functions/src/notifications.ts` plus the 30-day trial
+trigger in `functions/src/user_trial_onboarding.ts` — all **2nd gen**, all
+mounting the `EMAIL_PASS` secret.
 
 ---
 
@@ -16,9 +18,11 @@ Cloud Functions in `functions/src/notifications.ts`.
 
 ### New user — `onUserCreate`
 
-An Auth `user().onCreate` trigger (v1 auth provider, same namespace as the
-30-day trial trigger). Fires once per newly created Auth user — email/password
-and Google sign-in alike.
+A **2nd gen** Auth `onUserCreated` trigger (`firebase-functions/v2/identity`).
+Fires once per newly created Auth user — email/password and Google sign-in
+alike. (This replaced the 1st-gen `functions.auth.user().onCreate` chain,
+which showed 0 invocations in the console; the v2 identity provider is the
+supported user-creation event.)
 
 Email contents:
 
@@ -69,9 +73,8 @@ swallowed, so it can never fail the Auth / Firestore write that produced it.
 
 ## 2. Set the SMTP password secret
 
-The SMTP credentials are read from the Cloud Functions environment. Only the
-password is required to send; store it as a **secret** — never in a file and
-never in git:
+The SMTP password is read from a **Cloud Functions secret** — never from a
+file and never from git. Store it with the Firebase CLI:
 
 ```bash
 # from the repository root
@@ -79,13 +82,38 @@ firebase functions:secrets:set EMAIL_PASS
 # paste the mailbox password when prompted
 ```
 
-`EMAIL_PASS` is the only mandatory value. `EMAIL_USER` defaults to
-`support@jag-spoor.co.za` and doubles as the sender address, so mail is sent
-**from** and **to** the support mailbox out of the box.
+The secret is declared once in `functions/src/params.ts`:
+
+```ts
+import { defineSecret } from "firebase-functions/params";
+export const emailPass = defineSecret("EMAIL_PASS");
+```
+
+and **every mail-sending trigger mounts it** so the runtime can resolve the
+value at send time:
+
+```ts
+export const onUserCreate = onUserCreated(
+  { region: "us-central1", secrets: [emailPass] },
+  async (event) => { /* … */ }
+);
+```
+
+`functions/src/email.ts` resolves the password with `emailPass.value()`
+(falling back to a plaintext `EMAIL_PASS` env value, then to a skip) — see
+`currentEmailConfigWithSecret()`.
+
+`EMAIL_USER` defaults to `support@jag-spoor.co.za` and doubles as the sender
+address, so mail is sent **from** and **to** the support mailbox out of the
+box.
 
 Until `EMAIL_PASS` is set the triggers log
-`support email skipped: EMAIL_PASS is not configured` and return without
-sending — nothing breaks.
+`support email skipped: EMAIL_PASS secret is not configured` and return
+without sending — nothing breaks.
+
+> If `onUserCreate` still shows 0 invocations after deploying, confirm the
+> secret is bound: `firebase functions:secrets:get EMAIL_PASS` should list the
+> version, and the deploy output should mention `EMAIL_PASS` for each trigger.
 
 ---
 
@@ -136,12 +164,16 @@ The `functions` block in `firebase.json` runs `npm --prefix ./functions run
 build` as a pre-deploy step, so the TypeScript is compiled automatically. The
 runtime is Node 22.
 
-To deploy only the four notification functions:
+To deploy only the notification + trial functions:
 
 ```bash
 firebase deploy --only \
-  functions:onUserCreate,functions:onSubscriptionCreate,functions:onUserSubscriptionUpdated,functions:onPricingCreated
+  functions:onUserCreate,functions:onSubscriptionCreate,functions:onUserSubscriptionUpdated,functions:onPricingCreated,functions:initializeNewUserTrial
 ```
+
+> All five are **2nd gen** triggers and each declares `secrets: [emailPass]`.
+> A v2 deploy that changes a function from 1st to 2nd gen replaces the old
+> entry (the console shows it under the v2 runtime).
 
 ---
 
@@ -193,7 +225,9 @@ npm test
 | File | Responsibility |
 | --- | --- |
 | `functions/src/email.ts` | SMTP config resolution, the nodemailer transport, the message builders and `sendSupportEmail`. |
+| `functions/src/params.ts` | The shared `EMAIL_PASS` secret declaration (`defineSecret`). |
 | `functions/src/notifications.ts` | The four triggers + the subscription-transition logic. |
+| `functions/src/user_trial_onboarding.ts` | The 30-day trial trigger (also v2 + the secret). |
 | `functions/src/index.ts` | Re-exports the triggers so the Firebase CLI discovers them. |
 | `functions/test/email_notifications.test.js` | Unit tests. |
 | `functions/.env.example` | Documented `EMAIL_*` variables. |

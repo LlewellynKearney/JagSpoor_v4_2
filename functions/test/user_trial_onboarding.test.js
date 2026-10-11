@@ -27,7 +27,9 @@ test("trialEndsAtFrom returns exactly 30 days in the future", () => {
 test("index.js entry point exports the auth onCreate trigger", () => {
   const index = require("../lib/index.js");
   assert.ok(index.initializeNewUserTrial, "initializeNewUserTrial exported");
-  const trigger = index.initializeNewUserTrial.__trigger;
+  // v1 auth triggers carry __trigger; v2 identity triggers carry __endpoint.
+  const trigger =
+    index.initializeNewUserTrial.__trigger || index.initializeNewUserTrial.__endpoint;
   assert.ok(trigger, "trigger metadata present");
 });
 

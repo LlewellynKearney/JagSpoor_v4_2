@@ -1,7 +1,8 @@
 import { logger } from "firebase-functions/v2";
-import * as functionsV1 from "firebase-functions/v1";
+import { onUserCreated } from "firebase-functions/v2/identity";
 import { FieldValue } from "firebase-admin/firestore";
 import { firestore } from "./firebase";
+import { emailPass } from "./params";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Automated 30-Day Free Trial Provisioning
@@ -51,17 +52,20 @@ export function trialEndsAtFrom(startedAt: Date): Date {
 /**
  * initializeNewUserTrial
  *
- * Firebase Authentication user-creation trigger (v1 auth provider). Fires
- * once per newly created Auth user and initializes `users/{uid}` with the
- * 30-day free trial state (`subscriptionStatus: 'trialing'`, `trialEndsAt` =
- * now + 30 days, `requiresPayment: false`). An already-existing non-trial
- * `subscriptionStatus` (e.g. pre-provisioned billing state) is preserved so
- * the trigger can never downgrade an account.
+ * Firebase Authentication `onUserCreated` trigger (**2nd gen** identity
+ * provider). Fires once per newly created Auth user and initializes
+ * `users/{uid}` with the 30-day free trial state (`subscriptionStatus:
+ * 'trialing'`, `trialEndsAt` = now + 30 days, `requiresPayment: false`). An
+ * already-existing non-trial `subscriptionStatus` (e.g. pre-provisioned
+ * billing state) is preserved so the trigger can never downgrade an account.
+ *
+ * Declares the EMAIL_PASS secret so the runtime mounts the mailbox password
+ * (the support-notification trigger `onUserCreate` sends the welcome mail).
  */
-export const initializeNewUserTrial = functionsV1
-  .region("us-central1")
-  .auth.user()
-  .onCreate(async (user) => {
+export const initializeNewUserTrial = onUserCreated(
+  { region: "us-central1", secrets: [emailPass] },
+  async (event) => {
+    const user = event.data;
     const uid = user.uid;
 
     // Admin accounts are excluded from the automatic trial so the platform
@@ -118,4 +122,5 @@ export const initializeNewUserTrial = functionsV1
       uid,
       trialEndsAt: trialEndsAt.toISOString(),
     });
-  });
+  }
+);

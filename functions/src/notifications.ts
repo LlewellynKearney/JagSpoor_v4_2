@@ -1,7 +1,8 @@
 import { logger } from "firebase-functions/v2";
-import * as functionsV1 from "firebase-functions/v1";
+import { onUserCreated } from "firebase-functions/v2/identity";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { firestore, auth } from "./firebase";
+import { emailPass } from "./params";
 import {
   notifyNewUser,
   notifyNewSubscription,
@@ -142,15 +143,19 @@ async function lookupUserEmail(uid: string, fallback = ""): Promise<string> {
 /**
  * onUserCreate
  *
- * Firebase Authentication `user().onCreate` trigger (v1 auth provider, the
- * same namespace the trial trigger uses). Fires once per newly created Auth
- * user — email/password and Google sign-in alike — and emails the support
- * inbox with the new user's email, uid, creation time and provider.
+ * Firebase Authentication `onUserCreated` trigger (**2nd gen**, the identity
+ * provider). Fires once per newly created Auth user — email/password and
+ * Google sign-in alike — and emails the support inbox with the new user's
+ * email, uid, creation time and provider.
+ *
+ * Declares the EMAIL_PASS secret so the runtime can resolve the SMTP password
+ * via `emailPass.value()` (see email.ts). The handler destructures the v1
+ * `{ user }` compat shape, which the v2 identity provider also exposes.
  */
-export const onUserCreate = functionsV1
-  .region("us-central1")
-  .auth.user()
-  .onCreate(async (user) => {
+export const onUserCreate = onUserCreated(
+  { region: "us-central1", secrets: [emailPass] },
+  async (event) => {
+    const user = event.data;
     const provider =
       user.providerData && user.providerData.length > 0
         ? user.providerData
@@ -177,7 +182,8 @@ export const onUserCreate = functionsV1
         error: err instanceof Error ? err.message : String(err),
       });
     }
-  });
+  }
+);
 
 // ── 2. users/{uid}/subscriptions/{subId} onCreate ────────────────────────────
 
@@ -189,7 +195,11 @@ export const onUserCreate = functionsV1
  * inbox with the user's email, uid, plan, price and the full document data.
  */
 export const onSubscriptionCreate = onDocumentCreated(
-  { document: "users/{userId}/subscriptions/{subId}", region: "us-central1" },
+  {
+    document: "users/{userId}/subscriptions/{subId}",
+    region: "us-central1",
+    secrets: [emailPass],
+  },
   async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -234,7 +244,7 @@ export const onSubscriptionCreate = onDocumentCreated(
  * set) cannot send a duplicate email.
  */
 export const onUserSubscriptionUpdated = onDocumentUpdated(
-  { document: "users/{userId}", region: "us-central1" },
+  { document: "users/{userId}", region: "us-central1", secrets: [emailPass] },
   async (event) => {
     const change = event.data;
     if (!change) return;
@@ -291,7 +301,7 @@ export const onUserSubscriptionUpdated = onDocumentUpdated(
  * full document data (plus the uid when the document carries one).
  */
 export const onPricingCreated = onDocumentCreated(
-  { document: "pricing/{docId}", region: "us-central1" },
+  { document: "pricing/{docId}", region: "us-central1", secrets: [emailPass] },
   async (event) => {
     const snap = event.data;
     if (!snap) return;

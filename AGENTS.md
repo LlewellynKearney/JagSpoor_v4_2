@@ -1,6 +1,98 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Migrate auth triggers to v2 + wire EMAIL_PASS secret (added 2026-10-11)
+
+### Symptom
+`onUserCreate` showed **0 invocations** in the Firebase console and no runtime
+email log — only audit logs. It was a **1st-gen** `functions.auth.user().onCreate`
+trigger while the project otherwise runs 2nd-gen functions, and it never
+resolved the `EMAIL_PASS` secret (it read `process.env`).
+
+### Root cause
+1. **v1 trigger.** `functions/src/notifications.ts` and
+   `functions/src/user_trial_onboarding.ts` both imported
+   `firebase-functions/v1` and used the legacy `.auth.user().onCreate` chain.
+   The console shows v1 auth triggers separately and they do not fire on the
+   v2 runtime the rest of the project uses.
+2. **No secret binding.** The triggers had no `secrets: [...]`, so the
+   `EMAIL_PASS` secret set via `firebase functions:secrets:set EMAIL_PASS`
+   was never mounted into the runtime and `emailPass.value()` could not be
+   used.
+
+### Fix — firebase-functions v7 + v2 identity triggers + secrets
+- **`functions/package.json`**: `firebase-functions` `^6.0.1` -> **`^7.4.0`**
+  (resolved 7.4.0). REQUIRED: the v2 identity provider's
+  `onUserCreated` + `defineSecret` only exist from v7 (6.6.0 ships only the
+  blocking `beforeUserCreated`/`beforeUserSignedIn`). v7 bundles express 5
+  (optional peers `@apollo/server`/`graphql` are NOT installed — not needed).
+  Entry load stayed inside the deploy guard: **610 modules / ~226 ms** vs the
+  900 / 8000 ms budget.
+- **NEW `functions/src/params.ts`**: the single secret declaration —
+  `export const emailPass = defineSecret("EMAIL_PASS")` (+ the name constant).
+- **`functions/src/notifications.ts`**: `onUserCreate` migrated from the v1
+  chain to `onUserCreated({ region: "us-central1", secrets: [emailPass] }, …)`
+  reading `event.data` (the Admin SDK `UserRecord`). The three Firestore
+  triggers (`onSubscriptionCreate`, `onUserSubscriptionUpdated`,
+  `onPricingCreated`) are v2 already and each gained `secrets: [emailPass]`.
+- **`functions/src/user_trial_onboarding.ts`**: `initializeNewUserTrial`
+  migrated the same way (`onUserCreated` + `secrets: [emailPass]`), keeping its
+  30-day trial write + admin bypass unchanged. **Both** user-create triggers
+  are now v2 (they coexist as before).
+- **`functions/src/email.ts`**: new `currentEmailConfigWithSecret()` +
+  `defaultPasswordResolver()` (reads `emailPass.value()`, guarded) +
+  `setPasswordResolverForTesting` seam. `sendSupportEmail` now uses the
+  secret-backed config: the secret wins over a plaintext `EMAIL_PASS` env
+  value; a throwing/empty secret falls back to the env value, then to the
+  existing skip-and-log. `EMAIL_USER` still defaults to
+  `support@jag-spoor.co.za`; the host stays `EMAIL_HOST`-configurable
+  (`mail.jag-spoor.co.za` default; set `smtp.gmail.com`/`smtp.hostinger.com`
+  to switch) — no host hardcoded to a provider that was never in the repo.
+- **`functions/src/index.ts`**: unchanged exports (the four triggers + the
+  trial trigger + the inbox constant).
+
+### Tests
+- `functions/test/email_notifications.test.js`: structural contract updated to
+  the v2 shape (`onUserCreated(` present, the v1 `.auth.user().onCreate`
+  chain asserted ABSENT) + a new "every mail-sending trigger declares the
+  EMAIL_PASS secret" contract (4× `secrets: [emailPass]` in notifications.ts,
+  the trial trigger v2 + secret, `defineSecret("EMAIL_PASS")` in params.ts) +
+  4 secret-resolution tests (secret wins, env fallback, throwing resolver,
+  skip-without-password).
+- `functions/test/user_trial_onboarding.test.js`: the export assertion now
+  accepts `__endpoint` (v2) as well as `__trigger`.
+- Result: `npm test` **78/78 pass** (was 73). Compiled endpoint inspection
+  confirms all five triggers carry `secretEnvironmentVariables: [{key:
+  "EMAIL_PASS"}]`.
+
+### Verification
+- `cd functions && npm run build` -> **0 errors**; `npx tsc --noEmit` clean.
+- `cd functions && npm test` -> **78/78 pass**; load-budget guard 6/6.
+- `flutter analyze` (Flutter 3.44.9) -> **0 errors, 0 warnings**, 320 infos
+  (unchanged baseline; no Dart file changed).
+- `functions/package.json` `firebase-functions` `^7.4.0` (>= 5 as required).
+- No secrets / `.env` committed (`functions/.gitignore` covers `.env`).
+- Untouched: `android/app/build.gradle.kts` applicationId
+  (`za.co.jagspoor.app`), `admin_config/app_version`, `review_config`.
+
+### Operator note
+After pulling, redeploy so the v1 entries are replaced by the v2 ones:
+`firebase deploy --only functions` (or the five-function subset in
+`docs/EMAIL_NOTIFICATIONS_SETUP.md`). Confirm the secret is bound with
+`firebase functions:secrets:get EMAIL_PASS`. Create a throwaway account — the
+support inbox should receive `[JagSpoor] New user: <address>` within seconds.
+
+### Files
+- NEW: `functions/src/params.ts`.
+- MODIFIED: `functions/src/email.ts`, `functions/src/notifications.ts`,
+  `functions/src/user_trial_onboarding.ts`, `functions/package.json`,
+  `functions/package-lock.json`,
+  `functions/test/email_notifications.test.js`,
+  `functions/test/user_trial_onboarding.test.js`,
+  `docs/EMAIL_NOTIFICATIONS_SETUP.md`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
+
 ## Phase -- Cloud Functions: email support on new signup + new subscription (added 2026-10-11)
 
 Added four Cloud Functions that email **support@jag-spoor.co.za** on new user

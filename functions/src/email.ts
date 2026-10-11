@@ -133,6 +133,51 @@ export function currentEmailConfig(): EmailConfig {
   return resolveEmailConfig(process.env as EmailEnv);
 }
 
+/** A resolver that supplies the SMTP password (the EMAIL_PASS secret). */
+export type PasswordResolver = () => string;
+
+/** Reads the EMAIL_PASS secret value; returns "" when unavailable. */
+export function defaultPasswordResolver(): string {
+  // Declared in ./params.ts; imported lazily so this module stays importable
+  // in a bare unit-test context.
+  const { emailPass } = require("./params") as typeof import("./params");
+  try {
+    // `SecretParam.value()` throws during deployment/analysis; guard it.
+    return (emailPass.value() ?? "").toString();
+  } catch {
+    return "";
+  }
+}
+
+let passwordResolver: PasswordResolver = defaultPasswordResolver;
+
+/**
+ * Test seam: overrides (or, with `null`, restores) the password resolver.
+ * Never used in production.
+ */
+export function setPasswordResolverForTesting(resolver: PasswordResolver | null): void {
+  passwordResolver = resolver ?? defaultPasswordResolver;
+}
+
+/**
+ * Resolves the live configuration, sourcing the SMTP password from the
+ * EMAIL_PASS secret. The secret wins over a plaintext `EMAIL_PASS` env value
+ * when both are present (the secret is the supported, non-committed path).
+ */
+export function currentEmailConfigWithSecret(): EmailConfig {
+  const config = currentEmailConfig();
+  let secretValue = "";
+  try {
+    secretValue = trim(passwordResolver());
+  } catch {
+    secretValue = "";
+  }
+  if (secretValue) {
+    config.pass = secretValue;
+  }
+  return config;
+}
+
 // ── SMTP transport (lazy, memoised) ──────────────────────────────────────────
 
 /** Builds a nodemailer transport from a resolved config. */
@@ -246,9 +291,9 @@ export interface SendResult {
  * originating trigger can continue.
  */
 export async function sendSupportEmail(email: SupportEmail): Promise<SendResult> {
-  const config = currentEmailConfig();
+  const config = currentEmailConfigWithSecret();
   if (!config.pass) {
-    logger.warn("support email skipped: EMAIL_PASS is not configured", {
+    logger.warn("support email skipped: EMAIL_PASS secret is not configured", {
       kind: email.kind,
       hint: "firebase functions:secrets:set EMAIL_PASS",
     });

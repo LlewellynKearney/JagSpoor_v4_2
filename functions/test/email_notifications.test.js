@@ -80,6 +80,77 @@ test("EMAIL_TO is used when SUPPORT_EMAIL is absent", () => {
   assert.equal(config.to, "other@example.com");
 });
 
+// ── EMAIL_PASS secret wiring ─────────────────────────────────────────────────
+
+test("currentEmailConfigWithSecret sources the password from the secret", () => {
+  const prev = process.env.EMAIL_PASS;
+  delete process.env.EMAIL_PASS;
+  try {
+    email.setPasswordResolverForTesting(() => "secret-from-param");
+    const config = email.currentEmailConfigWithSecret();
+    assert.equal(config.pass, "secret-from-param");
+    assert.equal(config.user, "support@jag-spoor.co.za");
+    assert.equal(config.host, "mail.jag-spoor.co.za");
+    assert.equal(config.port, 465);
+    assert.equal(config.secure, true);
+  } finally {
+    email.setPasswordResolverForTesting(null);
+    if (prev === undefined) delete process.env.EMAIL_PASS;
+    else process.env.EMAIL_PASS = prev;
+  }
+});
+
+test("the secret wins over a plaintext EMAIL_PASS env value", () => {
+  const prev = process.env.EMAIL_PASS;
+  process.env.EMAIL_PASS = "plaintext-env-pass";
+  try {
+    email.setPasswordResolverForTesting(() => "secret-value");
+    assert.equal(email.currentEmailConfigWithSecret().pass, "secret-value");
+  } finally {
+    email.setPasswordResolverForTesting(null);
+    if (prev === undefined) delete process.env.EMAIL_PASS;
+    else process.env.EMAIL_PASS = prev;
+  }
+});
+
+test("a throwing/empty secret resolver falls back to the env password", () => {
+  const prev = process.env.EMAIL_PASS;
+  process.env.EMAIL_PASS = "env-fallback-pass";
+  try {
+    email.setPasswordResolverForTesting(() => {
+      throw new Error("secret not mounted");
+    });
+    assert.equal(email.currentEmailConfigWithSecret().pass, "env-fallback-pass");
+    email.setPasswordResolverForTesting(() => "");
+    assert.equal(email.currentEmailConfigWithSecret().pass, "env-fallback-pass");
+  } finally {
+    email.setPasswordResolverForTesting(null);
+    if (prev === undefined) delete process.env.EMAIL_PASS;
+    else process.env.EMAIL_PASS = prev;
+  }
+});
+
+test("sendSupportEmail skips (no throw) when no password is resolvable", async () => {
+  const prev = process.env.EMAIL_PASS;
+  delete process.env.EMAIL_PASS;
+  try {
+    email.setPasswordResolverForTesting(() => "");
+    const result = await email.notifyNewUser({
+      uid: "uid-x",
+      email: "x@example.com",
+      displayName: "",
+      provider: "password",
+      createdAt: new Date("2026-10-11T00:00:00.000Z"),
+    });
+    assert.equal(result.sent, false);
+    assert.match(result.reason, /EMAIL_PASS/);
+  } finally {
+    email.setPasswordResolverForTesting(null);
+    if (prev === undefined) delete process.env.EMAIL_PASS;
+    else process.env.EMAIL_PASS = prev;
+  }
+});
+
 // ── Message builders ─────────────────────────────────────────────────────────
 
 test("buildSubject prefixes every notification with [JagSpoor]", () => {
@@ -328,7 +399,32 @@ test("notifications.ts watches the expected document paths", () => {
   assert.match(src, /document:\s*"users\/\{userId\}\/subscriptions\/\{subId\}"/);
   assert.match(src, /document:\s*"users\/\{userId\}"/);
   assert.match(src, /document:\s*"pricing\/\{docId\}"/);
-  assert.match(src, /\.auth\.user\(\)\s*\.onCreate/);
+  // v2 identity provider (was the v1 `.auth.user().onCreate` chain).
+  assert.match(src, /onUserCreated\s*\(/);
+  assert.doesNotMatch(src, /\.auth\.user\(\)\s*\.onCreate/);
+});
+
+test("every mail-sending trigger declares the EMAIL_PASS secret", () => {
+  const src = stripComments(
+    fs.readFileSync(path.join(ROOT, "src", "notifications.ts"), "utf8")
+  );
+  // The four triggers must all mount the secret so emailPass.value() resolves.
+  assert.equal(
+    (src.match(/secrets:\s*\[emailPass\]/g) || []).length,
+    4,
+    "all four notification triggers declare secrets: [emailPass]"
+  );
+  const trial = stripComments(
+    fs.readFileSync(path.join(ROOT, "src", "user_trial_onboarding.ts"), "utf8")
+  );
+  assert.match(trial, /onUserCreated\s*\(/);
+  assert.match(trial, /secrets:\s*\[emailPass\]/);
+  assert.doesNotMatch(trial, /functionsV1|firebase-functions\/v1/);
+
+  const params = stripComments(
+    fs.readFileSync(path.join(ROOT, "src", "params.ts"), "utf8")
+  );
+  assert.match(params, /defineSecret\("EMAIL_PASS"\)/);
 });
 
 test("email.ts defaults to the JagSpoor mailbox + support inbox", () => {
