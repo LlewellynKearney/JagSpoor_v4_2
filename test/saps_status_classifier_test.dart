@@ -79,6 +79,25 @@ void main() {
       );
       expect(SapsStatusClassifier.classify('CFR Processing'), kSapsStageCfr);
 
+      // The live portal phrases for application 10654672: "IN PREPARATION
+      // FOR CONSIDERATION" with the appended "No status available contact
+      // the DFO" note must classify to CFR (stage 2), NOT DFO.
+      expect(
+        SapsStatusClassifier.classify('IN PREPARATION FOR CONSIDERATION'),
+        kSapsStageCfr,
+      );
+      expect(
+        SapsStatusClassifier.classify(
+          'IN PREPARATION FOR CONSIDERATION – No status available contact '
+          'the DFO',
+        ),
+        kSapsStageCfr,
+      );
+      expect(
+        SapsStatusClassifier.classify('No status available contact the DFO'),
+        kSapsStageCfr,
+      );
+
       // Printed / final stage
       expect(
         SapsStatusClassifier.classify('Licence approved and printed'),

@@ -91,7 +91,25 @@ class SapsTrackerService {
         );
       }
 
-      // No webhook configured -> deterministic offline mock (dev/test only).
+      // No webhook configured. If the doc already carries a live CFR payload,
+      // never let the offline mock overwrite it -- return the stored live
+      // status verbatim so a manual refresh cannot downgrade a live "At
+      // Central Registry" card back to the stale "Application received at
+      // DFO" mock stage. Otherwise fall through to the deterministic mock
+      // (dev / test only).
+      final storedRaw = (data['rawStatus'] as String?)?.trim() ?? '';
+      if (storedRaw.isNotEmpty) {
+        return SapsScraperResult(
+          applicationId: applicationId,
+          status: storedRaw,
+          statusCode: (data['liveStage'] as num?)?.toInt() ??
+              SapsStatusClassifier.classify(storedRaw),
+          displayLabel: (data['currentStatus'] as String?) ?? '',
+          lastChecked: DateTime.now(),
+          success: true,
+        );
+      }
+
       final mockStatus = _generateMockStatus();
 
       return SapsScraperResult(

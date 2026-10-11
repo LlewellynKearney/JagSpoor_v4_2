@@ -22,6 +22,9 @@ void main() {
     String serialNumber = 'OB14468',
     String status = 'Provincial',
     String rawStatus = '',
+    int? liveStage,
+    String statusDate = '',
+    String statusDescription = '',
   }) {
     return SapsApplication(
       id: 'app-1',
@@ -34,6 +37,9 @@ void main() {
       calibre: calibre,
       serialNumber: serialNumber,
       rawStatus: rawStatus,
+      liveStage: liveStage,
+      statusDate: statusDate,
+      statusDescription: statusDescription,
       submittedAt: submittedAt,
       createdAt: createdAt,
       provincialDfoReceivedAt: provincialDfoReceivedAt,
@@ -201,6 +207,52 @@ void main() {
 
     expect(find.textContaining('workdays since submission'), findsOneWidget);
     expect(find.textContaining('workdays at provincial DFO'), findsOneWidget);
+  });
+
+  testWidgets('renders the exact live 10654672 payload (HOWA .338 WIN MAG) '
+      'with At Central Registry + SAPS status date', (tester) async {
+    final app = buildApp(
+      firearmMake: 'HOWA',
+      calibre: '.338 WIN MAG',
+      serialNumber: 'F004574',
+      status: 'Application received at DFO',
+      rawStatus: 'IN PREPARATION FOR CONSIDERATION',
+      liveStage: 2,
+      statusDate: '2026/10/09',
+      statusDescription: 'No status available contact the DFO',
+    );
+    await tester.pumpWidget(wrap(app));
+
+    // Badge must be the live CFR label, NOT the stale "Application received
+    // at DFO".
+    expect(find.text('At Central Registry'), findsWidgets);
+    expect(find.text('Application received at DFO'), findsNothing);
+    // The SAPS status date row renders.
+    expect(find.textContaining('SAPS Status Date:'), findsOneWidget);
+    // Next: stage-derived from stage 2.
+    expect(find.text('Next: Printed / Ready for Collection'), findsOneWidget);
+    // Firearm pills.
+    expect(
+      find.descendant(
+        of: find.byType(HunterDataPill),
+        matching: find.text('HOWA'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(HunterDataPill),
+        matching: find.text('.338 WIN MAG'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(HunterDataPill),
+        matching: find.text('s/n F004574'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('renders the LIVE payload: At Central Registry + SAPS status '

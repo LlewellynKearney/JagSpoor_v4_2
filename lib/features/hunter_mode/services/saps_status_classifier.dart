@@ -87,6 +87,7 @@ class SapsStatusClassifier {
       'province',
     ],
     kSapsStageCfr: [
+      'in preparation for consideration',
       'for consideration by the commissioner',
       'for consideration by commissioner',
       'final consideration by the cfr',
@@ -103,6 +104,10 @@ class SapsStatusClassifier {
       'licensing section',
       'consideration by the commissioner',
       'consideration',
+      // The portal appends this note to an IN PREPARATION FOR CONSIDERATION
+      // result; treat it as the CFR stage (not DFO) so it does not downgrade
+      // a live CFR status.
+      'no status available contact the dfo',
       'cfr',
       'registry',
     ],

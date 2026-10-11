@@ -156,21 +156,85 @@ class SapsApplication {
   }
 
   factory SapsApplication.fromJson(Map<String, dynamic> json, {String? id}) {
+    // Some docs (and the debug enquiry screen) persist the live CFR payload
+    // as a nested `rawPayload` map keyed in camelCase. Read those as a
+    // fallback for every live field so a round-tripped payload never loses
+    // the live status / firearm details.
+    final raw = _mapOrNull(json['rawPayload']);
+    T? pick<T>(T? a, T? b) => a ?? b;
+
+    final rawStatusValue = (json['rawStatus'] as String?) ??
+        (json['raw'] as String?) ??
+        (raw?['status'] as String?) ??
+        (raw?['RAW'] as String?) ??
+        '';
+    final statusDescriptionValue = (json['statusDescription'] as String?) ??
+        (raw?['statusDescription'] as String?) ??
+        (raw?['DESCRIPTION'] as String?) ??
+        '';
+    final nextStepValue = (json['nextStep'] as String?) ??
+        (raw?['nextStep'] as String?) ??
+        (raw?['NEXT STEP'] as String?) ??
+        '';
+    final statusDateValue = (json['statusDate'] as String?) ??
+        (raw?['statusDate'] as String?) ??
+        (raw?['STATUS DATE'] as String?) ??
+        '';
+
     return SapsApplication(
       id: id ?? (json['id'] as String?) ?? '',
       hunterId: (json['hunterId'] as String?) ?? '',
-      referenceNumber: (json['referenceNumber'] as String?) ?? '',
-      idNumber: (json['idNumber'] as String?) ?? '',
-      applicationType:
-          (json['applicationType'] as String?) ?? 'Competency Certificate',
-      currentStatus: (json['currentStatus'] as String?) ?? 'Pending',
-      firearmMake: (json['firearmMake'] as String?) ??
-          (json['make'] as String?) ??
-          (json['firearm_make'] as String?) ??
+      referenceNumber: pick(
+        pick(
+          (json['referenceNumber'] as String?),
+          (raw?['applicationNumber'] as String?),
+        ),
+        (raw?['APP NO'] as String?),
+      ) ??
           '',
-      calibre: (json['calibre'] as String?) ?? '',
+      idNumber: (json['idNumber'] as String?) ?? '',
+      applicationType: pick(
+        (json['applicationType'] as String?),
+        pick(
+          (raw?['applicationType'] as String?),
+          (raw?['TYPE'] as String?),
+        ),
+      ) ??
+          'Competency Certificate',
+      currentStatus: (json['currentStatus'] as String?) ?? 'Pending',
+      firearmMake: pick(
+        pick(
+          (json['firearmMake'] as String?),
+          (json['make'] as String?),
+        ),
+        pick(
+          (json['firearm_make'] as String?),
+          pick(
+            (raw?['make'] as String?),
+            (raw?['MAKE'] as String?),
+          ),
+        ),
+      ) ??
+          '',
+      calibre: pick(
+        (json['calibre'] as String?),
+        pick(
+          (raw?['calibre'] as String?),
+          (raw?['CALIBRE'] as String?),
+        ),
+      ) ??
+          '',
       serialNumber: SapsStatusClassifier.normalizeSerial(
-        (json['serialNumber'] as String?) ?? (json['serial'] as String?),
+        pick(
+          pick(
+            (json['serialNumber'] as String?),
+            (json['serial'] as String?),
+          ),
+          pick(
+            (raw?['serialNumber'] as String?),
+            (raw?['SERIAL'] as String?),
+          ),
+        ),
       ),
       statusMessage: (json['statusMessage'] as String?) ?? '',
       batchNumber: (json['batchNumber'] as String?) ?? '',
@@ -180,13 +244,15 @@ class SapsApplication {
       provincialDfoReceivedAt: _dateTimeOrNull(
         json['provincialDfoReceivedAt'] ?? json['dfoReceivedAt'],
       ),
-      statusUpdatedAt: _dateTimeOrNull(json['statusUpdatedAt']),
-      rawStatus: (json['rawStatus'] as String?) ?? '',
-      liveStage: _intOrNull(json['liveStage']),
-      statusDate: (json['statusDate'] as String?) ?? '',
-      statusDescription: (json['statusDescription'] as String?) ?? '',
-      nextStep: (json['nextStep'] as String?) ?? '',
-      rawPayload: _mapOrNull(json['rawPayload']),
+      statusUpdatedAt: _dateTimeOrNull(json['statusUpdatedAt']) ??
+          _dateTimeOrNull(json['updated']) ??
+          _dateTimeOrNull(raw?['UPDATED']),
+      rawStatus: rawStatusValue,
+      liveStage: _intOrNull(json['liveStage']) ?? _intOrNull(json['STAGE']),
+      statusDate: statusDateValue,
+      statusDescription: statusDescriptionValue,
+      nextStep: nextStepValue,
+      rawPayload: raw,
       approved: (json['approved'] as bool?) ?? false,
       sapsUpdatedAt: _dateTimeOrNull(json['sapsUpdatedAt']),
       lastChecked: _dateTimeOrDefault(json['lastChecked']),
