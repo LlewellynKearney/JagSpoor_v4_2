@@ -18,6 +18,18 @@ import { firestore, auth, getAdmin } from "./firebase";
 // (see user_trial_onboarding.ts).
 export { initializeNewUserTrial } from "./user_trial_onboarding";
 
+// Support email notifications — new user signup + new subscription alerts to
+// support@jag-spoor.co.za (see notifications.ts / email.ts). Transport is
+// SMTP via nodemailer with credentials from the EMAIL_USER / EMAIL_PASS
+// secrets; the destination is SUPPORT_EMAIL (default support@jag-spoor.co.za).
+export {
+  onUserCreate,
+  onSubscriptionCreate,
+  onUserSubscriptionUpdated,
+  onPricingCreated,
+  SUPPORT_NOTIFICATION_EMAIL,
+} from "./notifications";
+
 // Billing & entitlement hardening — server-authoritative premium state on
 // users/{uid} + entitlements/{uid}. Google Play purchase validation (callable),
 // Real-Time Developer Notification handling (Pub/Sub), and the website-only

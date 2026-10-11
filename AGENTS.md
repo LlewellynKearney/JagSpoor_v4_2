@@ -1,6 +1,83 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Cloud Functions: email support on new signup + new subscription (added 2026-10-11)
+
+Added four Cloud Functions that email **support@jag-spoor.co.za** on new user
+signup and new subscription, via SMTP (nodemailer).
+
+### Modules
+- **NEW `functions/src/email.ts`** — the transport + message layer.
+  - `resolveEmailConfig(env)` (pure): `EMAIL_USER` (default
+    `support@jag-spoor.co.za`, doubles as the sender), `EMAIL_PASS` (required
+    to send), `EMAIL_HOST` (default `mail.jag-spoor.co.za`; switch to
+    `smtp.gmail.com` later), `EMAIL_PORT` (default 465), `EMAIL_SECURE`
+    (default true; only `"false"` disables), recipient `SUPPORT_EMAIL` ->
+    `EMAIL_TO` -> default. Invalid port falls back to 465.
+  - `buildTransport(config)` — `nodemailer.createTransport` (host/port/secure/
+    auth). **nodemailer 10.1.0 has ZERO runtime deps** (38 modules), so the
+    Firebase CLI 10s trigger-discovery budget is unaffected (entry load
+    601 modules / ~232ms vs the 900/8000ms guard).
+  - `sendSupportEmail(...)` — NEVER throws; a missing `EMAIL_PASS` logs
+    `support email skipped: EMAIL_PASS is not configured` and returns
+    `{sent:false, reason}`. `setTransportFactoryForTesting` seam.
+  - Pure builders: `buildSubject` (`[JagSpoor] …`), `buildUserSignupEmailBody`,
+    `buildSubscriptionEmailBody`, `formatDocument`, `formatPrice`.
+    `notifyNewUser` / `notifyNewSubscription` one-call wrappers.
+- **NEW `functions/src/notifications.ts`** — the four triggers:
+  1. `onUserCreate` — Auth `user().onCreate` (v1 auth provider, same namespace
+     as `initializeNewUserTrial`). Emails email/uid/provider/displayName/time.
+  2. `onSubscriptionCreate` — `users/{userId}/subscriptions/{subId}` onCreate.
+  3. `onUserSubscriptionUpdated` — `users/{userId}` onUpdate via the pure
+     `becameSubscribed(before, after)`: `subscriptionTier` empty→set, or
+     `isSubscribed`/`isPremium`/`isPro`/`subscriptionStatus` flips to active.
+     Stamps a `supportSubscriptionNotified: true` dedupe marker (Admin SDK) so
+     a follow-on purchase-recorder write can't double-send.
+  4. `onPricingCreated` — `pricing/{docId}` onCreate (fallback).
+  - `lookupUserEmail(uid, fallback)` resolves `users/{uid}.email` then the Auth
+    record. `resolvePlan` (`plan`/`tier`/`subscriptionTier`/`productId`) +
+    `resolvePrice` (`price`/`amount`/`amountZAR`/`priceZAR`/`monthlyPrice`).
+  - Every handler is best-effort (log + swallow) so mail can never fail the
+    Auth/Firestore write that produced it.
+- **`functions/src/index.ts`** re-exports the four triggers +
+  `SUPPORT_NOTIFICATION_EMAIL`.
+- **`functions/package.json`**: `nodemailer ^10.1.0` (dep) +
+  `@types/nodemailer ^8.0.2` (devDep).
+- **`functions/.env.example`** documents all `EMAIL_*` vars.
+- **NEW `docs/EMAIL_NOTIFICATIONS_SETUP.md`** — the operator walkthrough
+  (secret, deploy, test, Gmail switch, security notes).
+- **NEW `functions/test/email_notifications.test.js`** — 24 tests (config,
+  builders, subscription transitions, injected-transport send path,
+  structural wiring, no-hard-coded-secret guard).
+
+### Verification
+- `cd functions && npm run build` → **0 errors**.
+- `cd functions && npm test` → **73/73 pass** (24 new + 49 pre-existing).
+- `flutter analyze` (Flutter **3.44.9**, the repo-documented SDK; downloaded to
+  `/tmp/sdk/flutter`) → **0 errors, 0 warnings**, 320 info-level (the
+  documented pre-existing baseline). No Dart file was changed.
+- greps confirm `support@jag-spoor.co.za` + `onCreate` in `functions/src/`.
+- No secrets / `.env` committed (`functions/.gitignore` covers them).
+- Untouched per instruction: `android/app/build.gradle.kts` applicationId
+  (`za.co.jagspoor.app`), `admin_config/app_version`, `review_config`.
+
+### Operator note
+Set the SMTP password secret before deploying:
+`firebase functions:secrets:set EMAIL_PASS`, then
+`firebase deploy --only functions`. Until `EMAIL_PASS` is set the triggers log
+a warning and skip. Create a throwaway account to test — the support inbox
+should receive `[JagSpoor] New user: <address>` within seconds.
+
+### Files
+- NEW: `functions/src/email.ts`, `functions/src/notifications.ts`,
+  `functions/test/email_notifications.test.js`,
+  `docs/EMAIL_NOTIFICATIONS_SETUP.md`.
+- MODIFIED: `functions/src/index.ts`, `functions/package.json`,
+  `functions/package-lock.json`, `functions/.env.example`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (the
+  triggers only read; the Admin SDK bypasses client rules).
+
+
 ## Phase -- Review modal: remove Hello Peter (WhatsApp / Facebook / Play only) (added 2026-10-11)
 
 Dropped Hello Peter from the review prompt. The modal now offers exactly three
