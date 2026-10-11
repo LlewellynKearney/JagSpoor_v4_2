@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -590,24 +589,6 @@ class _HunterDashboardState extends State<HunterDashboard> {
               16 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
-              // DEV-ONLY: a tiny, unobtrusive shortcut into the live SAPS CFR
-              // enquiry screen (useful for verifying the portal form + results
-              // table). Reachable only from a kDebugMode build (the
-              // /debug_saps route is also gated in main.dart); release builds
-              // render nothing here.
-              if (kDebugMode)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/debug_saps'),
-                    icon: const Icon(Icons.bug_report, size: 16),
-                    label: const Text(
-                      'SAPS debug',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                  ),
-                ),
               // 🌟 Trial status banner (active trial only).
               StreamBuilder<UserEntitlement>(
                 stream: EntitlementService.instance.watchMyEntitlement(),
