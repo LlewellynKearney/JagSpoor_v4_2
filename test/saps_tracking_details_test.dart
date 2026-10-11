@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:jagspoor/features/hunter_mode/models/saps_tracking_details.dart';
 import 'package:jagspoor/features/hunter_mode/services/saps_cfr_scraper_client.dart';
@@ -461,6 +463,62 @@ void main() {
             await fake.collection('license_applications').doc('app-live').get();
         expect(doc.data()!['rawStatus'], 'IN PREPARATION FOR CONSIDERATION');
         expect(doc.data()!['statusCode'], 2);
+      });
+
+      test('a manual refresh with a live client runs a REAL enquiry and '
+          'persists the FULL payload (never the offline mock fallback)', () async {
+        // The ROOT-CAUSE regression: with the live (debug) client installed,
+        // refreshApplication must enquire + persist the full CFR payload, not
+        // rewrite the doc with a mock phrase ("Processing at District Office").
+        final fake = FakeFirebaseFirestore();
+        await fake.collection('license_applications').doc('app-root').set({
+          'hunterId': 'u1',
+          'referenceNumber': '10654672',
+          'serialNumber': 'F004574',
+        });
+
+        final mock = MockClient((request) async {
+          if (request.method == 'GET') {
+            return http.Response(
+              '<input type="hidden" name="csrf" value="tok">',
+              200,
+              headers: {'set-cookie': 'csrf_token=cook; path=/'},
+            );
+          }
+          return http.Response(
+            '<b>Search Results:</b><table>'
+            '<tr><td>LICENCE</td><td>10654672</td><td>9001015009087</td>'
+            '<td>.338 WIN MAG</td><td>HOWA</td><td>F004574</td>'
+            '<td>2026/10/09</td><td>IN PREPARATION FOR CONSIDERATION</td>'
+            '<td>No status available contact the DFO</td>'
+            '<td>No status available contact the DFO</td></tr></table>',
+            200,
+          );
+        });
+
+        final service = SapsTrackerService.forTesting(fake)
+          ..scraperFactoryForTesting =
+              (() => SapsCfrScraperClient(httpClient: mock));
+
+        final result = await service.refreshApplication('app-root');
+        expect(result.success, isTrue);
+        expect(result.statusStage, 2);
+
+        final doc =
+            await fake.collection('license_applications').doc('app-root').get();
+        final data = doc.data()!;
+        // The full live payload is persisted.
+        expect('${data['rawStatus']}', contains('IN PREPARATION'));
+        expect(data['liveStage'], 2);
+        expect(data['statusCode'], 2);
+        expect(data['calibre'], '.338 WIN MAG');
+        expect(data['firearmMake'], 'HOWA');
+        expect(data['serialNumber'], 'F004574');
+        expect(data['statusDate'], '2026/10/09');
+        expect(data['currentStatus'], 'At Central Registry');
+        expect(data['rawPayload'], isA<Map>());
+        // Never a mock phrase.
+        expect('${data['currentStatus']}', isNot(contains('District Office')));
       });
     },
   );

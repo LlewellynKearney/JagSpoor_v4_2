@@ -495,6 +495,19 @@ class SapsApplication {
     return '${date.year}-$m-$d';
   }
 
+  /// Human-readable label for the SAPS portal status date ([statusDate]),
+  /// e.g. `09 Oct 2026`. Empty when unknown / unparseable.
+  String get sapsStatusDateLabel {
+    final date = sapsStatusDate;
+    if (date == null) return '';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final d = date.day.toString().padLeft(2, '0');
+    return '$d ${months[date.month - 1]} ${date.year}';
+  }
+
   /// Parses a `yyyy/MM/dd` (also tolerates `yyyy-MM-dd`) portal date string.
   static DateTime? _parsePortalDate(String raw) {
     final trimmed = raw.trim();

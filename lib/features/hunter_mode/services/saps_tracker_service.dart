@@ -11,9 +11,28 @@ class SapsTrackerService {
   final FirebaseFirestore? _injectedFirestore;
   final SapsCfrScraperClient? _scraper;
 
-  SapsTrackerService({FirebaseFirestore? firestore, SapsCfrScraperClient? scraper})
-      : _injectedFirestore = firestore,
-        _scraper = scraper;
+  /// Test seam: when set, the refresh paths persist through this persister
+  /// instead of the real `updateApplicationStatus` (so a widget/unit test can
+  /// assert the live payload write without a Firebase app).
+  @visibleForTesting
+  Future<void> Function(String status, DateTime lastChecked)? statusPersisterForTesting;
+
+  /// Test seam: overrides the live-enquiry client used by the refresh paths.
+  @visibleForTesting
+  SapsCfrScraperClient Function()? scraperFactoryForTesting;
+
+  SapsTrackerService({
+    FirebaseFirestore? firestore,
+    SapsCfrScraperClient? scraper,
+    bool enableDebugFallback = false,
+  })  : _injectedFirestore = firestore,
+        // When enabled (debug builds), fall back to the direct portal client
+        // so a manual refresh performs a REAL CFR enquiry instead of the
+        // offline mock. The client itself only activates on a kDebugMode build
+        // with an saps.gov.za host, so a release build never reaches the
+        // portal directly.
+        _scraper = scraper ??
+            (enableDebugFallback ? SapsCfrScraperClient() : null);
 
   /// Lazily resolves the Firestore instance so constructing the service
   /// before `Firebase.initializeApp()` (cold-launch race / widget-test env)
@@ -34,19 +53,22 @@ class SapsTrackerService {
     return SapsTrackerService(firestore: firestore, scraper: scraper);
   }
 
-  /// Triggers a remote CFR status check.
+  /// Triggers a CFR status check for [applicationId].
   ///
-  /// When a [SapsCfrScraperClient] is configured (the deployed Apify Actor /
-  /// Cloud Function webhook), the raw status is fetched from the official
-  /// Central Firearms Register enquiry portal and mapped via the hardened
-  /// [SapsStatusClassifier]. When no webhook is configured (offline dev /
-  /// test env), a clearly-labelled deterministic mock status is used so the
-  /// flow stays exercisable end-to-end.
-  ///
-  /// Returns the scraped status result or null on failure.
+  /// Priority:
+  /// 1. **Existing live payload** — if the doc already carries a `rawStatus`
+  ///    (a prior live enquiry), it is returned VERBATIM. The offline mock can
+  ///    never overwrite real CFR data.
+  /// 2. **Webhook / direct-debug client** — when a configured webhook exists,
+  ///    or a `kDebugMode` build with the direct portal path (or an explicitly
+  ///    injected scraper), the REAL enquiry runs and its classified result is
+  ///    returned.
+  /// 3. **Offline mock** — ONLY for a doc with no live payload AND no live
+  ///    client (dev / test without portal access).
   Future<SapsScraperResult?> triggerRemoteScraperCheck(
     String applicationId,
   ) async {
+    if (applicationId.isEmpty) return null;
     try {
       final docSnapshot = await _firestore
           .collection('license_applications')
@@ -59,13 +81,29 @@ class SapsTrackerService {
       }
 
       final data = docSnapshot.data()!;
+
+      // 1. Never downgrade / overwrite an existing live payload.
+      final storedRaw = (data['rawStatus'] as String?)?.trim() ?? '';
+      if (storedRaw.isNotEmpty) {
+        return SapsScraperResult(
+          applicationId: applicationId,
+          status: storedRaw,
+          statusCode: (data['liveStage'] as num?)?.toInt() ??
+              SapsStatusClassifier.classify(storedRaw),
+          displayLabel: (data['currentStatus'] as String?) ?? '',
+          lastChecked: DateTime.now(),
+          success: true,
+        );
+      }
+
       final idNumber = data['idNumber'] as String? ?? '';
       final referenceNumber = data['referenceNumber'] as String? ?? '';
       final serialNumber = data['serialNumber'] as String? ?? '';
 
-      final scraper = _scraper;
-      // A configured webhook always wins; a debug build with no webhook falls
-      // through to the client's direct (device → portal) path.
+      // 2. A configured webhook, an injected worker, or the kDebugMode direct
+      //    path -> run the REAL CFR enquiry.
+      final scraper =
+          scraperFactoryForTesting?.call() ?? _scraper;
       if (scraper != null &&
           (scraper.isConfigured || scraper.isDirectDebugEnabled)) {
         final cfr = await scraper.fetchStatus(
@@ -91,25 +129,7 @@ class SapsTrackerService {
         );
       }
 
-      // No webhook configured. If the doc already carries a live CFR payload,
-      // never let the offline mock overwrite it -- return the stored live
-      // status verbatim so a manual refresh cannot downgrade a live "At
-      // Central Registry" card back to the stale "Application received at
-      // DFO" mock stage. Otherwise fall through to the deterministic mock
-      // (dev / test only).
-      final storedRaw = (data['rawStatus'] as String?)?.trim() ?? '';
-      if (storedRaw.isNotEmpty) {
-        return SapsScraperResult(
-          applicationId: applicationId,
-          status: storedRaw,
-          statusCode: (data['liveStage'] as num?)?.toInt() ??
-              SapsStatusClassifier.classify(storedRaw),
-          displayLabel: (data['currentStatus'] as String?) ?? '',
-          lastChecked: DateTime.now(),
-          success: true,
-        );
-      }
-
+      // 3. Offline mock — only for a doc with no live payload and no client.
       final mockStatus = _generateMockStatus();
 
       return SapsScraperResult(
@@ -170,6 +190,20 @@ class SapsTrackerService {
     return SapsStatusClassifier.displayLabel(rawStatus);
   }
 
+  /// Persists a refreshed status onto the doc, routing through
+  /// [statusPersisterForTesting] when a test seam is installed.
+  Future<bool> _persistStatus(
+    String applicationId,
+    String status,
+    DateTime lastChecked,
+  ) async {
+    if (statusPersisterForTesting != null) {
+      await statusPersisterForTesting!(status, lastChecked);
+      return true;
+    }
+    return updateApplicationStatus(applicationId, status, lastChecked);
+  }
+
   /// Updates an application's status in Firestore after a scraper check.
   Future<bool> updateApplicationStatus(
     String applicationId,
@@ -192,6 +226,36 @@ class SapsTrackerService {
     }
   }
 
+  /// Runs a REAL live CFR enquiry for [applicationId] using the webhook /
+  /// direct-debug client, then persists the FULL live payload via
+  /// [applyLiveStatus]. Returns the enquiry result when a live client is
+  /// available, else `null` (the caller falls back to the plainly-labelled
+  /// offline mock).
+  Future<SapsCfrStatus?> _liveEnquiryFor(String applicationId) async {
+    try {
+      final scraper = scraperFactoryForTesting?.call() ?? _scraper;
+      if (scraper == null ||
+          !(scraper.isConfigured || scraper.isDirectDebugEnabled)) {
+        return null;
+      }
+      final doc =
+          await _firestore.collection('license_applications').doc(applicationId).get();
+      if (!doc.exists) return null;
+      final data = doc.data()!;
+      final cfr = await scraper.fetchStatus(
+        referenceNumber: data['referenceNumber'] as String? ?? '',
+        idNumber: data['idNumber'] as String? ?? '',
+        serialNumber: data['serialNumber'] as String? ?? '',
+      );
+      if (cfr == null) return null;
+      await applyLiveStatus(applicationId, cfr);
+      return cfr;
+    } catch (e) {
+      debugPrint('SapsTrackerService: live enquiry failed for $applicationId: $e');
+      return null;
+    }
+  }
+
   /// Batch updates status for all tracked applications.
   Future<int> refreshAllApplications() async {
     int updatedCount = 0;
@@ -201,9 +265,16 @@ class SapsTrackerService {
           await _firestore.collection('license_applications').get();
 
       for (final doc in snapshot.docs) {
+        // Try a REAL live enquiry first (persists the full payload).
+        final live = await _liveEnquiryFor(doc.id);
+        if (live != null) {
+          updatedCount++;
+          continue;
+        }
+        // Fall back to the mock/live triggerRemoteScraperCheck path.
         final result = await triggerRemoteScraperCheck(doc.id);
         if (result != null && result.success) {
-          final updated = await updateApplicationStatus(
+          final updated = await _persistStatus(
             doc.id,
             result.status,
             result.lastChecked,
@@ -220,8 +291,26 @@ class SapsTrackerService {
 
   /// Refreshes a single application's status (used by the manual refresh
   /// button). Returns a [SapsRefreshResult] describing what the refresh did.
+  ///
+  /// Prefers a REAL live CFR enquiry (which persists the full payload:
+  /// rawStatus / liveStage / statusDate / calibre / make / serial / …). When
+  /// no live client is available, falls back to
+  /// [triggerRemoteScraperCheck] (which itself preserves an existing live
+  /// payload before ever using the mock).
   Future<SapsRefreshResult> refreshApplication(String applicationId) async {
     try {
+      final live = await _liveEnquiryFor(applicationId);
+      if (live != null) {
+        return SapsRefreshResult(
+          applicationId: applicationId,
+          success: true,
+          message: 'Status refreshed: ${live.rawStatus}',
+          statusMessage: live.rawStatus,
+          statusStage: live.stage,
+          lastChecked: DateTime.now(),
+        );
+      }
+
       final result = await triggerRemoteScraperCheck(applicationId);
       if (result == null || !result.success) {
         return SapsRefreshResult(
@@ -231,7 +320,7 @@ class SapsTrackerService {
         );
       }
 
-      final updated = await updateApplicationStatus(
+      final updated = await _persistStatus(
         applicationId,
         result.status,
         result.lastChecked,

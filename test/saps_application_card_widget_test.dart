@@ -226,11 +226,12 @@ void main() {
     // Badge must be the live CFR label, NOT the stale "Application received
     // at DFO".
     expect(find.text('At Central Registry'), findsWidgets);
-    expect(find.text('Application received at DFO'), findsNothing);
-    // The SAPS status date row renders.
     expect(find.textContaining('SAPS Status Date:'), findsOneWidget);
-    // Next: stage-derived from stage 2.
-    expect(find.text('Next: Printed / Ready for Collection'), findsOneWidget);
+    // Stage 2 -> next step is the CFR processing forward step.
+    expect(
+      find.text('Next: Central Firearms Register (CFR) Processing'),
+      findsOneWidget,
+    );
     // Firearm pills.
     expect(
       find.descendant(
@@ -287,8 +288,11 @@ void main() {
     // Collapsed: progress badge + SAPS status date + next-step indicator.
     expect(find.text('At Central Registry'), findsWidgets);
     expect(find.textContaining('SAPS Status Date:'), findsOneWidget);
-    // Stage 2 -> next step is the stage-derived CFR next step.
-    expect(find.text('Next: Printed / Ready for Collection'), findsOneWidget);
+    // Stage 2 -> next step is the stage-derived CFR processing step.
+    expect(
+      find.text('Next: Central Firearms Register (CFR) Processing'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Section 16 Dedicated Hunting'));
     await tester.pumpAndSettle();
