@@ -1,4 +1,4 @@
-import 'saps_tracker_service.dart';
+import 'saps_status_classifier.dart';
 
 /// Structured result extracted from a raw SAPS notification SMS.
 class SapsSmsParseResult {
@@ -64,7 +64,15 @@ class SapsSmsParser {
     final serial = _matchSerialNumber(normalized);
     final status = _matchStatus(normalized);
     final applicationType = _inferApplicationType(normalized);
-    final stageResult = SapsTrackerStatusMapper.stageFor(status);
+
+    // Classify the detected status phrase with the single source of truth
+    // (SapsStatusClassifier). No status detected -> no stage.
+    final stage = status.trim().isEmpty
+        ? null
+        : SapsStatusClassifier.classify(status);
+    final matchedPattern = stage == null
+        ? null
+        : SapsStatusClassifier.displayLabel(status);
 
     return SapsSmsParseResult(
       referenceNumber: reference,
@@ -73,8 +81,8 @@ class SapsSmsParser {
       serialNumber: serial,
       statusMessage: status,
       applicationType: applicationType,
-      statusStage: stageResult.statusStage,
-      matchedStatusPattern: stageResult.matchedPattern,
+      statusStage: stage,
+      matchedStatusPattern: matchedPattern,
     );
   }
 
@@ -275,62 +283,4 @@ class SapsSmsParser {
     }
     return '';
   }
-}
-
-/// Immutable status-stage mapping result used by [SapsSmsParser] and
-/// [SapsTrackerService] so both share the same stage vocabulary.
-class SapsTrackerStatusMapper {
-  SapsTrackerStatusMapper._();
-
-  /// Maps a raw status phrase to a stage index (0-3 or -1). Returns a result
-  /// with `statusStage == null` when no stage pattern matches.
-  static SapsTrackerStatusMapperResult stageFor(String rawStatus) {
-    if (rawStatus.trim().isEmpty) {
-      return const SapsTrackerStatusMapperResult();
-    }
-    final current = SapsTrackerService.convertRawStatusToStage(rawStatus);
-    if (current == 0 && !_looksSubmitted(rawStatus)) {
-      return const SapsTrackerStatusMapperResult();
-    }
-    return SapsTrackerStatusMapperResult(
-      statusStage: current,
-      matchedPattern: _matchedPatternForStage(current),
-    );
-  }
-
-  static bool _looksSubmitted(String rawStatus) {
-    final lower = rawStatus.toLowerCase();
-    return lower.contains('submitted') ||
-        lower.contains('received') ||
-        lower.contains('dfo') ||
-        lower.contains('district');
-  }
-
-  static String? _matchedPatternForStage(int? stage) {
-    switch (stage) {
-      case 0:
-        return 'Submitted / DFO';
-      case 1:
-        return 'Provincial Office';
-      case 2:
-        return 'Central Firearms Registry';
-      case 3:
-        return 'Printed / Ready for Collection';
-      case -1:
-        return 'Status unavailable';
-      default:
-        return null;
-    }
-  }
-}
-
-/// Result of the status-stage mapping performed by [SapsTrackerStatusMapper].
-class SapsTrackerStatusMapperResult {
-  final int? statusStage;
-  final String? matchedPattern;
-
-  const SapsTrackerStatusMapperResult({
-    this.statusStage,
-    this.matchedPattern,
-  });
 }

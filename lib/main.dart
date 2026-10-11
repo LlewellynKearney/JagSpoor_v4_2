@@ -30,6 +30,7 @@ import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'utils/animal_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 import 'core/utils/measurement_formatter.dart';
+import 'screens/debug_saps_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -320,6 +321,9 @@ class JagspoorApp extends StatelessWidget {
                           as Map<String, dynamic>? ??
                       {},
                 ),
+            // DEBUG-ONLY live SAPS CFR enquiry screen.
+            if (kDebugMode)
+              '/debug_saps': (context) => const DebugSapsScreen(),
           },
           ),
         );

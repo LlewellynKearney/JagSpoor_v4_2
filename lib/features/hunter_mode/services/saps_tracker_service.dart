@@ -61,24 +61,30 @@ class SapsTrackerService {
       final data = docSnapshot.data()!;
       final idNumber = data['idNumber'] as String? ?? '';
       final referenceNumber = data['referenceNumber'] as String? ?? '';
+      final serialNumber = data['serialNumber'] as String? ?? '';
 
       final scraper = _scraper;
-      if (scraper != null && scraper.isConfigured) {
+      // A configured webhook always wins; a debug build with no webhook falls
+      // through to the client's direct (device → portal) path.
+      if (scraper != null &&
+          (scraper.isConfigured || scraper.isDirectDebugEnabled)) {
         final cfr = await scraper.fetchStatus(
           referenceNumber: referenceNumber,
           idNumber: idNumber,
+          serialNumber: serialNumber,
         );
         if (cfr == null) {
           debugPrint(
-            'SapsTrackerService: CFR webhook returned no status for $applicationId',
+            'SapsTrackerService: CFR enquiry returned no status for $applicationId',
           );
           return null;
         }
-        final stage = SapsStatusClassifier.classify(cfr.rawStatus);
         return SapsScraperResult(
           applicationId: applicationId,
           status: cfr.rawStatus,
-          statusCode: stage,
+          statusCode: cfr.stage,
+          displayLabel: cfr.displayLabel,
+          sapsUpdatedAt: cfr.sapsUpdatedAt,
           lastChecked: DateTime.now(),
           success: true,
           error: cfr.statusMessage.isEmpty ? null : cfr.statusMessage,
@@ -328,6 +334,16 @@ class SapsScraperResult {
   final String applicationId;
   final String status;
   final int statusCode;
+
+  /// Human-friendly display label for [statusCode] (via
+  /// [SapsStatusClassifier]). Empty when not resolved.
+  final String displayLabel;
+
+  /// The date the SAPS portal reports its data was last updated (from the
+  /// "data on this page were updated on <b>DATE</b>" notice). Null when
+  /// unavailable.
+  final DateTime? sapsUpdatedAt;
+
   final DateTime lastChecked;
   final bool success;
   final String? error;
@@ -338,6 +354,8 @@ class SapsScraperResult {
     required this.statusCode,
     required this.lastChecked,
     required this.success,
+    this.displayLabel = '',
+    this.sapsUpdatedAt,
     this.error,
   });
 
@@ -346,6 +364,10 @@ class SapsScraperResult {
       applicationId: json['applicationId'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusCode: json['statusCode'] as int? ?? 0,
+      displayLabel: json['displayLabel'] as String? ?? '',
+      sapsUpdatedAt: json['sapsUpdatedAt'] != null
+          ? DateTime.tryParse(json['sapsUpdatedAt'] as String)
+          : null,
       lastChecked: json['lastChecked'] != null
           ? DateTime.tryParse(json['lastChecked'] as String) ?? DateTime.now()
           : DateTime.now(),
@@ -358,6 +380,9 @@ class SapsScraperResult {
         'applicationId': applicationId,
         'status': status,
         'statusCode': statusCode,
+        if (displayLabel.isNotEmpty) 'displayLabel': displayLabel,
+        if (sapsUpdatedAt != null)
+          'sapsUpdatedAt': sapsUpdatedAt!.toIso8601String(),
         'lastChecked': lastChecked.toIso8601String(),
         'success': success,
         if (error != null) 'error': error,

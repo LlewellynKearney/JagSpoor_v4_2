@@ -8,6 +8,13 @@ const int kSapsStageCfr = 2;
 const int kSapsStagePrinted = 3;
 const int kSapsStageNotFound = -1;
 
+/// Sentinel stage used when the portal refuses the enquiry because a firearm
+/// application needs BOTH a serial number AND a reference number (a
+/// competency-only application needs the reference alone). Distinct from
+/// [kSapsStageNotFound] so the caller can surface an actionable "enter both"
+/// message instead of "status unavailable".
+const int kSapsStageNeedSerialAndRef = -2;
+
 /// Hardened status classifier for the SAPS Central Firearms Register (CFR)
 /// firearm / competency application enquiry.
 ///
@@ -123,6 +130,18 @@ class SapsStatusClassifier {
       'not operational',
       'error',
     ],
+    // Treated as a validation prompt, not a status. The longest-match-wins
+    // scan classifies the "Please supply a Serial Number AND Reference Number"
+    // banner here so the caller can prompt for both fields. Nothing in the
+    // results-table status vocabulary contains these phrases, so there is no
+    // shadowing risk.
+    kSapsStageNeedSerialAndRef: [
+      'please supply a serial number and reference number',
+      'please supply a serial',
+      'supply a serial number and reference number',
+      'serial number and reference number',
+      'need_serial_and_ref',
+    ],
   };
 
   /// Maps a raw CFR status phrase to a stage index.
@@ -154,11 +173,33 @@ class SapsStatusClassifier {
     return kSapsStageDfo;
   }
 
+  /// Whether a raw CFR status phrase represents an APPROVED / finalised
+  /// application — the trigger for the "Add to Digital Firearm Safe" flow.
+  ///
+  /// True when the phrase classifies to the final stage ([kSapsStagePrinted],
+  /// i.e. printed / ready for collection / approved / collected) OR contains
+  /// an explicit approval keyword ("approved", "card printed", "finalised" /
+  /// "finalized", "ready for collection"). Deliberately narrow so an
+  /// in-progress CFR phrase ("For consideration by the Commissioner") never
+  /// reads as approved.
+  static bool isApproved(String? rawStatus) {
+    if (classify(rawStatus) == kSapsStagePrinted) return true;
+    final normalized = normalize(rawStatus);
+    if (normalized.isEmpty) return false;
+    return normalized.contains('approved') ||
+        normalized.contains('card printed') ||
+        normalized.contains('finalised') ||
+        normalized.contains('finalized');
+  }
+
   /// Maps a raw CFR status phrase to a human-friendly display label (used on
   /// the card status badge / detail view).
   static String displayLabel(String? rawStatus) {
     final normalized = normalize(rawStatus);
     if (normalized.isEmpty) return 'Pending Review';
+    if (classify(rawStatus) == kSapsStageNeedSerialAndRef) {
+      return 'Enter both Serial + Reference for firearm apps (Ref only for competency)';
+    }
     if (normalized.contains('not found') ||
         normalized.contains('no record') ||
         normalized.contains('invalid') ||
