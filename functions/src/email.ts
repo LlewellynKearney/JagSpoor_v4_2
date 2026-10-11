@@ -19,10 +19,16 @@ import type SMTPTransport from "nodemailer/lib/smtp-transport";
 //   EMAIL_PASS   — the SMTP password (REQUIRED to actually send).
 //   EMAIL_HOST   — SMTP host. Defaults to mail.jag-spoor.co.za
 //                  (set to smtp.gmail.com to switch providers later).
-//   EMAIL_PORT   — SMTP port. Defaults to 465.
-//   EMAIL_SECURE — "true"/"false". Defaults to true (implicit TLS on 465).
+//   EMAIL_PORT   — SMTP port. Defaults to 465 (implicit TLS); 587 selects
+//                  STARTTLS. The TLS mode is derived FROM the port on the
+//                  live path (465 => secure, else STARTTLS) so a stale
+//                  EMAIL_SECURE value can never desync the two.
 //   SUPPORT_EMAIL / EMAIL_TO — the recipient inbox. Defaults to
 //                  support@jag-spoor.co.za.
+//
+//   EMAIL_SECURE is only honoured by the pure `resolveEmailConfig` helper
+//   (used in unit tests / callers that supply their own env); the live
+//   `currentEmailConfigWithSecret` path derives TLS from the port instead.
 //
 // `SUPPORT_EMAIL` is the destination; `EMAIL_USER` doubles as the default
 // sender so the two are deliberately separate knobs.
@@ -160,22 +166,61 @@ export function setPasswordResolverForTesting(resolver: PasswordResolver | null)
 }
 
 /**
- * Resolves the live configuration, sourcing the SMTP password from the
- * EMAIL_PASS secret. The secret wins over a plaintext `EMAIL_PASS` env value
- * when both are present (the secret is the supported, non-committed path).
+ * Resolves the LIVE configuration for a send, sourcing the SMTP password from
+ * the EMAIL_PASS secret.
+ *
+ * This is deliberately independent of the pure `resolveEmailConfig` above so
+ * the deployed path can hard-code the Afrihost cPanel conventions that a
+ * mismatch on host / port / TLS mode would otherwise break (the classic
+ * `535 Incorrect authentication data`):
+ *
+ *   • host  — mail.jag-spoor.co.za (the cPanel mail host for jag-spoor.co.za)
+ *   • port  — 465 (implicit TLS) or 587 (STARTTLS), both supported
+ *   • TLS   — derived FROM THE PORT (465 => secure, everything else =>
+ *             STARTTLS). Tying `secure` to the port avoids the stale-env trap
+ *             where an old `EMAIL_SECURE=true` is left set while the port is
+ *             switched to 587, which makes nodemailer speak the wrong protocol
+ *             and the server reject the auth.
+ *   • user  — the FULL mailbox address (support@jag-spoor.co.za). Afrihost
+ *             cPanel rejects a bare local-part username, which is another
+ *             common cause of 535.
+ *
+ * Every value can still be overridden via the environment (`EMAIL_HOST`,
+ * `EMAIL_PORT`, `EMAIL_USER`, `SUPPORT_EMAIL` / `EMAIL_TO`) so the same code
+ * switches to Gmail or any other relay without a code change.
+ *
+ * The EMAIL_PASS secret wins over a plaintext `EMAIL_PASS` env value when both
+ * are present (the secret is the supported, non-committed path).
  */
 export function currentEmailConfigWithSecret(): EmailConfig {
-  const config = currentEmailConfig();
-  let secretValue = "";
+  // Afrihost cPanel defaults — allow override via env.
+  const host = trim(process.env.EMAIL_HOST) || DEFAULT_SMTP_HOST;
+
+  const rawPort = trim(process.env.EMAIL_PORT);
+  const parsedPort = Number.parseInt(rawPort, 10);
+  const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_SMTP_PORT;
+
+  // Implicit TLS on 465, STARTTLS on 587 (and any other port).
+  const secure = port === DEFAULT_SMTP_PORT;
+
+  // Afrihost requires the FULL email address as the SMTP username.
+  const user = trim(process.env.EMAIL_USER) || DEFAULT_SUPPORT_EMAIL;
+
+  const to = trim(process.env.SUPPORT_EMAIL) || trim(process.env.EMAIL_TO) || DEFAULT_SUPPORT_EMAIL;
+
+  // The secret wins over a plaintext env value; either may be empty.
+  let pass = trim(process.env.EMAIL_PASS);
   try {
-    secretValue = trim(passwordResolver());
+    const secretValue = trim(passwordResolver());
+    if (secretValue) {
+      pass = secretValue;
+    }
   } catch {
-    secretValue = "";
+    // `emailPass.value()` throws during deployment/analysis — keep the env
+    // value (which may itself be empty, in which case the send is skipped).
   }
-  if (secretValue) {
-    config.pass = secretValue;
-  }
-  return config;
+
+  return { host, port, secure, user, pass, from: user, to };
 }
 
 // ── SMTP transport (lazy, memoised) ──────────────────────────────────────────
@@ -286,6 +331,71 @@ export interface SendResult {
 }
 
 /**
+ * The nodemailer SMTP error surface (plus the generic `code` field) so a
+ * failure can be logged with the server's exact reply rather than just the
+ * message. A 535 auth rejection carries `responseCode` + `response` — the
+ * single most useful pair when diagnosing a mailbox mismatch.
+ */
+interface SmtpError {
+  message?: string;
+  code?: string;
+  responseCode?: number;
+  response?: string;
+  command?: string;
+}
+
+/** Extracts the diagnostic fields from a thrown nodemailer error. */
+function describeSmtpError(err: unknown): Record<string, unknown> {
+  if (!err || typeof err !== "object") {
+    return { error: String(err) };
+  }
+  const e = err as SmtpError;
+  return {
+    error: e.message ?? String(err),
+    code: e.code,
+    responseCode: e.responseCode,
+    response: e.response,
+    command: e.command,
+  };
+}
+
+/**
+ * Verifies the SMTP connection + credentials WITHOUT sending a message.
+ * Best-effort: a missing `verify` (an injected test transport) or a rejection
+ * is logged and never thrown, so it can be used purely as a diagnostic.
+ */
+async function verifyTransport(
+  transport: Transporter<SentMessageInfo>,
+  config: EmailConfig,
+  kind: EmailNotificationKind
+): Promise<boolean> {
+  if (typeof transport.verify !== "function") {
+    return false;
+  }
+  try {
+    await transport.verify();
+    logger.info("smtp transport verified", {
+      kind,
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      user: config.user,
+    });
+    return true;
+  } catch (err) {
+    logger.error("smtp transport verify failed", {
+      kind,
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      user: config.user,
+      ...describeSmtpError(err),
+    });
+    return false;
+  }
+}
+
+/**
  * Sends one support notification. NEVER throws: a missing password, an SMTP
  * outage or a transport error is logged and reported as `{sent:false}` so the
  * originating trigger can continue.
@@ -301,8 +411,25 @@ export async function sendSupportEmail(email: SupportEmail): Promise<SendResult>
   }
 
   const to = trim(email.to) || config.to;
+
+  // Connection debug — never logs the password, only its LENGTH, so a
+  // truncated / empty secret is visible without leaking the value.
+  logger.info("Email config check", {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.user,
+    passLen: config.pass?.length,
+    to: config.to,
+  });
+
   try {
     const transport = transportFactory(config);
+
+    // Handshake + AUTH probe before the real send so a 535 is attributed to
+    // the connection/credentials rather than the message.
+    await verifyTransport(transport, config, email.kind);
+
     const info = await transport.sendMail({
       from: `"JagSpoor" <${config.from}>`,
       to,
@@ -316,12 +443,20 @@ export async function sendSupportEmail(email: SupportEmail): Promise<SendResult>
     });
     return { sent: true };
   } catch (err) {
+    const detail = describeSmtpError(err);
     logger.error("support email failed", {
       kind: email.kind,
       to,
-      error: err instanceof Error ? err.message : String(err),
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      user: config.user,
+      ...detail,
     });
-    return { sent: false, reason: err instanceof Error ? err.message : String(err) };
+    return {
+      sent: false,
+      reason: detail.error ? String(detail.error) : String(err),
+    };
   }
 }
 

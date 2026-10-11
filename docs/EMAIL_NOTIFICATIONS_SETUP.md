@@ -123,11 +123,11 @@ Every value below has a working default. Set only what you need to change:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `EMAIL_USER` | `support@jag-spoor.co.za` | SMTP username **and** the default `From` address. |
+| `EMAIL_USER` | `support@jag-spoor.co.za` | SMTP username **and** the default `From` address. Must be the **full mailbox address** (Afrihost cPanel rejects a bare local-part username). |
 | `EMAIL_PASS` | *(unset)* | SMTP password. **Required** to send. Set as a secret. |
 | `EMAIL_HOST` | `mail.jag-spoor.co.za` | SMTP host. Set to `smtp.gmail.com` to switch providers later. |
-| `EMAIL_PORT` | `465` | SMTP port (465 implicit TLS / 587 STARTTLS). |
-| `EMAIL_SECURE` | `true` | `false` selects STARTTLS (use with port 587). |
+| `EMAIL_PORT` | `465` | SMTP port (465 implicit TLS / 587 STARTTLS). The TLS mode is derived **from the port** on the live path. |
+| `EMAIL_SECURE` | `true` | Only honoured by the pure `resolveEmailConfig` helper. The live path derives `secure` from the port so a stale value cannot desync TLS. |
 | `SUPPORT_EMAIL` | `support@jag-spoor.co.za` | The recipient inbox. |
 | `EMAIL_TO` | *(unset)* | Recipient alias — used only when `SUPPORT_EMAIL` is absent. |
 
@@ -205,6 +205,63 @@ automatically before building.
 > — that module does not exist and the error will persist. The correct import
 > is `firebase-functions/v2/identity` (see the official docs,
 > <https://firebase.google.com/docs/functions/auth-events>).
+
+---
+
+### Troubleshooting — `535 Incorrect authentication data` on Afrihost
+
+`Invalid login: 535 Incorrect authentication data` means the SMTP server
+rejected the **AUTH** step. On Afrihost cPanel it is almost never the message
+body — it is a host / port / TLS / username mismatch. The deployed config
+(`currentEmailConfigWithSecret` in `functions/src/email.ts`) now:
+
+- defaults the host to **`mail.jag-spoor.co.za`** (the cPanel mail host for
+  `jag-spoor.co.za`);
+- derives the TLS mode **from the port** — `465` → implicit TLS
+  (`secure: true`), anything else (e.g. `587`) → STARTTLS — so a **stale
+  `EMAIL_SECURE`** left over from a previous deploy can no longer desync the
+  protocol and cause a 535;
+- uses the **full mailbox address** (`support@jag-spoor.co.za`) as the SMTP
+  username — cPanel rejects a bare local-part username.
+
+Diagnose with the logs. Every send now logs:
+
+- `Email config check` — the resolved `host` / `port` / `secure` / `user` /
+  `to` **and `passLen`** (the password *length*, never the value). A
+  `passLen: 0` means the secret did not resolve; an unexpectedly short value
+  means a truncated secret.
+- `smtp transport verified` — the handshake + AUTH probe (`transport.verify()`)
+  succeeded **before** the real send.
+- `smtp transport verify failed` / `support email failed` — carry the exact
+  nodemailer `code`, `responseCode` and `response` (e.g. `EAUTH` / `535` /
+  `535 Incorrect authentication data`) plus the connection context, so the
+  server's own reply is visible instead of just "Invalid login".
+
+```bash
+firebase functions:log --only onUserCreate
+```
+
+Checklist when a 535 persists after `firebase functions:secrets:set EMAIL_PASS`:
+
+1. **Confirm the secret version is deployed.** The log's `passLen` must be
+   non-zero and match the real password length; re-run
+   `firebase deploy --only functions` after updating the secret so the new
+   version is mounted.
+2. **Confirm the username.** `EMAIL_USER` must be the full
+   `support@jag-spoor.co.za` (set it explicitly if you have overridden it).
+3. **Try the other port.** If `465` still 535s, set `EMAIL_PORT=587`
+   (STARTTLS) — or vice versa. No other change is needed: the TLS mode
+   follows the port automatically.
+4. **Verify the mailbox exists + the password works** by logging into
+   `https://webmail.jag-spoor.co.za` (Afrihost cPanel webmail) with the same
+   credentials. If webmail rejects it, the password/secret is wrong — not the
+   code.
+5. **Confirm the sender is authorised.** Some cPanel setups require the
+   `From` address to equal the authenticated mailbox — the default already
+   does (`from` = `EMAIL_USER`).
+
+> Never put the password in `.env` committed to git. `EMAIL_PASS` is read
+> from the Cloud Functions **secret** first, then a plaintext env value.
 
 ---
 

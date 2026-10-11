@@ -151,6 +151,133 @@ test("sendSupportEmail skips (no throw) when no password is resolvable", async (
   }
 });
 
+// ── Robust Afrihost config on the LIVE path ──────────────────────────────────
+//
+// The pure `resolveEmailConfig` (above) is env-injected and used by tests /
+// callers. The DEPLOYED path is `currentEmailConfigWithSecret`, which reads
+// `process.env` and derives the TLS mode from the port. These tests pin the
+// Afrihost cPanel conventions + the stale-env protection.
+
+/** Runs `fn` with a patched `process.env`, restoring every key afterwards. */
+function withEnv(patch, fn) {
+  const saved = {};
+  for (const key of Object.keys(patch)) {
+    saved[key] = process.env[key];
+    if (patch[key] === undefined) delete process.env[key];
+    else process.env[key] = patch[key];
+  }
+  try {
+    return fn();
+  } finally {
+    for (const key of Object.keys(saved)) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+}
+
+test("currentEmailConfigWithSecret defaults to Afrihost cPanel + 465 implicit TLS", () => {
+  withEnv(
+    {
+      EMAIL_HOST: undefined,
+      EMAIL_PORT: undefined,
+      EMAIL_USER: undefined,
+      EMAIL_SECURE: undefined,
+      SUPPORT_EMAIL: undefined,
+      EMAIL_TO: undefined,
+    },
+    () => {
+      email.setPasswordResolverForTesting(() => "pw");
+      try {
+        const c = email.currentEmailConfigWithSecret();
+        assert.equal(c.host, "mail.jag-spoor.co.za");
+        assert.equal(c.port, 465);
+        assert.equal(c.secure, true);
+        assert.equal(c.user, "support@jag-spoor.co.za");
+        assert.equal(c.from, "support@jag-spoor.co.za");
+        assert.equal(c.to, "support@jag-spoor.co.za");
+        assert.equal(c.pass, "pw");
+      } finally {
+        email.setPasswordResolverForTesting(null);
+      }
+    }
+  );
+});
+
+test("port 587 selects STARTTLS (secure:false) on the live path", () => {
+  withEnv({ EMAIL_PORT: "587", EMAIL_SECURE: undefined }, () => {
+    email.setPasswordResolverForTesting(() => "pw");
+    try {
+      const c = email.currentEmailConfigWithSecret();
+      assert.equal(c.port, 587);
+      assert.equal(c.secure, false);
+    } finally {
+      email.setPasswordResolverForTesting(null);
+    }
+  });
+});
+
+test("a stale EMAIL_SECURE cannot desync TLS from the port (the 535 trap)", () => {
+  // The classic failure: EMAIL_SECURE=true is left over while the port is
+  // switched to 587, so nodemailer speaks implicit TLS to a STARTTLS port and
+  // the server rejects the AUTH with 535.
+  withEnv({ EMAIL_PORT: "587", EMAIL_SECURE: "true" }, () => {
+    email.setPasswordResolverForTesting(() => "pw");
+    try {
+      const c = email.currentEmailConfigWithSecret();
+      assert.equal(c.port, 587);
+      assert.equal(c.secure, false, "TLS must follow the port, not EMAIL_SECURE");
+    } finally {
+      email.setPasswordResolverForTesting(null);
+    }
+  });
+});
+
+test("EMAIL_USER + EMAIL_HOST overrides are honoured on the live path", () => {
+  withEnv(
+    {
+      EMAIL_USER: "notifications@jag-spoor.co.za",
+      EMAIL_HOST: "smtp.gmail.com",
+      EMAIL_PORT: "465",
+    },
+    () => {
+      email.setPasswordResolverForTesting(() => "pw");
+      try {
+        const c = email.currentEmailConfigWithSecret();
+        assert.equal(c.user, "notifications@jag-spoor.co.za");
+        assert.equal(c.from, "notifications@jag-spoor.co.za");
+        assert.equal(c.host, "smtp.gmail.com");
+      } finally {
+        email.setPasswordResolverForTesting(null);
+      }
+    }
+  );
+});
+
+test("an invalid EMAIL_PORT falls back to 465 on the live path", () => {
+  withEnv({ EMAIL_PORT: "not-a-port" }, () => {
+    email.setPasswordResolverForTesting(() => "pw");
+    try {
+      const c = email.currentEmailConfigWithSecret();
+      assert.equal(c.port, 465);
+      assert.equal(c.secure, true);
+    } finally {
+      email.setPasswordResolverForTesting(null);
+    }
+  });
+});
+
+test("the EMAIL_PASS secret still wins over a plaintext env value (live path)", () => {
+  withEnv({ EMAIL_PASS: "plaintext" }, () => {
+    email.setPasswordResolverForTesting(() => "secret");
+    try {
+      assert.equal(email.currentEmailConfigWithSecret().pass, "secret");
+    } finally {
+      email.setPasswordResolverForTesting(null);
+    }
+  });
+});
+
 // ── Message builders ─────────────────────────────────────────────────────────
 
 test("buildSubject prefixes every notification with [JagSpoor]", () => {
@@ -370,6 +497,130 @@ test("a transport failure is reported, not thrown", async () => {
     if (previous !== undefined) process.env.EMAIL_PASS = previous;
     else delete process.env.EMAIL_PASS;
   }
+});
+
+test("sendSupportEmail probes the transport with verify() before sending", async () => {
+  const previous = process.env.EMAIL_PASS;
+  process.env.EMAIL_PASS = "test-pass";
+
+  let verifyCalls = 0;
+  let sendCalls = 0;
+  email.setTransportFactoryForTesting(() => ({
+    verify: async () => {
+      verifyCalls += 1;
+      return true;
+    },
+    sendMail: async () => {
+      sendCalls += 1;
+      return { messageId: "fake-verified" };
+    },
+  }));
+  try {
+    const result = await email.notifyNewUser({
+      uid: "uid-verify",
+      email: "hunter@example.com",
+      provider: "password",
+      createdAt: new Date("2026-10-11T00:00:00.000Z"),
+    });
+    assert.equal(result.sent, true);
+    assert.equal(verifyCalls, 1, "verify() must be called as a pre-send probe");
+    assert.equal(sendCalls, 1);
+  } finally {
+    email.setTransportFactoryForTesting(null);
+    if (previous !== undefined) process.env.EMAIL_PASS = previous;
+    else delete process.env.EMAIL_PASS;
+  }
+});
+
+test("a verify() failure does NOT abort the send (diagnostic only)", async () => {
+  const previous = process.env.EMAIL_PASS;
+  process.env.EMAIL_PASS = "test-pass";
+
+  let sendCalls = 0;
+  email.setTransportFactoryForTesting(() => ({
+    verify: async () => {
+      throw new Error("535 Incorrect authentication data");
+    },
+    sendMail: async () => {
+      sendCalls += 1;
+      return { messageId: "fake-after-verify-fail" };
+    },
+  }));
+  try {
+    const result = await email.notifyNewUser({
+      uid: "uid-verify-fail",
+      email: "hunter@example.com",
+      provider: "password",
+      createdAt: new Date("2026-10-11T00:00:00.000Z"),
+    });
+    // verify() is a probe: its failure is logged, the real send still runs.
+    assert.equal(result.sent, true);
+    assert.equal(sendCalls, 1);
+  } finally {
+    email.setTransportFactoryForTesting(null);
+    if (previous !== undefined) process.env.EMAIL_PASS = previous;
+    else delete process.env.EMAIL_PASS;
+  }
+});
+
+test("a 535 auth rejection surfaces the server reply, not just the message", async () => {
+  const previous = process.env.EMAIL_PASS;
+  process.env.EMAIL_PASS = "wrong-pass";
+  const authError = Object.assign(new Error("Invalid login: 535 Incorrect authentication data"), {
+    code: "EAUTH",
+    responseCode: 535,
+    response: "535 Incorrect authentication data",
+    command: "AUTH PLAIN",
+  });
+  email.setTransportFactoryForTesting(() => ({
+    sendMail: async () => {
+      throw authError;
+    },
+  }));
+  try {
+    const result = await email.notifyNewUser({
+      uid: "uid-535",
+      email: "hunter@example.com",
+      provider: "password",
+      createdAt: new Date("2026-10-11T00:00:00.000Z"),
+    });
+    assert.equal(result.sent, false);
+    assert.match(result.reason, /535/);
+  } finally {
+    email.setTransportFactoryForTesting(null);
+    if (previous !== undefined) process.env.EMAIL_PASS = previous;
+    else delete process.env.EMAIL_PASS;
+  }
+});
+
+// ── Debug logging / robust-config structural contracts ───────────────────────
+
+test("sendSupportEmail logs the config check + the detailed nodemailer error fields", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "src", "email.ts"), "utf8"));
+  // Connection debug line with the password LENGTH (never the value).
+  assert.match(src, /logger\.info\("Email config check"/);
+  assert.match(src, /passLen:\s*config\.pass\?\.length/);
+  // verify() probe + its own try/catch logging.
+  assert.match(src, /transport\.verify\(\)/);
+  assert.match(src, /smtp transport verify failed/);
+  // Detailed error extraction: code / response / responseCode.
+  assert.match(src, /responseCode:\s*e\.responseCode/);
+  assert.match(src, /response:\s*e\.response/);
+  assert.match(src, /code:\s*e\.code/);
+  // The failure log carries the connection context for triage.
+  assert.match(src, /logger\.error\("support email failed"/);
+});
+
+test("the live config derives TLS from the port and requires a full-email user", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "src", "email.ts"), "utf8"));
+  // secure is tied to the port (stale EMAIL_SECURE can never desync it).
+  assert.match(src, /const secure = port === DEFAULT_SMTP_PORT/);
+  // The live path reads process.env directly (Afrihost cPanel defaults).
+  assert.match(src, /process\.env\.EMAIL_HOST/);
+  assert.match(src, /process\.env\.EMAIL_PORT/);
+  assert.match(src, /process\.env\.EMAIL_USER/);
+  // The default SMTP username is the FULL mailbox address.
+  assert.match(src, /trim\(process\.env\.EMAIL_USER\)\s*\|\|\s*DEFAULT_SUPPORT_EMAIL/);
 });
 
 // ── Wiring / structural contracts ────────────────────────────────────────────

@@ -1,6 +1,87 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Robust Afrihost SMTP config + debug logging for support@jag-spoor.co.za (added 2026-10-11)
+
+### Symptom
+`onUserCreate` (now v2) fires, but the log shows
+`Invalid login: 535 Incorrect authentication data at sendSupportEmail
+lib/email.js:246`. The owner set the `EMAIL_PASS` secret to v3 and redeployed
+and it STILL 535s — so the fault is the host / port / TLS / username
+combination, not just the password.
+
+### Root cause
+The live send path (`currentEmailConfigWithSecret`) delegated to the pure
+`resolveEmailConfig(process.env)`, which honoured `EMAIL_SECURE` verbatim.
+A **stale `EMAIL_SECURE`** left over from a previous deploy (e.g. `true`) can
+desync from a changed `EMAIL_PORT` (587), making nodemailer speak implicit
+TLS to a STARTTLS port — the server then rejects AUTH with 535. There was
+also no connection debug (only the password length was unknown) and no
+`verify()` probe, so a 535 could not be distinguished from a bad envelope.
+
+### Fix — `functions/src/email.ts`
+- **`currentEmailConfigWithSecret()` rewritten** as an explicit Afrihost
+  cPanel resolver independent of the pure helper:
+  - host `process.env.EMAIL_HOST || "mail.jag-spoor.co.za"`;
+  - port `parseInt(process.env.EMAIL_PORT || "465")` (invalid -> 465);
+  - **`secure = port === 465`** — TLS is derived FROM the port, so a stale
+    `EMAIL_SECURE` can never desync 465 (implicit TLS) vs 587 (STARTTLS);
+  - user `process.env.EMAIL_USER || "support@jag-spoor.co.za"` — the FULL
+    mailbox address (cPanel rejects a bare local-part username);
+  - `pass` = the `EMAIL_PASS` secret (wins) else the plaintext env value;
+  - `from = user`, `to = SUPPORT_EMAIL || EMAIL_TO || default`.
+  The pure `resolveEmailConfig` is left untouched (still env-injected + still
+  honours `EMAIL_SECURE`) for tests / callers.
+- **`sendSupportEmail` debug**:
+  - `logger.info("Email config check", { host, port, secure, user, passLen,
+    to })` BEFORE the send — logs the password **length** only, never the
+    value, so an unresolved (`0`) or truncated secret is immediately visible.
+  - **`transport.verify()`** probe (new `verifyTransport()` helper) wrapped
+    in try/catch that logs `smtp transport verify failed` with the connection
+    context. Best-effort: a missing `verify` (injected test transport) or a
+    rejection is logged but does NOT abort the real send.
+  - **Detailed error extraction** via `describeSmtpError()`: logs the
+    nodemailer `code`, `responseCode`, `response`, `command` (+ host/port/
+    secure/user) on `support email failed`, so the server's exact reply
+    (`EAUTH` / `535` / `535 Incorrect authentication data`) is visible instead
+    of just the message string.
+- `secrets: [emailPass]` bindings are UNCHANGED (4× in `notifications.ts` +
+  the trial trigger + `defineSecret("EMAIL_PASS")` in `params.ts`).
+
+### Tests (`functions/test/email_notifications.test.js`, +11 => 92 total)
+- Live-path config: Afrihost defaults (host/465/secure/user/from/to), 587 ->
+  STARTTLS, the **stale-`EMAIL_SECURE` desync guard** (587 + `EMAIL_SECURE=true`
+  still yields `secure:false`), `EMAIL_USER`/`EMAIL_HOST` overrides, invalid
+  port -> 465, secret-wins-over-env.
+- Send path: `verify()` is called once before `sendMail`; a `verify()` failure
+  does NOT abort the send; a 535 `EAUTH` error surfaces the server reply in
+  `reason`.
+- Structural: the `Email config check` log + `passLen`, `transport.verify()`
+  + its failure log, and `code`/`response`/`responseCode` extraction all
+  present in `email.ts`; the live config derives TLS from the port and
+  requires the full-email user.
+
+### Verification
+- `cd functions && npm run build` -> 0 errors; `npm test` -> **92/92 pass**
+  (was 81).
+- No secrets / `.env` committed; no literal `EMAIL_PASS` value in the source.
+- Untouched: `notifications.ts` secret bindings, `params.ts`, the Flutter app.
+
+### Operator note
+After pulling: `cd functions && npm ci && npm run build && firebase deploy
+--only functions`. Then watch `firebase functions:log --only onUserCreate`:
+`Email config check` shows the resolved host/port/secure/user + `passLen`
+(0 => secret not mounted). If 535 persists, flip `EMAIL_PORT` 465 <-> 587 (TLS
+follows the port automatically) and confirm the mailbox password at
+`https://webmail.jag-spoor.co.za`. Full checklist in
+`docs/EMAIL_NOTIFICATIONS_SETUP.md`.
+
+### Files
+- MODIFIED: `functions/src/email.ts`,
+  `functions/test/email_notifications.test.js`,
+  `docs/EMAIL_NOTIFICATIONS_SETUP.md`, `functions/.env.example`, `AGENTS.md`.
+
+
 ## Phase -- TS2305 "onUserCreated" is a STALE node_modules, NOT a bad import (added 2026-10-11)
 
 ### Symptom
