@@ -1,6 +1,107 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- SAPS tracked card LIVE payload fix + dashboard debug cleanup (added 2026-10-11)
+
+### Symptom
+The SAPS tracked card for `10654672` / `F004574` still showed the STALE
+mock stage — "Application received at DFO" (stage 1), "Next: Provincial",
+while the live portal returns `IN PREPARATION FOR CONSIDERATION` (stage 2,
+"At Central Registry", status date `2026/10/09`, HOWA `.338 WIN MAG`,
+s/n `F004574`). The hunter dashboard also showed a `[SAPS Debug Tracker
+(dev only)]` menu entry to remove.
+
+### Root causes (three functional gaps)
+1. **Classifier would not have matched the exact portal phrases.** The live
+   phrase classifies via the generic `'consideration'` keyword, but the
+   appended note `"No status available contact the DFO"` and the naked
+   `"IN PREPARATION FOR CONSIDERATION"` were not explicit entries — anything
+   keying off the "DFO" word risked a DFO downgrade.
+2. **`SapsApplication.fromJson` did not read the camelCase `rawPayload`
+   aliases.** A doc/debug-payload carrying the live fields only inside the
+   nested `rawPayload` map (keys `status` / `calibre` / `make` /
+   `serialNumber` / `statusDate` / `applicationNumber` / `applicationType`)
+   hydrated no live fields → the card fell back to the stale `currentStatus`.
+3. **The offline mock could overwrite a live status.** With no webhook
+   configured (the debug direct path), `triggerRemoteScraperCheck` returned
+   `_generateMockStatus()` for EVERY doc — so the per-card manual refresh
+   (and refresh-all) rewrote a live `At Central Registry` doc back to a
+   random mock phrase including `"Application received at DFO"`.
+   Additionally the ENQUIRE upsert required an EXACT ref+serial match, so a
+   typo'd serial (`F0004574`) never matched the tracked doc.
+
+### Fixes
+- **`saps_status_classifier.dart`**: added `'in preparation for
+  consideration'` and `'no status available contact the dfo'` to the
+  `kSapsStageCfr` pattern table (CFR stage 2).
+- **`saps_application_model.dart` `fromJson`**: now reads a nested
+  `rawPayload` map as a fallback for every live field — `rawStatus`
+  (`status`/`RAW`), `statusDate` (`statusDate`/`STATUS DATE`),
+  `statusDescription` (`statusDescription`/`DESCRIPTION`), `nextStep`,
+  `liveStage`, plus `calibre`/`firearmMake`/`serialNumber`/`referenceNumber`/
+  `applicationType`/`statusUpdatedAt`. So a round-tripped live payload (the
+  debug-screen shape) is never lost when the flat keys are absent.
+- **`saps_tracker_service.dart` `triggerRemoteScraperCheck`**: with no
+  configured webhook, a doc that already carries a non-empty `rawStatus` now
+  returns the STORED live status verbatim (raw + `liveStage` + currentStatus)
+  instead of the deterministic mock. A manual refresh can no longer downgrade
+  a live card.
+- **`saps_tracker_screen.dart` `_upsertEnquiryToTracker`**: ranks candidate
+  matches — `ref+serial` (2) > `ref`-only or `serial`-only (1) — and keeps the
+  best, so a corrected serial (the `F0004574` → `F004574` typo) updates the
+  SAME tracked doc. The card's edit action now also pre-fills the top
+  "Check Live Status" enquiry inputs with the corrected ref/serial via a new
+  `onEdited` callback (`_prefillEnquiryFrom`).
+- **`hunter_dashboard.dart`**: replaced the `[SAPS Debug Tracker (dev only)]`
+  menu entry with a tiny `kDebugMode`-only left-aligned `TextButton.icon`
+  labelled `SAPS debug` (fontSize 11, bug_report icon). Nothing renders in
+  release.
+
+### Tests
+- `test/saps_status_classifier_test.dart` (+1 block): "IN PREPARATION FOR
+  CONSIDERATION" and its `– No status available contact the DFO` variant both
+  classify to CFR (stage 2), plus the naked note phrase.
+- `test/features/hunter_mode/saps_tracker_test.dart` (+1): `fromJson`
+  hydrates rawStatus/liveStage/statusDate/calibre/make/serial/appType/
+  referenceNumber from a nested camelCase `rawPayload` map, and
+  `currentProgressLabel == 'At Central Registry'`.
+- `test/saps_tracking_details_test.dart` (+1): `refreshApplication` preserves
+  a live `rawStatus`/`liveStage` verbatim (never downgraded by the mock).
+- `test/saps_application_card_widget_test.dart` (+1 + widened `buildApp`
+  helper): renders the exact `10654672` payload — badge "At Central Registry",
+  no "Application received at DFO", SAPS status date row, "Next: Printed /
+  Ready for Collection", and HOWA / `.338 WIN MAG` / `s/n F004574` pills.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing
+  info-level issues; the single `DropdownButtonFormField.value` info is the
+  deliberate cross-version pin — CI is Flutter 3.29.1 where `initialValue`
+  does not exist).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **All 2051
+  tests passed**. SAPS group: 205.
+- Commit `dc3d16f` pushed to `origin/fix/saps-card-live-1.0.11` (new branch).
+
+### Files
+- `lib/features/hunter_mode/services/saps_status_classifier.dart`,
+  `lib/features/ballistics/data/models/saps_application_model.dart`,
+  `lib/features/hunter_mode/services/saps_tracker_service.dart`,
+  `lib/features/hunter_mode/presentation/saps_tracker_screen.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `test/saps_status_classifier_test.dart`,
+  `test/features/hunter_mode/saps_tracker_test.dart`,
+  `test/saps_tracking_details_test.dart`,
+  `test/saps_application_card_widget_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (the
+  live payload writes go to the owner-scoped `license_applications` doc,
+  already covered by the existing rules).
+
+### Operator note
+If the tracker for `10654672` still shows the stale stage after pulling,
+open the card's EDIT action and re-save the corrected serial (`F004574`), or
+re-run the live ENQUIRE — both now persist the live payload onto the tracked
+doc. The offline mock can no longer drag it back.
+
+
 ## Phase -- SAPS tracked card: live CFR payload + edit/delete (added 2026-10-11)
 
 ### Symptom (Phase 2 bug)
