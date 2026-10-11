@@ -404,6 +404,51 @@ test("notifications.ts watches the expected document paths", () => {
   assert.doesNotMatch(src, /\.auth\.user\(\)\s*\.onCreate/);
 });
 
+test("the auth triggers import onUserCreated from v2/identity (NOT v2/auth)", () => {
+  // `firebase-functions/v2/auth` does not exist in ANY published version — the
+  // 2nd-gen user-creation trigger lives in `firebase-functions/v2/identity`.
+  // Importing from `v2/auth` yields TS2305 (no exported member
+  // 'onUserCreated') + implicit-any errors on the handler. This guards against
+  // "fixing" the import to the non-existent path.
+  for (const rel of ["src/notifications.ts", "src/user_trial_onboarding.ts"]) {
+    const src = stripComments(fs.readFileSync(path.join(ROOT, rel), "utf8"));
+    assert.match(
+      src,
+      /import\s*\{[^}]*onUserCreated[^}]*\}\s*from\s*"firebase-functions\/v2\/identity"/,
+      `${rel} must import onUserCreated from firebase-functions/v2/identity`
+    );
+    assert.doesNotMatch(
+      src,
+      /from\s*"firebase-functions\/v2\/auth"/,
+      `${rel} must NOT import from the non-existent firebase-functions/v2/auth`
+    );
+  }
+});
+
+test("firebase-functions is pinned to >= 7.4.0 (onUserCreated needs v7)", () => {
+  const pkg = require(path.join(ROOT, "package.json"));
+  const range = pkg.dependencies["firebase-functions"];
+  assert.ok(range, "firebase-functions is a dependency");
+  const major = Number(String(range).replace(/[^0-9.]/g, "").split(".")[0]);
+  assert.ok(
+    major >= 7,
+    `firebase-functions must be >= 7 (found ${range}); onUserCreated/defineSecret are absent in 6.x`
+  );
+});
+
+test("firebase.json predeploy installs from the lockfile before building", () => {
+  const cfg = require(path.join(ROOT, "..", "firebase.json"));
+  const pre = cfg.functions.predeploy || [];
+  assert.ok(
+    pre.some((cmd) => /npm\b.*\bci\b/.test(cmd)),
+    "predeploy must run `npm ci` so the deployed node_modules matches package-lock.json"
+  );
+  assert.ok(
+    pre.some((cmd) => /run build/.test(cmd)),
+    "predeploy must still run the TypeScript build"
+  );
+});
+
 test("every mail-sending trigger declares the EMAIL_PASS secret", () => {
   const src = stripComments(
     fs.readFileSync(path.join(ROOT, "src", "notifications.ts"), "utf8")

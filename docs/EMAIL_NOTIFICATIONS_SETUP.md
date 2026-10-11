@@ -179,6 +179,35 @@ firebase deploy --only \
 
 ## 5. Test it
 
+### Troubleshooting — `TS2305: Module "firebase-functions/v2/identity" has no exported member 'onUserCreated'`
+
+If `npm run build` (or the deploy) reports this error — together with
+`TS7006: Parameter 'event' implicitly has an 'any' type` — the
+`functions/node_modules` tree is **stale**. The trigger lives in
+`firebase-functions/v2/identity` in **every** published version (there is no
+`firebase-functions/v2/auth` — importing from it fails with the same TS2305);
+the error only appears when an **old `firebase-functions` 6.x** is installed
+locally, because `onUserCreated` was added in **v7**.
+
+Fix — reinstall from the lockfile so 7.4.0 is used:
+
+```bash
+cd functions
+npm ci            # NOT `npm install` — this pins the exact lockfile version
+npm run build     # must print 0 errors
+```
+
+`firebase.json` now runs `npm --prefix ./functions ci` in `predeploy`, so
+`firebase deploy --only functions` reinstalls the correct version
+automatically before building.
+
+> Do **not** "fix" this by changing the import to `firebase-functions/v2/auth`
+> — that module does not exist and the error will persist. The correct import
+> is `firebase-functions/v2/identity` (see the official docs,
+> <https://firebase.google.com/docs/functions/auth-events>).
+
+---
+
 ### Quick check — create a test user
 
 1. Sign up a throwaway account in the app (email/password or Google).

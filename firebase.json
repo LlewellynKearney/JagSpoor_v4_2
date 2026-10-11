@@ -36,6 +36,7 @@
     "source": "functions",
     "runtime": "nodejs22",
     "predeploy": [
+      "npm --prefix ./functions ci",
       "npm --prefix ./functions run build"
     ],
     "ignore": ["node_modules", ".git", "firebase-debug.log", "firebase-debug.*.log"]

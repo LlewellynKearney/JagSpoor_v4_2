@@ -1,6 +1,74 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- TS2305 "onUserCreated" is a STALE node_modules, NOT a bad import (added 2026-10-11)
+
+### Symptom
+Deploy reported `src/notifications.ts:2:10 TS2305: Module
+"firebase-functions/v2/identity" has no exported member 'onUserCreated'`
+(and the same in `user_trial_onboarding.ts`), plus `TS7006: Parameter 'event'
+implicitly has an 'any' type` — even though `package.json` pins
+`firebase-functions ^7.4.0` and CI builds green.
+
+### Root cause (proven, not guessed)
+The `functions/node_modules` tree on the reporter's machine was **stale
+(firebase-functions 6.x)** while `package.json`/`package-lock.json` said
+7.4.0. Reproduced EXACTLY by installing 6.6.0 and building: it emits the same
+TS2305 + TS7006 lines. With 7.4.0 installed the repo builds clean.
+
+- `onUserCreated` was ADDED in **firebase-functions v7** (6.x's
+  `v2/identity` ships only the blocking `beforeUserCreated`/`beforeUserSignedIn`).
+- The import path is **`firebase-functions/v2/identity`** in EVERY published
+  version. **`firebase-functions/v2/auth` DOES NOT EXIST** — it is not in any
+  version's `exports` map and yields `ERR_PACKAGE_PATH_NOT_EXPORTED`; a TS
+  probe with that import reproduces the same TS2305 verbatim. The official
+  docs (<https://firebase.google.com/docs/functions/auth-events>) confirm the
+  `v2/identity` path. So "fixing" the import to `v2/auth` is a dead end.
+- CI evidence: on push `37642da` the workflow's **Build TypeScript functions**
+  step SUCCEEDED (7.4.0 resolved) — only **Deploy to Firebase** failed, and
+  that failure is `Error: Failed to authenticate` because
+  `secrets.FIREBASE_TOKEN` is unset (the command ran as
+  `--token ""`). The auth failure is pre-existing and unrelated; the build is
+  fine in a clean environment.
+
+### Fix
+- **Code is correct as-is** — kept `import { onUserCreated } from
+  "firebase-functions/v2/identity"` in both files (did NOT change it to the
+  non-existent `v2/auth`; the typed `async (event)` + `.map((p))` /
+  `.filter((p): p is string => …)` were kept — they type-check cleanly under
+  7.4.0, so no `any` casts were added).
+- **`firebase.json`**: the `functions.predeploy` now runs
+  `npm --prefix ./functions ci` BEFORE `npm --prefix ./functions run build`,
+  so `firebase deploy --only functions` reinstalls the exact lockfile version
+  (7.4.0) automatically and the stale-6.x failure can no longer occur.
+- **`functions/test/email_notifications.test.js`** (+3 guards, 81 tests):
+  - the auth triggers must import `onUserCreated` from
+    `firebase-functions/v2/identity` AND must never import `v2/auth`;
+  - `package.json` `firebase-functions` major >= 7 (onUserCreated needs v7);
+  - `firebase.json` predeploy contains `npm ci` + the build.
+- **`docs/EMAIL_NOTIFICATIONS_SETUP.md`**: a TS2305 troubleshooting section
+  ("stale node_modules → `npm ci`; do NOT switch to `v2/auth`").
+
+### Verification
+- `cd functions && npm ci` (clean) resolves firebase-functions **7.4.0**;
+  `npm run build` → **0 errors**; `npm test` → **81/81 pass**.
+- Compiled triggers register `google.firebase.auth.user.v2.created` /
+  `gcfv2` with `secretEnvironmentVariables: [{key: "EMAIL_PASS"}]`.
+- `flutter analyze` → **0 errors, 0 warnings**, 320 infos (unchanged baseline).
+- No secrets / `.env` committed; `applicationId` untouched.
+
+### Operator note
+On the local machine run `cd functions && npm ci` (NOT `npm install`) then
+`firebase deploy --only functions`. Separately, the CI deploy job needs
+`secrets.FIREBASE_TOKEN` set in the repo, otherwise it fails at
+`firebase deploy` with "Failed to authenticate" (unrelated to this error).
+
+### Files
+- MODIFIED: `firebase.json`, `functions/test/email_notifications.test.js`,
+  `docs/EMAIL_NOTIFICATIONS_SETUP.md`, `AGENTS.md`.
+- No `functions/src/` changes (the imports were already correct).
+
+
 ## Phase -- Migrate auth triggers to v2 + wire EMAIL_PASS secret (added 2026-10-11)
 
 ### Symptom
