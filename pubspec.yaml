@@ -139,6 +139,10 @@ dependencies:
   # AppUpdateManager API to Dart, so no direct
   # com.google.android.play:app-update Gradle dependency is required.
   in_app_update: ^4.2.3
+  # Native in-app review prompt (Google Play In-App Review on Android /
+  # SKStoreReviewController on iOS). Used by the JagSpoor review modal to
+  # request a store rating without leaving the app.
+  in_app_review: ^2.0.12
 
 dev_dependencies:
   flutter_test:

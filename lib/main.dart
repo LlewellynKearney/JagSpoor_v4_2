@@ -30,6 +30,7 @@ import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'utils/animal_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 import 'core/utils/measurement_formatter.dart';
+import 'features/review/services/review_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -134,6 +135,20 @@ Future<void> main() async {
       await PushNotificationService.instance.initialize();
     } catch (e) {
       debugPrint('Push notification initialization failed: $e');
+    }
+
+    // --- Review prompt: device launch counter + control-plane seed ---
+    // Records this cold start (the review modal only appears after the
+    // configured `min_launches` count) and ensures
+    // `admin_config/review_config` exists with the documented defaults.
+    // Both are best-effort: a prefs / Firestore failure (or a non-admin write
+    // denial) must never block startup — the feature falls back to
+    // `ReviewConfig.defaults`.
+    try {
+      await ReviewService.instance.recordLaunch();
+      await ReviewService.instance.ensureConfig();
+    } catch (e) {
+      debugPrint('Review service initialization failed: $e');
     }
 
     // Network connectivity listener - auto-syncs offline queue when connection restored

@@ -9,6 +9,7 @@ import 'trophy_detail_screen.dart';
 import 'add_trophy_screen.dart';
 import 'services/trophy_share_composer.dart';
 import 'package:jagspoor/features/hunter_mode/widgets/hunter_scaffold.dart';
+import 'package:jagspoor/features/review/services/review_prompt_coordinator.dart';
 
 class TrophyRoomScreen extends StatefulWidget {
   final ThemeController theme;
@@ -99,6 +100,9 @@ class _TrophyRoomScreenState extends State<TrophyRoomScreen> {
               backgroundColor: Colors.green,
             ),
           );
+          // Prompt for a review once the hunter has saved a trophy (gated on
+          // the admin_config/review_config launch + cooldown rules).
+          await ReviewPromptCoordinator.maybeShow(context);
         }
       }
     } catch (e) {

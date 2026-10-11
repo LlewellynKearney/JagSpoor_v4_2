@@ -1,6 +1,182 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Review modal: remove Hello Peter (WhatsApp / Facebook / Play only) (added 2026-10-11)
+
+Dropped Hello Peter from the review prompt. The modal now offers exactly three
+destinations and the `admin_config/review_config` control plane no longer
+carries a Hello Peter URL.
+
+### Modal (`lib/widgets/jagspoor_review_modal.dart`)
+- Removed the HELLO PETER button, its icon, its `onTap` and the
+  `helloPeterUrl` read. The secondary `OutlinedButton` row was replaced by
+  three full-width action rows in the specified order, each with a
+  brand-tinted icon + label + subtitle:
+  1. **WHATSAPP** — icon `Icons.chat_rounded` in WhatsApp green `#25D366`,
+     sub "Share your hunt story" (hunter) / "Share your farm" (outfitter),
+     `onTap` -> `Share.share(...)` (the native share sheet; WhatsApp is a
+     target). New `shareWhatsAppForTesting` seam.
+  2. **FACEBOOK** — icon `Icons.facebook_rounded` in Facebook blue `#1877F2`,
+     sub "Leave a review on Facebook", `onTap` -> `launchUrl` of
+     `config.facebookUrl`.
+  3. **GOOGLE PLAY RATE** — icon `Icons.rate_review_rounded` in gold `#D4AF37`,
+     sub "Rate us on Google Play Store", `onTap` -> native `InAppReview`
+     (falling back to the store listing URL).
+- Added an `isOutfitter` flag (drives the prompt title + WhatsApp subtitle);
+  `show(...)` accepts it and `ReviewPromptCoordinator.maybeShow` passes it
+  through. The body is now wrapped in a `SingleChildScrollView` so the taller
+  3-button stack never overflows on short screens.
+- Theme unchanged: obsidian `#0A0A0A` canvas, brushed-gold `#D4AF37`, Bush
+  Karoo / Kalahari sand-ochre, official logo `assets/app logo/logo1.png`.
+
+### Config (`lib/features/review/models/review_config.dart`)
+- Removed `helloPeterUrl` / `defaultHelloPeterUrl` / the `hello_peter_url`
+  read+write. `defaultFacebookUrl` is now
+  **`https://www.facebook.com/JagSpoor/reviews/`** (the reviews tab) and
+  `defaultPlayStoreUrl` stays
+  `https://play.google.com/store/apps/details?id=za.co.jagspoor.app`.
+- New prompt-copy fields: `promptTitleHunter` ("LOVE JAGSPOOR?"),
+  `promptTitleOutfitter` ("LOVE JAGSPOOR FOR OUTFITTERS?"), `promptMessage`
+  ("Help keep SA hunting alive — Bush • Karoo • Kalahari"), with
+  `promptTitleFor(isOutfitter)`.
+
+### Service (`lib/features/review/services/review_service.dart`)
+- `ensureConfig()` seeds only: `enabled:true`, `min_launches:3`,
+  `cooldown_days:30`, `facebook_url`, `play_store_url`,
+  `prompt_title_hunter`, `prompt_title_outfitter`, `prompt_message`,
+  `updated_at: FieldValue.serverTimestamp()`. No `hello_peter_url`.
+
+### Tests
+- `test/review_config_test.dart` (18): defaults incl. the Facebook reviews
+  URL + prompt copy; `promptTitleFor`; `fromMap`/`toMap`; `shouldPrompt`
+  gating; launch/prompt stamps; `ensureConfig` seed (asserts
+  `updated_at` present); `logPromptShown`. All Hello Peter assertions removed.
+- `test/jagspoor_review_modal_test.dart` (7 widget tests): 3 destinations
+  (`find.byType(OutlinedButton)` == 3) + hunter/outfitter copy + logo + MAYBE
+  LATER + WhatsApp share + Facebook URL (`.../JagSpoor/reviews/`) + native
+  review. All 25 review tests pass.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues — the documented baseline). `grep -rn "hellopeter\|hello_peter\|
+  Hello Peter" lib/ test/` -> **0 results**.
+  `grep -rn "facebook.com/JagSpoor/reviews" lib/` -> the config default.
+- Files: `lib/widgets/jagspoor_review_modal.dart`,
+  `lib/features/review/models/review_config.dart`,
+  `lib/features/review/services/review_service.dart`,
+  `lib/features/review/services/review_prompt_coordinator.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `test/review_config_test.dart`, `test/jagspoor_review_modal_test.dart`,
+  `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec changes (the seeded
+  `admin_config/review_config` is covered by the existing
+  `read: isSignedIn()` / `write: isAdmin()` grant; an existing doc keeps any
+  legacy `hello_peter_url` field harmlessly ignored).
+
+
+## Phase -- Review/rate modal with JagSpoor theme (added 2026-10-11)
+
+### What was built
+An in-app review prompt shown after a trophy is saved or a booking is
+confirmed, gated by a Firestore control plane and a per-device launch/cooldown
+cadence.
+
+- **Dependency**: added `in_app_review: ^2.0.12` (native Google Play In-App
+  Review / iOS SKStoreReviewController). `share_plus` (^10.0.0) and
+  `url_launcher` (^6.3.0) were ALREADY direct dependencies — no change needed.
+  `pubspec.lock` re-resolved + `macos/Flutter/GeneratedPluginRegistrant.swift`
+  regenerated (InAppReviewPlugin).
+- **NEW `lib/widgets/jagspoor_review_modal.dart`** (`JagspoorReviewModal` +
+  `JagspoorReviewPalette`): the branded dialog — obsidian black `#0A0A0A`
+  canvas with a Kalahari-soil gradient tail (`#16110A` -> `#3A2A17`),
+  brushed-gold `#D4AF37` accents, a Bush Karoo / Kalahari sand-ochre
+  `#C08A3E` secondary tone, and warm sand body text `#E8DCC8`. Header logo is
+  `assets/app logo/logo1.png` (gold-star fallback on error). Actions:
+  RATE ON GOOGLE PLAY (native `InAppReview.requestReview()`, falling back to
+  `openStoreListing()` then the Play URL), HELLO PETER, FACEBOOK, MAYBE LATER.
+  `launchUrlForTesting` / `requestReviewForTesting` seams.
+  NOTE: the task referenced `assets/logo1.png`; the repo's official logo asset
+  is `assets/app logo/logo1.png` (the only logo1.png; the task's "use the
+  existing logo asset" resolves to this path).
+  NOTE: the task's `/mnt/data/jagspoor_review_modal.dart` did not exist in the
+  sandbox (`/mnt/data` was empty), so the modal was authored to the spec.
+- **NEW `lib/features/review/models/review_config.dart`** (`ReviewConfig`):
+  the `admin_config/review_config` control plane — `enabled` (default true),
+  `min_launches` (3), `cooldown_days` (30), `hello_peter_url`,
+  `facebook_url`, `play_store_url`. Alias/numeric-string tolerant `fromMap`;
+  `toMap` writes the canonical snake_case seed payload.
+- **NEW `lib/features/review/services/review_service.dart`** (`ReviewService`):
+  `loadConfig` (falls back to `ReviewConfig.defaults` when the doc is absent /
+  unreadable), `ensureConfig` (creates the doc with the defaults when absent —
+  idempotent; admin-only write so a non-admin denial is logged), the device
+  launch counter (`recordLaunch` / `launchCount`, SharedPreferences
+  `review_launch_count`), the cooldown stamp (`markPrompted` /
+  `lastPromptAt`, `review_last_prompt_at`), and `shouldPrompt()` (enabled AND
+  launches >= min_launches AND cooldown elapsed). `logPromptShown()` appends
+  `review_prompt_shown` to `feature_usage_events` (the UsageAnalyticsService
+  event shape). `firestoreForTesting` seam.
+- **NEW `lib/features/review/services/review_prompt_coordinator.dart`**
+  (`ReviewPromptCoordinator.maybeShow`): one-shot-per-session bridge from
+  `shouldPrompt()` to the modal — marks the prompt (starts the cooldown + logs
+  the event) then shows it. Fully failure-tolerant (any error -> false).
+- **Wiring**:
+  - `lib/main.dart`: after `PushNotificationService.initialize()`,
+    `ReviewService.instance.recordLaunch()` + `ensureConfig()` (best-effort,
+    try/catch) so the launch counter increments per cold start and the
+    `admin_config/review_config` doc is seeded.
+  - `lib/features/hunter_mode/trophy_room_screen.dart`: after "Trophy added
+    successfully" -> `await ReviewPromptCoordinator.maybeShow(context)`.
+  - `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`:
+    after `confirmPaymentReceived` -> "Booking confirmed" ->
+    `await ReviewPromptCoordinator.maybeShow(context)`.
+- **Firestore rules**: no change required — `admin_config/*` is already
+  `read: isSignedIn()` / `write: isAdmin()` and `feature_usage_events/{id}`
+  is already `create: isSignedIn()`. No new collection / index.
+
+### Tests
+- `test/review_config_test.dart` (16): `ReviewConfig` defaults / alias parsing
+  / `toMap` round-trip; `shouldPrompt` gating (below min_launches, disabled,
+  eligible, within cooldown, cooldown elapsed, fail-open to defaults without
+  Firestore); `recordLaunch` increment; `markPrompted` stamp; `ensureConfig`
+  create + idempotency; `logPromptShown` event shape + never-throws.
+- `test/jagspoor_review_modal_test.dart` (7 widget tests): brand palette +
+  all destinations render; official logo asset; MAYBE LATER dismisses false;
+  Hello Peter / Facebook launch the configured URLs; Rate on Google Play
+  requests the native review then dismisses. All 22 new tests pass.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues — the documented baseline). All new/changed files are analyzer-clean.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): all tests pass.
+  The first run showed 8 failures purely because the sandbox lacked the
+  documented `~/libs/libsqlite3.so` symlink (the SQLite-FFI suites); after
+  `ln -sf /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/libs/libsqlite3.so`
+  they all pass — environment-only, unrelated to this change.
+- Env: Flutter **3.44.9** downloaded + extracted to `/tmp/flutter` (the
+  sandbox had no SDK / Java); `pubspec.lock` drift was only the `in_app_review`
+  additions.
+
+### Files
+- NEW: `lib/widgets/jagspoor_review_modal.dart`,
+  `lib/features/review/models/review_config.dart`,
+  `lib/features/review/services/review_service.dart`,
+  `lib/features/review/services/review_prompt_coordinator.dart`,
+  `test/review_config_test.dart`, `test/jagspoor_review_modal_test.dart`.
+- MODIFIED: `pubspec.yaml`, `pubspec.lock`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift`, `lib/main.dart`,
+  `lib/features/hunter_mode/trophy_room_screen.dart`,
+  `lib/features/hunter_mode/screens/outfitter_booking_dashboard_screen.dart`,
+  `AGENTS.md`.
+- No Firestore rules / index / Storage changes (the existing `admin_config`
+  + `feature_usage_events` grants cover the new doc + event).
+- Operator note: `admin_config/review_config` is seeded by
+  `ReviewService.ensureConfig()` on the first admin launch (the write is
+  admin-only). A non-admin device runs on `ReviewConfig.defaults`. To change
+  the cadence, edit the doc in the Firebase Console (or as an admin).
+  Confirm the Hello Peter + Facebook URLs point at the real JagSpoor pages
+  before release.
+
+
 ## Phase -- SAPS tracked card HARD refactor: eliminate the offline-mock root cause (added 2026-10-11)
 
 ### Symptom

@@ -13,6 +13,7 @@ import '../services/package_booking_manager.dart';
 import '../services/user_role_resolver.dart';
 import '../widgets/hunter_contact_card.dart';
 import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
+import 'package:jagspoor/features/review/services/review_prompt_coordinator.dart';
 
 class OutfitterBookingDashboardScreen extends StatefulWidget {
   final ThemeController theme;
@@ -643,6 +644,8 @@ class _BookingCardState extends State<_BookingCard> {
             backgroundColor: Colors.green,
           ),
         );
+        // Prompt for a review once a booking is confirmed.
+        await ReviewPromptCoordinator.maybeShow(context, isOutfitter: true);
       }
     } catch (e) {
       if (mounted) {
