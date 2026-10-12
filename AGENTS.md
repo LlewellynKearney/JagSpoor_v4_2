@@ -1,6 +1,141 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Google Play "Photo and Video Permissions" compliance: Android photo picker, no broad media permissions (added 2026-10-12)
+
+### Policy
+Google Play's **Photo and Video Permissions** policy
+(<https://support.google.com/googleplay/android-developer/answer/13537402>)
+permits `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` / `READ_EXTERNAL_STORAGE`
+only for apps whose **core** functionality is photo/video browsing or
+management. Enforcement date **2026-10-12**. JagSpoor's need (pick a profile
+/ trophy / firearm / package photo) is served by the **Android system Photo
+Picker**, which grants per-file access with NO runtime permission.
+
+**JagSpoor uses the Android photo picker, not broad media permissions.**
+This is the permanent contract for this repo — do NOT re-add
+`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, or `READ_EXTERNAL_STORAGE`.
+
+### Root cause (why the permissions were there)
+`android/app/src/main/AndroidManifest.xml` declared
+`READ_MEDIA_IMAGES` + `READ_EXTERNAL_STORAGE` (`maxSdkVersion=32`) as a
+leftover from an early image-picker assumption. Neither is required:
+`image_picker` 1.2.1 (`image_picker_android` 0.8.13+1) automatically routes
+to `ActivityResultContracts.PickVisualMedia` on Android 13+ (API 33+) and to
+the backported Photo Picker on Android 11/12; older devices fall back to
+`ACTION_OPEN_DOCUMENT` / `ACTION_GET_CONTENT` — all grant per-file access
+without a storage permission. Camera capture uses `CAMERA` (still declared).
+
+### Fix 1 -- manifest: remove the declared permissions
+`android/app/src/main/AndroidManifest.xml`: removed
+`<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />`
+and `<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+android:maxSdkVersion="32" />`. Neither `READ_MEDIA_IMAGES` nor
+`READ_MEDIA_VIDEO` was ever declared by any Flutter plugin (verified across
+the pub cache + the merged manifest). `targetSdk` was already **36**
+(Android 16, ≥ 34) — no change needed.
+
+### Fix 2 -- manifest: strip the LIBRARY-IMPLIED permissions (the subtle part)
+Removing the declared permissions was NOT enough: the **merged** manifest
+still contained `WRITE_EXTERNAL_STORAGE` + `READ_EXTERNAL_STORAGE` +
+`READ_PHONE_STATE`, with **no `maxSdkVersion`** — so they applied on API 33+
+and still violated the policy. The manifest-merger report
+(`build/app/outputs/logs/manifest-merger-debug-report.txt`) named the origin:
+
+```
+uses-permission#android.permission.WRITE_EXTERNAL_STORAGE
+IMPLIED ... reason: org.tensorflow.lite.gpu.api has a targetSdkVersion < 4
+uses-permission#android.permission.READ_PHONE_STATE
+IMPLIED ... reason: org.tensorflow.lite.gpu.api has a targetSdkVersion < 4
+uses-permission#android.permission.READ_EXTERNAL_STORAGE
+IMPLIED ... reason: org.tensorflow.lite.gpu.api requested WRITE_EXTERNAL_STORAGE
+```
+
+The `com.google.ai.edge.litert:litert-gpu-api` AAR (pulled in transitively by
+`tflite_flutter` → LiteRT) ships **no `<uses-sdk>`**, so the merger treats its
+`targetSdkVersion` as `< 4` and auto-implies the legacy storage + phone-state
+permissions. Fix: added `xmlns:tools` and three explicit removals to the app
+manifest —
+
+```xml
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
+```
+
+`tools:node="remove"` deletes a permission from the final merged manifest
+regardless of origin. All three were verified absent from the merged manifest
+and from the built APK afterwards. JagSpoor reads only its own app-internal
+files, so none of the three is needed.
+
+### Fix 3 -- version bump 1.0.10 (code 10) -> 1.0.11 (code 11)
+A Play re-upload needs a strictly higher `versionCode`. Bumped in sync across
+all three sources (the Gradle values are hardcoded, NOT derived from
+`flutter.versionCode`): `pubspec.yaml` `version: 1.0.11+11`,
+`android/app/build.gradle.kts` `versionCode = 11` / `versionName = "1.0.11"`,
+`lib/core/widgets/version_info.dart` fallbacks `'11'` / `'1.0.11'`, plus the
+two test expectations (`test/version_info_and_facebook_test.dart`,
+`test/force_update_service_test.dart`). `versionCode` is bumped to 11 in the
+fix — NOT to 10 — because 10 was already published.
+
+### Verification (real Android build, in-sandbox)
+Full toolchain provisioned: Flutter **3.44.9** (`/home/openhands/flutter`),
+OpenJDK 21, Android cmdline-tools + `platforms;android-36` +
+`build-tools;36.0.0` + `ndk;27.0.12077973` under
+`/home/openhands/android-sdk`, `android/local.properties` (gitignored)
+pointing at them.
+- `flutter build apk --debug` -> **SUCCESS**.
+- Merged debug manifest (`build/app/intermediates/merged_manifests/debug/
+  processDebugManifest/AndroidManifest.xml`): **no** `READ_MEDIA_IMAGES`,
+  `READ_MEDIA_VIDEO`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, or
+  `READ_PHONE_STATE`.
+- `apkanalyzer manifest permissions` on BOTH the debug and release APKs:
+  **none** of those permissions present.
+- `flutter build apk --release` -> **SUCCESS** (76.8 MB).
+- `flutter build appbundle --release` -> **SUCCESS** ->
+  `build/app/outputs/bundle/release/app-release.aab` (upload artifact).
+- Merged/APK manifest: `package="za.co.jagspoor.app"`, `versionCode="11"`,
+  `versionName="1.0.11"`, `targetSdkVersion="36"`.
+- `flutter analyze`: **0 errors, 0 warnings** (320 pre-existing info-level
+  issues — the documented baseline).
+- `npm test` (functions): **101/101 pass**.
+- `flutter test` (full suite): **2076 passed, 1 failed** — the single failure
+  is the DOCUMENTED PRE-EXISTING
+  `test/trial_onboarding_functions_contract_test.dart` ("is a Firebase Auth
+  user-creation trigger in us-central1": asserts the v1 `.auth.user()` shape
+  while `functions/src/user_trial_onboarding.ts` was migrated to v2
+  `onUserCreated` in the "Migrate auth triggers to v2" phase). PROVEN
+  pre-existing: the identical failure reproduces with the photo-picker changes
+  stashed (`git stash`). Neither the test nor the TS source is touched by this
+  task.
+
+### Deploy / operator steps
+- Commit + push `main` (see the task brief for the exact commit command).
+- Re-run the **Build & Deploy** workflow, then upload
+  `build/app/outputs/bundle/release/app-release.aab` to **Play Console ->
+  Publishing overview -> Resubmit**.
+- Note (carried over): `android/key.properties` + the release keystore are
+  ABSENT in this sandbox, so the release AAB falls back to the debug signing
+  identity (`build.gradle.kts` `signingConfig` fallback). Play rejects a
+  debug-signed AAB — build the upload artifact in a credentialed environment
+  with the real keystore, or add `key.properties` here.
+- The merged manifest is the compliance evidence Play checks; keep the
+  `tools:node="remove"` block in place so a future dependency bump cannot
+  silently reintroduce the implied permissions.
+
+### Files
+- MODIFIED: `android/app/src/main/AndroidManifest.xml` (removed
+  `READ_MEDIA_IMAGES` + `READ_EXTERNAL_STORAGE`; added `xmlns:tools` + three
+  `tools:node="remove"` entries), `pubspec.yaml`, `pubspec.lock` (version
+  only), `android/app/build.gradle.kts`, `lib/core/widgets/version_info.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+- No Dart app logic changed (image picker call sites already use the system
+  picker). No `file_picker` change needed (its Android manifest declares no
+  storage permission; it uses the system document picker). No
+  `permission_handler` change needed (no photo/video permission is requested).
+
+
 ## Phase -- Fix "Firebase Deploy" GitHub Action failure (Failed to authenticate) + CI-vs-local deploy contract (added 2026-10-12)
 
 ### Symptom

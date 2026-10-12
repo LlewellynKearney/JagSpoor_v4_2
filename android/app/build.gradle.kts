@@ -72,14 +72,17 @@ android {
         // Current Google Play requirement (as of Aug 31 2026) for new apps
         // and updates: target Android 16 (API level 36). Already satisfied.
         targetSdk = 36
-        // Version code 10 + version name 1.0.10: each Play Console re-upload
+        // Version code 11 + version name 1.0.11: each Play Console re-upload
         // requires a strictly higher version code integer than the previous
-        // accepted AAB (v1.0.9 / code 9) for acceptance — and the forced
+        // accepted AAB (v1.0.10 / code 10) for acceptance — and the forced
         // update gate only fires when the published build carries a higher
-        // versionCode than the installed one. Kept in sync with the pubspec
-        // `version: 1.0.10+10` line.
-        versionCode = 10
-        versionName = "1.0.10"
+        // versionCode than the installed one. This build also removes the
+        // READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE permissions to satisfy
+        // Google Play's Photo and Video Permissions policy (enforced
+        // 2026-10-12). Kept in sync with the pubspec `version: 1.0.11+11`
+        // line.
+        versionCode = 11
+        versionName = "1.0.11"
     }
 
     // ---------- Signing configuration ----------

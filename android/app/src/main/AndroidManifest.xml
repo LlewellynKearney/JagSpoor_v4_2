@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
@@ -11,14 +12,47 @@
     <!-- Required for Google Play Billing subscriptions (in_app_purchase). -->
     <uses-permission android:name="com.android.vending.BILLING" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <!-- Gallery / photo-library access for image_picker.
-         Android 13+ (API 33+, incl. 14 / S26+) uses the granular
-         below still use the legacy READ_EXTERNAL_STORAGE grant. image_picker
-         returns a cached app-internal file path for picked media, so these
-         permissions cover browsing the user's photo library to pick a
-         trophy / firearm photo. -->
+    <!-- NO broad media permissions are declared by JagSpoor.
+         Specifically there is NO android.permission.READ_MEDIA_IMAGES,
+         NO READ_MEDIA_VIDEO and NO READ_EXTERNAL_STORAGE.
+         Google Play's "Photo and Video Permissions" policy (enforced
+         2026-10-12, https://support.google.com/googleplay/android-developer/answer/13537402)
+         permits those permissions only for apps whose CORE functionality is
+         photo/video browsing or management. JagSpoor's need (pick a profile /
+         trophy / firearm / package photo) is fully served by the Android
+         system Photo Picker, which grants per-file access with NO runtime
+         permission at all.
+         image_picker 1.2.1 (image_picker_android 0.8.13+1) automatically
+         routes to ActivityResultContracts.PickVisualMedia on Android 13+
+         (API 33+) and uses the backported Photo Picker on Android 11/12 when
+         the device supports it; on older devices it falls back to
+         ACTION_OPEN_DOCUMENT / ACTION_GET_CONTENT, which also grant per-file
+         access without a storage permission. Camera capture uses the CAMERA
+         permission declared above.
+         Do NOT re-add READ_MEDIA_IMAGES / READ_MEDIA_VIDEO /
+         READ_EXTERNAL_STORAGE: doing so re-triggers the Play policy
+         violation. See AGENTS.md ("Android photo picker") for the rationale.
+
+         The three `tools:node="remove"` directives below STRIP storage /
+         phone-state permissions that the TensorFlow Lite GPU delegate AAR
+         (`com.google.ai.edge.litert:litert-gpu-api`, pulled in transitively
+         by `tflite_flutter`) causes the manifest merger to IMPLY: that AAR
+         ships NO <uses-sdk>, so the merger treats its targetSdkVersion as
+         < 4 and auto-adds WRITE_EXTERNAL_STORAGE + READ_PHONE_STATE (and, in
+         turn, READ_EXTERNAL_STORAGE). JagSpoor needs none of them — photos
+         come from the system Photo Picker and the app only ever reads its
+         own app-internal files. `tools:node="remove"` deletes them from the
+         final merged manifest regardless of origin. Verified against the
+         merged manifest after `flutter build apk`: none of the three survive
+         (see the manifest-merger report, which otherwise reports them as
+         "IMPLIED ... reason: org.tensorflow.lite.gpu.api has a
+         targetSdkVersion < 4"). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"
+        tools:node="remove" />
     <!-- Calendar read/write for the "Add Hunt to Calendar" feature
          (BookingCalendarService). These are "dangerous" permissions on
          Android 6+ (API 23+) so they require a runtime grant in addition
