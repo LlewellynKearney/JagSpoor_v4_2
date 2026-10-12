@@ -1,18 +1,57 @@
 name: Firebase Deploy
 
+# Deploys the static Hosting bundle + the Firestore/Storage security rules on
+# every push to main. Cloud Functions are OPT-IN (see `deploy_functions`
+# below) because a v2 functions deploy mounts the `EMAIL_PASS` Secret Manager
+# secret, which requires the deploying service account to hold
+# `roles/secretmanager.secretAccessor` AND the secret to already exist in the
+# project (`firebase functions:secrets:set EMAIL_PASS`).
+#
+# Credentials: the job prefers a service-account JSON secret
+# (`FIREBASE_SERVICE_ACCOUNT`) and falls back to a legacy CI token
+# (`FIREBASE_TOKEN`). When NEITHER is configured the deploy job SKIPS with a
+# warning instead of failing — a missing secret must never red-flag the build.
+#
+# See AGENTS.md -> "Deploying" for the local-vs-CI contract.
+
 on:
   push:
     branches: [main]
+  # Run the verification job on PRs so the workflow itself is exercised before
+  # merge. The `deploy` job is gated to non-PR events below, so a PR never
+  # deploys (and fork PRs never receive secrets anyway).
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_functions:
+        description: 'Also deploy Cloud Functions (service account needs Secret Manager Secret Accessor for EMAIL_PASS)'
+        type: boolean
+        required: false
+        default: false
+      targets:
+        description: 'Comma-separated firebase deploy targets (overrides the default hosting,firestore:rules,storage)'
+        type: string
+        required: false
+        default: ''
 
 # Minimal permissions — the deploy only needs to read the repo; Firebase
-# access is granted via the FIREBASE_TOKEN secret.
+# access is granted via FIREBASE_SERVICE_ACCOUNT / FIREBASE_TOKEN.
 permissions:
   contents: read
 
+env:
+  # The Firebase project id. Overridable per-repo via the FIREBASE_PROJECT_ID
+  # Actions variable; defaults to the project in .firebaserc (jagspoor).
+  FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'jagspoor' }}
+
 jobs:
-  deploy:
-    name: Deploy Functions & Firestore Rules
+  # ── Always runs ────────────────────────────────────────────────────────────
+  # Verifies the Cloud Functions compile and pass their test suite even when
+  # no deploy credential is configured, so a broken `functions/` tree is
+  # caught in CI rather than at the next local deploy.
+  verify-functions:
+    name: Verify Cloud Functions
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -25,13 +64,114 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 
-      - name: Install dependencies
+      - name: Install dependencies (lockfile-exact)
         working-directory: functions
-        run: npm install
+        run: npm ci --no-audit --no-fund
 
       - name: Build TypeScript functions
         working-directory: functions
         run: npm run build
 
+      - name: Run functions tests
+        working-directory: functions
+        run: npm test
+
+  # ── Gated on credentials ──────────────────────────────────────────────────
+  deploy:
+    name: Deploy Hosting & Firestore Rules
+    runs-on: ubuntu-latest
+    needs: verify-functions
+    # Never deploy from a pull_request (fork PRs get no secrets, and a PR must
+    # not mutate production). Deploys run on push-to-main + manual dispatch.
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Fail-open credential probe: pick the service account when present, else
+      # the legacy token, else skip the deploy with an actionable warning.
+      # Passing `--token ""` (the previous behaviour) made firebase-tools
+      # abort with "Failed to authenticate" — the bug this workflow fixes.
+      - name: Check Firebase credentials
+        id: creds
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "mode=service_account" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Using FIREBASE_SERVICE_ACCOUNT."
+          elif [ -n "$FIREBASE_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Using FIREBASE_TOKEN."
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No Firebase credentials found — skipping the deploy."
+            echo "::warning::Set the repo secret FIREBASE_SERVICE_ACCOUNT (recommended) or FIREBASE_TOKEN to enable hosting + rules deploys."
+            echo "::warning::Cloud Functions still deploy from a local machine with 'firebase deploy --only functions' (see AGENTS.md)."
+          fi
+
+      - name: Setup Node.js
+        if: steps.creds.outputs.deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      # Install + build up-front so `firebase deploy` does not pay the cost
+      # again. `npm ci` pins the lockfile (npm install would drift).
+      - name: Install functions dependencies (lockfile-exact)
+        if: steps.creds.outputs.deploy == 'true'
+        working-directory: functions
+        run: npm ci --no-audit --no-fund
+
+      - name: Build TypeScript functions
+        if: steps.creds.outputs.deploy == 'true'
+        working-directory: functions
+        run: npm run build
+
+      - name: Write service account
+        if: steps.creds.outputs.deploy == 'true' && steps.creds.outputs.mode == 'service_account'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+
+      # Default target set is hosting + firestore rules + storage rules — none
+      # of which need the EMAIL_PASS secret. Functions are opt-in via the
+      # workflow_dispatch `deploy_functions` input.
+      - name: Resolve deploy targets
+        if: steps.creds.outputs.deploy == 'true'
+        id: targets
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_functions }}" = "true" ]; then
+            echo "value=hosting,firestore:rules,storage,functions" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.targets }}" ]; then
+            echo "value=${{ inputs.targets }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=hosting,firestore:rules,storage" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy to Firebase
-        run: npx firebase-tools deploy --only functions,firestore:rules --token "${{ secrets.FIREBASE_TOKEN }}"
+        if: steps.creds.outputs.deploy == 'true'
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          echo "Deploying targets: ${{ steps.targets.outputs.value }} (project: $FIREBASE_PROJECT_ID)"
+          if [ "${{ steps.creds.outputs.mode }}" = "token" ]; then
+            npx firebase-tools deploy \
+              --only "${{ steps.targets.outputs.value }}" \
+              --project "$FIREBASE_PROJECT_ID" \
+              --token "$FIREBASE_TOKEN" \
+              --non-interactive
+          else
+            npx firebase-tools deploy \
+              --only "${{ steps.targets.outputs.value }}" \
+              --project "$FIREBASE_PROJECT_ID" \
+              --non-interactive
+          fi

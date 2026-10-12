@@ -153,6 +153,15 @@ firebase deploy --only functions
 
 ## 4. Deploy
 
+> **CI vs local.** The GitHub Actions **Firebase Deploy** workflow deploys
+> **hosting + Firestore/Storage rules only** (targets
+> `hosting,firestore:rules,storage`). Cloud Functions are **opt-in** there
+> (Actions → *Firebase Deploy* → *Run workflow* → tick `deploy_functions`)
+> because a v2 functions deploy mounts the `EMAIL_PASS` Secret Manager secret
+> and needs the deploying service account to hold
+> `roles/secretmanager.secretAccessor`. The routine way to ship functions —
+> and the one that already has `EMAIL_PASS` mounted — is the local CLI below.
+
 ```bash
 # from the repository root
 cd functions && npm install          # installs nodemailer
@@ -160,9 +169,11 @@ cd ..
 firebase deploy --only functions
 ```
 
-The `functions` block in `firebase.json` runs `npm --prefix ./functions run
-build` as a pre-deploy step, so the TypeScript is compiled automatically. The
-runtime is Node 22.
+The `functions` block in `firebase.json` runs
+`npm --prefix "$RESOURCE_DIR" ci --no-audit --no-fund` then
+`npm --prefix "$RESOURCE_DIR" run build` as pre-deploy steps, so the
+lockfile-exact dependency tree is installed and the TypeScript is compiled
+automatically. The runtime is Node 22.
 
 To deploy only the notification + trial functions:
 
