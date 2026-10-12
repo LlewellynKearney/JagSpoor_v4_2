@@ -1,6 +1,137 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Fix "Firebase Deploy" GitHub Action failure (Failed to authenticate) + CI-vs-local deploy contract (added 2026-10-12)
+
+### Symptom
+Every push to `main` red-flagged the **Firebase Deploy** workflow
+(`.github/workflows/firebase-deploy.yml`), job *Deploy Functions & Firestore
+Rules*, in ~31s, while **Build & Deploy** stayed green. Log tail:
+
+```
+npx firebase-tools deploy --only functions,firestore:rules --token ""
+Error: Failed to authenticate, have you run firebase login?
+##[error]Process completed with exit code 1.
+```
+
+### Root cause
+The workflow invoked
+`npx firebase-tools deploy --only functions,firestore:rules --token "${{ secrets.FIREBASE_TOKEN }}"`
+**unconditionally**. The repo secret `FIREBASE_TOKEN` is **not configured**, so
+the interpolation collapsed to `--token ""` and firebase-tools aborted with
+"Failed to authenticate". There was no credential guard, so a missing secret
+hard-failed the job on every push.
+
+Three secondary defects found in the same audit:
+1. **`.firebaserc` was absent** (not tracked, not on disk) — so even with a
+   credential, `firebase deploy` had **no default project** to target. The
+   project id is `jagspoor` (from `lib/firebase_options.dart`).
+2. The **`Build & Deploy`** workflow's *Deploy to Firebase App Distribution*
+   job silently **skipped** every step (its `Check Firebase secrets` gate found
+   `FIREBASE_SERVICE_ACCOUNT` unset). So the repo has **no** Firebase
+   credential of either flavour configured in GitHub Secrets.
+3. Deploying **functions** from CI mounts the `EMAIL_PASS` Secret Manager
+   secret (every mail-sending trigger declares `secrets: [emailPass]`). That
+   needs the deploying service account to hold
+   `roles/secretmanager.secretAccessor` **and** the secret to pre-exist — a
+   fragile coupling for an unattended CI job.
+
+### Fix
+
+**`.github/workflows/firebase-deploy.yml` rewritten** (2 jobs):
+- `verify-functions` — **always runs**, no credential needed: `npm ci
+  --no-audit --no-fund` → `npm run build` → `npm test` on `functions/`. A
+  broken `functions/` tree is caught in CI even when the deploy is skipped.
+- `deploy` — `needs: verify-functions`, gated on a **fail-open credential
+  probe** (`Check Firebase credentials`): prefers
+  `secrets.FIREBASE_SERVICE_ACCOUNT` (written to
+  `$RUNNER_TEMP/firebase-sa.json` + `GOOGLE_APPLICATION_CREDENTIALS`), falls
+  back to `secrets.FIREBASE_TOKEN`, and when **neither** is set emits
+  `::warning::` + `deploy=false` so the job **succeeds (skips)** instead of
+  failing. Every credential-dependent step carries
+  `if: steps.creds.outputs.deploy == 'true'`.
+- **Default targets are `hosting,firestore:rules,storage`** — none of which
+  touch the `EMAIL_PASS` secret. Functions are **opt-in** via the
+  `workflow_dispatch` input `deploy_functions` (adds `,functions`), or an
+  explicit `targets` override. So the routine push deploy never needs Secret
+  Manager access.
+- `--token` is **only** passed in token mode (never with an empty value);
+  service-account mode relies on ADC. Both paths add `--project
+  "$FIREBASE_PROJECT_ID"` (env `vars.FIREBASE_PROJECT_ID || 'jagspoor'`) and
+  `--non-interactive`.
+- The functions install/build runs **before** the deploy step so
+  `firebase deploy`'s predeploy does not repeat it.
+
+**`firebase.json`** `functions.predeploy` now uses the documented
+`$RESOURCE_DIR` variable + non-audit install:
+```json
+"predeploy": [
+  "npm --prefix \"$RESOURCE_DIR\" ci --no-audit --no-fund",
+  "npm --prefix \"$RESOURCE_DIR\" run build"
+]
+```
+
+**`.firebaserc` (NEW, tracked)** — `{ "projects": { "default": "jagspoor" } }`
+so `firebase deploy` (CI **and** local) resolves the project without `--project`.
+
+### Contract test (NEW)
+`functions/test/firebase_deploy_workflow.test.js` (8 tests, node:test) locks
+the fix structurally (no network / no credentials):
+- the workflow triggers on `main`; it **never** emits an unconditional
+  `--token "${{ secrets.FIREBASE_TOKEN }}"` line (the exact ba74c1f shape);
+- the credential probe references **both** secrets and writes
+  `deploy=true`/`deploy=false` + `::warning::`;
+- the deploy step is gated on `steps.creds.outputs.deploy == 'true'`;
+- the default target set is `hosting,firestore:rules,storage` and functions
+  are only reached through `deploy_functions`;
+- the deploy pins `--project "$FIREBASE_PROJECT_ID"` + `--non-interactive`;
+- `.firebaserc` default project is `jagspoor`;
+- `firebase.json` predeploy runs `npm --prefix "$RESOURCE_DIR" ci` then
+  `npm --prefix "$RESOURCE_DIR" run build`.
+
+### Verification
+- `cd functions && npm ci --no-audit --no-fund` → clean (lockfile in sync).
+- `npm run build` (tsc) → **0 errors**; `npm test` → **100/100 pass**
+  (92 pre-existing + 8 new workflow-contract tests).
+- Workflow + `firebase.json` + `.firebaserc` parsed with PyYAML / `json`:
+  valid. The new test file is tracked (the `functions/.gitignore` `!test/*.js`
+  negation covers it).
+- No secrets committed; `.firebaserc` carries only the public project id.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
+### Deploying — the CI-vs-local contract (how to ship)
+
+| Target | How | Needs |
+| --- | --- | --- |
+| Hosting + Firestore rules + Storage rules | **GitHub Actions** on push to `main` (once a credential secret is set) | `FIREBASE_SERVICE_ACCOUNT` (recommended) or `FIREBASE_TOKEN` |
+| Cloud Functions (all 5 mail/trial triggers + notifications) | **Local CLI** `cd functions && npm ci && npm run build && firebase deploy --only functions` | `EMAIL_PASS` mounted (`firebase functions:secrets:set EMAIL_PASS`) + Secret Manager Secret Accessor on the deploying identity |
+| Cloud Functions from CI (opt-in) | Actions → **Firebase Deploy** → *Run workflow* → tick `deploy_functions` | the credential secret **plus** `roles/secretmanager.secretAccessor` for that SA and the `EMAIL_PASS` secret already present |
+
+**One-time operator steps (cannot be done from this sandbox):**
+1. Add the repo secret **`FIREBASE_SERVICE_ACCOUNT`** (a Firebase service
+   account JSON key) — recommended over the deprecated `FIREBASE_TOKEN`. In
+   Google Cloud IAM grant that service account: *Firebase Admin*, *Cloud
+   Functions Developer*, *Cloud Run Admin*, *Service Account User*, *Firebase
+   Rules Admin*, *Firebase Hosting Admin*, and — only if CI should deploy
+   functions — **Secret Manager Secret Accessor**.
+2. Confirm `firebase functions:secrets:set EMAIL_PASS` has been run in project
+   `jagspoor` (the v4 secret). Without it a functions deploy still succeeds
+   but the mail triggers log `support email skipped: EMAIL_PASS secret is not
+   configured`.
+3. (Optional) set the Actions **variable** `FIREBASE_PROJECT_ID` if the
+   project id ever changes (defaults to `jagspoor`).
+
+Until step 1 is done the deploy job **skips with a warning** (green) and the
+functions are still verified by `verify-functions`; hosting + rules must be
+deployed locally in the meantime.
+
+### Files
+- MODIFIED: `.github/workflows/firebase-deploy.yml` (rewritten),
+  `firebase.json` (predeploy `$RESOURCE_DIR`), `AGENTS.md`,
+  `docs/EMAIL_NOTIFICATIONS_SETUP.md` (CI-vs-local note).
+- NEW: `.firebaserc`, `functions/test/firebase_deploy_workflow.test.js`.
+
+
 ## Phase -- Robust Afrihost SMTP config + debug logging for support@jag-spoor.co.za (added 2026-10-11)
 
 ### Symptom
