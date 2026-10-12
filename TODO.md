@@ -222,7 +222,80 @@ Out of scope (later)
 In-app chat (reuse existing)
 Reviews v2
 Hunter-to-provider payment (handled offline)
+3. IMPLEMENTATION PLAN - MINIMAL CHANGE (How to incorporate without breaking current JagSpoor v4_2)
+Principle: Extend, don't replace. All new fields nullable with defaults.
+Phase 1 - Non-breaking extension (1-2 days when build starts)
+A. Roles (reuse existing)
+
+Current: enum UserRole { hunter, outfitter, admin }
+New: enum UserRole { hunter, internationalHunter, outfitter, butchery, taxidermy, admin }
+Existing checks role == hunter still work
+New logic: if role == internationalHunter -> show passport, SAPS 520, currency toggle
+Firestore: no migration needed - new users get new role, old users unchanged
+B. Pricing Model - Extend, not replace (backward compatible)
+
+// Existing model keeps working
+class Package {
+  double? price; // OLD - keep for compat, nullable
+  double? localPrice; // NEW - if null, fallback to price
+  double? intlPrice; // NEW - if null, hide from international hunters
+  Audience audience; // NEW - default Audience.both so existing packages show to all
+}
+// Migration on read:
+double get effectiveLocalPrice => localPrice ?? price ?? 0;
+double get effectiveIntlPrice => intlPrice ?? price ?? 0;
+Outfitter dashboard: add 2 price fields + Audience chips [All | Local | International] on top of existing screen
+Existing outfitters: audience = both by default -> no breaking change
+C. Outfitter Gold Standard - Just a badge
+
+New: outfitters/{uid}/goldStandard { checklist: Map, score: int, verifiedDocs: [] }
+UI: collapsible section in existing outfitter onboarding: Optimum Outfitter Checklist (10 items)
+Scoring: score = checkedCount / 10
+Sorting only, no filtering: international hunters sorted by score desc, local hunters sorted by distance/price
+Featured badge: Gold Standard if score >= 8
+D. Subscription - Reuse same modal
+
+Existing modal widget: SubscriptionPaywallModal
+Pass UserRole -> returns price:
+hunter: R34.99
+internationalHunter: $5.99
+outfitter: R299.99
+butchery/taxidermy: R149.99
+Play Console: create 5 products: hunter_monthly, intl_hunter_monthly, outfitter_monthly, butchery_monthly, taxidermy_monthly
+Gate same as before: dashboard load checks subscriptions/{uid}.status == active
+Phase 2 - Adapt Gold Standard INTO Local Hunter (feels like upgrade, not change)
+Gold Standard Feature	How to adapt to Local Hunter (minimal)
+Trophy Care (deal breaker)	In existing Trophy Log, add button Find Taxidermy / Butchery Nearby -> reuses Find screens. Local hunters lose trophies to bad caping too.
+Transparency Pricing	Existing package view: add 2 bullet lists: Included: ... and Extra: ... (daily rate + trophy fee). Local hates hidden costs too.
+Pre-hunt pack / Logistics	Reuse Trip Planner: for local, show Farm gate GPS, check-in, what to bring, calibre advice instead of OR Tambo. Same widget, different text per audience.
+Accommodation photos	Outfitters already upload lodge photos. Require 5+ photos to get Verified Lodge badge - works for both.
+Conservation story	Add optional field conservationImpact to outfitter profile - show for both, international sees first.
+Food & hospitality	Existing lodge description - add tags: Traditional SA cuisine, Boma, Laundry, etc.
+Phase 3 - Butchery/Taxidermy Reuse Outfitter UI (0.5-1 day)
+Butchery/Taxidermy dashboard = clone of Outfitter dashboard pricing CRUD (same widget, different labels)
+Hunter search: clone FindOutfitterScreen -> FindButcheryScreen + FindTaxidermyScreen (same map+list, query where role == butchery)
+Booking: reuse existing bookings collection, add providerType + audience + currency
+No new backend - all existing Firebase rules + FCM notifications reused
+Result - No Breaking Changes
+Local hunter (R34.99): same app + nearby butchery/taxidermy + transparent pricing + trophy care button = feels like upgrade
+International hunter ($5.99): sees USD pricing, gold standard sorted, OR Tambo, dip/pack quotes upfront, SAPS 520 handling
+Outfitter (R299.99): sets 2 prices once, gets both markets separately - solves price inflation
+Butchery/Taxidermy (R149.99): same dashboard, 2 tabs Local/International
+Code change: ~5 new files, 3 modified files (UserRole enum, Package model, Outfitter dashboard)
+Build Order When Requested
+ Extend UserRole + Package model (nullable fields, default both) - 2 hours
+ Outfitter dashboard 2 price fields + audience chips - 3 hours
+ Gold Standard checklist + badge + score sorting - 3 hours
+ Butchery/Taxidermy roles + pricing CRUD (reuse outfitter UI) - 4 hours
+ FindButchery/FindTaxidermy screens (clone FindOutfitter) - 3 hours
+ Booking with audience + currency + tripId link - 3 hours
+ Subscription paywall 5 products - 2 hours
+ Tests + security rules
+Total: ~20 hours, no breaking changes to existing 1.0.11 build in Play Console review.
+
 NOTES FOR OPENHANDS
 DO NOT BUILD NOW - spec only
-When build is requested, start with butchery profile, then taxidermy, then hunter search, then booking
+When build is requested, follow Phase 1 -> Phase 2 -> Phase 3 order above
+All new fields nullable with defaults (audience=both) to keep existing outfitters working
 Keep existing international hunter TODO untouched
+Gold Standard is sorting/badge, not filter - don't hide existing outfitters from local hunters
