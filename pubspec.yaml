@@ -15,7 +15,7 @@ dependencies:
   mobile_scanner: ^6.0.11
   
   # Reliable native camera access to bypass GPU/Vulkan rendering errors
-  image_picker: ^1.0.0
+  image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
   
   # Camera access for spoor identifier
