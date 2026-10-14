@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -39,7 +40,7 @@
          by `tflite_flutter`) causes the manifest merger to IMPLY: that AAR
          ships NO <uses-sdk>, so the merger treats its targetSdkVersion as
          < 4 and auto-adds WRITE_EXTERNAL_STORAGE + READ_PHONE_STATE (and, in
-         turn, READ_EXTERNAL_STORAGE). JagSpoor needs none of them — photos
+         turn, READ_EXTERNAL_STORAGE). JagSpoor needs none of them - photos
          come from the system Photo Picker and the app only ever reads its
          own app-internal files. `tools:node="remove"` deletes them from the
          final merged manifest regardless of origin. Verified against the
