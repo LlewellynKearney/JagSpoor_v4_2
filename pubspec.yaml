@@ -134,6 +134,11 @@ dependencies:
   # NOTE: 3.3.0 / 0.5.x require Dart >=3.12 / Flutter >=3.44 — the CI pin must
   # move off 3.29.1 (Dart 3.7) to build this.
   in_app_purchase: ^3.3.0
+  # Google Play specific Billing API (GooglePlayProductDetails / offer tokens).
+  # Billing Library v5+ requires the base-plan offerToken for subscriptions;
+  # resolving it needs this platform implementation package directly, so it is
+  # declared here (pinned in lockstep with in_app_purchase 3.3.0).
+  in_app_purchase_android: ^0.5.0
   package_info_plus: ^9.0.1
   # Google Play in-app updates (immediate + flexible). Provides the Play Core
   # AppUpdateManager API to Dart, so no direct

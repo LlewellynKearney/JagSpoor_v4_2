@@ -40,6 +40,15 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// catalog resolves.
   SubscriptionVatPrice? _price;
 
+  /// The resolved Play catalog for the app's tiers. Held so the purchase flow
+  /// can launch with the base-plan offer token resolved at catalog load.
+  Map<SubscriptionTier, PlayProduct> _products = const {};
+
+  /// True while the Play catalog query is in flight (after billing support is
+  /// confirmed) — gates the SUBSCRIBE button so it can never launch before the
+  /// base-plan offer token is known.
+  bool _catalogLoading = false;
+
   /// v1.0.12 hotfix: the paywall is a first-class purchase surface. It listens
   /// to the Play purchase stream so a purchase made here is acknowledged
   /// immediately (the previous version had no listener at all, so a purchase
@@ -175,19 +184,47 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// The amount is NEVER hardcoded: until the catalog resolves the paywall
   /// shows [PaywallScreen.loadingPriceLabel] rather than inventing a number.
   Future<void> _loadPlayPrice() async {
+    // Query the Play catalog directly (no separate availability probe — the
+    // catalog query is itself the availability check, and a host that cannot
+    // reach the store simply leaves the price on the neutral loading label).
+    // The loading state is engaged while the query is in flight so the
+    // SUBSCRIBE button can never launch before the base-plan offer token is
+    // known.
+    if (mounted) setState(() => _catalogLoading = true);
     try {
       final products = await PlayBillingService.instance.loadProducts();
+      if (!mounted) return;
       final product = products[_tier];
-      if (!mounted || product == null) return;
       setState(() {
-        _price = SubscriptionVatPrice.fromExVat(
-          product.rawPrice,
-          currencySymbol: product.currencySymbol,
-        );
+        _products = products;
+        _catalogLoading = false;
+        if (product != null) {
+          _price = SubscriptionVatPrice.fromExVat(
+            product.rawPrice,
+            currencySymbol: product.currencySymbol,
+          );
+        }
       });
     } catch (e) {
       debugPrint('PaywallScreen.loadPlayPrice failed: $e');
+      if (mounted) setState(() => _catalogLoading = false);
     }
+  }
+
+  /// The Play catalog entry for the active tier, or null when it has not
+  /// loaded / is not configured in the Play Console.
+  PlayProduct? get _activeProduct => _products[_tier];
+
+  /// Whether the SUBSCRIBE button is enabled: held disabled while the catalog
+  /// is loading, and — once loaded — until the active product carries the
+  /// base-plan offer token Google Play Billing v5+ requires. When no catalog
+  /// entry resolved (non-store host / product not configured) the button stays
+  /// tappable so [_subscribeViaGooglePlay] can explain the reason.
+  bool get _subscribeEnabled {
+    if (_catalogLoading) return false;
+    final product = _activeProduct;
+    if (product == null) return true;
+    return product.isPurchasable;
   }
 
   Future<void> _launchWebsite(BuildContext context) async {
@@ -215,8 +252,24 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   Future<void> _subscribeViaGooglePlay(BuildContext context) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
+    final product = _activeProduct;
+    if (_catalogLoading) return; // catalog still loading — button is disabled
+    if (product != null && !product.isPurchasable) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This subscription is not available yet — the Play Console base '
+            'plan is not active. Please try again later or contact support.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     try {
-      final launched = await PlayBillingService.instance.purchaseProduct(_tier);
+      final launched = product != null
+          ? await PlayBillingService.instance.buyProduct(product)
+          : await PlayBillingService.instance.purchaseProduct(_tier);
       if (!launched && messenger != null) {
         messenger.showSnackBar(
           const SnackBar(
@@ -360,21 +413,34 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ],
               FilledButton.icon(
                 key: const ValueKey('paywallPlaySubscribeButton'),
-                onPressed: _paymentPending
+                onPressed: (_paymentPending || !_subscribeEnabled)
                     ? null
                     : () => _subscribeViaGooglePlay(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor:
+                      theme.subtitleColor.withValues(alpha: 0.3),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                icon: const Icon(Icons.play_circle_fill_rounded),
-                label: const Text(
-                  'SUBSCRIBE VIA GOOGLE PLAY',
-                  style: TextStyle(
+                icon: _catalogLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.play_circle_fill_rounded),
+                label: Text(
+                  _catalogLoading
+                      ? 'LOADING GOOGLE PLAY…'
+                      : 'SUBSCRIBE VIA GOOGLE PLAY',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.1,
                   ),
