@@ -17,8 +17,8 @@ import 'package:jagspoor/features/shared/widgets/facebook_link_tile.dart';
 void main() {
   group('VersionInfo fallback contract', () {
     test('fallback constants mirror the current Android Play build', () {
-      expect(VersionInfo.fallbackVersionName, '1.0.11');
-      expect(VersionInfo.fallbackVersionCode, '11');
+      expect(VersionInfo.fallbackVersionName, '1.0.12');
+      expect(VersionInfo.fallbackVersionCode, '12');
     });
 
     test('resolve() never throws on unsupported hosts', () async {

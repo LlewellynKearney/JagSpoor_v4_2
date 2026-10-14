@@ -1,6 +1,58 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Version bump 1.0.11 (code 11) -> 1.0.12 (code 12) for the Play Store re-upload (added 2026-10-14)
+
+### What changed
+A strictly-higher `versionCode` is required for every Play Console re-upload,
+so the app was bumped from **1.0.11 / code 11** to **1.0.12 / code 12**. The
+release reason is the Google Sign-In SHA registration for the production
+package id `za.co.jagspoor.app`.
+
+### Version sources kept in sync (hand-synced convention)
+The Gradle values are HARDCODED in this project (they do NOT track
+`flutter.versionCode` / `flutter.versionName`), so the bump was applied to
+every source by hand:
+- `pubspec.yaml`: `version: 1.0.11+11` -> `version: 1.0.12+12`.
+- `android/app/build.gradle.kts` (`defaultConfig`): `versionCode = 11` ->
+  `12`, `versionName = "1.0.11"` -> `"1.0.12"` (+ the surrounding comment).
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode` `'11'` ->
+  `'12'`, `fallbackVersionName` `'1.0.11'` -> `'1.0.12'`, plus the two
+  doc-comment examples (`resolve()` + `VersionInfoCaption`).
+- `test/version_info_and_facebook_test.dart`: fallback expectations ->
+  `'1.0.12'` / `'12'`.
+- `test/force_update_service_test.dart`: the shipped-build test now mirrors
+  versionCode 12 (floor 12 vs 11 blocks; floor 11 vs 11 does not).
+
+### `android/local.properties`
+ABSENT from the working tree and NOT tracked by git (it is gitignored). It
+holds only `sdk.dir` / `flutter.sdk` SDK-location paths — no version fields —
+so no change was needed or possible. The build machine supplies its own.
+
+### Verification (no build, per instruction)
+- `grep` across `lib/`, `test/`, `functions/src/`, `android/` confirms the
+  only remaining `1.0.11` / `code 11` mentions are the intentional historical
+  reference in the Gradle comment ("previous accepted AAB v1.0.11 / code 11").
+- No Flutter SDK is present in this sandbox, so `flutter analyze` /
+  `flutter test` / any APK/AAB build were deliberately NOT run (the task said
+  "Do not build yet, just bump version"). The two touched test files are
+  pure constant/`shouldBlock` expectations updated in lockstep with the
+  constants they assert against, so they stay green.
+- No `analysis_options.yaml` / `pubspec.lock` drift (no `pub get` was run).
+
+### Files
+- MODIFIED: `pubspec.yaml`, `android/app/build.gradle.kts`,
+  `lib/core/widgets/version_info.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+
+### Operator note
+The Google Play Console base plans and the `admin_config/app_version`
+forced-update floor are unchanged; raise the floor to 12 only once the
+versionCode-12 AAB is live on the track, otherwise builds below 12 are blocked
+with no in-app way forward.
+
+
 ## Phase -- Google Play "Photo and Video Permissions" compliance: Android photo picker, no broad media permissions (added 2026-10-12)
 
 ### Policy
