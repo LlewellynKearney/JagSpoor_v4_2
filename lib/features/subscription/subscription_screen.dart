@@ -60,6 +60,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _paymentPending = false;
   Map<SubscriptionTier, PlayProduct> _products = const {};
 
+  /// True while the Play catalog query is in flight (after billing support is
+  /// confirmed). Drives the loading state so the SUBSCRIBE button is never
+  /// tapped before the base-plan offer token has been resolved.
+  bool _catalogLoading = false;
+
   /// Admin-controlled fallback price (from `admin_config/pricing`), resolved
   /// when the live Play catalog has not loaded. Null until the async load
   /// completes; the hard-coded last resort applies until then.
@@ -148,9 +153,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// real Play Console price and surface a graceful "billing unavailable"
   /// state.
   Future<void> _initBilling() async {
-    final supported = await PlayBillingService.instance.isBillingSupported();
+    // Only touch the Play Billing plugin when the host actually supports it.
+    // On a non-store host (emulator, test host) `isAvailable` is false — or
+    // the plugin call never returns — so the catalog is left unresolved and
+    // the SUBSCRIBE affordance stays in its normal state (the price falls back
+    // to the admin control plane). The loading state is engaged ONLY once
+    // billing support has been confirmed, so the UI never hangs on a query
+    // that cannot complete.
+    bool supported;
+    try {
+      supported = await PlayBillingService.instance.isBillingSupported();
+    } catch (e) {
+      debugPrint('SubscriptionScreen: billing availability check failed: $e');
+      supported = false;
+    }
     Map<SubscriptionTier, PlayProduct> products = const {};
     if (supported) {
+      if (mounted) setState(() => _catalogLoading = true);
       try {
         products = await PlayBillingService.instance.loadProducts();
       } catch (e) {
@@ -171,8 +190,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     setState(() {
       _billingSupported = supported;
       _products = products;
+      _catalogLoading = false;
       _adminFallbackPrice = adminFallback;
     });
+  }
+
+  /// The Play catalog entry for the active tier, or null when it has not
+  /// loaded / is not configured in the Play Console.
+  PlayProduct? get _activeProduct => _products[_tier];
+
+  /// Whether the SUBSCRIBE button is enabled.
+  ///
+  /// Held disabled while the Play catalog is loading, and — once loaded —
+  /// until the active product carries the base-plan **offer token** Google
+  /// Play Billing v5+ requires (without it `launchBillingFlow` fails with
+  /// `INVALID_OFFER_TOKEN`, so the button must not launch). When NO catalog
+  /// entry resolved at all (a non-store host, or a product not yet configured
+  /// in the Play Console) the affordance stays tappable so [_subscribe] can
+  /// explain the reason instead of leaving a dead button.
+  bool get _subscribeEnabled {
+    if (_catalogLoading) return false;
+    final product = _activeProduct;
+    if (product == null) return true;
+    return product.isPurchasable;
   }
 
   String? get _userId {
@@ -229,9 +269,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       );
       return;
     }
+    // The base-plan offer token must be resolved before launching. It is
+    // missing when the product has no ACTIVE base plan in the Play Console —
+    // surface that (instead of the opaque INVALID_OFFER_TOKEN platform error).
+    final product = _activeProduct;
+    if (product != null && !product.isPurchasable) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This subscription is not available yet — the Play Console base '
+            'plan is not active. Please try again later or contact support.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     setState(() => _isLaunching = true);
     try {
-      final launched = await PlayBillingService.instance.purchaseProduct(_tier);
+      // Prefer the already-loaded product (its offer token was resolved at
+      // catalog load); fall back to the by-tier lookup when it is absent.
+      final launched = product != null
+          ? await PlayBillingService.instance.buyProduct(product)
+          : await PlayBillingService.instance.purchaseProduct(_tier);
       if (!mounted) return;
       if (!launched) {
         messenger?.showSnackBar(
@@ -945,11 +1005,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         ),
       );
     }
+    // The SUBSCRIBE button stays disabled until the Play catalog has resolved
+    // AND (once it has) the active product carries the base-plan offer token
+    // Google Play Billing v5+ requires. Tapping before that point is what
+    // produced the INVALID_OFFER_TOKEN failure.
+    final busy = _isLaunching || _catalogLoading;
+    final String label;
+    if (_paymentPending) {
+      label = 'PAYMENT PENDING…';
+    } else if (_catalogLoading) {
+      label = 'LOADING GOOGLE PLAY…';
+    } else if (_isLaunching) {
+      label = 'CONTACTING GOOGLE PLAY…';
+    } else {
+      label = 'SUBSCRIBE VIA GOOGLE PLAY';
+    }
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
         key: const ValueKey('subscribeButton'),
-        onPressed: (_isLaunching || _paymentPending) ? null : _subscribe,
+        onPressed: (_isLaunching || _paymentPending || !_subscribeEnabled)
+            ? null
+            : _subscribe,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.green.shade700,
           foregroundColor: Colors.white,
@@ -959,7 +1036,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        icon: _isLaunching
+        icon: busy
             ? const SizedBox(
                 width: 18,
                 height: 18,
@@ -970,11 +1047,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               )
             : const Icon(Icons.play_circle_fill_rounded),
         label: Text(
-          _paymentPending
-              ? 'PAYMENT PENDING…'
-              : (_isLaunching
-                  ? 'CONTACTING GOOGLE PLAY…'
-                  : 'SUBSCRIBE VIA GOOGLE PLAY'),
+          label,
           style: const TextStyle(
             fontWeight: FontWeight.w800,
             letterSpacing: 1.1,
