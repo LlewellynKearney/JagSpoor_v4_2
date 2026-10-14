@@ -53,6 +53,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _isOpeningPlayStore = false;
   bool _isRestoring = false;
   bool _billingSupported = true;
+
+  /// True while a Google Play purchase is in the pending (delayed-payment)
+  /// state — the subscribe button is disabled and a "payment pending" notice
+  /// is shown until the store confirms or cancels (v1.0.12 hotfix).
+  bool _paymentPending = false;
   Map<SubscriptionTier, PlayProduct> _products = const {};
 
   /// Admin-controlled fallback price (from `admin_config/pricing`), resolved
@@ -254,22 +259,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
-  /// Listens to the Play Billing purchase stream and mirrors completed
-  /// purchases onto `users/{uid}` via the SERVER-SIDE
-  /// `validateGooglePlayPurchase` Cloud Function so the entitlement is
-  /// verified against the Google Play Developer API. The app NEVER writes
-  /// `isPremium` locally — the Cloud Function is the only writer.
+  /// Listens to the Play Billing purchase stream.
   ///
-  /// Alongside the server verification, the transaction is recorded through
-  /// [PlayPurchaseRecorder] (`users/{uid}` subscription state +
-  /// `purchases/{uid}_{productId}`) so the app has a durable, queryable
-  /// record and the gated screens unlock immediately. The write is keyed on
-  /// uid + product id, so the recorder's own listener delivering the same
-  /// event cannot create a duplicate.
+  /// **v1.0.12 hotfix — acknowledge first.** For a completed purchase the
+  /// transaction is acknowledged (`completePurchase`) IMMEDIATELY, before the
+  /// server verification round-trip, so it can never be left unacknowledged
+  /// (which is what makes Google auto-refund after 3 days). Only after the
+  /// acknowledgement is the purchase recorded + verified server-side.
   ///
-  /// Subscriptions are non-consumable; once a [PurchaseStatus.purchased] /
-  /// [PurchaseStatus.restored] event arrives the entitlement is recorded
-  /// server-side and the transaction is finished.
+  /// The entitlement itself is written by the `validateGooglePlayPurchase`
+  /// Cloud Function — the app no longer mirrors it onto `users/{uid}` (those
+  /// fields are frozen in `firestore.rules`). `pending` purchases (delayed
+  /// payment) show a pending notice; `error` / `canceled` clear it.
   void _listenForPurchases() {
     PlayBillingService.instance.purchaseStream.listen((purchases) async {
       for (final purchase in purchases) {
@@ -277,12 +278,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             purchase.status == PurchaseStatus.restored) {
           final tier = SubscriptionTier.fromPlayProductId(purchase.productID);
           final token = purchase.verificationData.serverVerificationData;
-          // Durable local record: `users/{uid}` subscription state + the
-          // `purchases` collection document (idempotent on uid + product id).
+          // 1) Acknowledge IMMEDIATELY — never leave a transaction open.
+          await PlayBillingService.instance.completePurchase(purchase);
+          // 2) Durable, owner-scoped transaction record.
           await PlayPurchaseRecorder.instance.recordPurchase(
             productId: purchase.productID,
             purchaseToken: token,
           );
+          // 3) Server-side verification (writes the authoritative entitlement).
           try {
             final result = await EntitlementService.instance
                 .verifyGooglePlayPurchase(
@@ -326,11 +329,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 ),
               );
             }
-            continue;
           }
-          await PlayBillingService.instance.completePurchase(purchase);
+        } else if (purchase.status == PurchaseStatus.pending) {
+          // Delayed-payment: the store confirms/cancels later. Show a pending
+          // notice and disable the subscribe button meanwhile.
+          if (mounted) setState(() => _paymentPending = true);
         } else if (purchase.status == PurchaseStatus.error) {
           debugPrint('Play purchase error: ${purchase.error}');
+          if (mounted) setState(() => _paymentPending = false);
+        } else if (purchase.status == PurchaseStatus.canceled) {
+          if (mounted) setState(() => _paymentPending = false);
         }
       }
     });
@@ -470,6 +478,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
                 _buildStatusBanner(theme, subscription),
+                if (_paymentPending) ...[
+                  const SizedBox(height: 12),
+                  _buildPendingBanner(theme),
+                ],
                 const SizedBox(height: 20),
                 _buildTierCards(theme),
                 const SizedBox(height: 20),
@@ -586,6 +598,39 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     'Off-Grid Mesh Sync & Team Radar',
     'Business Intelligence & Revenue Analytics',
   ];
+
+  /// "Payment pending" notice shown while a delayed-payment Play purchase is
+  /// awaiting confirmation (v1.0.12 hotfix). The subscribe button is disabled
+  /// meanwhile so the user cannot start a duplicate purchase.
+  Widget _buildPendingBanner(ThemeController theme) {
+    return Container(
+      key: const ValueKey('subscriptionPendingBanner'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.hourglass_top_rounded,
+              color: Colors.orange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Payment pending — your subscription will activate once Google '
+              'Play confirms the payment.',
+              style: TextStyle(
+                color: theme.textColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Renders ONLY the active mode's tier card — Hunter Mode shows the Hunter
   /// tier, Outfitter Mode shows the Outfitter tier; the other tier card is
@@ -904,7 +949,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       width: double.infinity,
       child: FilledButton.icon(
         key: const ValueKey('subscribeButton'),
-        onPressed: _isLaunching ? null : _subscribe,
+        onPressed: (_isLaunching || _paymentPending) ? null : _subscribe,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.green.shade700,
           foregroundColor: Colors.white,
@@ -925,7 +970,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               )
             : const Icon(Icons.play_circle_fill_rounded),
         label: Text(
-          _isLaunching ? 'CONTACTING GOOGLE PLAY…' : 'SUBSCRIBE VIA GOOGLE PLAY',
+          _paymentPending
+              ? 'PAYMENT PENDING…'
+              : (_isLaunching
+                  ? 'CONTACTING GOOGLE PLAY…'
+                  : 'SUBSCRIBE VIA GOOGLE PLAY'),
           style: const TextStyle(
             fontWeight: FontWeight.w800,
             letterSpacing: 1.1,

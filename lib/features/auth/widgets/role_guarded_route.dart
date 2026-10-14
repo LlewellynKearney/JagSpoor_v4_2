@@ -101,6 +101,13 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
 
     if (!mounted) return;
 
+    // Admin is exempt from the entitlement gate (the platform operator must
+    // always be able to reach the portal). SECURITY (v1.0.12 hotfix): this
+    // exemption is safe ONLY because `firestore.rules` freezes
+    // `users/{uid}.role` (a client can never self-assign `role: 'admin'`) and
+    // the admin claim / allow-list are server-controlled. Combined with the
+    // `isPremiumActive` expiry requirement, an ordinary user can no longer
+    // reach this branch.
     if (allowed && widget.requiresPremium && role != AppRole.admin) {
       final entitlement = await EntitlementService.instance.getMyEntitlement();
       if (mounted && !entitlement.canAccessPremium(DateTime.now())) {

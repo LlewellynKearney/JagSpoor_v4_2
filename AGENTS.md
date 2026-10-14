@@ -1,6 +1,129 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- 1.0.12 HOTFIX: freeze `role` + `subscriptionStatus`, ack purchases immediately (added 2026-10-14)
+
+Closes the two CRITICAL exploits from `AUDIT_BILLING_REPORT.md` before the
+1.0.13 feature work. **Rules + client + tests only; no new features, no new
+roles.**
+
+### CRITICAL #1 — client could self-assign `role: 'admin'` (FIXED)
+- `firestore.rules` `users/{userId}` write guard now FREEZES `role`. A client
+  write may only (a) omit `role`, (b) re-send the STORED role unchanged, or
+  (c) set it for the FIRST time (no stored role) to a NON-admin value while
+  not already an admin. Changing a stored role, or setting `'admin'`, is
+  denied. `isDualRole` / `roles` are likewise set-once-then-frozen.
+  **Why first-assignment-only, not a blanket freeze:** `role_selection_screen`
+  writes `role` client-side at self-registration (a new `users/{uid}` doc with
+  no role yet), so a blanket freeze would break every new signup. The exploit
+  (self-assigning admin) is closed; legitimate admin provisioning goes through
+  the Admin SDK / Cloud Function (bypasses rules).
+- Defence-in-depth comments added to `admin_auth_guard.dart` (the
+  `userRole == 'admin'` Firestore fallback is now only trustworthy because of
+  the rules freeze) and `role_guarded_route.dart` (the admin entitlement
+  exemption).
+- **Residual (documented, not fixed here):** `outfitters/{uid}.role` is not
+  frozen — an admin already owns `outfitters/{uid}`, so this is not a
+  hunter→admin escalation, but a future phase should freeze it too.
+
+### CRITICAL #2 — client could forge `subscriptionStatus: 'active'` (FIXED)
+- `firestore.rules`: removed the client `trialing -> 'active'` transition and
+  the `isPro: true` clause. `subscriptionStatus`, `isPro`, `subscriptionTier`
+  are now change-detection only (a client may only re-send the stored value).
+  `entitlements/{uid}` remains `write: false` for clients.
+- `entitlement_service.dart`:
+  - `isPremiumActive` now REQUIRES a non-null, future `premiumExpiry`. The old
+    "active status with no expiry" fallback (the free-premium vector) is gone.
+  - `getMyEntitlement` now reads the server-authoritative `entitlements/{uid}`
+    mirror (`fromEntitlementMirror`) and merges it over `users/{uid}`
+    (`mergePremiumMirror`), so the premium trust path no longer depends on the
+    client-writable users doc. Falls back to the users-doc premium only when
+    the mirror is absent (legacy subscribers).
+- `play_purchase_recorder.dart` no longer mirrors the entitlement onto
+  `users/{uid}` (those writes are now rules-denied); it writes ONLY the
+  owner-scoped `purchases/{uid}_{productId}` record. The entitlement is
+  written by the `validateGooglePlayPurchase` Cloud Function.
+- `subscription_status_service.dart` `markTrialStarted` no longer writes
+  `subscriptionTier` (frozen) — promo/provider metadata only.
+
+### FIX 3 — acknowledge purchases IMMEDIATELY (FIXED)
+- `subscription_screen.dart` `_listenForPurchases`: `completePurchase` is now
+  called FIRST (before the server verification round-trip), so a transaction
+  can never be left unacknowledged (the previous order `continue`d before ack
+  on a verification failure → Google auto-refund after 3 days). Added
+  `PurchaseStatus.pending` handling (a "PAYMENT PENDING…" banner + disabled
+  subscribe button) and `error` / `canceled` reset.
+- `paywall_screen.dart`: the paywall previously had NO purchase listener at
+  all (a purchase started there was never acknowledged). It now listens,
+  acknowledges immediately, records the transaction, verifies server-side, and
+  shows a pending banner (`ValueKey('paywallPendingBanner')`).
+
+### Demo reviewer seed
+- `demo_reviewer_service.dart` `seedDemoData` no longer writes
+  `subscriptionTier` in the profile `set()` — writing a frozen field would deny
+  the ENTIRE write (taking `role` / `isDualRole` / `roles` down with it). The
+  reviewer's access comes from the backend Auth onCreate trial trigger.
+
+### Tests (full suite **2095 passed, 1 pre-existing failure**)
+- NEW `test/billing_rules_hotfix_test.dart` (12 structural rule-contract
+  tests): role freeze (cannot set admin / cannot change once set / dual-role
+  frozen), subscriptionStatus + isPro + subscriptionTier server-owned, the
+  `trialing -> active` transition removed, `entitlements` write-denied, and
+  that a `displayName`-only write mentions no frozen field (ALLOW contract).
+  Mirrors the emulator-free structural pattern (`@firebase/rules-unit-testing`
+  cannot run in this sandbox — no Java).
+- `test/entitlement_trial_status_test.dart`: the bare-active-no-expiry case now
+  asserts DENY; +6 mirror/merge tests; `markTrialStarted` no longer writes the
+  tier.
+- `test/firestore_rules_seeding_test.dart`: purchase-confirmation group
+  updated to the server-owned contract; `guardedFields` + the
+  resource-read-restriction set extended.
+- `test/play_purchase_recorder_test.dart`,
+  `test/subscription_status_service_test.dart`,
+  `test/subscription_loader_restoration_test.dart`,
+  `test/demo_reviewer_service_test.dart`: updated to the new contract.
+- The single remaining failure (`trial_onboarding_functions_contract_test`:
+  "is a Firebase Auth user-creation trigger in us-central1") is the DOCUMENTED
+  PRE-EXISTING v1-vs-v2 auth-trigger assertion — reproduced identically with
+  these changes stashed.
+
+### Verification
+- Flutter **3.44.9** (Dart 3.12.2) installed to `/tmp/flutter`; `flutter
+  analyze` on all 8 changed lib files + 7 test files: **0 errors, 0 warnings**
+  (2 pre-existing `info`s in untouched `entitlement_service.dart` doc/comment
+  lines).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink): **2095 passed, 1 pre-existing failure**.
+- `pubspec.lock` drift from `pub get` (meta/test/test_api/test_core patch
+  bumps) reverted to keep the hotfix focused.
+- **Rules validated structurally** (brace/paren/bracket balance 0; the
+  `trialing -> active` clause gone; role/status/tier freeze present).
+
+### ⚠️ Deploy required
+`npx firebase-tools deploy --only firestore:rules` in a credentialed env.
+**Until the rules deploy, BOTH exploits remain live** (the client fixes alone
+cannot stop a raw SDK write). The client-side `isPremiumActive` expiry
+requirement + the `entitlements`-mirror read reduce exposure but the rules
+freeze is the actual fix.
+
+### Files
+- MODIFIED: `firestore.rules`, `lib/services/entitlement_service.dart`,
+  `lib/features/subscription/services/play_purchase_recorder.dart`,
+  `lib/features/subscription/services/subscription_status_service.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/features/auth/services/demo_reviewer_service.dart`,
+  `lib/features/admin/services/admin_auth_guard.dart`,
+  `lib/features/auth/widgets/role_guarded_route.dart`,
+  `test/entitlement_trial_status_test.dart`,
+  `test/firestore_rules_seeding_test.dart`,
+  `test/play_purchase_recorder_test.dart`,
+  `test/subscription_status_service_test.dart`,
+  `test/subscription_loader_restoration_test.dart`,
+  `test/demo_reviewer_service_test.dart`, `AGENTS.md`.
+- NEW: `test/billing_rules_hotfix_test.dart`.
+
+
 ## Phase -- Version bump 1.0.11 (code 11) -> 1.0.12 (code 12) for the Play Store re-upload (added 2026-10-14)
 
 ### What changed

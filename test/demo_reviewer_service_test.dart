@@ -61,7 +61,10 @@ void main() {
       expect(data['email'], DemoReviewerConfig.email);
       expect(data['phone'], isNotEmpty);
       expect(data['outfitterId'], 'demo-uid');
-      expect(data['subscriptionTier'], 'hunter');
+      // v1.0.12 hotfix: `subscriptionTier` is server-owned too (frozen in
+      // firestore.rules) — writing it would deny the ENTIRE profile write, so
+      // the seed omits it.
+      expect(data.containsKey('subscriptionTier'), isFalse);
       // v9: `subscriptionStatus` is server-owned (frozen in firestore.rules);
       // the client seed must NOT write it — the backend Auth onCreate trial
       // trigger provisions the trial state on account creation.

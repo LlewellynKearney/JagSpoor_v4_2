@@ -82,22 +82,22 @@ void main() {
   });
 
   group('SubscriptionStatusService', () {
-    test('markTrialStarted writes only the client-owned tier/promo metadata',
+    test('markTrialStarted writes only the client-owned promo metadata',
         () async {
       // v9: the trial window + status are server-owned (frozen in
-      // firestore.rules); the client may only write its own tier/promo/
-      // provider metadata.
+      // firestore.rules); v1.0.12 also froze `subscriptionTier`. The client may
+      // only write its own promo / provider metadata.
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.outfitter,
         promoCode: 'LAUNCH25',
       );
       final snap = await fake.collection('users').doc('uid-1').get();
       final data = snap.data()!;
-      expect(data['subscriptionTier'], 'outfitter');
       expect(data['subscriptionPromoCode'], 'LAUNCH25');
       expect(data['subscriptionProvider'], 'google_play_billing');
       expect(data.containsKey('subscriptionUpdatedAt'), isTrue);
-      // Frozen server-owned trial fields are NOT written by the client.
+      // Frozen server-owned fields are NOT written by the client.
+      expect(data.containsKey('subscriptionTier'), isFalse);
       expect(data.containsKey('subscriptionStatus'), isFalse);
       expect(data.containsKey('subscriptionTrialEndsAt'), isFalse);
       expect(data.containsKey('trialEndsAt'), isFalse);
@@ -251,6 +251,7 @@ void main() {
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
       for (final frozen in const [
         'subscriptionStatus',
+        'subscriptionTier',
         'trialEndsAt',
         'trialEnd',
         'trialStartedAt',
@@ -262,7 +263,6 @@ void main() {
             reason: '$frozen is frozen (server-owned) — the client must not '
                 'write it or firestore.rules denies the write');
       }
-      expect(data['subscriptionTier'], 'hunter');
     });
 
     test('readTrialState reads the server-provisioned window (read-only)',

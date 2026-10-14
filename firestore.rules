@@ -208,27 +208,58 @@ service cloud.firestore {
         && (!('subscriptionTrialStart' in request.resource.data)
           || (resource != null
             && request.resource.data.subscriptionTrialStart == resource.data.subscriptionTrialStart))
+        // subscriptionStatus is SERVER-OWNED (v1.0.12 hotfix). The previous
+        // rule permitted a client `trialing -> 'active'` transition, which let
+        // a user forge a permanent free subscription (the entitlement reader
+        // treats a stored 'active' as premium). Only Cloud Functions (Admin
+        // SDK) may change it now — a client may only re-send the stored value.
         && (!('subscriptionStatus' in request.resource.data)
           || (resource != null
-            && (request.resource.data.subscriptionStatus == resource.data.subscriptionStatus
-              || (request.resource.data.subscriptionStatus == 'active'
-                && ('subscriptionStatus' in resource.data)
-                && resource.data.subscriptionStatus in ['trialing', 'trial', 'active']))))
-        // `isPro` is the convenience premium mirror the purchase recorder
-        // stamps alongside the status transition. It may only be turned on in
-        // the SAME write that confirms the subscription as active (or remain
-        // unchanged), so it cannot be flipped on its own.
+            && request.resource.data.subscriptionStatus == resource.data.subscriptionStatus))
+        // `isPro` is a convenience premium mirror. It is SERVER-OWNED
+        // (v1.0.12 hotfix) — a client can no longer flip it on (it previously
+        // rode along with a forged `subscriptionStatus: 'active'`).
         && (!('isPro' in request.resource.data)
           || (resource != null
-            && request.resource.data.isPro == resource.data.isPro)
-          || (request.resource.data.isPro == true
-            && request.resource.data.subscriptionStatus == 'active'))
+            && request.resource.data.isPro == resource.data.isPro))
         && (!('createdAt' in request.resource.data)
           || (resource != null
             && request.resource.data.createdAt == resource.data.createdAt))
         && (!('referralCodeUsed' in request.resource.data)
           || (resource != null
-            && request.resource.data.referralCodeUsed == resource.data.referralCodeUsed));
+            && request.resource.data.referralCodeUsed == resource.data.referralCodeUsed))
+        // ── Role freeze (v1.0.12 hotfix — closes the admin-escalation exploit) ──
+        // `role` drives admin detection (AdminAuthGuard + the isAdmin() rule
+        // helper). A client could previously self-assign `role: 'admin'` and
+        // both open the Admin Portal and skip the entitlement gate. Now a
+        // client write may only (a) omit `role`, (b) re-send the STORED role
+        // unchanged, or (c) set it for the FIRST time (no stored role) to a
+        // non-admin value while not already being an admin. Changing a stored
+        // role, or setting it to `'admin'`, is denied. Legitimate admin /
+        // role provisioning goes through the Admin SDK / a Cloud Function
+        // (which bypasses these rules).
+        && (!('role' in request.resource.data)
+          || (resource != null
+            && request.resource.data.role == resource.data.role)
+          || (request.resource.data.role != 'admin'
+            && !isAdmin()
+            && (resource == null || !('role' in resource.data))))
+        // Dual-role signals grant BOTH dashboards. Frozen to their first value
+        // so they cannot be flipped on or removed after provisioning.
+        && (!('isDualRole' in request.resource.data)
+          || (resource == null
+            || !('isDualRole' in resource.data)
+            || request.resource.data.isDualRole == resource.data.isDualRole))
+        && (!('roles' in request.resource.data)
+          || (resource == null
+            || !('roles' in resource.data)
+            || request.resource.data.roles == resource.data.roles))
+        // Billing tier is SERVER-OWNED (`validateGooglePlayPurchase` writes
+        // it). A client may only re-send the stored value — it can never
+        // upgrade itself to the outfitter tier.
+        && (!('subscriptionTier' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionTier == resource.data.subscriptionTier));
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 

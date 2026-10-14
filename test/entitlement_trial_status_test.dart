@@ -115,8 +115,20 @@ void main() {
       }
     });
 
-    test("accepts 'active' as a premium entitlement", () {
+    test("a bare 'active' status with NO expiry no longer grants premium "
+        '(v1.0.12 hotfix)', () {
+      // The exploit: forging subscriptionStatus:'active' with no expiry
+      // granted permanent premium. Access now REQUIRES a future premiumExpiry.
       final ent = UserEntitlement.fromMap({'subscriptionStatus': 'active'});
+      expect(ent.isPremiumActive(DateTime(2026, 9, 21)), isFalse);
+      expect(ent.canAccessPremium(DateTime(2026, 9, 21)), isFalse);
+    });
+
+    test("an 'active' status WITH a future expiry grants premium", () {
+      final ent = UserEntitlement.fromMap({
+        'subscriptionStatus': 'active',
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 10, 21)),
+      });
       expect(ent.isPremiumActive(DateTime(2026, 9, 21)), isTrue);
       expect(ent.canAccessPremium(DateTime(2026, 9, 21)), isTrue);
     });
@@ -217,12 +229,14 @@ void main() {
   });
 
   group('markTrialStarted (server-owned trial window — v9)', () {
-    test('writes ONLY the client-owned tier/promo/provider metadata', () async {
+    test('writes ONLY the client-owned promo/provider metadata', () async {
       await SubscriptionStatusService.instance.markTrialStarted(
         tier: SubscriptionTier.hunter,
       );
       final data = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(data['subscriptionTier'], 'hunter');
+      // v1.0.12 hotfix: `subscriptionTier` is server-owned too — the client
+      // must not write it.
+      expect(data.containsKey('subscriptionTier'), isFalse);
       expect(data['subscriptionProvider'], 'google_play_billing');
       // Every trial-window / status field is frozen (server-owned) — the
       // client write must not include any of them.
@@ -307,6 +321,70 @@ void main() {
       // The doc carries a fingerprint + a valid trial -> access is granted.
       expect(ockerDoc().containsKey('deviceFingerprint'), isTrue);
       expect(ent.canAccessPremium(DateTime(2026, 9, 21)), isTrue);
+    });
+  });
+
+  group('server-authoritative premium mirror (v1.0.12 hotfix)', () {
+    test('fromEntitlementMirror reads the premium fields only', () {
+      final mirror = UserEntitlement.fromEntitlementMirror({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 10, 21)),
+        'subscriptionSource': 'google_play',
+        'subscriptionProduct': 'jagspoor_hunter_monthly',
+      });
+      expect(mirror.isPremium, isTrue);
+      expect(mirror.premiumExpiry, DateTime(2026, 10, 21));
+      // The mirror carries no trial data.
+      expect(mirror.trialEnd, isNull);
+      expect(mirror.subscriptionStatus, '');
+    });
+
+    test('mergePremiumMirror: the mirror wins when it carries premium', () {
+      final base = UserEntitlement.fromMap({
+        // A forged client status must NOT grant premium on its own.
+        'subscriptionStatus': 'active',
+        'subscriptionTier': 'hunter',
+      });
+      final mirror = UserEntitlement.fromEntitlementMirror({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 10, 21)),
+      });
+      final merged = base.mergePremiumMirror(mirror);
+      expect(merged.isPremiumActive(DateTime(2026, 9, 21)), isTrue);
+    });
+
+    test('mergePremiumMirror: a forged active status with no mirror expiry '
+        'does NOT grant premium', () {
+      final base = UserEntitlement.fromMap({'subscriptionStatus': 'active'});
+      final merged = base.mergePremiumMirror(const UserEntitlement());
+      expect(merged.isPremiumActive(DateTime(2026, 9, 21)), isFalse);
+    });
+
+    test('mergePremiumMirror: trial window is preserved from users/{uid}', () {
+      final base = UserEntitlement.fromMap(jannieDoc());
+      final merged = base.mergePremiumMirror(const UserEntitlement());
+      expect(merged.isTrialActive(DateTime(2026, 9, 21)), isTrue);
+      expect(merged.trialEnd, DateTime(2026, 10, 21));
+    });
+
+    test('getMyEntitlement merges the entitlements/{uid} mirror', () async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        // No premiumExpiry on the users doc — premium comes from the mirror.
+      });
+      await fake.collection('entitlements').doc('uid-1').set({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 10, 21)),
+        'subscriptionSource': 'google_play',
+      });
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.premiumExpiry, DateTime(2026, 10, 21));
+      expect(ent.isPremiumActive(DateTime(2026, 9, 21)), isTrue);
+    });
+
+    test('getMyEntitlement fails closed when neither doc exists', () async {
+      final ent = await EntitlementService.instance.getMyEntitlement();
+      expect(ent.canAccessPremium(DateTime(2026, 9, 21)), isFalse);
     });
   });
 }

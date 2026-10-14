@@ -128,7 +128,14 @@ class PlayPurchaseRecorder {
     }
   }
 
-  /// Writes the transaction to `users/{uid}` + `purchases`.
+  /// Writes the transaction record to `purchases/{uid}_{productId}`.
+  ///
+  /// **v1.0.12 hotfix:** the recorder no longer mirrors the entitlement onto
+  /// `users/{uid}` (`subscriptionStatus` / `isPro` / `subscriptionTier`). Those
+  /// fields are server-owned (see `firestore.rules`), and the authoritative
+  /// entitlement is written by the `validateGooglePlayPurchase` Cloud Function.
+  /// A client write of those fields is now rejected with PERMISSION_DENIED, so
+  /// the recorder's only job is the durable, owner-scoped transaction record.
   ///
   /// Returns `true` when the `purchases` document was written. A missing
   /// session (or an offline / rules-denied Firestore) resolves `false` and is
@@ -147,18 +154,9 @@ class PlayPurchaseRecorder {
     }
     final tier = SubscriptionTier.fromPlayProductId(productId);
     try {
-      // 1) Mirror the entitlement onto the user profile so the paywall /
-      //    role gates unlock immediately.
-      await _db.collection('users').doc(uid).set({
-        'subscriptionTier': tier.key,
-        'subscriptionStatus': subscriptionStatusActive,
-        'isPro': true,
-        'subscriptionProvider': 'google_play_billing',
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // 2) Persist the transaction itself (one document per purchase token so
-      //    a repeated delivery of the same token cannot create duplicates).
+      // Persist the transaction itself (one document per uid + product id so a
+      // repeated delivery of the same token cannot create duplicates). The
+      // entitlement is written server-side by `validateGooglePlayPurchase`.
       await _db
           .collection(purchasesCollection)
           .doc('${uid}_$productId')

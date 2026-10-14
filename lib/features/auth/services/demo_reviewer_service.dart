@@ -175,6 +175,12 @@ class DemoReviewerService {
     // only be written by Cloud Functions. The client seed therefore omits
     // them — the reviewer's access is granted by the backend Auth onCreate
     // trial trigger, which provisions the trial on account creation.
+    //
+    // v1.0.12 hotfix: `subscriptionTier` is now server-owned too, so it is
+    // omitted here (writing it would deny the ENTIRE profile write, taking
+    // `role` / `isDualRole` / `roles` down with it). The tier is display-only
+    // and is set server-side by `validateGooglePlayPurchase` on a real
+    // purchase.
     final profile = <String, dynamic>{
       'firstName': 'Demo',
       'lastName': 'Reviewer',
@@ -185,7 +191,6 @@ class DemoReviewerService {
       'isDualRole': true,
       'roles': DemoReviewerConfig.roles,
       'outfitterId': userId,
-      'subscriptionTier': DemoReviewerConfig.subscriptionTier,
       'subscriptionProvider': 'google_play_billing',
       'profileUpdatedAt': FieldValue.serverTimestamp(),
     };

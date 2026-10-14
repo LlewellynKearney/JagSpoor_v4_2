@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../services/entitlement_service.dart';
 import '../auth/services/user_role_provider.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
@@ -36,6 +40,18 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// catalog resolves.
   SubscriptionVatPrice? _price;
 
+  /// v1.0.12 hotfix: the paywall is a first-class purchase surface. It listens
+  /// to the Play purchase stream so a purchase made here is acknowledged
+  /// immediately (the previous version had no listener at all, so a purchase
+  /// started from the paywall was never acknowledged and Google auto-refunded
+  /// it after 3 days).
+  StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
+
+  /// True while a Google Play purchase is in the pending (delayed-payment)
+  /// state — the user is shown a "payment pending" notice until the store
+  /// confirms or cancels.
+  bool _paymentPending = false;
+
   ThemeController get theme => widget.theme;
 
   SubscriptionTier get _tier =>
@@ -44,11 +60,110 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   void initState() {
     super.initState();
-    // Record any Google Play purchase (new or restored) onto users/{uid} +
-    // the `purchases` collection. Idempotent, so it is safe to start from
-    // every subscription surface.
+    // Record any Google Play purchase (new or restored) onto `purchases`.
+    // Idempotent, so it is safe to start from every subscription surface.
     PlayPurchaseRecorder.instance.startListening();
+    _listenForPurchases();
     _loadPlayPrice();
+  }
+
+  @override
+  void dispose() {
+    _purchaseSub?.cancel();
+    super.dispose();
+  }
+
+  /// Acknowledges completed purchases IMMEDIATELY and drives server
+  /// verification.
+  ///
+  /// Order matters: `completePurchase` (Google Play's acknowledge) is called
+  /// FIRST, before the server round-trip, so the transaction is always
+  /// acknowledged even if verification is slow, fails, or the app is killed.
+  /// A verification failure is then surfaced for a retry rather than leaving
+  /// the purchase unacknowledged (which is what triggers Google's 3-day
+  /// auto-refund).
+  void _listenForPurchases() {
+    _purchaseSub = PlayBillingService.instance.purchaseStream.listen(
+      (purchases) async {
+        for (final purchase in purchases) {
+          final status = purchase.status;
+          if (status == PurchaseStatus.purchased ||
+              status == PurchaseStatus.restored) {
+            // 1) Acknowledge immediately — never leave a transaction open.
+            await PlayBillingService.instance.completePurchase(purchase);
+            // 2) Durable, owner-scoped transaction record.
+            await PlayPurchaseRecorder.instance.recordPurchase(
+              productId: purchase.productID,
+              purchaseToken:
+                  purchase.verificationData.serverVerificationData,
+            );
+            // 3) Server-side verification (writes the authoritative
+            //    entitlement). Best-effort; a failure is surfaced for retry.
+            await _verifyPurchase(purchase);
+          } else if (status == PurchaseStatus.pending) {
+            if (mounted) setState(() => _paymentPending = true);
+          } else if (status == PurchaseStatus.error) {
+            if (mounted) {
+              setState(() => _paymentPending = false);
+              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Google Play purchase failed: '
+                    '${purchase.error?.message ?? 'unknown error'}.',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          } else if (status == PurchaseStatus.canceled) {
+            if (mounted) setState(() => _paymentPending = false);
+          }
+        }
+      },
+      onError: (Object e) =>
+          debugPrint('PaywallScreen purchase stream error: $e'),
+    );
+  }
+
+  /// Calls the `validateGooglePlayPurchase` Cloud Function and surfaces the
+  /// outcome. Never throws.
+  Future<void> _verifyPurchase(PurchaseDetails purchase) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final tier = SubscriptionTier.fromPlayProductId(purchase.productID);
+    try {
+      final result = await EntitlementService.instance
+          .verifyGooglePlayPurchase(
+        purchaseToken: purchase.verificationData.serverVerificationData,
+        productId: tier.playProductId,
+      );
+      if (!mounted) return;
+      setState(() => _paymentPending = false);
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            result.success
+                ? 'Subscription active — access unlocked.'
+                : 'Purchase received, but verification is pending. '
+                    'Please try again shortly.',
+          ),
+          backgroundColor: result.success ? Colors.green : Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      debugPrint('PaywallScreen.verifyPurchase failed: $e');
+      if (!mounted) return;
+      setState(() => _paymentPending = false);
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Purchase received — verification pending. Pull to refresh in a '
+            'moment.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   /// Loads the live Google Play Billing catalog price for the active tier and
@@ -213,9 +328,41 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
               ),
               const SizedBox(height: 28),
+              if (_paymentPending) ...[
+                Container(
+                  key: const ValueKey('paywallPendingBanner'),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange, width: 1.2),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.hourglass_top_rounded,
+                          color: Colors.orange, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Payment pending — your subscription will activate '
+                          'once Google Play confirms the payment.',
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               FilledButton.icon(
                 key: const ValueKey('paywallPlaySubscribeButton'),
-                onPressed: () => _subscribeViaGooglePlay(context),
+                onPressed: _paymentPending
+                    ? null
+                    : () => _subscribeViaGooglePlay(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,

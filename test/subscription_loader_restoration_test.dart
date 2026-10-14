@@ -62,10 +62,17 @@ void main() {
   });
 
   group('purchase writes reach Firestore', () {
-    test('the recorder writes the users doc subscription fields', () {
-      expect(recorder, contains("'subscriptionStatus': subscriptionStatusActive"));
-      expect(recorder, contains("'isPro': true"));
-      expect(recorder, contains("'subscriptionTier': tier.key"));
+    test('the recorder writes the purchases record but NOT the server-owned '
+        'users entitlement fields (v1.0.12 hotfix)', () {
+      // v1.0.12: `subscriptionStatus` / `isPro` / `subscriptionTier` are
+      // server-owned (frozen in firestore.rules) — the recorder must not write
+      // them or the client write is denied. The recorder writes only the
+      // owner-scoped `purchases` record; the entitlement is written by the
+      // `validateGooglePlayPurchase` Cloud Function.
+      expect(recorder, isNot(contains("'isPro': true")));
+      expect(recorder, isNot(contains("'subscriptionStatus': subscriptionStatusActive")));
+      expect(recorder, isNot(contains("'subscriptionTier': tier.key")));
+      expect(recorder, contains("collection(purchasesCollection)"));
     });
 
     test('the recorder writes the purchases collection document', () {

@@ -7,11 +7,17 @@ import 'package:jagspoor/features/subscription/services/play_billing_service.dar
 import 'package:jagspoor/features/subscription/services/play_purchase_recorder.dart';
 import 'package:jagspoor/features/subscription/services/subscription_pricing.dart';
 
-/// Task 2 (v9.2): a Google Play purchase must land in Firestore —
-/// `users/{uid}` (`subscriptionTier` / `subscriptionStatus: 'active'` /
-/// `isPro: true`) AND one `purchases/{uid}_{productId}` document carrying
-/// `uid`, `productId`, `purchaseToken` and `status`. Before this fix the
-/// `purchases` collection was always empty because no write existed.
+/// Task 2 (v9.2): a Google Play purchase must land in Firestore as one
+/// `purchases/{uid}_{productId}` document carrying `uid`, `productId`,
+/// `purchaseToken` and `status`. Before the original fix the `purchases`
+/// collection was always empty because no write existed.
+///
+/// **v1.0.12 hotfix:** the recorder no longer mirrors the entitlement onto
+/// `users/{uid}` (`subscriptionTier` / `subscriptionStatus` / `isPro`). Those
+/// fields are now server-owned (frozen in `firestore.rules`) and written by the
+/// `validateGooglePlayPurchase` Cloud Function — a client write would be
+/// rejected. These tests assert the recorder writes ONLY the `purchases`
+/// record.
 void main() {
   late FakeFirebaseFirestore fake;
 
@@ -49,18 +55,19 @@ void main() {
   });
 
   group('recordPurchase', () {
-    test('writes the hunter subscription state + purchase record', () async {
+    test('writes the hunter purchase record (no client entitlement write)',
+        () async {
       final ok = await PlayPurchaseRecorder.instance.recordPurchase(
         productId: SubscriptionTier.hunter.playProductId,
         purchaseToken: 'tok-abc',
       );
       expect(ok, isTrue);
 
-      final user = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(user['subscriptionTier'], 'hunter');
-      expect(user['subscriptionStatus'], 'active');
-      expect(user['isPro'], isTrue);
-      expect(user['subscriptionProvider'], 'google_play_billing');
+      // v1.0.12 hotfix: the recorder must NOT write the server-owned
+      // entitlement fields onto users/{uid}.
+      final user = (await fake.collection('users').doc('uid-1').get()).data();
+      expect(user, isNull,
+          reason: 'the recorder must not write users/{uid} (server-owned)');
 
       final purchases = await fake.collection(purchasesCollection).get();
       expect(purchases.docs.length, 1);
@@ -77,8 +84,6 @@ void main() {
         productId: SubscriptionTier.outfitter.playProductId,
         purchaseToken: 'tok-out',
       );
-      final user = (await fake.collection('users').doc('uid-1').get()).data()!;
-      expect(user['subscriptionTier'], 'outfitter');
       final purchase = (await fake
               .collection(purchasesCollection)
               .doc('uid-1_${SubscriptionTier.outfitter.playProductId}')

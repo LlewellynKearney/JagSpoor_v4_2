@@ -145,7 +145,8 @@ void main() {
       expect(block, contains('resource == null'));
     });
 
-    test('users write restricts ONLY deviceFingerprint (immutability kept)', () {
+    test('users write restricts deviceFingerprint + role/dual-role immutability',
+        () {
       final block = _blockFor(rules, 'users');
       // The trial-abuse immutability clause must remain intact.
       expect(block, contains("'deviceFingerprint' in resource.data"));
@@ -154,19 +155,17 @@ void main() {
         contains('resource.data.deviceFingerprint == '
             'request.resource.data.deviceFingerprint'),
       );
-      // No OTHER field may be frozen in the write grant — the owner must be
-      // able to update every profile field (medical info, legal compliance,
-      // battery settings, …) without a permission-denied. `deviceFingerprint`
-      // is the only immutability clause; `subscriptionStatus` is read on the
-      // RESOURCE (stored) side by the v9.2 purchase-confirmation guard, which
-      // restricts a transition rather than freezing the field.
+      // v1.0.12 hotfix: the role/dual-role signals are set-once-then-frozen
+      // (they read the STORED `'X' in resource.data` to detect first
+      // assignment). Every other profile field (medical info, legal
+      // compliance, battery settings, …) stays freely owner-writable.
       final restrictions = RegExp(r"'([^']+)' in resource\.data")
           .allMatches(block)
           .map((m) => m.group(1))
           .toSet();
-      expect(restrictions, {'deviceFingerprint', 'subscriptionStatus'},
-          reason: 'deviceFingerprint stays immutable; subscriptionStatus is '
-              'only read to validate the Play purchase confirmation');
+      expect(restrictions, {'deviceFingerprint', 'role', 'isDualRole', 'roles'},
+          reason: 'deviceFingerprint stays immutable; role / isDualRole / '
+              'roles are frozen to their first assignment');
     });
 
     test('users delete = owner-scoped signed-in (GDPR account deletion)', () {
@@ -215,6 +214,14 @@ void main() {
       // only be turned on in the same write that marks the subscription
       // active.
       'isPro',
+      // v1.0.12 hotfix: the billing tier + role/dual-role signals are
+      // server-owned. `subscriptionTier` can never be client-upgraded; `role`
+      // is set once (non-admin) then frozen, closing the admin-escalation
+      // exploit.
+      'subscriptionTier',
+      'role',
+      'isDualRole',
+      'roles',
     ];
 
     test('no server-owned field is denied by standalone key presence', () {
@@ -753,29 +760,34 @@ void _purchaseRecordingContracts(String rules) {
   });
 
   group('users/{uid} purchase confirmation contract (v9.2)', () {
-    test('subscriptionStatus may move to active from a trial state', () {
+    test('subscriptionStatus is server-owned — no client -> active transition '
+        '(v1.0.12 hotfix)', () {
       final block = _blockFor(rules, 'users');
+      // The client trialing->active transition was REMOVED (it let a user
+      // forge a permanent free subscription).
       expect(
         block,
-        contains("request.resource.data.subscriptionStatus == 'active'"),
+        isNot(contains("request.resource.data.subscriptionStatus == 'active'")),
       );
       expect(
         block,
-        contains("resource.data.subscriptionStatus in ['trialing', 'trial', 'active']"),
+        isNot(contains("resource.data.subscriptionStatus in ['trialing', 'trial', 'active']")),
+      );
+      // Only re-sending the stored value is permitted.
+      expect(
+        block,
+        contains('request.resource.data.subscriptionStatus == resource.data.subscriptionStatus'),
       );
     });
 
-    test('isPro may only be set alongside the active confirmation', () {
+    test('isPro is server-owned (cannot be flipped on by a client)', () {
       final block = _blockFor(rules, 'users');
       expect(block, contains("!('isPro' in request.resource.data)"));
       expect(
         block,
-        contains('request.resource.data.isPro == true'),
+        contains('request.resource.data.isPro == resource.data.isPro'),
       );
-      expect(
-        block,
-        contains("request.resource.data.subscriptionStatus == 'active'"),
-      );
+      expect(block, isNot(contains('request.resource.data.isPro == true')));
     });
 
     test('the subscription-status guard is still a change-detection operand',

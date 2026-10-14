@@ -157,10 +157,11 @@ class SubscriptionStatusService {
   /// the full trial window on account creation.
   ///
   /// This method therefore writes ONLY the fields the client still owns:
-  /// the tier (`subscriptionTier`), the promo code (`subscriptionPromoCode`)
-  /// and the provider (`subscriptionProvider`). It deliberately does NOT
-  /// write any trial timestamp or the status — a client write of a frozen
-  /// field is rejected by the rules. Callers should treat the trial window as
+  /// the promo code (`subscriptionPromoCode`) and the provider
+  /// (`subscriptionProvider`). It deliberately does NOT write any trial
+  /// timestamp, the status, OR the tier — all of those are frozen in
+  /// `firestore.rules` (v1.0.12 hotfix froze `subscriptionTier`; a client write
+  /// of it is rejected). Callers should treat the trial window + tier as
   /// server-provisioned (read back from `users/{uid}`).
   Future<void> markTrialStarted({
     required SubscriptionTier tier,
@@ -170,9 +171,8 @@ class SubscriptionStatusService {
     final uid = _uid;
     if (uid == null) throw StateError('No signed-in user');
     await _db.collection('users').doc(uid).set({
-      // Client-owned metadata only — the trial window + status are frozen
-      // and provisioned by the backend trigger.
-      'subscriptionTier': tier.key,
+      // Client-owned metadata only — the trial window, status and tier are
+      // frozen and provisioned by the backend trigger / Cloud Functions.
       'subscriptionPromoCode': promoCode,
       'subscriptionProvider': 'google_play_billing',
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),

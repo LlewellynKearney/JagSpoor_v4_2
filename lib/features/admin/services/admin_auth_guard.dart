@@ -60,6 +60,14 @@ class AdminAuthGuard {
 
     // 2. Firestore role fallback: `users/{uid}.role == 'admin'` or
     //    `outfitters/{uid}.role == 'admin'`.
+    //
+    //    SECURITY (v1.0.12 hotfix): this fallback is only trustworthy because
+    //    `firestore.rules` now FREEZES `users/{uid}.role` — a client can set it
+    //    once (non-admin) on first assignment and can never change it, and can
+    //    never set it to `'admin'`. Before that freeze, this doc-role fallback
+    //    was an admin-escalation vector (a client could self-assign
+    //    `role: 'admin'`). Do NOT relax the role freeze in `firestore.rules`
+    //    without also revisiting this guard.
     if (!admin) {
       try {
         final userDoc = await _db.collection('users').doc(user.uid).get();

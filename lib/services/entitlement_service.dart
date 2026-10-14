@@ -112,18 +112,19 @@ class UserEntitlement {
 
   /// Whether the user has an active premium entitlement.
   ///
-  /// Primary: the server-authoritative `isPremium` flag + a future
-  /// `premiumExpiry`. Fallback: `subscriptionStatus == 'active'` (a Play
-  /// purchase whose expiry mirror has not landed yet) — treated as active
-  /// when the expiry is absent or still in the future.
+  /// **v1.0.12 hotfix:** access now REQUIRES a non-null, future
+  /// `premiumExpiry`. The previous fallback granted premium on a stored
+  /// `subscriptionStatus == 'active'` with **no** expiry — that was the vector
+  /// a forged client status (or a stale mirror) could exploit to obtain
+  /// permanent free access. A status alone no longer grants access; the
+  /// server-authoritative `entitlements/{uid}` mirror (read by
+  /// [EntitlementService.getMyEntitlement]) always carries the expiry.
   bool isPremiumActive(DateTime now) {
-    if (isPremium && premiumExpiry != null && premiumExpiry!.isAfter(now)) {
-      return true;
-    }
-    if (_isActiveStatus(subscriptionStatus)) {
-      final expiry = premiumExpiry;
-      return expiry == null || expiry.isAfter(now);
-    }
+    final expiry = premiumExpiry;
+    if (expiry == null) return false;
+    if (isPremium && expiry.isAfter(now)) return true;
+    // A stored active status is honoured only WITH a future expiry.
+    if (_isActiveStatus(subscriptionStatus) && expiry.isAfter(now)) return true;
     return false;
   }
 
@@ -223,6 +224,47 @@ class UserEntitlement {
     );
   }
 
+  /// Builds an entitlement from the server-authoritative `entitlements/{uid}`
+  /// mirror (written ONLY by Cloud Functions; `firestore.rules` sets
+  /// `write: false` for clients). The mirror carries the premium fields
+  /// (`isPremium` / `premiumExpiry` / `subscriptionSource` /
+  /// `subscriptionProduct`) and never a client-forgeable status, so it is the
+  /// trusted source for [isPremiumActive] (v1.0.12 hotfix). Trial fields are
+  /// absent from the mirror and are merged in from `users/{uid}`.
+  static UserEntitlement fromEntitlementMirror(Map<String, dynamic>? data) {
+    if (data == null) return const UserEntitlement();
+    return UserEntitlement(
+      isPremium: data['isPremium'] == true,
+      premiumExpiry: _toDate(data['premiumExpiry']),
+      subscriptionSource: data['subscriptionSource'] as String?,
+      subscriptionProduct: data['subscriptionProduct'] as String?,
+    );
+  }
+
+  /// Merges this (trial + status, from `users/{uid}`) with a server-owned
+  /// premium [mirror] (from `entitlements/{uid}`). When the mirror carries
+  /// premium data it takes precedence (it is the Admin-SDK-written source of
+  /// truth); when the mirror is absent / empty the premium fields fall back to
+  /// this document so a legacy subscriber whose entitlement predates the mirror
+  /// is never locked out. The trial window / status / createdAt /
+  /// requiresPayment always come from this (users) document.
+  UserEntitlement mergePremiumMirror(UserEntitlement mirror) {
+    final hasMirror = mirror.isPremium || mirror.premiumExpiry != null;
+    return UserEntitlement(
+      isPremium: hasMirror ? mirror.isPremium : isPremium,
+      premiumExpiry: hasMirror ? mirror.premiumExpiry : premiumExpiry,
+      subscriptionSource:
+          hasMirror ? (mirror.subscriptionSource ?? subscriptionSource) : subscriptionSource,
+      subscriptionProduct:
+          hasMirror ? (mirror.subscriptionProduct ?? subscriptionProduct) : subscriptionProduct,
+      trialStart: trialStart,
+      trialEnd: trialEnd,
+      subscriptionStatus: subscriptionStatus,
+      requiresPayment: requiresPayment,
+      createdAt: createdAt,
+    );
+  }
+
   static DateTime? _toDate(dynamic v) {
     if (v is Timestamp) return v.toDate();
     if (v is DateTime) return v;
@@ -318,29 +360,48 @@ class EntitlementService {
 
   /// One-shot read of the current user's entitlement state.
   ///
-  /// Prefers the SERVER document (`Source.server`) so a just-provisioned
-  /// trial written by the backend trigger (or the client registration write)
-  /// is observed immediately rather than a stale cache hit on the very first
-  /// login. Falls back to the cache when offline / on a server error so an
-  /// off-grid user is not locked out — and finally to the empty entitlement
-  /// when neither is retrievable.
+  /// **v1.0.12 hotfix — reads the server-authoritative mirror.** The premium
+  /// fields are taken from `entitlements/{uid}` (written ONLY by Cloud
+  /// Functions; `firestore.rules` sets `write: false` for clients), merged with
+  /// the trial window / status read from `users/{uid}`. This removes the
+  /// `users/{uid}` document from the premium trust path entirely.
+  ///
+  /// Prefers the SERVER documents so a just-provisioned trial or a
+  /// freshly-verified purchase is observed immediately, falling back to the
+  /// cache when offline, then to the empty entitlement.
   Future<UserEntitlement> getMyEntitlement() async {
     final uid = _uid;
     if (uid == null) return const UserEntitlement();
-    final ref = _db.collection('users').doc(uid);
+    final userRef = _db.collection('users').doc(uid);
+    final entRef = _db.collection('entitlements').doc(uid);
+
+    final users = await _readWithFallback(userRef);
+    final mirror = await _readWithFallback(entRef);
+    if (users == null && mirror == null) return const UserEntitlement();
+
+    final base = UserEntitlement.fromMap(users);
+    final premium = UserEntitlement.fromEntitlementMirror(mirror);
+    return base.mergePremiumMirror(premium);
+  }
+
+  /// Reads a document preferring the server, then the cache, then null.
+  /// Never throws.
+  Future<Map<String, dynamic>?> _readWithFallback(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
     try {
       final snap = await ref.get(const GetOptions(source: Source.server));
-      return UserEntitlement.fromMap(snap.data());
+      return snap.data();
     } catch (e) {
-      debugPrint('EntitlementService.getMyEntitlement server read failed, '
-          'falling back to cache: $e');
+      debugPrint('EntitlementService: server read failed for '
+          '${ref.path}, falling back to cache: $e');
       try {
         final cached = await ref.get(const GetOptions(source: Source.cache));
-        return UserEntitlement.fromMap(cached.data());
+        return cached.data();
       } catch (cacheError) {
-        debugPrint('EntitlementService.getMyEntitlement cache read failed: '
-            '$cacheError');
-        return const UserEntitlement();
+        debugPrint('EntitlementService: cache read failed for '
+            '${ref.path}: $cacheError');
+        return null;
       }
     }
   }
