@@ -293,9 +293,389 @@ Build Order When Requested
  Tests + security rules
 Total: ~20 hours, no breaking changes to existing 1.0.11 build in Play Console review.
 
+4. TODO - New Feature: UV / Fluorescence Overlay for Spoor/Track Identifier (SPEC ONLY)
+Goal
+Add UV/fluorescence imaging mode to existing Spoor/Track identifier to help hunters identify tracks at night/low-light and detect blood trails, urine markers, and disturbed ground not visible in normal light.
+
+Why it fits JagSpoor
+Local hunters track wounded animals at dusk - blood fluoresces differently under UV
+International hunters expect tech edge - UV mode is differentiator vs other hunting apps
+Reuses existing ML track identifier - just adds camera filter + overlay model
+Features (Spec Only - DO NOT BUILD YET)
+4a. Camera Modes
+ Add toggle in Track Identifier screen: Normal | UV | Fluorescence Overlay
+ UV mode: use device camera with blue light filter + increased exposure
+ Fluorescence overlay: ML model highlights organic material (blood, urine, broken vegetation) with neon overlay
+ Torch integration: if device has UV LED (some rugged phones) - auto enable, else show "Use external UV torch" prompt
+4b. Track Enhancement
+ Spoor detection: UV highlights fine edges of tracks in dust/mud that normal light misses
+ Blood trail mode: separate toggle Blood Trail - enhances red/brown fluorescence, draws path line on screen
+ Species-specific UV patterns: some urine/scat fluoresces differently - add to existing species database
+ Save UV vs Normal side-by-side comparison image
+4c. Model & Data
+ Extend existing TFLite model: spoor_identifier.tflite -> add UV training dataset
+ New model: uv_fluorescence_overlay.tflite - segmentation model (blood, urine, disturbed ground)
+ Training data: night tracking photos + blood trail photos (UV and normal)
+ On-device inference - no internet needed in bush (critical)
+4d. UI/UX
+ Screen: TrackIdentifierScreen - add bottom toggle bar: [Normal][UV][Blood]
+ Overlay: semi-transparent neon green for tracks, neon red for blood, neon yellow for urine/disturbance
+ Capture: saves both normal + UV image + overlay mask
+ Share: include UV image in trophy log / hunt report
+ Settings: calibration for external UV torch intensity
+4e. Firestore & Storage
+ users/{uid}/trackScans/{scanId} { normalImageUrl, uvImageUrl, overlayMaskUrl, mode, speciesGuess, confidence, location, timestamp }
+ uvCalibration/{deviceModel} { exposure, filterStrength } - crowd-sourced per device
+ Storage: track_scans/{uid}/{scanId}_normal.jpg, _uv.jpg, _overlay.png
+4f. Acceptance Criteria (future build)
+ Toggle between Normal/UV/Blood modes in Track Identifier - no crash
+ UV overlay highlights blood trail visible in low light
+ Works offline - on-device TFLite
+ Saves side-by-side comparison
+ Battery efficient (UV mode drains fast - show warning)
+ Tested on 5+ Android devices including rugged (CAT, Samsung XCover)
+4g. Subscription Gate
+ NO CHARGE - Free for both hunter roles
+ Available in hunter (R34.99 sub) AND internationalHunter ($5.99 sub) at no extra cost - included in base subscription
+ Also available in free tier: basic UV filter (without ML overlay) - premium ML blood trail overlay requires active sub but no additional charge
+ Actually: per requirement - UV fluorescent feature has NO CHARGE - available to both local and international hunter roles even without sub? If must be free for all: remove gate entirely - just include in app
+ Final: UV feature = free, included for both hunter and internationalHunter roles - no paywall, no extra charge - core feature
+4h. Out of Scope (later)
+ Thermal overlay (different hardware)
+ Real UV camera hardware integration
+ iOS version (Android first)
+Implementation - Minimal Change
+ Reuse existing TrackIdentifierScreen + camera controller
+ Add filter: simple image processing (blue channel boost + contrast) for MVP, ML overlay later
+ New file: uv_overlay_service.dart - handles mode switching + inference
+ New file: blood_trail_painter.dart - custom painter for neon path
+ Modify 1 existing file: track_identifier_screen.dart - add toggle bar
+Total: ~8 hours, reuses existing camera + ML pipeline, no breaking changes.
+
+5. TODO - JagSpoor Marketplace (Safari Outdoor killer) - SPEC ONLY - Deepsearch Findings Applied
+Deepsearch Summary - Safari Outdoor Failures
+Website: single-retailer shop (7 mega stores, 151k visitors/month) - NOT a marketplace
+App: 50K+ downloads, 4.6 stars - social + classifieds + SAPS tracker - marketplace broken
+Failures: R100 per ad to publish (greed after scammers), links open Play Store not ad, search doesn't return results, Firestore permission-denied on SAPS tracker, credit system killed usage, no testing before release
+Opportunity: Build TRUE multi-vendor marketplace - free with sub, deep links work, search works, verified sellers
+Goal
+Build user-friendly marketplace that works - where hunters sell private gear/firearms, outfitters sell hunts (local vs international separated), butchery/taxidermy sell services - all in one search with trust.
+
+5a. Why Hunters Will Switch from Safari Outdoor
+Safari: Pay R100 per ad, pray you sell + links broken + scammers
+JagSpoor: Free listings included in R34.99 hunter sub, deep links work, verified sellers, map view, works offline in bush
+5b. Roles & What They Can Sell
+hunter (R34.99): SELL private gear - rifles, shotguns, optics, ammo (private), clothing, etc. + BUY everything
+internationalHunter ($5.99): BUY hunts (international pricing), BUY taxidermy/butchery export services + SELL gear (same as hunter) - sees USD
+outfitter (R299.99): SELL hunt packages - 2 tabs Local (ZAR) / International (USD) - audience separated - Gold Standard badge
+butchery (R149.99): SELL services - Local tab (biltong, sausage R/kg) / International tab (dip/pack USD) - audience separated
+taxidermy (R149.99): SELL mounts - Local (R) / International (USD all-in with dip/pack + shipping estimate) - Gold Standard
+Future retailer (R299.99): SELL new retail stock like Safari Outdoor - same audience separation - later phase
+5c. Listing Model
+enum ListingType { gear, firearm, huntPackage, butcheryService, taxidermyService, retail }
+enum Audience { local, international, both }
+enum Condition { new, likeNew, good, fair }
+class MarketplaceListing {
+  String id;
+  String sellerId;
+  UserRole sellerRole;
+  ListingType type;
+  Audience audience; // default both - local hunter sees local, international sees international
+  String title;
+  String description;
+  List<String> photoUrls; // compressed + CDN
+  double localPrice; // ZAR - nullable
+  double intlPrice; // USD - nullable
+  String currency; // ZAR or USD based on audience
+  Condition? condition; // for gear/firearm
+  String? calibre; // for firearm
+  String? province;
+  GeoPoint? location; // for map view + distance
+  String? licenseNo; // firearm - required
+  bool verified; // ID + license check
+  bool featured; // Gold Standard or paid boost
+  String status; // active, sold, expired
+  DateTime createdAt;
+  int viewCount;
+  int saveCount;
+}
+5d. Firestore
+marketplace/{listingId} { ...as above, sellerId, audience, geohash for geo query }
+marketplace/{listingId}/offers/{offerId} { buyerId, amount, message, status: pending/accepted/declined }
+users/{uid}/savedListings/{listingId} { savedAt }
+users/{uid}/verification { idVerified, licenseVerified, verifiedAt, badge }
+marketplaceReports/{reportId} { reporterId, listingId, reason: scam/fake/wrong, status }
+5e. Search & Discovery - Must Work (Unlike Safari)
+ Screen: MarketplaceScreen - 2 views: List + Map (flutter_map) toggle
+ Search bar: Algolia / Typesense - instant, typo-tolerant, not Firestore query (fixes Safari search fail)
+ Filters:
+Category chips: [All, Rifles, Optics, Hunts, Butchery, Taxidermy]
+Audience: auto-filter by role - hunter sees local, internationalHunter sees international - manual toggle if both
+Distance slider: 5km to 500km + nationwide
+Price range slider (ZAR or USD based on role)
+Condition, Calibre, Province, Verified only, Gold Standard only
+ Sort: Newest, Price low-high, Distance, Popular, Verified first
+ Deep links that WORK: https://jagspoor.com/m/{listingId} -> opens app if installed, else web page with listing + button to open in app - test on device (fixes Safari link fail)
+ Offline cache: cache last 50 listings, queue new listing when no signal in bush
+5f. Listing Flow - Free with Sub (Unlike Safari R100)
+ Button: + Sell - choose type
+ For gear/firearm: photos (compress), title, description, calibre, condition, province, price (localPrice + optional intlPrice), license no if firearm
+ Verification step for firearm: upload license photo - admin or auto-check - badge Verified Seller - prevents scammers (Safari failed here)
+ Publish:
+If subscriptions/{uid}.status == active: FREE, instant publish
+If inactive: 3 free ads/month, else paywall modal - "Subscribe to sell unlimited - R34.99/mo" - NOT R100 per ad
+ No credit system - no R100 pray-to-sell
+5g. Trust & Safety (Safari Scammer Fix)
+ Verified badge: ID verified + firearm license verified (if selling firearm)
+ Seller rating: after transaction, buyer rates - shown on profile
+ Report: 1 tap report scam/fake - goes to admin queue - auto-hide after 3 reports pending review
+ Chat: in-app chat only, phone no hidden until both agree - prevents WhatsApp scammers
+ No fake payment: warning banner "Only release firearm after SAPS transfer + payment cleared in YOUR banking app - not screenshot"
+ Gold Standard badge for outfitters/taxidermy - score >=8
+5h. Offers & Booking
+ On listing: Make Offer button -> enters amount + message -> creates offer in offers subcollection
+ Seller: Accept/Decline/Counter in app + FCM notification
+ For hunt/butchery/taxidermy service: Book button -> goes to existing booking flow with audience + currency (reuse Phase 3)
+ For gear/firearm: after accept -> chat opens to arrange meetup/SAPS transfer
+5i. Subscription Gate - Free with Existing Subs
+ NO EXTRA CHARGE - marketplace included in all roles:
+hunter R34.99/mo: unlimited buying + selling gear/firearm + buying hunts/services
+internationalHunter $5.99/mo: same - sees USD pricing
+outfitter R299.99/mo: unlimited hunt packages (local+intl) + buying gear
+butchery/taxidermy R149.99/mo: unlimited services + buying gear
+ Free tier: 3 listings + unlimited browsing - paywall after 3
+ No R100 per ad - ever
+5j. Acceptance Criteria
+ Hunter can list rifle with photos + licence + location - free if sub active
+ Deep link jagspoor.com/m/{id} opens app directly to listing (tested on 2 devices)
+ Search returns correct results - Algolia typo-tolerant (test: "308" finds ".308 Win")
+ Map view shows listings within radius - geohash query works
+ Audience filter: local hunter sees only local + both, international sees international + both - never mixed pricing
+ Verified badge shows after ID check
+ Report button hides listing after 3 reports
+ Offline: can create listing offline, queues, publishes when online
+ No Firestore permission-denied errors - rules tested in staging before prod (lesson from Safari)
+5k. Implementation - Minimal Change (Reuse Existing)
+ Reuse FindOutfitterScreen map+list widget for marketplace
+ Reuse Package model extended with Audience + localPrice/intlPrice (Phase 1)
+ Reuse booking flow for service bookings
+ New: MarketplaceService - Algolia search + deep link handling
+ New: ListingCard widget - photo, title, price (ZAR/USD per role), verified badge, distance
+ New: SellScreen - form + photo compress + verification upload
+ New: Offer flow + chat
+ Security rules: marketplace read if audience matches role, write if owner + verified + sub active (or free quota)
+Total: ~16 hours, reuses Phase 1-3, fixes all Safari failures, no extra charge.
+
 NOTES FOR OPENHANDS
 DO NOT BUILD NOW - spec only
-When build is requested, follow Phase 1 -> Phase 2 -> Phase 3 order above
+When build is requested, follow Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 (UV free) -> Phase 5 (Marketplace) -> Phase 6 (NR5) -> Phase 7 (NR9)
 All new fields nullable with defaults (audience=both) to keep existing outfitters working
 Keep existing international hunter TODO untouched
 Gold Standard is sorting/badge, not filter - don't hide existing outfitters from local hunters
+UV/Fluorescence feature is Phase 4 - free for both hunter roles - core feature
+Marketplace Phase 5 - free with sub - killer feature vs Safari Outdoor - must have working deep links + Algolia search + verification to prevent scammers
+Test deep links + search + rules in staging before prod - Safari Outdoor failed because they didn't test
+6. NR5: VELDBRAND & POACHING ALERT - Farm Watch Tab (SPEC ONLY)
+Status
+Date: Nov 2026 | Nr1, Nr6, Nr7 Done | Nr8 WIP | Nr5 & Nr9 Next | Build: Dec 2026, 12h
+
+Problem in SA
+1 kudu bull poached = R15k-R50k loss
+Fence cut = herd escapes, R100k+ loss
+Veldbrand Free State/NW can burn 1000ha in hours
+Current: WhatsApp groups, alerts get lost, no GPS, no log for insurance
+SAPS rural response slow, farm watch faster
+Goal
+One-tap alert that works OFFLINE in Kalahari with no signal - justifies R299 outfitter tier (one prevented incident = 50 months paid)
+
+6a. One-Tap Alert Button (OFFLINE FIRST) - Core
+ Home screen: 4 big buttons (no typing in bush):
+[🔥 VELDBRAND] Fire
+[✂ HEINING GESNY] Fence Cut/Poaching
+[🔫 STROPERY / SUSPICIOUS PERSON] Suspicious
+[🐾 SIEK/DOOIE DIER] Sick/Dead game
+ Flow: Tap button -> Auto GPS (even offline, use last known) -> Optional 1-tap photo -> Optional 10s voice note m4a -> Save locally SQLite queue + timestamp -> Auto send when signal returns
+ No keyboard needed - critical for bush use
+ Firestore: alerts/{id} { type: fire|fence|poaching|sick, farmId, gps, reporterId, reporterName, photos[], voiceUrl, status: open/enRoute/resolved/closed, createdAt, synced }
+ Local DB: alerts_queue SQLite - offline first
+6b. Broadcast System
+ Alert sends to:
+Farm owner (FCM push + optional SMS via Twilio R49/mo add-on)
+Farm manager
+Assigned workers list per farm farms/{farmId}/workers[]
+Nearby farms opt-in within 10km radius (geo query)
+ Auto WhatsApp intent: "ALERT: [TYPE] at -26.12345, 27.45678 - Farm: Leeuwfontein - Time: 14:32 - By: Jan - Open in JagSpoor: https://jagspoor.com/alert/{id}"
+ Push: "🔥 Fire at Leeuwfontein North Camp - 2km from you" - FCM topic per farm
+ SMS fallback: optional R49/mo add-on via Twilio for no-data areas
+6c. Map View (Offline Maps Critical)
+ Farm boundaries: user draws polygon or imports KML farms/{farmId} { boundary: Polygon, name }
+ Pins: Red=open, Yellow=en route, Green=resolved - tap pin -> photos, voice, reporter, time, status, action taken
+ Offline maps: Download farm area - Mapbox offline or Google offline - store in device
+ Layers toggle: boreholes, gates, water points, high-risk fence sections
+ Screen: FarmWatchMapScreen - flutter_map + offline tiles
+6d. Incident Log & Reports (Insurance Value)
+ Every alert = incident report: ID, Type, Date/Time, GPS, Reporter, Photos, Voice, Status, Action taken, Cost (R)
+ Filter: by farm, type, date, status
+ Export PDF for insurance: "Incident #123 - Fence cut 12 Dec 2026 - Location -26.123,27.456 - Photos - Damage: 200m fence, R4,500 - Reported by Jan" - uses pdf package
+ Analytics: "3 fence cuts at North fence in last 30 days - pattern detected" - simple count per fence section
+ Dashboard card: open incidents count, trend graph
+6e. Status Workflow
+ Open -> En Route (someone accepted) -> Resolved -> Closed
+ Anyone in farm group can update status + add photo of fixed fence
+ FCM notification on status change
+6f. Roles & Audience Separation
+ hunter (R34.99): Can REPORT alerts (free to report) - sees own farm alerts only - map view of own incidents
+ internationalHunter ($5.99): Same as hunter - can report if guest on farm - sees international pricing not relevant here - map view free
+ outfitter (R299.99): RECEIVES all alerts for farms they manage + can assign workers + view all incidents + export PDF - this justifies R299 tier
+ butchery/taxidermy: Not in Farm Watch - hide tab
+ admin: Sees all farms analytics
+6g. Technical Notes - Minimal Change
+ Reuse existing TrackIdentifierScreen camera for photo capture + compress to 800px
+ Use existing location service + geolocator - already have GPS
+ New: AlertService - SQLite queue (sqflite) - queueAlert() + syncWhenOnline() (connectivity_plus)
+ Voice: record package m4a max 10s
+ Push: existing FCM - new topic farm_{farmId}
+ Photos: compress 800px, save to Firebase Storage alerts/{id}/
+ Offline first: all saves local first, then sync
+6h. Monetization
+ Included in Outfitter R299.99 - no extra charge - pitch: "One prevented incident = 50 months paid"
+ Hunter R34.99 / International $5.99: Free to report, outfitter pays to receive - included in base sub
+ Optional add-on: R49/mo SMS alerts via Twilio - addons/smsAlerts { farmId, active, phoneNumbers[] } - for areas with no data
+6i. Build Order (12h part-time) - Spec Only
+Week 1 (4h): Alert button UI 4 big buttons + GPS grab + offline save SQLite + queue
+Week 2 (5h): Map view pins + broadcast farm group FCM + WhatsApp intent + polygon draw
+Week 3 (3h): Incident log list + status update + PDF export insurance
+6j. Canva Assets Needed
+Alert icons: Flame red, fence cut, rifle cross, paw - 512x512 PNG
+Empty state: "No incidents - farm safe" green check
+6k. Acceptance Criteria
+ Tap 🔥 button -> GPS saved offline even with airplane mode -> appears in queue -> auto sends when online
+ Map shows farm boundary + red pin at alert location
+ Push received by farm owner within 5 sec when online
+ PDF export includes photos + GPS + cost
+ Works offline in Kalahari (tested airplane mode)
+Total: ~12h, reuses camera + GPS + FCM, offline first.
+
+7. NR9: PLAASBESTUUR LITE - Water & Feeding + Carrying Capacity (SPEC ONLY)
+Status
+Date: Nov 2026 | Build: Jan-Feb 2027, 20h | Unlocks R599 tier | Pitch: "R599 to save R100k"
+
+Problem in SA
+Outfitters use paper notebooks: "Fed camp 3, 500kg, 12 Nov" - no history, no cost tracking
+Overstocking = veld damage 3 years, DAFF can fine
+Borehole diesel costs huge, water tracking critical for drought
+No app calculates carrying capacity using official SA DAFF guidelines
+Goal
+Simple farm manager that calculates carrying capacity + tracks water/feed costs - upgrade tier R599 Pro
+
+7a. Water Dashboard
+ Add borehole: farms/{farmId}/boreholes/{id} { name: Boorgat 1, gps, depthM: 80, pumpType: diesel|solar|eskom, capacityLPerHour, active }
+ Daily log (30 sec): waterLogs/{id} { date, boreholeId, hoursPumped, liters auto calc hours*capacity, dieselUsedL, dieselCostR, photoMeterUrl }
+ Dashboard:
+Water level trend graph last 30 days (MPAndroidChart / fl_chart)
+Avg hours/day vs today - alert: "Boorgat 1 only 1.2h today vs avg 3h - check pump" (local notification)
+Diesel cost this month, total water pumped this month
+ Rain gauge log: rainLogs/{id} { date, mm, camp } -> auto veld growth estimate: "45mm this month - good growth expected"
+ Screen: WaterDashboardScreen - borehole list + log button + graph
+7b. Feeding Log
+ Setup Camps: farms/{farmId}/camps/{id} { name: Camp A, sizeHa: 200, veldType: Sweetveld|Sourveld|Mixed|Kalahari|Karoo, condition: Good|Average|Poor, currentLSU: auto }
+ Log feeding (45 sec): feedLogs/{id} { date, campId, feedType: pellets|lusern|mielies|lek, kg, costPerKg, total auto, supplier, photoReceiptUrl }
+ Auto calculations:
+Cost per camp per month, cost per animal per month (total feed cost / total animals in camp)
+Total feeding cost vs hunting income for that camp
+ Alerts: "Camp C not fed in 7 days", "Feed cost R12k vs income R8k - loss" - local notif
+ Screen: FeedingLogScreen
+7c. Carrying Capacity Calculator (KILLER FEATURE - SA ONLY - No other app has this)
+ Official DAFF guidelines - store as JSON lookup table assets/daff_capacity.json:
+Input: Farm size ha, Veld type, Rainfall Low (<400mm) / Med (400-600) / High (>600), Veld condition Good/Avg/Poor
+Formula: ha per LSU table:
+Sweetveld good 12-14 ha/LSU, avg 16, poor 21
+Sourveld good 18-20, avg 22, poor 30
+Mixed good 15, avg 18, poor 25
+Kalahari good 25-30, avg 35, poor 45
+Karoo good 20, avg 28, poor 40
+Adjust: Poor = +50% ha/LSU (as spec)
+Output: MAX LSU = farmSizeHa / haPerLSU
+Example: 1200ha Sweetveld High Good = 85 LSU max
+ Current stock: farms/{farmId}/camps/{campId}/game/{speciesId} { species: kudu, count: 30, lsuPerAnimal: 0.8, totalLSU: 24 }
+ LSU TABLE (20 species - include in assets):
+Eland 1.2, Kudu 0.8, Blue Wildebeest 0.7, Red Hartebeest 0.6, Gemsbok 0.6, Zebra 0.7, Impala 0.15, Blesbok 0.15, Springbok 0.08, Warthog 0.2, Waterbuck 0.7, Sable 0.75, Roan 0.8, Nyala 0.4, Bushbuck 0.25, Duiker 0.05, Steenbok 0.04, Ostrich 0.3, Giraffe 1.5, Buffalo 1.0
+ Result dashboard:
+"You have 45.5 LSU of 85 max (53% capacity)"
+"You can add: 12 impala OR 2 kudu bulls OR 1 eland bull" - auto calc remaining LSU / lsuPerSpecies
+"Camp A: 90% full - do not add" (red), "Camp B: 40% full - can move 10 impala from A to B" (green)
+Visual: Pie chart per camp green/yellow/red (green <70%, yellow 70-90%, red >90%)
+ Screen: CapacityCalculatorScreen - inputs + result + pie chart
+7d. Staff Tasks
+ Simple task list: farms/{farmId}/tasks/{id} { title: Check fence North, assignedTo: Jan, due: date, priority: High/Med/Low, status: Open/Done, photoProofUrl, gpsDone, doneAt }
+ Shows log: Who did what, when, with photo proof - reuse camera + GPS
+ Screen: StaffTasksScreen
+7e. Cost Dashboard (Farm Profit)
+ Monthly view: costDashboard/{farmId}/{month} { income: hunting R45k, accommodation R10k, expenses: diesel R4k, feed R12k, staff R15k, maintenance R3k, profit auto R21k }
+ Auto pull: water diesel cost + feeding cost from logs - manual income/expense entry for rest
+ Per farm, per camp breakdown
+ Export Excel/CSV for accountant - excel package
+ Screen: CostDashboardScreen - bar chart income vs expense
+7f. Compliance Notes
+ Reminders: "Game count due for DAFF - 30 Nov" - local notification scheduled
+ Store docs: farms/{farmId}/documents/{id} { type: registration|permit, fileUrl, expiry } - reuse existing License Wallet Nr1
+7g. Roles & Monetization - Two Tiers (Critical)
+ Current R299 tier: JagSpoor Outfitter = Hunt bookings + Trophy stock + Marketplace hunt packages + NR5 Farm Watch (alerts)
+ NEW R599 tier: Plaasbestuur Pro = Everything in R299 + Water + Feeding + Capacity + Staff + Cost dashboard + Excel export
+ Pitch: "One prevented overgrazing saves R100k in veld rehab. One borehole failure detected early saves R20k pump."
+ Target: 50 farms x R599 = R29,950 MRR - HuntX pitch: "JagSpoor is not hunting app - it's farm protection + farm profit. R599 to save R100k."
+ Firestore: subscriptions/{uid} { tier: outfitter_basic R299 | outfitter_pro R599 } - gate screens by tier
+ Hunter roles: hunter R34.99 + internationalHunter $5.99 - can VIEW farm data if shared by outfitter (read-only) - not edit
+7h. Technical Notes - Minimal Change
+ All data offline first, sync when online - reuse SQLite queue from NR5
+ Simple tables, no complex GIS - polygon draw already from NR5 map
+ Capacity formula: JSON lookup easy to update
+ Graphs: fl_chart (already used?) or MPAndroidChart free
+ Reuse existing camera for receipt/meter photos
+ Reuse existing GPS service
+7i. Build Order (20h part-time) - Spec Only
+Week 1 (8h): Water dashboard + borehole add + daily log + graph + rain gauge
+Week 2 (6h): Feeding log + camps setup + carrying capacity calculator with LSU table + pie chart
+Week 3 (6h): Cost dashboard + staff tasks + Excel export + tier gating R299 vs R599
+7j. Canva Assets Needed
+Icons: Water drop blue, feed bag brown, LSU cow icon, staff icon - 512x512
+Dashboard template: "Farm dashboard minimal"
+7k. Acceptance Criteria
+ Add borehole Boorgat 1, log 3h pumping -> auto liters + graph shows 3h
+ Add Camp A 200ha Sweetveld Good -> calculator shows max LSU -> add 30 kudu -> shows 53% capacity + can add 12 impala
+ Feed log R12k vs income R8k -> alert loss
+ Cost dashboard shows profit R21k + export CSV opens in Excel
+ R299 tier cannot open Water dashboard - shows upgrade to R599 modal
+ Works offline - logs queue, syncs when online
+Total: ~20h, reuses NR5 map + SQLite queue + camera, unlocks R599 tier.
+
+8. CURRENT STACK SUMMARY (Updated Nov 2026)
+DONE
+✅ Nr1 License Wallet (SAPS expiry alerts, offline PDFs)
+✅ Nr6 Biltong/Butchery Tracker (tag -> butcher -> kg)
+✅ Nr7 Snake/Spoor ID Offline (30 snakes + spoor, offline) + UV Fluorescence FREE (Phase 4) - both roles free
+WIP
+🔨 Nr8 Taxidermist Tracker (with local vs international pricing separation)
+NEXT (Spec Only - Do Not Build)
+⭐ Nr5 Veldbrand & Poaching Alert - Farm Watch Tab (12h, Dec build, included in R299 outfitter, hunters free to report) - Phase 6
+⭐ Nr9 Plaasbestuur Lite - Water & Feeding + Carrying Capacity (20h, Jan-Feb build, unlocks R599 Pro tier) - Phase 7
+After These Two + Marketplace
+Marketplace Phase 5: Safari Outdoor killer - free with sub, verified sellers
+You can pitch at HuntX: "JagSpoor is not a hunting app - it's farm protection + farm profit. R299 to stop poaching, R599 to save R100k."
+Final Pricing Tiers (Locked)
+hunter: R34.99/mo ZAR - trophy log, hunts (local), butchery/taxidermy nearby, marketplace selling, UV free, can report farm alerts
+internationalHunter: $5.99/mo USD - same as hunter but international pricing, Gold Standard, OR Tambo, SAPS 520, marketplace USD
+outfitter R299.99/mo: Basic - hunt bookings (local+intl separated), farm watch alerts, marketplace hunt packages
+outfitter Pro R599/mo: Everything Basic + water + feeding + carrying capacity + staff + cost dashboard + Excel export (NR9)
+butchery R149.99/mo: Local + International pricing separated, marketplace services
+taxidermy R149.99/mo: Local + International pricing separated + dip/pack + shipping, Gold Standard
+Optional SMS add-on: R49/mo via Twilio for farm alerts no-data areas
+Build Phases (All Spec Only)
+Phase 1: Roles + Pricing separation (2h)
+Phase 2: Gold Standard badge (3h)
+Phase 3: Butchery/Taxidermy roles (4h)
+Phase 4: UV Fluorescence free (8h)
+Phase 5: Marketplace Safari killer (16h)
+Phase 6: NR5 Farm Watch (12h)
+Phase 7: NR9 Plaasbestuur Pro R599 tier (20h)
+Total: ~65h part-time - no breaking changes to 1.0.11 in Play review
