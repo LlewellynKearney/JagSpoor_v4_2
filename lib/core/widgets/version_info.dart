@@ -17,14 +17,14 @@ class VersionInfo {
   /// Static fallback used only when `package_info_plus` cannot resolve the
   /// live bundle metadata (billing/test host). Mirrors the current Android
   /// Play Console build (see `android/app/build.gradle.kts`).
-  static const String fallbackVersionCode = '12';
-  static const String fallbackVersionName = '1.0.12';
+  static const String fallbackVersionCode = '14';
+  static const String fallbackVersionName = '1.0.13';
 
   /// Asynchronously resolves the installed app version + build number.
   ///
   /// Returns a map of `{name, code, display}`. `name` is the human-readable
-  /// version (e.g. "1.0.12"), `code` is the build/version code (e.g. "12"),
-  /// and `display` is the combined `"1.0.12 (build 12)"` label used by the
+  /// version (e.g. "1.0.13"), `code` is the build/version code (e.g. "14"),
+  /// and `display` is the combined `"1.0.13 (build 14)"` label used by the
   /// widgets. Never throws -- any platform failure falls back to the
   /// documented [fallbackVersionName] / [fallbackVersionCode].
   static Future<Map<String, String>> resolve() async {
@@ -49,7 +49,7 @@ class VersionInfo {
   }
 }
 
-/// A compact, theme-aware version caption ("v1.0.12 · build 12") rendered in
+/// A compact, theme-aware version caption ("v1.0.13 · build 14") rendered in
 /// the footer area of the profile / settings screens.
 ///
 /// Fetches the version dynamically from `package_info_plus` on first mount
