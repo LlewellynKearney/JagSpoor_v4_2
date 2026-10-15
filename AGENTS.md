@@ -1,6 +1,115 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Fix PlayPurchaseRecorder `itemAlreadyOwned` loop: restore + acknowledge + server-authoritative premium (added 2026-10-15)
+
+### Symptom
+Device log on re-subscribe:
+`I/flutter: PlayPurchaseRecorder purchase error: IAPError(code:
+purchase_error, source: google_play, message: BillingResponse.itemAlreadyOwned)`
+The user already held the subscription, but the recorder treated the event as a
+failure — so it was never acknowledged and the entitlement was never linked
+(a legitimate subscriber stayed locked out, and Play kept re-delivering the
+unacknowledged transaction until it auto-refunded).
+
+### Root cause
+`PlayPurchaseRecorder._onPurchases` logged EVERY `PurchaseStatus.error` event
+and `continue`d. `itemAlreadyOwned` is NOT an error — it is the store saying
+"you already own this". The Android plugin attaches it as an `IAPError` whose
+`message` is `"BillingResponse.itemAlreadyOwned"` (the enum stringified;
+`details` carries the raw billing debug message) on a `PurchaseStatus.error`
+`PurchaseDetails` — so it fell straight into the error branch.
+
+### Fix (4 files + 1 test)
+1. **`play_billing_service.dart`**
+   - NEW `PlayBillingErrors` — the single classification point:
+     `isItemAlreadyOwned(IAPError?)` / `isItemAlreadyOwnedMessage(String?)`,
+     case-insensitive + tolerant of `item_already_owned` / `item already owned`
+     spellings and a bare `"7"` (the numeric response code), while NOT
+     mis-classifying `developerError` / `serviceUnavailable` /
+     `itemUnavailable` / `17`. Scans BOTH `message` and `details`.
+   - NEW `queryPastPurchases()` — the authoritative lookup the recovery needs
+     (restore alone only replays onto the stream; the recovery needs the
+     purchase object SYNCHRONOUSLY to acknowledge it). Resolves the Android
+     platform addition via `_billing.getPlatformAddition<
+     InAppPurchaseAndroidPlatformAddition>()` (the canonical provider API —
+     `InAppPurchasePlatformAddition.instance` is not re-exported by the
+     umbrella `in_app_purchase` package) and returns `[]` on any failure.
+   - NEW `findExistingPurchase(productId)` — prefers a purchased / restored
+     match, falls back to the first match.
+   - Test seams: `pastPurchasesForTesting`, `restoreForTesting`,
+     `completePurchaseForTesting`, `restoreCallsForTesting`,
+     `completedPurchasesForTesting` (all reset in `resetTestSeams`).
+2. **`play_purchase_recorder.dart`** — the recovery path:
+   - `_onPurchases`: on a `PurchaseStatus.error` event, if
+     `PlayBillingErrors.isItemAlreadyOwned(purchase.error)` ->
+     `_recoverAlreadyOwned(productID)` (NO error log), else the original
+     purchase-error log.
+   - `_recoverAlreadyOwned`: (1) `restorePurchases()`; (2)
+     `findExistingPurchase`; (3) `completePurchase(existing)`; (4)
+     `setPremium(...)`; (5) `recordPurchase(...)`. Every step best-effort.
+   - Info-level log `"subscription already owned, restoring (product …)"`
+     replaces the error line (the requested wording), plus a completion log.
+   - `premiumSetterForTesting` seam; the class doc records the recovery.
+3. **`entitlement_service.dart`** — NEW `setPremium({productId,
+   purchaseToken})`. **Server-authoritative**: it does NOT write `isPremium`
+   locally (those fields are frozen in `firestore.rules` — a client write is
+   PERMISSION_DENIED). It routes through the existing
+   `verifyGooglePlayPurchase` callable, so the Cloud Function re-validates the
+   Play token and writes the authoritative `users/{uid}` +
+   `entitlements/{uid}` entitlement — "already owned" ends with the SAME
+   server-verified grant as a fresh purchase. `premiumSetterForTesting` seam.
+4. **`subscription_screen.dart`** — the screen's own `PurchaseStatus.error`
+   branch now detects `itemAlreadyOwned` and reports the recovery instead of
+   `"Play purchase error: …"` (the recorder on the same stream does the work).
+5. **`main.dart`** — startup billing bootstrap: `startListening()` **BEFORE**
+   `restorePurchases()` (a restored purchase delivered on the stream between
+   the two calls would otherwise be dropped), gated on `isBillingSupported()`,
+   best-effort.
+
+### Test (`test/play_purchase_item_already_owned_test.dart`, NEW, 12 tests, all pass)
+- `PlayBillingErrors` detection: the exact reported `IAPError`; case/spelling
+  variants incl. bare `"7"`; negative cases (`developerError`, `17`, `null`);
+  the `details` field path.
+- Recorder recovery: the exact reported event -> restore requested +
+  purchase acknowledged + premium granted with the restored token + the
+  transaction recorded; **`itemAlreadyOwned` results in `isPremium = true`**
+  (end-to-end through the real `EntitlementService.getMyEntitlement` +
+  `entitlements/{uid}` mirror); a genuine purchase error is still logged and
+  triggers NO restore/grant; `itemAlreadyOwned` with no live purchase does not
+  grant premium.
+- `setPremium`: routes through the verifier; never writes `users/{uid}`
+  client-side.
+- Source contracts: `main.dart` calls `startListening()` BEFORE
+  `restorePurchases()`; the recorder logs the informational recovery wording.
+- Hermetic: the plugin's real restore/complete calls are stubbed via the new
+  seams, so no `ServicesBinding` / `GooglePlayPurchaseDetails` assertion noise.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 321 infos — an
+  issue-for-issue diff against the stashed baseline is IDENTICAL (the 6
+  "new" lines are pre-existing `main.dart` / `entitlement_service.dart`
+  infos that merely shifted line numbers). New test file: "No issues found".
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2117 passed,
+  1 pre-existing failure** — `trial_onboarding_functions_contract_test`
+  ("is a Firebase Auth user-creation trigger in us-central1"), the DOCUMENTED
+  v1-vs-v2 auth-trigger assertion in `functions/src/user_trial_onboarding.ts`
+  (untouched by this change). All 107 billing-related tests green.
+- Env: Flutter **3.44.9** at `/workspace/sdk/flutter`; the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink
+  is required for the sqflite-FFI suites (run with `LD_LIBRARY_PATH="$HOME/libs"`).
+
+### Files
+- MODIFIED: `lib/features/subscription/services/play_billing_service.dart`,
+  `lib/features/subscription/services/play_purchase_recorder.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/services/entitlement_service.dart`, `lib/main.dart`, `AGENTS.md`.
+- NEW: `test/play_purchase_item_already_owned_test.dart`.
+- No Firestore rules / index / Storage / functions / pubspec / manifest
+  changes (the entitlement grant deliberately reuses the existing
+  server-authoritative callable rather than widening the frozen client rules).
+
+
 ## Phase -- Version bump 1.0.13 (code 13) -> 1.0.13+14 (code 14) for the Play Store re-upload (added 2026-10-15)
 
 ### What changed

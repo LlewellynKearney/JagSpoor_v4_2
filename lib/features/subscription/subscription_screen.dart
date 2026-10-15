@@ -395,8 +395,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           // notice and disable the subscribe button meanwhile.
           if (mounted) setState(() => _paymentPending = true);
         } else if (purchase.status == PurchaseStatus.error) {
-          debugPrint('Play purchase error: ${purchase.error}');
-          if (mounted) setState(() => _paymentPending = false);
+          // `itemAlreadyOwned` is NOT a failure — the user already holds the
+          // subscription. `PlayPurchaseRecorder` (listening on the same
+          // stream) restores the existing purchase and grants the entitlement,
+          // so this branch only clears the pending state and reports the
+          // recovery instead of a purchase error.
+          if (PlayBillingErrors.isItemAlreadyOwned(purchase.error)) {
+            debugPrint(
+              'Play purchase: subscription already owned — restoring '
+              '(${purchase.productID}).',
+            );
+            if (mounted) setState(() => _paymentPending = false);
+          } else {
+            debugPrint('Play purchase error: ${purchase.error}');
+            if (mounted) setState(() => _paymentPending = false);
+          }
         } else if (purchase.status == PurchaseStatus.canceled) {
           if (mounted) setState(() => _paymentPending = false);
         }

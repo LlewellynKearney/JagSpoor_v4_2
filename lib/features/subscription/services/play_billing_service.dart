@@ -4,6 +4,46 @@ import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import 'subscription_pricing.dart';
 
+/// Pure detection helpers for the Google Play Billing error surface.
+///
+/// `itemAlreadyOwned` is NOT a failure — it is the store telling us the user
+/// already holds this subscription (e.g. re-subscribing on a device where the
+/// entitlement was never linked, or a replay after a reinstall). The correct
+/// response is to restore the existing purchase, NOT to report a purchase
+/// error. These helpers keep that classification in ONE place so the recorder
+/// and the subscription screen agree.
+class PlayBillingErrors {
+  PlayBillingErrors._();
+
+  /// The `IAPError.code` the Android plugin attaches to a failed purchase
+  /// (`in_app_purchase_android` `kPurchaseErrorCode`).
+  static const String purchaseErrorCode = 'purchase_error';
+
+  /// Whether [error] represents `BillingResponse.itemAlreadyOwned`.
+  ///
+  /// The Android plugin does not expose the `BillingResponse` enum on the
+  /// [IAPError]; it stringifies the response code into `message` (e.g.
+  /// `"BillingResponse.itemAlreadyOwned"`) and puts the raw billing debug
+  /// message in `details`. Both are scanned (case-insensitively) so the
+  /// detection is robust to either spelling.
+  static bool isItemAlreadyOwned(IAPError? error) =>
+      isItemAlreadyOwnedMessage(error?.message) ||
+      isItemAlreadyOwnedMessage('${error?.details}');
+
+  /// Whether a raw string mentions `itemAlreadyOwned` (case-insensitive).
+  static bool isItemAlreadyOwnedMessage(String? message) {
+    if (message == null || message.isEmpty) return false;
+    final normalized = message.toLowerCase();
+    return normalized.contains('itemalreadyowned') ||
+        normalized.contains('item_already_owned') ||
+        normalized.contains('item already owned') ||
+        // Some plugin builds surface the numeric response code (7) instead of
+        // the enum name; only treat a bare 7 as owned when it is the whole
+        // message (never a substring of another code like 17/70).
+        normalized.trim() == '7';
+  }
+}
+
 /// Immutable snapshot of a product loaded from the Play Billing catalog.
 class PlayProduct {
   final SubscriptionTier tier;
@@ -147,6 +187,30 @@ class PlayBillingService {
   @visibleForTesting
   static Map<SubscriptionTier, PlayProduct>? productsForTesting;
 
+  /// Test seam: replaces [queryPastPurchases] so the `itemAlreadyOwned`
+  /// recovery path can be exercised without the Android billing plugin.
+  @visibleForTesting
+  static Future<List<PurchaseDetails>> Function()? pastPurchasesForTesting;
+
+  /// Test seam: replaces the plugin's `restorePurchases` call.
+  @visibleForTesting
+  static Future<void> Function()? restoreForTesting;
+
+  /// Test seam: replaces the plugin's `completePurchase` call.
+  @visibleForTesting
+  static Future<void> Function(PurchaseDetails purchase)?
+      completePurchaseForTesting;
+
+  /// Records each [restorePurchases] invocation (tests assert the restore was
+  /// requested when the store reported `itemAlreadyOwned`).
+  @visibleForTesting
+  static int restoreCallsForTesting = 0;
+
+  /// Records each [completePurchase] invocation (tests assert the existing
+  /// purchase was acknowledged).
+  @visibleForTesting
+  static final List<PurchaseDetails> completedPurchasesForTesting = [];
+
   /// Web-safe openable Play subscriptions URL (compliance + management).
   ///
   /// `playStoreSubscriptionsUrl` opens the platform subscriptions page for
@@ -161,6 +225,11 @@ class PlayBillingService {
   static void resetTestSeams() {
     billingForTesting = null;
     productsForTesting = null;
+    pastPurchasesForTesting = null;
+    restoreForTesting = null;
+    completePurchaseForTesting = null;
+    restoreCallsForTesting = 0;
+    completedPurchasesForTesting.clear();
   }
 
   InAppPurchase get _billing => billingForTesting ?? InAppPurchase.instance;
@@ -286,6 +355,16 @@ class PlayBillingService {
   /// Restores / refreshes purchases so an existing subscriber re-syncs their
   /// entitlement (e.g. after reinstalling or on a new device).
   Future<void> restorePurchases() async {
+    restoreCallsForTesting++;
+    final override = restoreForTesting;
+    if (override != null) {
+      try {
+        await override();
+      } catch (e) {
+        debugPrint('PlayBillingService.restorePurchases (test) failed: $e');
+      }
+      return;
+    }
     try {
       await _billing.restorePurchases();
     } catch (e) {
@@ -293,9 +372,74 @@ class PlayBillingService {
     }
   }
 
+  /// Queries Google Play for the user's EXISTING (non-consumed) purchases.
+  ///
+  /// This is the authoritative lookup for the `itemAlreadyOwned` recovery
+  /// path: when the store reports the subscription is already owned, the app
+  /// must find that live purchase and acknowledge it rather than reporting a
+  /// purchase error. Returns an empty list (never throws) when billing is
+  /// unavailable, the platform is not Android, or the query fails — so callers
+  /// can treat "no result" as "nothing to restore".
+  ///
+  /// `restorePurchases()` alone is not enough here: it replays purchases onto
+  /// [purchaseStream], but a caller that needs the purchase object
+  /// SYNCHRONOUSLY (to call `completePurchase`) must query for it.
+  Future<List<PurchaseDetails>> queryPastPurchases() async {
+    final override = pastPurchasesForTesting;
+    if (override != null) {
+      try {
+        return await override();
+      } catch (e) {
+        debugPrint('PlayBillingService.queryPastPurchases (test) failed: $e');
+        return const <PurchaseDetails>[];
+      }
+    }
+    try {
+      // `queryPastPurchases` lives on the Android platform ADDITION, not on the
+      // core `InAppPurchase` facade. `getPlatformAddition` casts the active
+      // addition to the Android type — on a non-Android platform (or with no
+      // plugin registered) it throws, which the catch below turns into an
+      // empty result.
+      final addition = _billing.getPlatformAddition<
+          InAppPurchaseAndroidPlatformAddition>();
+      final response = await addition.queryPastPurchases();
+      return response.pastPurchases;
+    } catch (e) {
+      debugPrint('PlayBillingService.queryPastPurchases unavailable: $e');
+      return const <PurchaseDetails>[];
+    }
+  }
+
+  /// Finds the live purchase for [productId] among the store's existing
+  /// purchases. Prefers a purchased / restored entry (an acknowledged, still
+  /// valid subscription) and falls back to the first match for the product.
+  Future<PurchaseDetails?> findExistingPurchase(String productId) async {
+    final past = await queryPastPurchases();
+    PurchaseDetails? fallback;
+    for (final purchase in past) {
+      if (purchase.productID != productId) continue;
+      if (purchase.status == PurchaseStatus.purchased ||
+          purchase.status == PurchaseStatus.restored) {
+        return purchase;
+      }
+      fallback ??= purchase;
+    }
+    return fallback;
+  }
+
   /// Finishes the transaction so the store stops holding it. Must be called
   /// once the entitlement has been recorded.
   Future<void> completePurchase(PurchaseDetails purchase) async {
+    completedPurchasesForTesting.add(purchase);
+    final override = completePurchaseForTesting;
+    if (override != null) {
+      try {
+        await override(purchase);
+      } catch (e) {
+        debugPrint('PlayBillingService.completePurchase (test) failed: $e');
+      }
+      return;
+    }
     try {
       await _billing.completePurchase(purchase);
     } catch (e) {

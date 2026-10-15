@@ -305,11 +305,21 @@ class EntitlementService {
   @visibleForTesting
   static Future<String?> Function()? idTokenResolverForTesting;
 
+  /// Test seam: replaces the server-authoritative premium grant performed by
+  /// [setPremium] so the `itemAlreadyOwned` recovery path can be asserted
+  /// without a live Cloud Function.
+  @visibleForTesting
+  static Future<bool> Function({
+    required String productId,
+    String? purchaseToken,
+  })? premiumSetterForTesting;
+
   @visibleForTesting
   static void resetTestSeams() {
     firestoreForTesting = null;
     currentUserIdResolverForTesting = null;
     idTokenResolverForTesting = null;
+    premiumSetterForTesting = null;
     projectIdForTesting = 'jagspoor';
   }
 
@@ -472,6 +482,50 @@ class EntitlementService {
         message: 'Purchase verification failed.',
       );
     }
+  }
+
+  /// Grants (or refreshes) the premium entitlement for the signed-in user.
+  ///
+  /// **Server-authoritative by design.** `users/{uid}` and `entitlements/{uid}`
+  /// freeze `isPremium` / `premiumExpiry` / `subscriptionStatus` / `isPro`
+  /// against client writes (`firestore.rules`), so this NEVER writes premium
+  /// state locally. It routes through the same
+  /// [verifyGooglePlayPurchase] callable the normal purchase flow uses, which
+  /// has the Cloud Function re-validate the Play purchase token and write the
+  /// authoritative entitlement. The `itemAlreadyOwned` recovery path calls this
+  /// after restoring the user's existing purchase, so "already owned" ends with
+  /// the SAME server-verified premium grant as a fresh purchase.
+  ///
+  /// Returns `true` when the server confirmed the entitlement. A missing
+  /// session / token or a rejected verification resolves `false` (never
+  /// throws) so the caller can surface a retry instead of crashing.
+  Future<bool> setPremium({
+    required String productId,
+    String? purchaseToken,
+  }) async {
+    final override = premiumSetterForTesting;
+    if (override != null) {
+      return override(productId: productId, purchaseToken: purchaseToken);
+    }
+    final token = purchaseToken;
+    if (token == null || token.isEmpty) {
+      debugPrint(
+        'EntitlementService.setPremium: no purchase token for $productId — '
+        'cannot grant premium (nothing to verify server-side).',
+      );
+      return false;
+    }
+    final result = await verifyGooglePlayPurchase(
+      purchaseToken: token,
+      productId: productId,
+    );
+    if (!result.success) {
+      debugPrint(
+        'EntitlementService.setPremium: server rejected the entitlement grant '
+        'for $productId (${result.message}).',
+      );
+    }
+    return result.success;
   }
 }
 

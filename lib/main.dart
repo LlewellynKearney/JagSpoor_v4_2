@@ -31,6 +31,8 @@ import 'utils/animal_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
 import 'core/utils/measurement_formatter.dart';
 import 'features/review/services/review_service.dart';
+import 'features/subscription/services/play_billing_service.dart';
+import 'features/subscription/services/play_purchase_recorder.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -135,6 +137,23 @@ Future<void> main() async {
       await PushNotificationService.instance.initialize();
     } catch (e) {
       debugPrint('Push notification initialization failed: $e');
+    }
+
+    // --- Google Play Billing: startup restore (order matters) ---
+    // Attach the purchase listener BEFORE asking the store to replay prior
+    // purchases, otherwise a restored purchase delivered on the stream in the
+    // window between the two calls would be dropped. This also links an
+    // existing subscriber's entitlement on a fresh install / new device, and
+    // recovers the `itemAlreadyOwned` case (the user already holds the
+    // subscription) via the recorder's restore path.
+    // Best-effort: a billing / plugin failure must never block startup.
+    try {
+      PlayPurchaseRecorder.instance.startListening();
+      if (await PlayBillingService.instance.isBillingSupported()) {
+        await PlayBillingService.instance.restorePurchases();
+      }
+    } catch (e) {
+      debugPrint('Play Billing startup restore failed: $e');
     }
 
     // --- Review prompt: device launch counter + control-plane seed ---

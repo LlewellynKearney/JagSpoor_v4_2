@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../../../services/entitlement_service.dart';
 import 'play_billing_service.dart';
 import 'subscription_pricing.dart';
 
@@ -31,6 +32,14 @@ const String purchaseStatusActive = 'active';
 /// automatically. Listening is idempotent: [startListening] attaches at most
 /// one subscription per process, so it is safe to call from every
 /// subscription surface (paywall, subscription screen, dashboards).
+///
+/// **`itemAlreadyOwned` recovery.** When Google Play reports
+/// `BillingResponse.itemAlreadyOwned` (the user already holds the
+/// subscription — e.g. re-subscribing on a device where the entitlement was
+/// never linked), that is NOT a purchase failure. The recorder restores the
+/// existing purchase, acknowledges it, and grants the premium entitlement
+/// server-side (see [_recoverAlreadyOwned]) instead of logging a purchase
+/// error.
 class PlayPurchaseRecorder {
   PlayPurchaseRecorder._();
   static final PlayPurchaseRecorder instance = PlayPurchaseRecorder._();
@@ -47,11 +56,21 @@ class PlayPurchaseRecorder {
   @visibleForTesting
   static Stream<List<PurchaseDetails>>? purchaseStreamForTesting;
 
+  /// Test seam: replaces the premium grant performed after an
+  /// `itemAlreadyOwned` recovery so the entitlement outcome is assertable
+  /// without a live Cloud Function.
+  @visibleForTesting
+  static Future<bool> Function({
+    required String productId,
+    String? purchaseToken,
+  })? premiumSetterForTesting;
+
   @visibleForTesting
   static void resetTestSeams() {
     firestoreForTesting = null;
     currentUserIdResolverForTesting = null;
     purchaseStreamForTesting = null;
+    premiumSetterForTesting = null;
     instance._subscription?.cancel();
     instance._subscription = null;
     instance._started = false;
@@ -114,7 +133,14 @@ class PlayPurchaseRecorder {
           purchase.status == PurchaseStatus.restored;
       if (!active) {
         if (purchase.status == PurchaseStatus.error) {
-          debugPrint('PlayPurchaseRecorder purchase error: ${purchase.error}');
+          // `itemAlreadyOwned` is NOT an error — the store is telling us the
+          // subscription is already held. Recover it (restore + acknowledge +
+          // grant premium) instead of logging a purchase error.
+          if (PlayBillingErrors.isItemAlreadyOwned(purchase.error)) {
+            await _recoverAlreadyOwned(purchase.productID);
+          } else {
+            debugPrint('PlayPurchaseRecorder purchase error: ${purchase.error}');
+          }
         }
         continue;
       }
@@ -126,6 +152,70 @@ class PlayPurchaseRecorder {
       // caller (the subscription screen finishes it after the server-side
       // verification round-trip). The recorder only persists the record.
     }
+  }
+
+  /// Recovers a subscription the store reports as already owned.
+  ///
+  /// Sequence (mirrors the requested fix):
+  ///  1. Ask Google Play to replay prior purchases
+  ///     ([PlayBillingService.restorePurchases]).
+  ///  2. Query the store for the live purchase
+  ///     ([PlayBillingService.queryPastPurchases] / [findExistingPurchase]).
+  ///  3. Acknowledge it ([PlayBillingService.completePurchase]) so the store
+  ///     stops holding the transaction.
+  ///  4. Grant the premium entitlement
+  ///     ([EntitlementService.setPremium]) — server-authoritative, so the
+  ///     entitlement is written by the Cloud Function exactly as it is for a
+  ///     fresh purchase.
+  ///
+  /// Every step is best-effort: a missing session / token or a store error
+  /// leaves the existing (cached) entitlement in place rather than throwing.
+  Future<void> _recoverAlreadyOwned(String productId) async {
+    debugPrint(
+      'PlayPurchaseRecorder: subscription already owned, restoring '
+      '(product $productId).',
+    );
+    // 1) Ask the store to replay prior purchases.
+    await PlayBillingService.instance.restorePurchases();
+    // 2) Find the existing purchase for this product.
+    final existing =
+        await PlayBillingService.instance.findExistingPurchase(productId);
+    if (existing == null) {
+      debugPrint(
+        'PlayPurchaseRecorder: itemAlreadyOwned for $productId but the store '
+        'returned no live purchase — nothing to acknowledge.',
+      );
+      return;
+    }
+    // 3) Acknowledge the existing transaction so it is not held open.
+    await PlayBillingService.instance.completePurchase(existing);
+    // 4) Grant the premium entitlement server-side.
+    final token = existing.verificationData.serverVerificationData;
+    final granted = await _setPremium(productId: productId, token: token);
+    // 5) Record the transaction so the purchase history is complete.
+    if (token.isNotEmpty) {
+      await recordPurchase(productId: productId, purchaseToken: token);
+    }
+    debugPrint(
+      'PlayPurchaseRecorder: restored already-owned $productId — premium '
+      '${granted ? 'granted' : 'pending server confirmation'}.',
+    );
+  }
+
+  /// Delegates the premium grant to [EntitlementService.setPremium] (or the
+  /// recorder-level test seam when one is installed).
+  Future<bool> _setPremium({
+    required String productId,
+    required String token,
+  }) async {
+    final override = premiumSetterForTesting;
+    if (override != null) {
+      return override(productId: productId, purchaseToken: token);
+    }
+    return EntitlementService.instance.setPremium(
+      productId: productId,
+      purchaseToken: token,
+    );
   }
 
   /// Writes the transaction record to `purchases/{uid}_{productId}`.
