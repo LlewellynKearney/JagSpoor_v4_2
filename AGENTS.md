@@ -1,6 +1,65 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Version bump 1.0.13 (code 13) -> 1.0.13+14 (code 14) for the Play Store re-upload (added 2026-10-15)
+
+### What changed
+A strictly-higher `versionCode` is required for every Play Console re-upload,
+so the app was bumped from **1.0.13+13 / code 13** to **1.0.13+14 / code 14**.
+The version NAME stays `1.0.13` (only the build number advanced), matching the
+task brief (`version: 1.0.13+14`, commit message "version name 13").
+
+### Version sources kept in sync (hand-synced convention)
+The Gradle values are HARDCODED in this project (they do NOT track
+`flutter.versionCode` / `flutter.versionName`), so the bump was applied to
+every source by hand:
+- `pubspec.yaml`: `version: 1.0.13+13` -> `version: 1.0.13+14`.
+- `android/app/build.gradle.kts` (`defaultConfig`): `versionCode = 12` ->
+  `14` and `versionName = "1.0.12"` -> `"1.0.13"` (+ the surrounding comment).
+  NOTE: the Gradle pair had LAGGED at 12/1.0.12 (the previous bump had only
+  touched the pubspec), so this phase also caught it up to the pubspec line.
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode` `'12'` ->
+  `'14'`, `fallbackVersionName` `'1.0.12'` -> `'1.0.13'`, plus the two
+  doc-comment examples (`resolve()` + `VersionInfoCaption`).
+- `test/version_info_and_facebook_test.dart`: fallback expectations ->
+  `'1.0.13'` / `'14'`.
+- `test/force_update_service_test.dart`: the shipped-build test now mirrors
+  versionCode 14 (floor 14 vs 13 blocks; floor 13 vs 13 does not).
+
+### `android/local.properties`
+ABSENT from the working tree and NOT tracked by git (it is gitignored). It
+holds only `sdk.dir` / `flutter.sdk` SDK-location paths — no version fields —
+so no change was needed or possible. The build machine supplies its own.
+
+### Verification (real Android release AAB built in-sandbox)
+Full toolchain provisioned from scratch (the sandbox had NO Flutter / Java /
+Android SDK): Flutter **3.44.9** (Dart 3.12.2) at `/workspace/sdk/flutter`,
+OpenJDK **21**, and the Android cmdline-tools + `platforms;android-36` +
+`build-tools;36.0.0` + `ndk;27.0.12077973` under `/workspace/sdk/android-sdk`
+(`android/local.properties`, gitignored, points at them; CMake 3.22.1 was
+auto-installed by Gradle during the build).
+- `flutter clean` -> clean; `flutter pub get` -> clean (NO `pubspec.lock`
+  drift; working tree stayed clean).
+- `flutter build appbundle --release` -> **SUCCESS** (638.2s) ->
+  `build/app/outputs/bundle/release/app-release.aab` (**127.3 MB**,
+  sha256 `40b20844758c1a776aba88426baabc19634518a25024b8b4e5f710c76abd4054`).
+- Merged + packaged release manifests: `package="za.co.jagspoor.app"`,
+  **`versionCode="14"`**, **`versionName="1.0.13"`**.
+- The AAB's OWN protobuf manifest (`base/manifest/AndroidManifest.xml`,
+  decoded directly) confirms **`versionCode = 14`**, **`versionName = 1.0.13`**
+  — the artifact genuinely carries the bumped build.
+- Commit `36b416e` ("chore: bump to 1.0.13+14 - version name 13") pushed to
+  `origin/main` (`3e18574..36b416e`); local + origin in sync, tree clean.
+- No Firestore rules / index / Storage / functions / pubspec-dependency
+  changes (version metadata only).
+
+### Operator note
+The Google Play Console base plans and the `admin_config/app_version`
+forced-update floor are unchanged; raise the floor to 14 only once the
+versionCode-14 AAB is live on the track, otherwise builds below 14 are blocked
+with no in-app way forward.
+
+
 ## Phase -- 1.0.12 HOTFIX: freeze `role` + `subscriptionStatus`, ack purchases immediately (added 2026-10-14)
 
 Closes the two CRITICAL exploits from `AUDIT_BILLING_REPORT.md` before the
