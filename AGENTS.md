@@ -1,6 +1,102 @@
 # JagSpoor -- Agent Memory
 
 
+## Phase -- Fix in-app update crash (ERROR_APP_NOT_OWNED) + paywall R40.24 double-VAT bug + version bump to 1.0.16+19 (code 19) (added 2026-10-15)
+
+### Fix 1 -- `lib/services/update_service.dart`: ERROR_APP_NOT_OWNED crash
+- **Root cause**: a build installed outside Google Play (`flutter run`, a
+  sideloaded APK, an emulator) makes Play Core reject `InAppUpdate.checkForUpdate()`
+  with `ERROR_APP_NOT_OWNED` (numeric code `-10`). The old code only caught the
+  exception generically and logged "Update check failed", which on some builds
+  surfaced as an error.
+- **Fix**: `checkForImmediateUpdate()` now (a) **skips outright when
+  `kDebugMode`** (a local/debug build is never Play-distributed) and (b) detects
+  the app-not-owned condition via the new pure static `isAppNotOwned(Object)`
+  helper — matched against the `PlatformException.code` (`-10` /
+  `app_not_owned`), `message`, `details`, and `toString()` so every plugin
+  spelling is covered. Either path logs exactly
+  `"Local build - skipping update check"` and returns **without blocking the UI**.
+  The Android-only + `kIsWeb` guards are unchanged.
+
+### Fix 2 -- paywall R40.24 instead of R34.99 (double-VAT bug)
+- **Root cause**: the app treated the resolved Google Play catalog amount as
+  VAT-EXCLUSIVE and grossed it up by 15% before display. Under the owner's
+  **Option A** model the Play Console base plan already carries the FINAL
+  VAT-inclusive charge (R34.99), so `34.99 * 1.15 = R40.24` was rendered.
+- **Fix (`subscription_pricing.dart`)**: `SubscriptionVatPrice` now has a
+  canonical `fromInclusive(double)` constructor that shows the resolved amount
+  **verbatim** (ex-VAT component derived as `inclVat / 1.15` for reporting);
+  `primaryLabel` is `"R 34.99/month"` and `vatNote` is `"Incl. 15% VAT"`.
+  `fromExVat` is retained for genuinely ex-VAT callers. `PlayPriceReconciliation`
+  now compares the two VAT-INCLUSIVE amounts **directly** (no gross-up) so the
+  admin/subscriber divergence banners stay correct; `playExVat` was renamed to
+  `playInclVat` and `matchMessage`/`mismatchMessage` copy simplified.
+- **Wiring**: `paywall_screen.dart` + `subscription_screen.dart` (`_playInclVat`
+  / `_playVatPrice`) now use `fromInclusive`. The price is STILL dynamic —
+  resolved Play Billing catalog → `admin_config/pricing` → hard-coded last
+  resort (`resolveMonthlyPrice` / `_baseAmount`); the R34.99 / R299.99
+  constants were already the fallbacks. No hardcoded 40.24 exists anywhere in
+  `lib/` (grep-verified).
+- **Tests**: `paywall_dynamic_price_test.dart` (Option A: R34.99 verbatim, NOT
+  R40.24; `fromInclusive` vs `fromExVat`) and
+  `price_divergence_reconciliation_test.dart` (direct comparison) rewritten.
+
+### Fix 3 -- version bump 1.0.15+16 (code 16) -> 1.0.16+19 (code 19)
+Hand-synced across every source (the Gradle values are HARDCODED, they do NOT
+track `flutter.versionCode`): `pubspec.yaml` (`1.0.16+19`),
+`android/app/build.gradle.kts` (`versionCode = 19`, `versionName = "1.0.16"`),
+`lib/core/widgets/version_info.dart` fallbacks (`'19'` / `'1.0.16'` + doc
+examples), and the two version tests (`version_info_and_facebook_test.dart`,
+`force_update_service_test.dart`). The only remaining `code 16` mention is the
+intentional historical reference in the Gradle comment.
+
+### Verification (real toolchain, in-sandbox)
+- Toolchain provisioned from scratch: Flutter **3.44.9** at `/opt/flutter`
+  (Dart 3.12.2), OpenJDK **21**, Android cmdline-tools + `platforms;android-36`
+  + `build-tools;36.0.0` + `ndk;27.0.12077973` under `/opt/android-sdk`
+  (`android/local.properties`, gitignored, points at them).
+- `flutter pub get` clean (no `pubspec.lock` / `analysis_options.yaml` drift).
+- `flutter clean` + `flutter build apk --release` -> **SUCCESS** (664.7s) ->
+  `build/app/outputs/flutter-apk/app-release.apk` (**76,795,676 bytes**, sha256
+  `3a71d7ecd61ae02cc9b3fc68bfedb1764f2f02bbe7f402331d9f792278fcca93`).
+  `aapt2 dump badging` confirms **`versionCode='19'`**, **`versionName='1.0.16'`**,
+  `package='za.co.jagspoor.app'`, `targetSdkVersion 36`.
+- The fix strings are compiled into the Dart AOT binary: `"Local build -
+  skipping update check"`, `"Incl. 15% VAT"` / `"% VAT"` and `"/month"` are
+  present in all three `lib/{arm64-v8a,armeabi-v7a,x86_64}/libapp.so`.
+- `flutter analyze`: **0 errors, 0 warnings**, 321 pre-existing infos (the 2
+  `unnecessary_const` infos in `version_info_and_facebook_test.dart` are the
+  documented pre-existing baseline; the change adds none).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites): **2117 passed,
+  1 pre-existing failure** — the DOCUMENTED v1-vs-v2 auth-trigger assertion in
+  `trial_onboarding_functions_contract_test` ("is a Firebase Auth user-creation
+  trigger in us-central1", `functions/src/user_trial_onboarding.ts`, untouched).
+
+### Operator note / caveats
+- ⚠️ The APK is **debug-signed** (`android/key.properties` absent -> the
+  documented Gradle fallback; `apksigner` reports `CN=Android Debug`). The
+  keystore was NOT touched. Play rejects a debug-signed artifact; build the
+  upload artifact in a credentialed env with the real keystore.
+- The `admin_config/app_version` forced-update floor is unchanged; raise it to
+  19 only once the versionCode-19 build is live on the track.
+- No Play Billing purchase logic, no Firestore rules / index / Storage, and no
+  keystore changes.
+
+### Files
+- MODIFIED: `lib/services/update_service.dart`,
+  `lib/features/subscription/services/subscription_pricing.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/admin/screens/admin_dashboard_screen.dart`,
+  `lib/core/widgets/version_info.dart`, `pubspec.yaml`,
+  `android/app/build.gradle.kts`,
+  `test/paywall_dynamic_price_test.dart`,
+  `test/price_divergence_reconciliation_test.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+
+
 ## Phase -- Version bump 1.0.13+14 -> 1.0.15+16 (code 16) for the Play Store re-upload (added 2026-10-15)
 
 ### What changed

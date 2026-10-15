@@ -77,9 +77,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// The recurring monthly amount for the current tier, **including VAT**.
   ///
   /// Precedence: the LIVE Google Play Billing catalog price (`rawPrice` from
-  /// [PlayBillingService.loadProducts], the authoritative charge — quoted
-  /// EXCLUDING VAT in South Africa, so it is grossed up by 15% here) → the
-  /// admin-controlled `admin_config/pricing` amount (already a VAT-inclusive
+  /// [PlayBillingService.loadProducts], the authoritative charge — under
+  /// Option A the base plan already carries the final VAT-inclusive amount) →
+  /// the admin-controlled `admin_config/pricing` amount (also a VAT-inclusive
   /// end-user amount) → the hard-coded last resort. This keeps the checkout
   /// summary, promo calculations, and the tier-card copy consistent with the
   /// Play Console catalog while the Admin Portal remains the control plane
@@ -91,14 +91,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ? outfitterMonthlyPriceZAR
           : hunterMonthlyPriceZAR);
 
-  /// The live Play catalog amount grossed up to the VAT-inclusive amount the
-  /// customer is charged, or null when no Play product has loaded. Google Play
-  /// quotes the catalog amount EXCLUDING VAT in South Africa, so the payable
-  /// amount is `exVat * 1.15`.
+  /// The live Play catalog amount — under Option A this IS the VAT-inclusive
+  /// amount the customer is charged (the base plan carries the final listed
+  /// price), or null when no Play product has loaded. It is never grossed up;
+  /// the previous `exVat * 1.15` treatment is what produced R40.24 for a
+  /// R34.99 base plan.
   double? get _playInclVat {
     final product = _products[_tier];
     if (product == null) return null;
-    return SubscriptionVatPrice.fromExVat(
+    return SubscriptionVatPrice.fromInclusive(
       product.rawPrice,
       currencySymbol: product.currencySymbol,
     ).inclVat;
@@ -109,17 +110,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   SubscriptionVatPrice? get _playVatPrice {
     final product = _products[_tier];
     if (product == null) return null;
-    return SubscriptionVatPrice.fromExVat(
+    return SubscriptionVatPrice.fromInclusive(
       product.rawPrice,
       currencySymbol: product.currencySymbol,
     );
   }
 
   /// Whether the live Play catalog price diverges from the admin-configured
-  /// price once the catalog amount (quoted EXCLUDING VAT) is grossed up to its
-  /// VAT-inclusive payable amount — the Admin Portal WARNING basis, surfaced
-  /// here so a subscriber sees the same mismatch the operator does. Uses the
-  /// shared [PlayPriceReconciliation] so both surfaces agree on the comparison.
+  /// price — the Admin Portal WARNING basis, surfaced here so a subscriber sees
+  /// the same mismatch the operator does. Under Option A both figures are the
+  /// final VAT-inclusive charge, so they are compared directly via the shared
+  /// [PlayPriceReconciliation].
   bool get _hasPriceDivergence {
     final product = _products[_tier];
     final admin = _adminFallbackPrice;
@@ -791,10 +792,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            // The VAT-inclusive amount the customer is charged. The live Play
-            // catalog amount is quoted EXCLUDING VAT in South Africa, so it is
-            // grossed up to `exVat * 1.15`; otherwise the control-plane amount
-            // (already VAT inclusive) is shown. Never a hardcoded literal.
+            // The VAT-inclusive amount the customer is charged. Under Option A
+            // the live Play catalog amount (and the control-plane amount) is
+            // already the final listed charge, so it is shown verbatim. Never a
+            // hardcoded literal.
             vatPrice?.primaryLabel ??
                 'R ${amount.toStringAsFixed(2)}/month',
             style: TextStyle(
@@ -805,8 +806,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            // `Incl. 15% VAT (R199.00 excl. VAT)` when the live Play catalog
-            // resolved the ex-VAT amount, else the inclusive-price caption.
+            // `Incl. 15% VAT` when the live Play catalog resolved the amount,
+            // else the inclusive-price caption.
             vatPrice?.vatNote ?? 'Price includes 15% VAT',
             key: ValueKey('tierVatNote_${tier.key}'),
             style: TextStyle(color: theme.subtitleColor, fontSize: 12),
@@ -1109,9 +1110,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  /// Warns the subscriber that the live Play catalog price (grossed up to its
-  /// VAT-inclusive amount) differs from the Admin-Portal-configured price. The
-  /// store is the charge truth; the operator must align the Play base plan.
+  /// Warns the subscriber that the live Play catalog price differs from the
+  /// Admin-Portal-configured price. Under Option A both are the final
+  /// VAT-inclusive charge. The store is the charge truth; the operator must
+  /// align the Play base plan.
   Widget _buildDivergenceNotice(ThemeController theme) {
     final product = _products[_tier];
     final admin = _adminFallbackPrice ?? 0;

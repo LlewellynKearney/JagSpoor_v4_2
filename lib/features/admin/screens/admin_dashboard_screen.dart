@@ -124,12 +124,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   /// admin-configured `admin_config/pricing` amount under the Option A
   /// (VAT-inclusive listed price) model.
   ///
-  /// Google Play quotes the catalog amount EXCLUDING VAT while the Admin
-  /// control plane stores the VAT-INCLUSIVE final charge, so the catalog figure
-  /// is grossed up by 15% before comparing (via [PlayPriceReconciliation]).
-  /// Example: Play R30.43 excl → R34.99 incl == Admin R34.99 → NO warning.
-  /// The banner is shown ONLY when the reconciled amounts differ by more than
-  /// the documented 2-cent tolerance.
+  /// Under Option A the Play Console base plan carries the FINAL VAT-inclusive
+  /// charge (R34.99 / R299.99) — the same figure the Admin control plane
+  /// stores — so the two are compared directly (via [PlayPriceReconciliation]).
+  /// Example: Play R34.99 == Admin R34.99 → NO warning. The banner is shown
+  /// ONLY when the amounts differ by more than the documented 2-cent tolerance.
   ///
   /// Best-effort: a billing-unavailable / catalog-miss / error leaves the
   /// banner hidden (nothing to compare).
@@ -150,8 +149,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           adminInclVat: adminPrice,
           currencySymbol: product.currencySymbol,
         );
-        // Reconciled figures agree (30.43 * 1.15 == 34.99 within tolerance):
-        // do NOT warn.
+        // Reconciled figures agree (Play R34.99 == Admin R34.99 within
+        // tolerance): do NOT warn.
         if (reconciliation.matches) continue;
         messages.add(reconciliation.mismatchMessage);
       }
@@ -474,11 +473,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  /// Warning banner shown when the live Play Console price, grossed up to its
-  /// VAT-inclusive amount, differs from the admin-configured
-  /// `admin_config/pricing` amount by more than the documented reconciliation
-  /// tolerance ([priceDivergenceToleranceZAR]). The Play Console is the charge
-  /// truth; the operator must align the base plan.
+  /// Warning banner shown when the live Play Console price differs from the
+  /// admin-configured `admin_config/pricing` amount by more than the documented
+  /// reconciliation tolerance ([priceDivergenceToleranceZAR]). Both figures are
+  /// the final VAT-inclusive charge under Option A. The Play Console is the
+  /// charge truth; the operator must align the base plan.
   Widget _buildPriceDivergenceBanner() {
     return Container(
       key: const ValueKey('adminPriceDivergenceBanner'),

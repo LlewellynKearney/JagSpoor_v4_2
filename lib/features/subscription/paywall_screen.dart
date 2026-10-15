@@ -33,11 +33,11 @@ class PaywallScreen extends StatefulWidget {
 }
 
 class _PaywallScreenState extends State<PaywallScreen> {
-  /// Live Play catalog price, EXCLUDING VAT. Google Play returns the
-  /// localized, formatted catalog price, which in South Africa is quoted
-  /// **excluding** 15% VAT, so the amount the customer pays is derived from
-  /// [PlayProduct.rawPrice] (see `SubscriptionVatPrice`). Null until the
-  /// catalog resolves.
+  /// Live Play catalog price — under Option A this is the FINAL VAT-inclusive
+  /// charge the customer pays (the Play Console base plan carries the listed
+  /// amount and 15% VAT is absorbed out of it). Derived from
+  /// [PlayProduct.rawPrice] (see `SubscriptionVatPrice.fromInclusive`). Null
+  /// until the catalog resolves.
   SubscriptionVatPrice? _price;
 
   /// The resolved Play catalog for the app's tiers. Held so the purchase flow
@@ -175,14 +175,15 @@ class _PaywallScreenState extends State<PaywallScreen> {
     }
   }
 
-  /// Loads the live Google Play Billing catalog price for the active tier and
-  /// converts it to the VAT-inclusive amount the customer is charged.
+  /// Loads the live Google Play Billing catalog price for the active tier.
   ///
-  /// Google Play's catalog amount is quoted EXCLUDING VAT in South Africa, so
-  /// the paywall shows `exVat * 1.15` as the primary price with the ex-VAT
-  /// figure as an explanatory note (`Incl. 15% VAT (R199.00 excl. VAT)`).
-  /// The amount is NEVER hardcoded: until the catalog resolves the paywall
-  /// shows [PaywallScreen.loadingPriceLabel] rather than inventing a number.
+  /// Under Option A the Play Console base plan is configured with the FINAL
+  /// VAT-inclusive charge (R34.99 / R299.99), so the catalog amount is shown
+  /// verbatim as the primary price with the `Incl. 15% VAT` caption beneath it
+  /// — it is NEVER grossed up (the previous `exVat * 1.15` treatment is what
+  /// produced the incorrect R40.24 display). The amount is NEVER hardcoded:
+  /// until the catalog resolves the paywall shows
+  /// [PaywallScreen.loadingPriceLabel] rather than inventing a number.
   Future<void> _loadPlayPrice() async {
     // Query the Play catalog directly (no separate availability probe — the
     // catalog query is itself the availability check, and a host that cannot
@@ -199,7 +200,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         _products = products;
         _catalogLoading = false;
         if (product != null) {
-          _price = SubscriptionVatPrice.fromExVat(
+          _price = SubscriptionVatPrice.fromInclusive(
             product.rawPrice,
             currencySymbol: product.currencySymbol,
           );
@@ -350,13 +351,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 14),
-                    // The VAT-inclusive price the customer is charged. Google
-                    // Play's catalog amount is quoted EXCLUDING VAT in South
-                    // Africa, so the payable amount (`exVat * 1.15`) is derived
-                    // here and shown as the primary price, with the ex-VAT
-                    // figure as the explanatory note. Never a hardcoded amount:
-                    // until the catalog resolves the neutral loading label is
-                    // shown instead.
+                    // The VAT-inclusive price the customer is charged. Under
+                    // Option A the Play Console base plan already carries the
+                    // final listed amount, so it is shown verbatim (never
+                    // grossed up) with the `Incl. 15% VAT` caption beneath it.
+                    // Never a hardcoded amount: until the catalog resolves the
+                    // neutral loading label is shown instead.
                     Text(
                       price?.primaryLabel ?? PaywallScreen.loadingPriceLabel,
                       key: const ValueKey('paywallPriceLabel'),

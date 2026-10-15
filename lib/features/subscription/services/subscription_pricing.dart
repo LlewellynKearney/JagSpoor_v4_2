@@ -68,60 +68,57 @@ const Duration trialDuration = Duration(days: 30);
 const double hunterMonthlyPriceZAR = 34.99;
 const double outfitterMonthlyPriceZAR = 299.99;
 
-/// South African Value-Added Tax rate (15%) applied to Google Play catalog
-/// prices, which are quoted **excluding VAT** in South Africa.
+/// South African Value-Added Tax rate (15%) absorbed out of the listed
+/// subscription price under Option A.
 const double saVatRate = 0.15;
 
 /// Tolerance (ZAR) within which two reconciled price figures count as equal.
 ///
-/// The Play Console catalog amount is quoted **excluding VAT** while the Admin
-/// control plane stores the **VAT-inclusive** amount, so a reconciliation must
-/// gross the catalog figure up by 15% before comparing. Rounding across the two
-/// representations (and the store's own cent rounding) can drift by a fraction
-/// of a cent, so a 2-cent tolerance avoids a false PRICE DIVERGENCE warning
-/// (e.g. Play R30.43 excl -> R34.9945 incl vs Admin R34.99).
+/// Under Option A both the Play Console base plan and the Admin control plane
+/// carry the FINAL VAT-inclusive charge, so the two figures are compared
+/// directly. The store's own cent rounding can still drift by a fraction of a
+/// cent, so a 2-cent tolerance avoids a false PRICE DIVERGENCE warning.
 const double priceDivergenceToleranceZAR = 0.02;
 
-/// Reconciles a Google Play catalog amount against an Admin-configured amount
-/// under the Option A (VAT-inclusive listed price) model.
+/// Reconciles the Google Play catalog amount against the Admin-configured
+/// amount under the Option A (VAT-inclusive listed price) model.
 ///
-/// Google Play quotes the catalog amount EXCLUDING VAT in South Africa; the
-/// Admin control plane (`admin_config/pricing`) stores the FINAL VAT-INCLUSIVE
-/// charge the customer pays. A naive comparison of the two figures is therefore
-/// always wrong (R30.43 vs R34.99). This helper performs the correct
-/// reconciliation — `playExVat * 1.15` vs `adminInclVat`, within
-/// [priceDivergenceToleranceZAR] — and produces the operator-facing copy.
+/// Under Option A the Play Console base plan is configured with the FINAL
+/// VAT-INCLUSIVE charge (R34.99 / R299.99) — the same figure the Admin control
+/// plane (`admin_config/pricing`) stores — so the two figures are compared
+/// directly, within [priceDivergenceToleranceZAR]. (The previous model grossed
+/// the catalog amount up by 15% first, which is exactly what produced the
+/// incorrect R40.24 display and is no longer applied.)
 ///
 /// Single source of truth used by the Admin Portal divergence banner and the
 /// subscriber-facing checkout notice so both agree on when (and how) to warn.
 class PlayPriceReconciliation {
-  /// Catalog amount **excluding** VAT, as returned by Play (`rawPrice`).
-  final double playExVat;
-
-  /// Catalog amount **including** VAT (`playExVat * (1 + vatRate)`).
+  /// Catalog amount as returned by Play (`rawPrice`) — under Option A this is
+  /// the VAT-INCLUSIVE charge.
   final double playInclVat;
 
-  /// Admin-configured amount (already VAT inclusive).
+  /// Admin-configured amount (also VAT inclusive).
   final double adminInclVat;
 
   /// Currency symbol used in the generated [matchMessage] / [mismatchMessage].
   final String currencySymbol;
 
-  /// Tolerance within which the inclusive amounts count as equal.
+  /// Tolerance within which the two amounts count as equal.
   final double tolerance;
 
   const PlayPriceReconciliation({
-    required this.playExVat,
     required this.playInclVat,
     required this.adminInclVat,
     this.currencySymbol = 'R',
     this.tolerance = priceDivergenceToleranceZAR,
   });
 
-  /// Builds the reconciliation: grosses [playExVat] up to the VAT-inclusive
-  /// payable amount and compares it against the Admin-inclusive
-  /// [adminInclVat]. Non-finite inputs collapse to zero so the UI can never
-  /// render `NaN`.
+  /// Builds the reconciliation by comparing the two VAT-inclusive amounts
+  /// directly. Non-finite inputs collapse to zero so the UI can never render
+  /// `NaN`.
+  ///
+  /// [vatRate] is accepted for source compatibility but is no longer applied —
+  /// under Option A the catalog amount is already the inclusive charge.
   factory PlayPriceReconciliation.compare({
     required double playExVat,
     required double adminInclVat,
@@ -129,12 +126,11 @@ class PlayPriceReconciliation {
     String currencySymbol = 'R',
     double tolerance = priceDivergenceToleranceZAR,
   }) {
-    final exVat = playExVat.isFinite && playExVat > 0 ? playExVat : 0.0;
+    final play = playExVat.isFinite && playExVat > 0 ? playExVat : 0.0;
     final admin =
         adminInclVat.isFinite && adminInclVat > 0 ? adminInclVat : 0.0;
     return PlayPriceReconciliation(
-      playExVat: exVat,
-      playInclVat: exVat * (1 + vatRate),
+      playInclVat: play,
       adminInclVat: admin,
       currencySymbol: currencySymbol.isEmpty ? 'R' : currencySymbol,
       tolerance: tolerance,
@@ -143,39 +139,44 @@ class PlayPriceReconciliation {
 
   String _fmt(double v) => '$currencySymbol${v.toStringAsFixed(2)}';
 
-  /// Whether the Play (grossed-up) and Admin amounts agree within [tolerance].
-  /// When this is true the operator banner must stay hidden.
+  /// Whether the Play and Admin amounts agree within [tolerance]. When this is
+  /// true the operator banner must stay hidden.
   bool get matches => (playInclVat - adminInclVat).abs() < tolerance;
 
-  /// Confirmation copy, e.g.
-  /// `Play Console R30.43 excl (R34.99 incl) matches Admin R34.99`.
-  String get matchMessage => 'Play Console ${_fmt(playExVat)} excl '
-      '(${_fmt(playInclVat)} incl) matches Admin ${_fmt(adminInclVat)}';
+  /// Confirmation copy, e.g. `Play Console R34.99 matches Admin R34.99`.
+  String get matchMessage =>
+      'Play Console ${_fmt(playInclVat)} matches Admin ${_fmt(adminInclVat)}';
 
-  /// Warning copy, e.g.
-  /// `Play Console R30.43 excl (R34.99 incl) != Admin R35.99 — update Play
+  /// Warning copy, e.g. `Play Console R34.99 != Admin R39.99 — update Play
   /// Console base plan to match.`
-  String get mismatchMessage => 'Play Console ${_fmt(playExVat)} excl '
-      '(${_fmt(playInclVat)} incl) != Admin ${_fmt(adminInclVat)} — '
-      'update Play Console base plan to match.';
+  String get mismatchMessage => 'Play Console ${_fmt(playInclVat)} != '
+      'Admin ${_fmt(adminInclVat)} — update Play Console base plan to match.';
 }
 
-/// Resolved VAT breakdown for a catalog amount quoted **excluding VAT**.
+/// Resolved VAT breakdown for the monthly subscription charge.
 ///
-/// Google Play returns the localized, formatted catalog price
-/// (`ProductDetails.price` / `rawPrice`) which — in South Africa — is the
-/// EX-VAT amount. The app must display the amount the customer actually pays,
-/// so the VAT-inclusive amount is derived here (`exVat * 1.15`) and shown as
-/// the primary price, with the ex-VAT figure as the explanatory subtext.
+/// **Option A (the owner's pricing model): the listed price IS the final
+/// VAT-inclusive charge.** The Google Play Console base plan (and the
+/// `admin_config/pricing` control plane) are configured with the amount the
+/// customer actually pays — R34.99 hunter / R299.99 outfitter — and 15% SA VAT
+/// is *absorbed* out of it, not added on top.
+///
+/// The bug this fixes: the app used to treat the resolved catalog amount as
+/// VAT-EXCLUSIVE and gross it up by 15% before display, so a base plan already
+/// carrying R34.99 was rendered as `34.99 * 1.15 = R40.24`. The display amount
+/// is now taken verbatim from the resolved source (Play Billing catalog →
+/// `admin_config/pricing`), never inflated.
 ///
 /// Single source of truth so the paywall / subscription screen and their tests
-/// agree on one VAT calculation (`hunter_monthly` + `outfitter_monthly`).
+/// agree on one calculation (`hunter_monthly` + `outfitter_monthly`).
 class SubscriptionVatPrice {
-  /// Catalog amount excluding VAT.
-  final double exVat;
-
-  /// Amount the customer pays, including VAT.
+  /// The amount the customer pays, including VAT (the resolved catalog /
+  /// control-plane price).
   final double inclVat;
+
+  /// The VAT-exclusive component (`inclVat / (1 + vatRate)`), kept for
+  /// reporting / reconciliation.
+  final double exVat;
 
   /// Currency symbol reported by the store (e.g. `R`). Falls back to `R`.
   final String currencySymbol;
@@ -184,15 +185,36 @@ class SubscriptionVatPrice {
   final double vatRate;
 
   const SubscriptionVatPrice({
-    required this.exVat,
     required this.inclVat,
+    required this.exVat,
     this.currencySymbol = 'R',
     this.vatRate = saVatRate,
   });
 
+  /// Builds the breakdown from the **VAT-inclusive** amount the customer pays
+  /// (the Play catalog price / `admin_config/pricing` amount under Option A).
+  /// This is the canonical constructor — the resolved price is displayed as
+  /// is, with the VAT-exclusive component derived for reporting. Non-positive
+  /// amounts resolve to zero so the UI can never render a negative price.
+  factory SubscriptionVatPrice.fromInclusive(
+    double inclusive, {
+    String currencySymbol = 'R',
+    double vatRate = saVatRate,
+  }) {
+    final base = inclusive.isFinite && inclusive > 0 ? inclusive : 0.0;
+    return SubscriptionVatPrice(
+      inclVat: base,
+      exVat: base / (1 + vatRate),
+      currencySymbol: currencySymbol.isEmpty ? 'R' : currencySymbol,
+      vatRate: vatRate,
+    );
+  }
+
   /// Builds the breakdown for an ex-VAT [exVat] amount, adding VAT at
-  /// [vatRate] (default 15%). Non-positive amounts resolve to zero so the UI
-  /// can never render a negative price.
+  /// [vatRate] (default 15%). Retained for callers that genuinely hold a
+  /// VAT-EXCLUSIVE figure; the subscription surfaces use
+  /// [SubscriptionVatPrice.fromInclusive] because the Play Console base plan
+  /// is configured with the final inclusive charge.
   factory SubscriptionVatPrice.fromExVat(
     double exVat, {
     String currencySymbol = 'R',
@@ -200,8 +222,8 @@ class SubscriptionVatPrice {
   }) {
     final base = exVat.isFinite && exVat > 0 ? exVat : 0.0;
     return SubscriptionVatPrice(
-      exVat: base,
       inclVat: base * (1 + vatRate),
+      exVat: base,
       currencySymbol: currencySymbol.isEmpty ? 'R' : currencySymbol,
       vatRate: vatRate,
     );
@@ -210,13 +232,14 @@ class SubscriptionVatPrice {
   /// The VAT portion of [inclVat].
   double get vatAmount => inclVat - exVat;
 
-  /// Primary price label, e.g. `R228.85/month`.
-  String get primaryLabel => '${formatZar(inclVat)}/month';
+  /// Primary price label, e.g. `R 34.99/month`.
+  String get primaryLabel =>
+      '$currencySymbol ${inclVat.toStringAsFixed(2)}/month';
 
-  /// Explanatory subtext, e.g. `Incl. 15% VAT (R199.00 excl. VAT)`.
+  /// Explanatory subtext, e.g. `Incl. 15% VAT`.
   String get vatNote {
     final percent = (vatRate * 100).round();
-    return 'Incl. $percent% VAT (${formatZar(exVat)} excl. VAT)';
+    return 'Incl. $percent% VAT';
   }
 
   /// Formats a ZAR amount with the resolved currency symbol + two decimals
