@@ -17,6 +17,7 @@ import '../auth/services/user_role_provider.dart';
 import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
+import '../subscription/widgets/subscription_management_tile.dart';
 import 'models/hunter_profile.dart';
 import 'services/battery_saver_manager.dart';
 import 'services/account_deletion_service.dart';
@@ -1087,6 +1088,21 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       ),
                       onTap: _showChangePasswordDialog,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Subscription management — Play-policy compliant. A
+                  // Google Play-billed subscriber is routed to Google Play's
+                  // subscriptions manager (one tap, no JagSpoor login); only a
+                  // PayFast subscriber sees a website link.
+                  Card(
+                    color: HunterUi.cardColor(widget.theme),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: widget.theme.accentColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: SubscriptionManagementTile(theme: widget.theme),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(

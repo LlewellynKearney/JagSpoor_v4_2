@@ -38,6 +38,27 @@ test("writeEntitlement rejects an empty uid", async () => {
   );
 });
 
+test("platformFromSource normalizes the billing platform", () => {
+  assert.equal(
+    ent.platformFromSource(ent.SUBSCRIPTION_SOURCE_GOOGLE_PLAY),
+    "google_play"
+  );
+  assert.equal(
+    ent.platformFromSource("  GOOGLE_PLAY  "),
+    "google_play"
+  );
+  assert.equal(
+    ent.platformFromSource(ent.SUBSCRIPTION_SOURCE_PAYFAST),
+    "payfast"
+  );
+  assert.equal(ent.platformFromSource("payfast_web"), "payfast");
+  // Non-billing sources (trial / none / blank) resolve to null so the
+  // Play-policy branch never sees a bogus platform.
+  assert.equal(ent.platformFromSource(ent.SUBSCRIPTION_SOURCE_TRIAL), null);
+  assert.equal(ent.platformFromSource(""), null);
+  assert.equal(ent.platformFromSource(undefined), null);
+});
+
 test("playStateError maps subscription states", () => {
   assert.equal(
     ent.playStateError(2),

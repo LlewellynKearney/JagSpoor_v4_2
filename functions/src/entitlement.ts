@@ -62,6 +62,29 @@ export interface WriteEntitlementInput {
    * revocation, PayFast, the trial trigger), which clears the mirror.
    */
   hasActivePurchase?: boolean;
+  /**
+   * The billing platform that granted the subscription (`google_play` /
+   * `payfast`). Drives the Play-policy management branch in the app: a
+   * Play-billed user is routed to Google Play's subscriptions manager, never
+   * the website. Defaults to `subscriptionSource` when omitted (both use the
+   * same vocabulary).
+   */
+  subscriptionPlatform?: string;
+}
+
+/**
+ * Normalizes a raw source/platform string to the canonical platform
+ * (`google_play` / `payfast`), else null (e.g. `trial` / unknown).
+ */
+export function platformFromSource(source: string | undefined | null): string | null {
+  const value = (source ?? "").toString().trim().toLowerCase();
+  if (value === SUBSCRIPTION_SOURCE_GOOGLE_PLAY || value.startsWith("google_play")) {
+    return SUBSCRIPTION_SOURCE_GOOGLE_PLAY;
+  }
+  if (value === SUBSCRIPTION_SOURCE_PAYFAST || value.startsWith("payfast")) {
+    return SUBSCRIPTION_SOURCE_PAYFAST;
+  }
+  return null;
 }
 
 /**
@@ -76,6 +99,11 @@ export async function writeEntitlement(
     throw new Error("writeEntitlement requires a non-empty uid");
   }
   const now = FieldValue.serverTimestamp();
+  // Server-authoritative billing platform (Play-policy branch). Explicit
+  // `subscriptionPlatform` wins; otherwise it is derived from the source.
+  const platform =
+    platformFromSource(fields.subscriptionPlatform) ??
+    platformFromSource(fields.subscriptionSource);
   const userPayload: Record<string, unknown> = {
     isPremium: fields.isPremium,
     premiumExpiry: fields.premiumExpiry,
@@ -107,6 +135,9 @@ export async function writeEntitlement(
   if (fields.subscriptionRenewalDate) {
     userPayload.subscriptionRenewalDate = fields.subscriptionRenewalDate;
   }
+  if (platform) {
+    userPayload.subscriptionPlatform = platform;
+  }
 
   const entitlementPayload: Record<string, unknown> = {
     userId: uid,
@@ -121,6 +152,9 @@ export async function writeEntitlement(
   }
   if (fields.payfastPaymentId) {
     entitlementPayload.payfastPaymentId = fields.payfastPaymentId;
+  }
+  if (platform) {
+    entitlementPayload.subscriptionPlatform = platform;
   }
 
   await firestore().collection("users").doc(uid).set(userPayload, {

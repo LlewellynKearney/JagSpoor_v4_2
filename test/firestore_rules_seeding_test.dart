@@ -226,6 +226,11 @@ void main() {
       'role',
       'isDualRole',
       'roles',
+      // Play compliance: the billing platform decides the management branch
+      // (Play -> Google Play subscriptions manager; PayFast -> website). It is
+      // server-owned so a client cannot flip a Play subscription to 'payfast'
+      // to unlock an external checkout link.
+      'subscriptionPlatform',
     ];
 
     test('no server-owned field is denied by standalone key presence', () {

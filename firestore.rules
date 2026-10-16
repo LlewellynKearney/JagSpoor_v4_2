@@ -175,6 +175,15 @@ service cloud.firestore {
         && (!('subscriptionSource' in request.resource.data)
           || (resource != null
             && request.resource.data.subscriptionSource == resource.data.subscriptionSource))
+        // `subscriptionPlatform` is SERVER-OWNED: it decides the Play-policy
+        // branch (a Play-billed user is routed to Google Play's subscriptions
+        // manager, never the website). A client must not be able to flip a
+        // Play subscription to 'payfast' (or vice versa) to unlock an external
+        // checkout link. Change-detection only — a merge write that re-sends
+        // the stored value, or omits the field, still passes.
+        && (!('subscriptionPlatform' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscriptionPlatform == resource.data.subscriptionPlatform))
         && (!('subscriptionProduct' in request.resource.data)
           || (resource != null
             && request.resource.data.subscriptionProduct == resource.data.subscriptionProduct))

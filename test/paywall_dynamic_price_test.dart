@@ -114,12 +114,15 @@ void main() {
     expect(find.byKey(const ValueKey('paywallVatNote')), findsOneWidget);
   });
 
-  testWidgets('renders the subscribe + website actions', (tester) async {
+  testWidgets('renders the subscribe action (no website checkout for Play)',
+      (tester) async {
     await tester.pumpWidget(buildPaywall());
     await tester.pump();
     expect(find.byKey(const ValueKey('paywallPlaySubscribeButton')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey('paywallWebsiteButton')), findsOneWidget);
+    // Play compliance: the old generic "manage on website" button is gone.
+    expect(find.byKey(const ValueKey('paywallWebsiteButton')), findsNothing);
+    expect(find.textContaining('on website'), findsNothing);
   });
 
   group('SubscriptionVatPrice', () {

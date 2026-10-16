@@ -28,6 +28,7 @@ import '../referral/widgets/referral_share_widget.dart';
 import '../auth/screens/privacy_policy_screen.dart';
 import '../subscription/subscription_screen.dart';
 import '../subscription/services/play_billing_service.dart';
+import '../subscription/widgets/subscription_management_tile.dart';
 import '../subscription/services/play_purchase_recorder.dart';
 import '../subscription/services/subscription_pricing.dart';
 import '../subscription/services/subscription_status_service.dart';
@@ -752,6 +753,27 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                     color: theme.subtitleColor,
                   ),
                   onTap: () => ChangePasswordDialog.show(context),
+                ),
+                const SizedBox(height: 24),
+
+                // ── Subscription management (Play compliance) ─────────────
+                // A Google Play-billed subscriber is routed to Google Play's
+                // own subscriptions manager; only a PayFast subscriber sees a
+                // website link. Never steers a Play user off-store.
+                SubscriptionManagementTile(
+                  theme: theme,
+                  onSubscribe: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SubscriptionScreen(
+                          theme: theme,
+                          tier: SubscriptionTier.outfitter,
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
 

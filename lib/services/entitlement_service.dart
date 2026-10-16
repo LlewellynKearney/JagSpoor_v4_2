@@ -97,6 +97,19 @@ class UserEntitlement {
   /// status is present. `null` when the field is absent.
   final DateTime? createdAt;
 
+  /// The billing platform that granted the subscription — `'google_play'` or
+  /// `'payfast'`, else `null` when unknown.
+  ///
+  /// This is the **Play-policy switch**: a Play-billed subscriber MUST be
+  /// routed to Google Play's own subscriptions manager and must NEVER be shown
+  /// a link that steers to an external (website) checkout. Read from the
+  /// server-owned `subscriptionPlatform` field (aliases tolerated), falling
+  /// back to the canonical `subscriptionSource` when only that is present
+  /// (`subscriptionSource` uses the identical `'google_play'` / `'payfast'`
+  /// vocabulary). `firestore.rules` freezes `subscriptionPlatform` alongside
+  /// the other server-owned entitlement fields, so it is not client-forgeable.
+  final String? subscriptionPlatform;
+
   const UserEntitlement({
     this.isPremium = false,
     this.premiumExpiry,
@@ -108,6 +121,7 @@ class UserEntitlement {
     this.requiresPayment = false,
     this.hasActivePurchase = false,
     this.createdAt,
+    this.subscriptionPlatform,
   });
 
   /// Trial / grace status strings that indicate an in-progress free trial.
@@ -208,6 +222,59 @@ class UserEntitlement {
   /// Whether the entitlement was granted via the PayFast website checkout.
   bool get isPayfast => subscriptionSource == SubscriptionSource.payfast;
 
+  /// Resolves the billing platform from the raw document, preferring the
+  /// explicit `subscriptionPlatform` field (with alias tolerance) and falling
+  /// back to the canonical `subscriptionSource`. Both use the same
+  /// `'google_play'` / `'payfast'` vocabulary. Returns `null` when neither is a
+  /// recognized platform (e.g. `'trial'` / `'none'` / absent).
+  static String? _resolvePlatform(Map<String, dynamic> data) {
+    final candidates = <dynamic>[
+      data['subscriptionPlatform'],
+      data['subscription_platform'],
+      data['billingPlatform'],
+      data['platform'],
+      data['subscriptionSource'],
+      data['subscription_source'],
+    ];
+    for (final raw in candidates) {
+      final value = (raw ?? '').toString().trim().toLowerCase();
+      if (value == SubscriptionSource.googlePlay) {
+        return SubscriptionSource.googlePlay;
+      }
+      if (value == SubscriptionSource.payfast) {
+        return SubscriptionSource.payfast;
+      }
+    }
+    return null;
+  }
+
+  /// The resolved billing platform (`'google_play'` / `'payfast'` / `null`),
+  /// preferring [subscriptionPlatform] and falling back to
+  /// [subscriptionSource] when only that field is populated.
+  String? get billingPlatform {
+    final platform = subscriptionPlatform;
+    if (platform == SubscriptionSource.googlePlay ||
+        platform == SubscriptionSource.payfast) {
+      return platform;
+    }
+    final source = subscriptionSource;
+    if (source == SubscriptionSource.googlePlay ||
+        source == SubscriptionSource.payfast) {
+      return source;
+    }
+    return null;
+  }
+
+  /// Whether this subscription is billed by Google Play — i.e. the user must
+  /// be routed to Google Play's subscriptions manager (and must NEVER be shown
+  /// an external website checkout link).
+  bool get isPlayBilled => billingPlatform == SubscriptionSource.googlePlay;
+
+  /// Whether this subscription is billed via the PayFast website checkout —
+  /// the only case where a "Manage subscription on website" affordance is
+  /// policy-compliant.
+  bool get isPayfastBilled => billingPlatform == SubscriptionSource.payfast;
+
   /// Resolves the first present trial-end timestamp across
   /// [trialEndFieldAliases] (both signup schemas + snake_case legacy
   /// variants).
@@ -243,6 +310,7 @@ class UserEntitlement {
       requiresPayment: data['requiresPayment'] == true,
       hasActivePurchase: data['hasActivePurchase'] == true,
       createdAt: _toDate(data['createdAt']) ?? _toDate(data['created_at']),
+      subscriptionPlatform: _resolvePlatform(data),
     );
   }
 
@@ -261,6 +329,7 @@ class UserEntitlement {
       subscriptionSource: data['subscriptionSource'] as String?,
       subscriptionProduct: data['subscriptionProduct'] as String?,
       hasActivePurchase: data['hasActivePurchase'] == true,
+      subscriptionPlatform: _resolvePlatform(data),
     );
   }
 
@@ -289,6 +358,10 @@ class UserEntitlement {
       // entitlements/{uid} mirror — take whichever is set.
       hasActivePurchase: hasActivePurchase || mirror.hasActivePurchase,
       createdAt: createdAt,
+      // The billing platform may arrive from either document; prefer the
+      // mirror's (server-authoritative) value, else keep this document's.
+      subscriptionPlatform:
+          mirror.subscriptionPlatform ?? subscriptionPlatform,
     );
   }
 

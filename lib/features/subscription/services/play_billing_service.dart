@@ -221,6 +221,12 @@ class PlayBillingService {
   static const String playStoreAppPageUrl =
       'https://play.google.com/store/apps/details?id=za.co.jagspoor.app';
 
+  /// The website billing page (PayFast). Shown ONLY to PayFast-billed
+  /// subscribers — a Google Play-billed user is ALWAYS routed to Google Play's
+  /// own subscriptions manager (Play policy), never to this URL.
+  static const String websiteBillingUrl =
+      'https://jagspoor.co.za/account/billing';
+
   @visibleForTesting
   static void resetTestSeams() {
     billingForTesting = null;

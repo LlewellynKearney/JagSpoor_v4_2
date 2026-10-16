@@ -12,18 +12,44 @@ import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 
 /// Paywall shown when a user's free trial has expired and they are not a
-/// premium subscriber. Two actions:
-///   1. Subscribe via Google Play (native in_app_purchase).
-///   2. Manage subscription on the JagSpoor website
-///      (https://jag-spoor.co.za/pricing — PayFast lives on the website,
-///      deliberately NOT embedded in the app).
+/// premium subscriber.
+///
+/// **Play compliance (critical):** the management affordance is branched on
+/// the subscription's billing platform ([UserEntitlement.billingPlatform]):
+///   * Google Play-billed users get a "Manage subscription" action that opens
+///     Google Play's own subscriptions manager
+///     (https://play.google.com/store/account/subscriptions) — NEVER a link
+///     that steers to an external website checkout.
+///   * PayFast (website) subscribers may be shown "Manage subscription on
+///     website" — that is the only case where an external billing link is
+///     policy-compliant.
+///   * Everyone else (no active subscription) is shown the native Google Play
+///     subscribe call-to-action.
 class PaywallScreen extends StatefulWidget {
   final ThemeController theme;
 
   const PaywallScreen({super.key, required this.theme});
 
-  /// The pricing page hosted on the website (PayFast checkout).
-  static const String websitePricingUrl = 'https://jag-spoor.co.za/pricing';
+  /// The billing page hosted on the website (PayFast). Shown ONLY to
+  /// PayFast-billed subscribers — never to a Play-billed user (Play policy).
+  static const String websiteBillingUrl =
+      'https://jagspoor.co.za/account/billing';
+
+  /// Google Play's own subscriptions manager — the policy-compliant
+  /// management surface for a Play-billed subscription. No login is required
+  /// beyond the device's signed-in Google account, and it is reachable in one
+  /// tap from this screen.
+  static const String playSubscriptionsUrl =
+      'https://play.google.com/store/account/subscriptions?package=za.co.jagspoor.app&sku=jagspoor_hunter_monthly';
+
+  /// The literal fragment that must never appear for a Play-billed user.
+  static const String websiteManageLabel = 'on website';
+
+  /// Test seam: pre-seeds the entitlement the paywall branches on, so the
+  /// Play-vs-PayFast management affordance can be asserted without a live
+  /// Firebase read.
+  @visibleForTesting
+  static UserEntitlement? entitlementForTesting;
 
   /// Shown while the live Google Play catalog price has not resolved yet.
   static const String loadingPriceLabel = 'Loading price…';
@@ -77,6 +103,41 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// True while the `purchases` collection check is in flight.
   bool _checkingPurchaseState = false;
 
+  /// The current entitlement (server-authoritative), used to branch the
+  /// management affordance on the billing platform (Play vs PayFast). Null
+  /// until the one-shot read resolves.
+  UserEntitlement? _entitlement;
+
+  /// The billing platform that granted the current subscription — `'google_play'`
+  /// / `'payfast'` / `null`. Resolved from the entitlement, with the `purchases`
+  /// collection as a secondary Play signal (a durable Play transaction can only
+  /// have come from Google Play).
+  String? get _billingPlatform {
+    final platform = _entitlement?.billingPlatform;
+    if (platform != null) return platform;
+    // A Play purchase row owned by the caller is definitive proof of a Play
+    // billing relationship, even before the users/{uid} mirror resolves.
+    if (_alreadySubscribed) return SubscriptionSource.googlePlay;
+    return null;
+  }
+
+  /// Whether the active subscription is billed by Google Play. Play policy:
+  /// route to Google Play's subscriptions manager, never to the website.
+  bool get _isPlayBilled => _billingPlatform == SubscriptionSource.googlePlay;
+
+  /// Whether the active subscription is billed via the PayFast website
+  /// checkout (the only case where a website management link is compliant).
+  bool get _isPayfastBilled =>
+      _billingPlatform == SubscriptionSource.payfast;
+
+  /// Whether an active paid subscription exists (either source) — gates the
+  /// "manage" affordance vs the subscribe call-to-action.
+  bool get _hasActiveSubscription =>
+      _alreadySubscribed ||
+      _isPlayBilled ||
+      _isPayfastBilled ||
+      (_entitlement?.isPremiumActive(DateTime.now()) ?? false);
+
   ThemeController get theme => widget.theme;
 
   SubscriptionTier get _tier =>
@@ -90,7 +151,29 @@ class _PaywallScreenState extends State<PaywallScreen> {
     PlayPurchaseRecorder.instance.startListening();
     _listenForPurchases();
     _checkPurchasesCollection();
+    _loadEntitlement();
     _loadPlayPrice();
+  }
+
+  /// One-shot read of the server-authoritative entitlement so the management
+  /// affordance can branch on the billing platform (Play vs PayFast).
+  ///
+  /// Best-effort: a read failure (offline / no session) leaves the platform
+  /// unknown, in which case the paywall shows the neutral subscribe
+  /// call-to-action — never an external checkout link.
+  Future<void> _loadEntitlement() async {
+    final override = PaywallScreen.entitlementForTesting;
+    if (override != null) {
+      if (mounted) setState(() => _entitlement = override);
+      return;
+    }
+    try {
+      final entitlement = await EntitlementService.instance.getMyEntitlement();
+      if (!mounted) return;
+      setState(() => _entitlement = entitlement);
+    } catch (e) {
+      debugPrint('PaywallScreen.loadEntitlement failed: $e');
+    }
   }
 
   /// Reads the `purchases` collection as the paywall's second source of truth.
@@ -273,26 +356,55 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return product.isPurchasable;
   }
 
-  Future<void> _launchWebsite(BuildContext context) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
+  /// Launches [url] in the platform's external app (browser / Play Store).
+  /// Returns whether the launch succeeded; never throws.
+  Future<bool> _launchExternal(String url) async {
     try {
-      final launched = await launchUrl(
-        Uri.parse(PaywallScreen.websitePricingUrl),
+      return await launchUrl(
+        Uri.parse(url),
         mode: LaunchMode.externalApplication,
       );
-      if (!launched && messenger != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Unable to open the website. Please visit '
-              '${PaywallScreen.websitePricingUrl} in your browser.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
     } catch (e) {
-      debugPrint('PaywallScreen.launchWebsite failed: $e');
+      debugPrint('PaywallScreen.launchExternal failed for $url: $e');
+      return false;
+    }
+  }
+
+  /// Opens Google Play's subscriptions manager — the policy-compliant
+  /// management surface for a Play-billed subscription. One tap from this
+  /// screen; the device's own Google account authorises it (no JagSpoor login
+  /// step).
+  Future<void> _openPlaySubscriptions(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final launched = await _launchExternal(PaywallScreen.playSubscriptionsUrl);
+    if (!launched) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to open Google Play. You can manage your subscription '
+            'from the Play Store app under "Subscriptions".',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  /// Opens the website billing page. Shown ONLY to PayFast-billed
+  /// subscribers — never to a Play-billed user (Play policy).
+  Future<void> _openWebsiteBilling(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final launched = await _launchExternal(PaywallScreen.websiteBillingUrl);
+    if (!launched) {
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to open the website. Please visit '
+            '${PaywallScreen.websiteBillingUrl} in your browser.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -376,7 +488,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Your free trial has ended',
+                      _hasActiveSubscription
+                          ? 'Your subscription is active'
+                          : 'Your free trial has ended',
+                      key: const ValueKey('paywallHeadline'),
                       style: TextStyle(
                         color: theme.textColor,
                         fontSize: 20,
@@ -386,9 +501,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Subscribe to continue using the full hunting '
-                      'toolkit, package marketplace, ballistics calculator '
-                      'and all premium features.',
+                      _hasActiveSubscription
+                          ? 'Manage your billing below. Your subscription is '
+                              'handled by the store that billed it.'
+                          : 'Subscribe to continue using the full hunting '
+                              'toolkit, package marketplace, ballistics '
+                              'calculator and all premium features.',
                       style: TextStyle(
                         color: theme.subtitleColor,
                         fontSize: 14,
@@ -447,7 +565,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         child: Text(
                           'You already have an active Google Play '
                           'subscription — restoring your access now. No need '
-                          'to subscribe again.',
+                          'to subscribe again; manage it below.',
                           style: TextStyle(
                             color: theme.textColor,
                             fontSize: 13,
@@ -490,70 +608,108 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              FilledButton.icon(
-                key: const ValueKey('paywallPlaySubscribeButton'),
-                onPressed: (_paymentPending ||
-                        _alreadySubscribed ||
-                        !_subscribeEnabled)
-                    ? null
-                    : () => _subscribeViaGooglePlay(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      theme.subtitleColor.withValues(alpha: 0.3),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              if (_isPlayBilled ||
+                  _alreadySubscribed ||
+                  // An active subscriber whose platform is unknown (no mirror
+                  // yet) is routed to the Play manager — never the website
+                  // link. This is the compliance-safe default: a Play user is
+                  // never steered off-store.
+                  (!_isPayfastBilled && _hasActiveSubscription)) ...[
+                // COMPLIANT for Google Play. A Play-billed subscriber is
+                // routed to Google Play's own subscriptions manager — there is
+                // deliberately NO external/website checkout affordance here
+                // (Play policy forbids steering Play users off-store).
+                OutlinedButton.icon(
+                  key: const ValueKey('paywallManagePlayButton'),
+                  onPressed: () => _openPlaySubscriptions(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.accentColor,
+                    side: BorderSide(color: theme.accentColor, width: 1.4),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.play_circle_outline_rounded),
+                  label: const Text(
+                    'Manage subscription',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
                   ),
                 ),
-                icon: _catalogLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Icon(
-                        _alreadySubscribed
-                            ? Icons.verified_rounded
-                            : Icons.play_circle_fill_rounded,
-                      ),
-                label: Text(
-                  _alreadySubscribed
-                      ? 'SUBSCRIPTION ALREADY ACTIVE'
-                      : (_catalogLoading
-                          ? 'LOADING GOOGLE PLAY…'
-                          : 'SUBSCRIBE VIA GOOGLE PLAY'),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                key: const ValueKey('paywallWebsiteButton'),
-                onPressed: () => _launchWebsite(context),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: theme.accentColor,
-                  side: BorderSide(color: theme.accentColor, width: 1.4),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.language_rounded),
-                label: const Text(
-                  'MANAGE SUBSCRIPTION ON WEBSITE',
+                const SizedBox(height: 8),
+                Text(
+                  'Subscription billed by Google Play',
+                  key: const ValueKey('paywallPlayBillingNote'),
                   style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
+                    color: theme.subtitleColor,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ] else if (_isPayfastBilled) ...[
+                // OK for web (PayFast) subscribers only — the single case
+                // where an external billing link is policy-compliant.
+                OutlinedButton.icon(
+                  key: const ValueKey('paywallManageWebsiteButton'),
+                  onPressed: () => _openWebsiteBilling(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.accentColor,
+                    side: BorderSide(color: theme.accentColor, width: 1.4),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.language_rounded),
+                  label: const Text(
+                    'Manage subscription on website',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
                   ),
                 ),
-              ),
+              ] else
+                // No active subscription — the native Google Play subscribe
+                // call-to-action (the only purchase path in the app).
+                FilledButton.icon(
+                  key: const ValueKey('paywallPlaySubscribeButton'),
+                  onPressed: (_paymentPending || !_subscribeEnabled)
+                      ? null
+                      : () => _subscribeViaGooglePlay(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor:
+                        theme.subtitleColor.withValues(alpha: 0.3),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: _catalogLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.play_circle_fill_rounded),
+                  label: Text(
+                    _catalogLoading
+                        ? 'LOADING GOOGLE PLAY…'
+                        : 'SUBSCRIBE VIA GOOGLE PLAY',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

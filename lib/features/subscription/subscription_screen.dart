@@ -456,6 +456,42 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
+  /// Opens the website billing page. Shown ONLY to PayFast (website)
+  /// subscribers — never to a Play-billed user (Play policy).
+  Future<void> _openWebsiteBilling() async {
+    if (_isOpeningPlayStore) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    setState(() => _isOpeningPlayStore = true);
+    try {
+      final opened = await launchUrl(
+        Uri.parse(PlayBillingService.websiteBillingUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to open the website. Please visit '
+              '${PlayBillingService.websiteBillingUrl} in your browser.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Unable to open the website: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isOpeningPlayStore = false);
+    }
+  }
+
   /// Shows a confirmation dialog explaining that cancellation is handled in
   /// Google Play. Returns `true` when the user chooses to open the Play
   /// subscription center.
@@ -982,9 +1018,39 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Widget _buildSubscribeButton(ThemeController theme, UserSubscription sub) {
     // Active subscription / live free trial: the primary checkout button is
-    // replaced by the manage-in-Google-Play action, since recurring billing
-    // is owned by Google Play.
+    // replaced by the platform-appropriate management action.
+    //
+    // Play compliance: a Google Play-billed subscriber is routed to Google
+    // Play's subscriptions manager (never the website). A PayFast (website)
+    // subscriber — the only case where an external link is compliant — is
+    // routed to the website billing page.
     if (sub.hasSubscription) {
+      if (sub.isPayfastBilled) {
+        return SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('manageWebsiteSubscriptionButton'),
+            onPressed: _isOpeningPlayStore ? null : _openWebsiteBilling,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.accentColor,
+              side: BorderSide(color: theme.accentColor, width: 1.6),
+              disabledForegroundColor: theme.subtitleColor,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.language_rounded),
+            label: const Text(
+              'MANAGE SUBSCRIPTION ON WEBSITE',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+        );
+      }
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(

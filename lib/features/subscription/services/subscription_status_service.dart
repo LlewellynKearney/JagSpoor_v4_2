@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../services/entitlement_service.dart' show trialEndFieldAliases, trialStartFieldAliases;
+import '../../../services/entitlement_service.dart'
+    show trialEndFieldAliases, trialStartFieldAliases, SubscriptionSource;
 import 'subscription_pricing.dart';
 
 /// Immutable snapshot of a user's subscription state as stored on
@@ -20,17 +21,37 @@ class UserSubscription {
   /// The promo code applied at checkout (empty when none).
   final String promoCode;
 
+  /// The billing platform that granted the subscription — `'google_play'` or
+  /// `'payfast'`, else `null` when unknown. Read from the server-owned
+  /// `subscriptionPlatform` field (alias-tolerant), falling back to the
+  /// canonical `subscriptionSource`. This is the Play-policy switch: a
+  /// Play-billed subscriber must be routed to Google Play's subscriptions
+  /// manager, never to an external website checkout.
+  final String? platform;
+
   const UserSubscription({
     this.status = SubscriptionStatus.none,
     this.tier,
     this.trialEndsAt,
     this.renewalDate,
     this.promoCode = '',
+    this.platform,
   });
 
   bool get isActive => status == SubscriptionStatus.active;
   bool get isInTrial => status == SubscriptionStatus.trial;
   bool get hasSubscription => isActive || isInTrial;
+
+  /// Whether this subscription is billed by Google Play (route to the Play
+  /// subscriptions manager; never show an external website checkout link).
+  bool get isPlayBilled =>
+      platform == SubscriptionSource.googlePlay ||
+      platform == 'google_play_billing';
+
+  /// Whether this subscription is billed via the PayFast website checkout (the
+  /// only case where a "Manage subscription on website" affordance is
+  /// policy-compliant).
+  bool get isPayfastBilled => platform == SubscriptionSource.payfast;
 
   /// Days remaining in the trial (0 when not in trial / expired).
   int trialDaysRemaining(DateTime now) {
@@ -52,7 +73,35 @@ class UserSubscription {
       trialEndsAt: _resolveTrialEnd(data),
       renewalDate: _toDate(data['subscriptionRenewalDate']),
       promoCode: (data['subscriptionPromoCode'] as String?) ?? '',
+      platform: _resolvePlatform(data),
     );
+  }
+
+  /// Resolves the billing platform from the raw document, preferring the
+  /// explicit `subscriptionPlatform` field (alias-tolerant) and falling back
+  /// to `subscriptionSource` / `subscriptionProvider`. Returns `null` when none
+  /// of them names a recognized platform.
+  static String? _resolvePlatform(Map<String, dynamic> data) {
+    for (final raw in <dynamic>[
+      data['subscriptionPlatform'],
+      data['subscription_platform'],
+      data['billingPlatform'],
+      data['subscriptionSource'],
+      data['subscription_source'],
+      data['subscriptionProvider'],
+      data['subscription_provider'],
+    ]) {
+      final value = (raw ?? '').toString().trim().toLowerCase();
+      if (value == SubscriptionSource.googlePlay ||
+          value == 'google_play_billing' ||
+          value.startsWith('google_play')) {
+        return SubscriptionSource.googlePlay;
+      }
+      if (value == SubscriptionSource.payfast || value.startsWith('payfast')) {
+        return SubscriptionSource.payfast;
+      }
+    }
+    return null;
   }
 
   /// First present trial-end timestamp across every documented alias.

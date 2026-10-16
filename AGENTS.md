@@ -1,5 +1,64 @@
 # JagSpoor -- Agent Memory
 
+## Play Compliance: google_play users -> manage via play.google.com/store/account/subscriptions, never via website.
+
+**This is a permanent, load-bearing policy contract for this repo. Do NOT
+reintroduce an external/website checkout or management link for a Google
+Play-billed user.**
+
+### The rule
+- A subscriber whose `subscriptionPlatform` is `google_play` MUST be routed to
+  Google Play's own subscriptions manager
+  (`https://play.google.com/store/account/subscriptions?package=za.co.jagspoor.app&sku=<productId>`).
+  The literal fragment `on website` must NEVER appear anywhere in the widget
+  tree for a Play-billed user.
+- Only a `payfast` (website) subscriber may be shown a
+  "Manage subscription on website" affordance
+  (`https://jagspoor.co.za/account/billing`).
+- No active subscription -> the native Google Play subscribe call-to-action
+  (the only purchase path inside the app).
+- Cancelling is one tap from the paywall / account screen and requires NO
+  JagSpoor login (Google Play authorises it with the device's Google account).
+
+### Where the branch lives
+- `UserEntitlement.subscriptionPlatform` / `billingPlatform` /
+  `isPlayBilled` / `isPayfastBilled` (`lib/services/entitlement_service.dart`)
+  resolve the platform from the server-owned `subscriptionPlatform` field
+  (alias-tolerant: `subscription_platform` / `billingPlatform` / `platform`),
+  falling back to the canonical `subscriptionSource`. `subscriptionPlatform`
+  is FROZEN in `firestore.rules` (change-detection, alongside the other
+  server-owned entitlement fields) so a client cannot flip a Play
+  subscription to `payfast` to unlock an external link.
+- `UserSubscription.platform` / `isPlayBilled` / `isPayfastBilled`
+  (`lib/features/subscription/services/subscription_status_service.dart`) do
+  the same for the subscription screen.
+- `paywall_screen.dart`: `_isPlayBilled` -> "Manage subscription" (Play URL)
+  + helper text "Subscription billed by Google Play"; `_isPayfastBilled` ->
+  "Manage subscription on website"; otherwise the Play subscribe CTA. An
+  active subscriber whose platform is unknown defaults to the Play branch
+  (compliance-safe) — the website link is only ever shown for an explicit
+  `payfast` platform.
+- `subscription_screen.dart`: `MANAGE IN GOOGLE PLAY` for Play / unknown;
+  `MANAGE SUBSCRIPTION ON WEBSITE` only for `payfast`.
+- `lib/features/subscription/widgets/subscription_management_tile.dart`: the
+  reactive settings/account tile wired into the Hunter Profile
+  (`ACCOUNT SECURITY`) and the Outfitter settings sheet, with the same
+  branching.
+
+### Regression guard
+`test/play_billing_compliance_test.dart` asserts, across the paywall, the
+subscription screen and the settings tile: for `platform == google_play` the
+widget tree contains NO text matching "on website"; for `platform == payfast`
+it DOES contain "on website". Keep this suite green.
+
+### Operator note
+If a Play-billed subscription ever needs to be moved to website billing, that
+is an operator-side migration (Play Console + `subscriptionPlatform`), never a
+client-driven link. `functions/src/entitlement.ts` should stamp
+`subscriptionPlatform` (`google_play` / `payfast`) in `writeEntitlement` so
+the branch has a server-authoritative source; until then the client falls back
+to `subscriptionSource` (which already uses the same vocabulary).
+
 ## Phase -- purchases -> users/{uid} entitlement sync + junk purchase cleanup (added 2026-10-16)
 
 ### Symptom
