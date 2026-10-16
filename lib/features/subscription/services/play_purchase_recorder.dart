@@ -15,6 +15,40 @@ const String purchasesCollection = 'purchases';
 /// The `purchases/{id}` status value recorded for a verified / active purchase.
 const String purchaseStatusActive = 'active';
 
+/// Outcome of reconciling the `purchases` collection into the entitlement.
+///
+/// See [PlayPurchaseRecorder.reconcileEntitlementFromPurchases]. The flag the
+/// UI actually gates on is the SERVER-written `users/{uid}` mirror — this
+/// result only reports what the local sync observed.
+class PurchaseReconciliation {
+  /// True when at least one `purchases` document owned by the caller carries
+  /// [purchaseStatusActive].
+  final bool hasActivePurchase;
+
+  /// The product id of the active purchase used for the grant (`null` when no
+  /// row existed or every row carried a blank product id — junk rows).
+  final String? productId;
+
+  /// True when the server confirmed the purchase and therefore wrote the
+  /// authoritative entitlement (`subscriptionStatus: 'active'`,
+  /// `isPremium`, `premiumExpiry`, `hasActivePurchase`).
+  final bool premiumGranted;
+
+  const PurchaseReconciliation({
+    this.hasActivePurchase = false,
+    this.productId,
+    this.premiumGranted = false,
+  });
+
+  /// No active purchase / no signed-in user.
+  static const PurchaseReconciliation none = PurchaseReconciliation();
+
+  @override
+  String toString() => 'PurchaseReconciliation(hasActivePurchase: '
+      '$hasActivePurchase, productId: $productId, '
+      'premiumGranted: $premiumGranted)';
+}
+
 /// Records completed Google Play subscription purchases onto Firestore.
 ///
 /// Google Play Billing is the charge truth, but the app's own screens need a
@@ -242,6 +276,15 @@ class PlayPurchaseRecorder {
           'recorded (product $productId).');
       return false;
     }
+    // A blank product id can never be verified server-side (the Play Developer
+    // API rejects it) and it is exactly the junk-row shape observed in the
+    // live `purchases` collection. Refuse it here so no new junk row is
+    // written; `reconcileEntitlementFromPurchases` skips legacy ones.
+    if (productId.trim().isEmpty) {
+      debugPrint('PlayPurchaseRecorder: refusing to record a purchase with a '
+          'blank productId (uid $uid).');
+      return false;
+    }
     final tier = SubscriptionTier.fromPlayProductId(productId);
     try {
       // Persist the transaction itself (one document per uid + product id so a
@@ -263,5 +306,120 @@ class PlayPurchaseRecorder {
       debugPrint('PlayPurchaseRecorder.recordPurchase failed: $e');
       return false;
     }
+  }
+
+  /// Reconciles the `purchases` collection into the entitlement — the
+  /// "users collection not synced from purchases collection" fix.
+  ///
+  /// Called on app start and on every auth-state change (see
+  /// [syncEntitlementFromPurchases] / `main.dart`). The `purchases`
+  /// collection is the durable, owner-scoped record of what Google Play
+  /// actually charged for, so it is the source of truth used to repair a
+  /// `users/{uid}` document that was never mirrored (a dropped purchase
+  /// stream delivery, an install that predates the recorder, or a Cloud
+  /// Function round-trip that failed).
+  ///
+  /// Steps:
+  ///  1. Read `purchases` where `uid == currentUid` and `status == 'active'`
+  ///     (ordered client-side so no composite index is required).
+  ///  2. Ignore junk rows (blank `productId` / `purchaseToken`) — a row that
+  ///     cannot be verified server-side must never grant entitlement.
+  ///  3. If a usable active purchase exists, ask the server to (re-)validate
+  ///     it via [EntitlementService.setPremium] / the
+  ///     `validateGooglePlayPurchase` callable. The Cloud Function re-checks
+  ///     the Play token and writes the authoritative `users/{uid}` mirror
+  ///     (`subscriptionStatus: 'active'`, `isPremium`, `premiumExpiry`,
+  ///     `hasActivePurchase`) + the `entitlements/{uid}` mirror.
+  ///
+  /// **The entitlement write stays server-authoritative.** The client never
+  /// sets `subscriptionStatus` / `isPremium` itself (those fields are frozen
+  /// in `firestore.rules` — a client write is PERMISSION_DENIED); the sync
+  /// simply drives the same server path a fresh purchase uses, so a repaired
+  /// account ends with an identical, server-verified grant.
+  ///
+  /// Never throws. Returns [PurchaseReconciliation.none] for an unauthenticated
+  /// caller / read error, and a result carrying [hasActivePurchase] with
+  /// `premiumGranted: false` when the store lookup failed (the caller can then
+  /// retry on the next launch).
+  Future<PurchaseReconciliation> reconcileEntitlementFromPurchases() async {
+    final uid = _uid;
+    if (uid == null) return PurchaseReconciliation.none;
+
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> rows;
+    try {
+      final snap = await _db
+          .collection(purchasesCollection)
+          .where('uid', isEqualTo: uid)
+          .where('status', isEqualTo: purchaseStatusActive)
+          .get();
+      rows = snap.docs;
+    } catch (e) {
+      debugPrint('PlayPurchaseRecorder.reconcileEntitlementFromPurchases read '
+          'failed: $e');
+      return PurchaseReconciliation.none;
+    }
+
+    // Newest first so the most recent active purchase wins. `updatedAt` may
+    // be a server timestamp that has not resolved locally yet — a missing
+    // value sorts last, which is the safe default.
+    final sorted = [...rows];
+    sorted.sort((a, b) {
+      final at = _asDate(a.data()['updatedAt'] ?? a.data()['createdAt']);
+      final bt = _asDate(b.data()['updatedAt'] ?? b.data()['createdAt']);
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return bt.compareTo(at);
+    });
+
+    // Junk-row guard: a row with no product id / token cannot be verified
+    // (see the empty-productId document in the live collection) and must not
+    // be used to unlock premium.
+    for (final row in sorted) {
+      final data = row.data();
+      final productId = (data['productId'] ?? '').toString().trim();
+      final token = (data['purchaseToken'] ?? '').toString().trim();
+      if (productId.isEmpty || token.isEmpty) {
+        debugPrint('PlayPurchaseRecorder: skipping junk purchase row '
+            '${row.id} (blank productId/token) — it cannot be verified.');
+        continue;
+      }
+      final granted = await _setPremium(productId: productId, token: token);
+      debugPrint('PlayPurchaseRecorder: reconciled active purchase $productId '
+          'for $uid — premium ${granted ? 'granted' : 'pending server '
+          'confirmation'}.');
+      return PurchaseReconciliation(
+        hasActivePurchase: true,
+        productId: productId,
+        premiumGranted: granted,
+      );
+    }
+
+    return PurchaseReconciliation.none;
+  }
+
+  /// Fire-and-forget entry point for app start / auth-state changes.
+  ///
+  /// Runs [reconcileEntitlementFromPurchases] and swallows every failure so a
+  /// caller can invoke it unconditionally (e.g. from a Firebase Auth state
+  /// listener) without guarding it. Attaches the purchase listener first so a
+  /// purchase delivered while the sync is in flight is still recorded.
+  Future<void> syncEntitlementFromPurchases() async {
+    startListening();
+    try {
+      await reconcileEntitlementFromPurchases();
+    } catch (e) {
+      debugPrint('PlayPurchaseRecorder.syncEntitlementFromPurchases failed: $e');
+    }
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true);
+    }
+    return null;
   }
 }

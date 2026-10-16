@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -154,6 +155,25 @@ Future<void> main() async {
       }
     } catch (e) {
       debugPrint('Play Billing startup restore failed: $e');
+    }
+
+    // --- Entitlement sync: purchases collection -> users/{uid} ---
+    // The `purchases` collection is the durable record of what Google Play
+    // actually charged for. Reconcile it into the entitlement on EVERY app
+    // start AND on every auth-state change, so a `users/{uid}` document that
+    // was never mirrored (a dropped purchase stream delivery, an install that
+    // predates the recorder, or a failed Cloud Function round-trip) is
+    // repaired without the user having to re-purchase. The repair drives the
+    // server-authoritative `validateGooglePlayPurchase` callable — the client
+    // never writes the frozen entitlement fields itself.
+    try {
+      FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user == null) return;
+        PlayPurchaseRecorder.instance.syncEntitlementFromPurchases();
+      });
+      await PlayPurchaseRecorder.instance.syncEntitlementFromPurchases();
+    } catch (e) {
+      debugPrint('Entitlement sync from purchases failed: $e');
     }
 
     // --- Review prompt: device launch counter + control-plane seed ---

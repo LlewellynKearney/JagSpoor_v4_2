@@ -214,6 +214,10 @@ void main() {
       // only be turned on in the same write that marks the subscription
       // active.
       'isPro',
+      // purchases -> users sync: the server-owned mirror of the Google Play
+      // purchase state (`validateGooglePlayPurchase`). It grants access in
+      // `isPremiumActive`, so a client must never be able to set it.
+      'hasActivePurchase',
       // v1.0.12 hotfix: the billing tier + role/dual-role signals are
       // server-owned. `subscriptionTier` can never be client-upgraded; `role`
       // is set once (non-admin) then frozen, closing the admin-escalation

@@ -61,6 +61,22 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// confirms or cancels.
   bool _paymentPending = false;
 
+  /// Google Play's view of the subscription, resolved from the `purchases`
+  /// collection (the durable record of what the store actually charged for).
+  ///
+  /// The paywall treats `purchases` as a source of truth in ADDITION to the
+  /// server-written `users/{uid}.subscriptionStatus` mirror, so a subscriber
+  /// whose entitlement was never mirrored is never asked to pay twice.
+
+  /// Whether Google Play already holds an active subscription for this
+  /// account. Drives the "you are already subscribed" state, which replaces
+  /// the purchase call-to-action so the user is not charged again while the
+  /// server mirror catches up.
+  bool _alreadySubscribed = false;
+
+  /// True while the `purchases` collection check is in flight.
+  bool _checkingPurchaseState = false;
+
   ThemeController get theme => widget.theme;
 
   SubscriptionTier get _tier =>
@@ -73,7 +89,32 @@ class _PaywallScreenState extends State<PaywallScreen> {
     // Idempotent, so it is safe to start from every subscription surface.
     PlayPurchaseRecorder.instance.startListening();
     _listenForPurchases();
+    _checkPurchasesCollection();
     _loadPlayPrice();
+  }
+
+  /// Reads the `purchases` collection as the paywall's second source of truth.
+  ///
+  /// A purchase row owned by the caller with `status == 'active'` means Google
+  /// Play has already charged for a subscription — so the paywall must show
+  /// the "already subscribed" state and must NOT invite a second purchase,
+  /// even when `users/{uid}.subscriptionStatus` has not been mirrored yet.
+  /// Best-effort: a read failure (offline / rules / no session) leaves the
+  /// normal purchase call-to-action in place.
+  Future<void> _checkPurchasesCollection() async {
+    if (mounted) setState(() => _checkingPurchaseState = true);
+    try {
+      final result = await PlayPurchaseRecorder.instance
+          .reconcileEntitlementFromPurchases();
+      if (!mounted) return;
+      setState(() {
+        _checkingPurchaseState = false;
+        _alreadySubscribed = result.hasActivePurchase;
+      });
+    } catch (e) {
+      debugPrint('PaywallScreen.checkPurchasesCollection failed: $e');
+      if (mounted) setState(() => _checkingPurchaseState = false);
+    }
   }
 
   @override
@@ -221,8 +262,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// base-plan offer token Google Play Billing v5+ requires. When no catalog
   /// entry resolved (non-store host / product not configured) the button stays
   /// tappable so [_subscribeViaGooglePlay] can explain the reason.
+  ///
+  /// It is also held disabled while the `purchases` collection check is in
+  /// flight, so the user can never be charged again in the window before the
+  /// paywall knows Google Play already holds an active subscription.
   bool get _subscribeEnabled {
-    if (_catalogLoading) return false;
+    if (_catalogLoading || _checkingPurchaseState) return false;
     final product = _activeProduct;
     if (product == null) return true;
     return product.isPurchasable;
@@ -381,6 +426,40 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
               ),
               const SizedBox(height: 28),
+              if (_alreadySubscribed) ...[
+                // `purchases` says Google Play already holds an active
+                // subscription for this account — never invite a second
+                // purchase while the server mirror catches up.
+                Container(
+                  key: const ValueKey('paywallAlreadySubscribedBanner'),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green, width: 1.2),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          color: Colors.green, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'You already have an active Google Play '
+                          'subscription — restoring your access now. No need '
+                          'to subscribe again.',
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               if (_paymentPending) ...[
                 Container(
                   key: const ValueKey('paywallPendingBanner'),
@@ -413,7 +492,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ],
               FilledButton.icon(
                 key: const ValueKey('paywallPlaySubscribeButton'),
-                onPressed: (_paymentPending || !_subscribeEnabled)
+                onPressed: (_paymentPending ||
+                        _alreadySubscribed ||
+                        !_subscribeEnabled)
                     ? null
                     : () => _subscribeViaGooglePlay(context),
                 style: FilledButton.styleFrom(
@@ -435,11 +516,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.play_circle_fill_rounded),
+                    : Icon(
+                        _alreadySubscribed
+                            ? Icons.verified_rounded
+                            : Icons.play_circle_fill_rounded,
+                      ),
                 label: Text(
-                  _catalogLoading
-                      ? 'LOADING GOOGLE PLAY…'
-                      : 'SUBSCRIBE VIA GOOGLE PLAY',
+                  _alreadySubscribed
+                      ? 'SUBSCRIPTION ALREADY ACTIVE'
+                      : (_catalogLoading
+                          ? 'LOADING GOOGLE PLAY…'
+                          : 'SUBSCRIBE VIA GOOGLE PLAY'),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.1,

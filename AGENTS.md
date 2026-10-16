@@ -1,5 +1,142 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- purchases -> users/{uid} entitlement sync + junk purchase cleanup (added 2026-10-16)
+
+### Symptom
+`users/{uid}` was never synced from the `purchases` collection: a subscriber
+whose Google Play purchase was recorded (or whose purchase-stream delivery was
+dropped) could stay locked behind the paywall because
+`users.subscriptionStatus` was never mirrored to `'active'`. The live
+`purchases` collection also held a junk document
+`V8amh1XcS5YeokFLZ5v9hoRp6Oo2_` with an empty `productId` (unverifiable).
+
+### Root cause
+The `purchases` collection is written by `PlayPurchaseRecorder` (the durable
+record of what Google Play charged for), and the authoritative entitlement is
+written server-side by the `validateGooglePlayPurchase` Cloud Function. Nothing
+reconciled the two on start-up: a dropped purchase-stream delivery, an install
+that predates the recorder, or a failed Cloud Function round-trip left
+`users/{uid}` stale with no repair path. The paywall also had no way to consult
+`purchases`, so it could invite a second purchase.
+
+### Fix 1 -- reconcile `purchases` into the entitlement (client)
+`lib/features/subscription/services/play_purchase_recorder.dart`:
+- NEW `reconcileEntitlementFromPurchases()`:
+  1. reads `purchases` `.where('uid' == uid).where('status' == 'active')`;
+  2. orders newest-first CLIENT-side (no composite index required);
+  3. skips JUNK rows (blank `productId` / `purchaseToken`) — an unverifiable
+     row must never grant entitlement;
+  4. drives the server-authoritative grant via `EntitlementService.setPremium`
+     -> the `validateGooglePlayPurchase` callable (the Cloud Function
+     re-validates the Play token and writes `users/{uid}` +
+     `entitlements/{uid}`). The client NEVER writes the frozen fields itself.
+  Returns a `PurchaseReconciliation{hasActivePurchase, productId,
+  premiumGranted}`.
+- NEW `syncEntitlementFromPurchases()` — fire-and-forget wrapper (attaches the
+  purchase listener + runs the reconcile, swallows every failure).
+- NEW `PurchaseReconciliation` result class.
+- `recordPurchase` now REFUSES a blank `productId` so no new junk row is
+  written.
+
+### Fix 2 -- wire the sync on app start + auth-state change
+`lib/main.dart`: after the Play Billing startup restore, a
+`FirebaseAuth.instance.authStateChanges()` listener (skipping sign-out) plus an
+immediate call run `syncEntitlementFromPurchases()`. Added the
+`firebase_auth` import. Best-effort — a billing / plugin failure never blocks
+startup.
+
+### Fix 3 -- paywall treats `purchases` as a source of truth
+`lib/features/subscription/paywall_screen.dart`:
+- `_checkPurchasesCollection()` runs in `initState` (via
+  `reconcileEntitlementFromPurchases`) and flips `_alreadySubscribed`.
+- When already subscribed, the paywall renders a green
+  `paywallAlreadySubscribedBanner` ("You already have an active Google Play
+  subscription — restoring your access now...") and the subscribe button is
+  disabled, relabelled "SUBSCRIPTION ALREADY ACTIVE".
+- The subscribe button is also held disabled while the purchases check is in
+  flight (`_checkingPurchaseState`), so the user can never be charged again in
+  the race window.
+
+### Fix 4 -- server mirror of the purchase state
+- `lib/services/entitlement_service.dart`: `UserEntitlement` gained
+  `hasActivePurchase` (read in `fromMap` + `fromEntitlementMirror`, carried
+  through `mergePremiumMirror`). `isPremiumActive` now grants access when
+  `hasActivePurchase` is set (server-owned, so not forgeable) — the repair path
+  for a `users/{uid}` doc whose local `premiumExpiry` has not resolved yet.
+- `functions/src/entitlement.ts`: `WriteEntitlementInput` gained
+  `hasActivePurchase`; `writeEntitlement` writes it onto BOTH `users/{uid}` and
+  `entitlements/{uid}`; `validateGooglePlayPurchase` sets it `true`. RTDN
+  revocation / PayFast / the trial trigger omit it (clears the mirror).
+- `firestore.rules`: `hasActivePurchase` added to the users change-detection
+  freeze set (SERVER-OWNED — it grants access in `isPremiumActive`, so a client
+  must never set it).
+- `test/firestore_rules_seeding_test.dart`: `hasActivePurchase` added to
+  `guardedFields` (the "exactly the server-owned set" assertion stays exact).
+
+### Fix 5 -- junk document cleanup + operator repair script
+- NEW `functions/src/sync_purchases.ts` (standalone script, NOT exported from
+  `index.ts`, `SYNC_CONFIRM=yes` guarded):
+  1. deletes every `purchases` doc with a blank `productId` / `purchaseToken`
+     (the reported `V8amh1XcS5YeokFLZ5v9hoRp6Oo2_` is exactly this shape);
+  2. for every uid with an ACTIVE verifiable purchase, repairs `users/{uid}`
+     to `subscriptionStatus: 'active'` + `hasActivePurchase: true`.
+  Pure helpers exported for tests: `isJunkPurchaseRow`, `isActivePurchaseRow`,
+  `usersSyncPayload`, `syncPurchases(db)`.
+- `functions/package.json`: `sync:purchases` npm script.
+
+### Tests
+- NEW `test/purchases_users_sync_test.dart` (19 tests): no-session / no-active
+  / other-uid ignore; the active row drives the server grant with the right
+  product + token; the client never writes `users/{uid}`; server rejection ->
+  `premiumGranted: false`; JUNK rows (blank productId, blank token) never grant
+  and never reach the server; junk + valid coexist; newest-active wins;
+  read-failure resilience; `recordPurchase` junk guard; `syncEntitlement…`
+  attaches the listener; `UserEntitlement.hasActivePurchase` matrix
+  (fromMap / mirror / merge / access).
+- NEW `functions/test/sync_purchases.test.js` (6 tests): constants;
+  `isJunkPurchaseRow` / `isActivePurchaseRow`; `usersSyncPayload`; the full
+  `syncPurchases` run (junk deleted, valid kept, `users/{uid}` repaired with
+  the profile preserved, cancelled-only user untouched); empty no-op.
+- `test/subscription_loader_restoration_test.dart` (+4 tests): the recorder
+  reads `purchases` by uid + active status, drives the server grant without a
+  local entitlement write, `main.dart` syncs on start + auth changes, the
+  paywall checks `purchases`.
+
+### Verification
+- `flutter analyze`: **0 errors, 0 warnings**, 321 pre-existing infos
+  (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2141 passed,
+  1 pre-existing failure** — `trial_onboarding_functions_contract_test`
+  ("is a Firebase Auth user-creation trigger in us-central1"), PROVEN
+  pre-existing by stashing the changes (identical failure at HEAD `18ef222`).
+- `functions`: `npm run build` (tsc) clean; `npm test` **107/107 pass**.
+- Env: Flutter **3.44.9** re-installed at `$HOME/sdk/flutter`
+  (`/opt/flutter` unwritable); the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink for the sqflite-FFI
+  suites.
+
+### Operator steps (cannot be done in this sandbox — no Firebase credentials)
+1. `npx firebase-tools deploy --only firestore:rules,functions` (the rules
+   freeze + the `hasActivePurchase` write need to be live).
+2. Run the repair script once in a credentialed env:
+   `cd functions && npm run build && SYNC_CONFIRM=yes node lib/sync_purchases.js`
+   — this DELETES the junk `V8amh1XcS5YeokFLZ5v9hoRp6Oo2_` row and repairs
+   `users/{uid}` for every account holding an active purchase.
+   (Alternatively delete that one document from the Firebase Console.)
+
+### Files
+- MODIFIED: `lib/features/subscription/services/play_purchase_recorder.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/services/entitlement_service.dart`, `lib/main.dart`,
+  `firestore.rules`, `functions/src/entitlement.ts`,
+  `functions/package.json`, `test/firestore_rules_seeding_test.dart`,
+  `test/subscription_loader_restoration_test.dart`, `AGENTS.md`.
+- NEW: `functions/src/sync_purchases.ts`,
+  `functions/test/sync_purchases.test.js`,
+  `test/purchases_users_sync_test.dart`.
+- No pubspec / manifest / Storage changes.
+
+
 
 ## Phase -- Fix in-app update crash (ERROR_APP_NOT_OWNED) + paywall R40.24 double-VAT bug + version bump to 1.0.16+19 (code 19) (added 2026-10-15)
 

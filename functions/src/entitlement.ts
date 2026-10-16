@@ -55,6 +55,13 @@ export interface WriteEntitlementInput {
   subscriptionStatus?: string;
   subscriptionTier?: string;
   subscriptionRenewalDate?: Date | null;
+  /**
+   * Server-confirmed Google Play purchase state (mirror of an active
+   * `purchases/{uid}_{productId}` row). Set ONLY by
+   * `validateGooglePlayPurchase`; omitted / false everywhere else (RTDN
+   * revocation, PayFast, the trial trigger), which clears the mirror.
+   */
+  hasActivePurchase?: boolean;
 }
 
 /**
@@ -74,6 +81,13 @@ export async function writeEntitlement(
     premiumExpiry: fields.premiumExpiry,
     subscriptionSource: fields.subscriptionSource,
     entitlementUpdatedAt: now,
+    // Mirror of the Google Play purchase state. The app reads this to repair a
+    // users/{uid} document that was never synced from the `purchases`
+    // collection (see PlayPurchaseRecorder.reconcileEntitlementFromPurchases):
+    // a confirmed Play purchase means the server validated an active
+    // transaction, so this is the durable "Google Play holds a subscription
+    // for this uid" answer. Revocation (RTDN) clears it.
+    hasActivePurchase: fields.hasActivePurchase === true,
   };
   if (fields.subscriptionProduct) {
     userPayload.subscriptionProduct = fields.subscriptionProduct;
@@ -100,6 +114,7 @@ export async function writeEntitlement(
     premiumExpiry: fields.premiumExpiry,
     subscriptionSource: fields.subscriptionSource,
     updatedAt: now,
+    hasActivePurchase: fields.hasActivePurchase === true,
   };
   if (fields.subscriptionProduct) {
     entitlementPayload.subscriptionProduct = fields.subscriptionProduct;
@@ -277,6 +292,11 @@ export const validateGooglePlayPurchase = onCall(
       subscriptionStatus: "active",
       subscriptionTier: tier,
       subscriptionRenewalDate: premiumExpiry,
+      // The server just validated an ACTIVE Google Play transaction for this
+      // uid — mirror that onto users/{uid} + entitlements/{uid} so the app can
+      // reconcile its entitlement from the `purchases` collection even when the
+      // original purchase-stream delivery was dropped.
+      hasActivePurchase: true,
     });
 
     return {

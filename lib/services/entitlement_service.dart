@@ -79,6 +79,19 @@ class UserEntitlement {
   /// trial).
   final bool requiresPayment;
 
+  /// Server-owned mirror of the Google Play purchase state.
+  ///
+  /// `writeEntitlement` sets it `true` whenever the server confirms a Play
+  /// purchase (`validateGooglePlayPurchase`), i.e. whenever the `purchases`
+  /// collection carries an active transaction for the account. It is the
+  /// server's durable answer to "does Google Play currently hold an active
+  /// subscription for this uid?" and is the repair path for a `users/{uid}`
+  /// document that was never mirrored from `purchases`.
+  ///
+  /// Client-write is frozen in `firestore.rules` (server-owned), so it can
+  /// only ever be set by the Cloud Function.
+  final bool hasActivePurchase;
+
   /// The account-creation timestamp (`createdAt`), used as a last-resort
   /// 30-day trial fallback when neither a trial-end timestamp NOR a trial
   /// status is present. `null` when the field is absent.
@@ -93,6 +106,7 @@ class UserEntitlement {
     this.trialEnd,
     this.subscriptionStatus = '',
     this.requiresPayment = false,
+    this.hasActivePurchase = false,
     this.createdAt,
   });
 
@@ -121,6 +135,13 @@ class UserEntitlement {
   /// [EntitlementService.getMyEntitlement]) always carries the expiry.
   bool isPremiumActive(DateTime now) {
     final expiry = premiumExpiry;
+    // The server-confirmed purchase flag is itself proof the server validated
+    // an active Google Play transaction for this account (the `purchases`
+    // mirror). It therefore grants access even before a locally-cached
+    // `premiumExpiry` resolves — the server only ever sets it alongside a real
+    // expiry, so this cannot be forged by a client (the field is frozen in
+    // `firestore.rules`).
+    if (hasActivePurchase) return true;
     if (expiry == null) return false;
     if (isPremium && expiry.isAfter(now)) return true;
     // A stored active status is honoured only WITH a future expiry.
@@ -220,6 +241,7 @@ class UserEntitlement {
       trialEnd: _resolveTrialEnd(data),
       subscriptionStatus: status,
       requiresPayment: data['requiresPayment'] == true,
+      hasActivePurchase: data['hasActivePurchase'] == true,
       createdAt: _toDate(data['createdAt']) ?? _toDate(data['created_at']),
     );
   }
@@ -238,6 +260,7 @@ class UserEntitlement {
       premiumExpiry: _toDate(data['premiumExpiry']),
       subscriptionSource: data['subscriptionSource'] as String?,
       subscriptionProduct: data['subscriptionProduct'] as String?,
+      hasActivePurchase: data['hasActivePurchase'] == true,
     );
   }
 
@@ -261,6 +284,10 @@ class UserEntitlement {
       trialEnd: trialEnd,
       subscriptionStatus: subscriptionStatus,
       requiresPayment: requiresPayment,
+      // The server-confirmed purchase flag may arrive from EITHER the users
+      // document (writeEntitlement mirrors it there too) or the
+      // entitlements/{uid} mirror — take whichever is set.
+      hasActivePurchase: hasActivePurchase || mirror.hasActivePurchase,
       createdAt: createdAt,
     );
   }

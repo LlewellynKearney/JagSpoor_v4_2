@@ -222,6 +222,14 @@ service cloud.firestore {
         && (!('isPro' in request.resource.data)
           || (resource != null
             && request.resource.data.isPro == resource.data.isPro))
+        // `hasActivePurchase` mirrors the Google Play purchase state onto
+        // users/{uid} (written by `validateGooglePlayPurchase`). SERVER-OWNED:
+        // it grants access in `isPremiumActive`, so a client must never be
+        // able to set it (change-detection only — a merge write that re-sends
+        // the stored value, or omits the field, still passes).
+        && (!('hasActivePurchase' in request.resource.data)
+          || (resource != null
+            && request.resource.data.hasActivePurchase == resource.data.hasActivePurchase))
         && (!('createdAt' in request.resource.data)
           || (resource != null
             && request.resource.data.createdAt == resource.data.createdAt))

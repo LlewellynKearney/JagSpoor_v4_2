@@ -25,6 +25,10 @@ void main() {
   final screen = File('lib/features/subscription/subscription_screen.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
+  final main = File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n');
+  final paywall = File('lib/features/subscription/paywall_screen.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
 
   group('subscription loader restored on the dashboards', () {
     test('hunter dashboard restores + listens for purchases in initState', () {
@@ -91,6 +95,52 @@ void main() {
         screen,
         contains('purchase.verificationData.serverVerificationData'),
       );
+    });
+  });
+
+  // ── purchases collection -> users/{uid} entitlement sync ─────────────────
+  //
+  // Regression guard for the reported "users collection not synced from
+  // purchases collection" bug: on app start / auth-state change the app must
+  // reconcile the `purchases` collection into the entitlement, and the paywall
+  // must treat `purchases` as a source of truth.
+  group('purchases collection is synced into the entitlement', () {
+    test('the recorder reads purchases where uid + status == active', () {
+      expect(recorder, contains("collection(purchasesCollection)"));
+      expect(recorder, contains(".where('uid', isEqualTo: uid)"));
+      expect(
+        recorder,
+        contains(".where('status', isEqualTo: purchaseStatusActive)"),
+      );
+    });
+
+    test('the recorder drives the server-authoritative grant (never a local '
+        'entitlement write)', () {
+      expect(recorder, contains('reconcileEntitlementFromPurchases'));
+      expect(recorder, contains('_setPremium('));
+      // The frozen fields are still never written client-side.
+      expect(recorder, isNot(contains("'subscriptionStatus':")));
+      expect(recorder, isNot(contains("'isPremium':")));
+    });
+
+    test('main.dart syncs on app start AND on auth-state changes', () {
+      expect(
+        main,
+        contains('syncEntitlementFromPurchases'),
+        reason: 'app start must reconcile purchases -> users',
+      );
+      expect(
+        main,
+        contains('authStateChanges()'),
+        reason: 'auth-state changes must re-run the sync',
+      );
+    });
+
+    test('the paywall checks the purchases collection as a source of truth',
+        () {
+      expect(paywall, contains('_checkPurchasesCollection'));
+      expect(paywall, contains('reconcileEntitlementFromPurchases'));
+      expect(paywall, contains('hasActivePurchase'));
     });
   });
 }
