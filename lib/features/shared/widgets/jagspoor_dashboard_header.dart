@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/web_layout.dart';
 import 'hunter_media_card.dart';
 
 /// Frosted, two-line branded dashboard header shared by every JagSpoor
@@ -53,8 +54,12 @@ class JagSpoorDashboardHeader extends StatelessWidget
   Color get syncDotColor =>
       syncActive ? kHunterMediaAmber : const Color(0xFF8A8A8A);
 
+  /// The header height for the ambient platform: 64 px on web/desktop so the
+  /// header reads as a proper app bar in the browser, the standard 56 px
+  /// (`kToolbarHeight`) on the mobile platforms so the Android/iOS layout is
+  /// unchanged.
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(WebLayout.headerHeight());
 
   @override
   Widget build(BuildContext context) {

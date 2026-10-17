@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/features/hunter_mode/firearm_safe_screen.dart';
@@ -65,6 +66,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
   final List<String> favoriteIds = [];
   bool _isAdmin = false;
   bool _isDual = false;
+
+  /// Feature ids whose card is currently hovered (web/desktop hover lift).
+  final Set<String> _hoveredFeatureIds = <String>{};
 
   @override
   void initState() {
@@ -527,15 +531,18 @@ class _HunterDashboardState extends State<HunterDashboard> {
       required String title,
       required String subtitle,
       required List<String> ids,
+      bool isDesktop = false,
     }) {
       return DashboardFeatureFolder(
         theme: theme,
         icon: icon,
         title: title,
         subtitle: subtitle,
+        isDesktop: isDesktop,
         children: [
           for (final id in ids)
-            _buildCard(context, theme, byId[id]!, compact: true),
+            _buildCard(context, theme, byId[id]!,
+                compact: true, isDesktop: isDesktop),
         ],
       );
     }
@@ -581,141 +588,274 @@ class _HunterDashboardState extends State<HunterDashboard> {
               ),
             ],
           ),
-          body: ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.of(context).padding.top + kToolbarHeight + 8,
-              16,
-              16 + MediaQuery.of(context).padding.bottom,
-            ),
-            children: [
-              // 🌟 Trial status banner (active trial only).
-              StreamBuilder<UserEntitlement>(
-                stream: EntitlementService.instance.watchMyEntitlement(),
-                builder: (context, snapshot) {
-                  final ent = snapshot.data ?? const UserEntitlement();
-                  if (ent.isPremiumActive(DateTime.now())) {
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              // > 800px logical width = desktop presentation: a centred,
+              // max-width column with 2-column module grids (web design spec).
+              final isDesktop =
+                  WebLayout.isDesktopWidth(constraints.maxWidth);
+              final topInset = MediaQuery.of(context).padding.top +
+                  WebLayout.headerHeight() +
+                  8;
+
+              final content = <Widget>[
+                // 🌟 Trial status banner (active trial only).
+                StreamBuilder<UserEntitlement>(
+                  stream: EntitlementService.instance.watchMyEntitlement(),
+                  builder: (context, snapshot) {
+                    final ent = snapshot.data ?? const UserEntitlement();
+                    if (ent.isPremiumActive(DateTime.now())) {
+                      return const SizedBox.shrink();
+                    }
+                    if (ent.isTrialActive(DateTime.now())) {
+                      return TrialBanner(
+                        theme: theme,
+                        daysRemaining: ent.trialDaysRemaining(DateTime.now()),
+                        trialEnd: ent.trialEnd,
+                      );
+                    }
                     return const SizedBox.shrink();
-                  }
-                  if (ent.isTrialActive(DateTime.now())) {
-                    return TrialBanner(
-                      theme: theme,
-                      daysRemaining: ent.trialDaysRemaining(DateTime.now()),
-                      trialEnd: ent.trialEnd,
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-              // 🎯 Network Diagnostic HUD Status Bar
-              const NetworkDiagnosticHud(),
-              const SizedBox(height: 16),
-              Card(
-                color: HunterUi.cardColor(theme),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: HunterUi.cardBorderColor(theme),
-                  ),
+                  },
                 ),
-                child: ListTile(
-                  leading: Icon(
-                    Icons.radar_rounded,
-                    color: theme.accentColor,
-                    size: 28,
-                  ),
-                  title: Text(
-                    'SYSTEM ACTIVE',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: HunterUi.titleColor(theme),
-                      letterSpacing: 1.2,
+                // 🎯 Network Diagnostic HUD Status Bar
+                const NetworkDiagnosticHud(),
+                const SizedBox(height: 16),
+                _buildSystemActiveCard(context, theme, isDesktop: isDesktop),
+                const SizedBox(height: 24),
+                _buildSectionLabel(context, theme, 'TACTICAL MODULES'),
+                const SizedBox(height: 12),
+                if (isDesktop)
+                  _twoColumnGrid([
+                    buildFolder(
+                      icon: Icons.gps_fixed_rounded,
+                      title: 'All things guns',
+                      subtitle: 'Firearm safe & ammunition management',
+                      ids: const ['firearm_safe', 'ammunition'],
+                      isDesktop: true,
                     ),
+                    buildFolder(
+                      icon: Icons.storefront_rounded,
+                      title: 'Market place',
+                      subtitle: 'Packages, custom builds & trophy bookings',
+                      ids: const [
+                        'marketplace',
+                        'custom_package_builder',
+                        'trophy_browser',
+                      ],
+                      isDesktop: true,
+                    ),
+                    buildFolder(
+                      icon: Icons.handyman_rounded,
+                      title: 'Tools',
+                      subtitle:
+                          'Ballistics, field estimates & tracking utilities',
+                      ids: const [
+                        'ballistic_calculator',
+                        'field_estimate',
+                        'spoor_tracker',
+                        'scope_settings',
+                        'shot_group_analyzer',
+                      ],
+                      isDesktop: true,
+                    ),
+                  ])
+                else ...[
+                  buildFolder(
+                    icon: Icons.gps_fixed_rounded,
+                    title: 'All things guns',
+                    subtitle: 'Firearm safe & ammunition management',
+                    ids: const ['firearm_safe', 'ammunition'],
                   ),
-                  subtitle: Text(
-                    'GPS Link Established. All tracking modules ready.',
-                    style: TextStyle(
-                        color: HunterUi.subtitleColor(theme), fontSize: 13),
+                  const SizedBox(height: 16),
+                  buildFolder(
+                    icon: Icons.storefront_rounded,
+                    title: 'Market place',
+                    subtitle: 'Packages, custom builds & trophy bookings',
+                    ids: const [
+                      'marketplace',
+                      'custom_package_builder',
+                      'trophy_browser',
+                    ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'TACTICAL MODULES',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: HunterUi.subtitleColor(theme),
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 12),
-              buildFolder(
-                icon: Icons.gps_fixed_rounded,
-                title: 'All things guns',
-                subtitle: 'Firearm safe & ammunition management',
-                ids: const ['firearm_safe', 'ammunition'],
-              ),
-              const SizedBox(height: 16),
-              buildFolder(
-                icon: Icons.storefront_rounded,
-                title: 'Market place',
-                subtitle: 'Packages, custom builds & trophy bookings',
-                ids: const [
-                  'marketplace',
-                  'custom_package_builder',
-                  'trophy_browser',
+                  const SizedBox(height: 16),
+                  buildFolder(
+                    icon: Icons.handyman_rounded,
+                    title: 'Tools',
+                    subtitle:
+                        'Ballistics, field estimates & tracking utilities',
+                    ids: const [
+                      'ballistic_calculator',
+                      'field_estimate',
+                      'spoor_tracker',
+                      'scope_settings',
+                      'shot_group_analyzer',
+                    ],
+                  ),
                 ],
-              ),
-              const SizedBox(height: 16),
-              buildFolder(
-                icon: Icons.handyman_rounded,
-                title: 'Tools',
-                subtitle: 'Ballistics, field estimates & tracking utilities',
-                ids: const [
-                  'ballistic_calculator',
-                  'field_estimate',
-                  'spoor_tracker',
-                  'scope_settings',
-                  'shot_group_analyzer',
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'MORE MODULES',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: HunterUi.subtitleColor(theme),
-                  letterSpacing: 1.5,
+                const SizedBox(height: 24),
+                _buildSectionLabel(context, theme, 'MORE MODULES'),
+                const SizedBox(height: 12),
+                if (isDesktop)
+                  _twoColumnGrid([
+                    for (final feature in remainingFeatures)
+                      _buildCard(context, theme, feature, isDesktop: true),
+                  ])
+                else
+                  for (var i = 0; i < remainingFeatures.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 16),
+                    _buildCard(context, theme, remainingFeatures[i]),
+                  ],
+                const CopyrightFooter(),
+              ];
+
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                  isDesktop ? 24 : 16,
+                  topInset,
+                  isDesktop ? 24 : 16,
+                  16 + MediaQuery.of(context).padding.bottom,
                 ),
-              ),
-              const SizedBox(height: 12),
-              for (var i = 0; i < remainingFeatures.length; i++) ...[
-                if (i > 0) const SizedBox(height: 16),
-                _buildCard(context, theme, remainingFeatures[i]),
-              ],
-              const CopyrightFooter(),
-            ],
+                children: [
+                  if (isDesktop)
+                    // Centre + cap the content width so the desktop layout
+                    // never stretches edge-to-edge across a wide monitor.
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: WebLayout.maxContentWidth,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: content,
+                        ),
+                      ),
+                    )
+                  else
+                    ...content,
+                ],
+              );
+            },
           ),
         );
       },
     );
   }
 
+  /// A small section label ("TACTICAL MODULES" / "MORE MODULES").
+  Widget _buildSectionLabel(
+    BuildContext context,
+    ThemeController theme,
+    String label,
+  ) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        color: HunterUi.subtitleColor(theme),
+        letterSpacing: 1.5,
+      ),
+    );
+  }
+
+  /// The "SYSTEM ACTIVE" status card — icon left, high-contrast title +
+  /// subtitle, so it reads cleanly on the darkened web background.
+  Widget _buildSystemActiveCard(
+    BuildContext context,
+    ThemeController theme, {
+    bool isDesktop = false,
+  }) {
+    return Card(
+      color: HunterUi.cardColor(theme),
+      elevation: isDesktop ? 3 : 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(isDesktop ? 16 : 12),
+        side: BorderSide(color: HunterUi.cardBorderColor(theme)),
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 20 : 16,
+          vertical: 4,
+        ),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: theme.accentColor.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: theme.accentColor.withValues(alpha: 0.4)),
+          ),
+          child: Icon(
+            Icons.radar_rounded,
+            color: theme.accentColor,
+            size: 26,
+          ),
+        ),
+        title: Text(
+          'SYSTEM ACTIVE',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: HunterUi.titleColor(theme),
+            letterSpacing: 1.2,
+          ),
+        ),
+        subtitle: Text(
+          'GPS Link Established. All tracking modules ready.',
+          style:
+              TextStyle(color: HunterUi.subtitleColor(theme), fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  /// Lays [items] out in a 2-column grid on desktop, pairing them into rows so
+  /// each row's cards share the tallest height (variable-height expandable
+  /// folders stay aligned without a fixed-aspect [GridView]).
+  Widget _twoColumnGrid(List<Widget> items, {double spacing = 16}) {
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += 2) {
+      if (i > 0) rows.add(SizedBox(height: spacing));
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: items[i]),
+            SizedBox(width: spacing),
+            Expanded(
+              child: i + 1 < items.length
+                  ? items[i + 1]
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+
+
   Widget _buildCard(
     BuildContext context,
     ThemeController theme,
     DashboardFeature feature, {
     bool compact = false,
+    bool isDesktop = false,
   }) {
     final bool isFavorite = favoriteIds.contains(feature.id);
-    return Card(
+    final radius = isDesktop ? 16.0 : 12.0;
+    final hovered = _hoveredFeatureIds.contains(feature.id);
+    final card = Card(
       color: HunterUi.cardColor(theme),
-      elevation: 2,
+      elevation: isDesktop ? (hovered ? 6 : 3) : 2,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: HunterUi.cardBorderColor(theme)),
+        borderRadius: BorderRadius.circular(radius),
+        side: BorderSide(
+          color: hovered && isDesktop
+              ? theme.accentColor.withValues(alpha: 0.55)
+              : HunterUi.cardBorderColor(theme),
+        ),
       ),
       child: Stack(
         children: [
@@ -725,9 +865,11 @@ class _HunterDashboardState extends State<HunterDashboard> {
                   .trackFeatureUsage(feature.title);
               feature.onTap(context, widget.theme);
             },
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(radius),
             child: Padding(
-              padding: EdgeInsets.all(compact ? 14.0 : 20.0),
+              padding: EdgeInsets.all(
+                isDesktop ? 18.0 : (compact ? 14.0 : 20.0),
+              ),
               child: Row(
                 children: [
                   Icon(feature.icon,
@@ -780,6 +922,41 @@ class _HunterDashboardState extends State<HunterDashboard> {
         ],
       ),
     );
+    // Web/desktop hover affordance: track pointer enter/exit so the card can
+    // lift (elevation + accent border) under the cursor, and show the click
+    // cursor. Mobile is unaffected (no hover events fire there).
+    if (!isDesktop) return card;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => _setHovered(feature.id, true),
+      onExit: (_) => _setHovered(feature.id, false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: hovered
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.30),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : null,
+        ),
+        child: card,
+      ),
+    );
+  }
+
+  /// Tracks which feature cards are currently hovered (web/desktop only) so
+  /// each card can render its hover lift independently.
+  void _setHovered(String id, bool hovered) {
+    final changed = hovered
+        ? _hoveredFeatureIds.add(id)
+        : _hoveredFeatureIds.remove(id);
+    if (changed && mounted) setState(() {});
   }
 }
 

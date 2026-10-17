@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/layout/web_layout.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Shared immersive Solitary Acacia background used across the entire hunter
@@ -73,7 +74,18 @@ class HunterAcaciaBackground {
     );
   }
 
-  /// The responsive background stack: photo + scrim + content, layered.
+  /// Desktop/web contrast veil.
+  ///
+  /// On a large monitor the acacia photo is stretched across the full viewport
+  /// and its bright regions wash out the card text. A flat 65% black layer
+  /// (per the web design spec) sits between the photo and the mode scrim on
+  /// web/desktop widths only, so the mobile presentation is untouched.
+  static Widget webContrastOverlay() => Container(
+        color: Colors.black.withValues(alpha: 0.65),
+      );
+
+  /// The responsive background stack: photo + contrast veil (web) + scrim +
+  /// content, layered.
   ///
   /// Use inside a Scaffold body to make a non-Scaffold screen (or a body that
   /// already manages its own Scaffold/AppBar) immersive.
@@ -90,10 +102,12 @@ class HunterAcaciaBackground {
       builder: (context) {
         final dark = isDarkMode ??
             Theme.of(context).brightness == Brightness.dark;
+        final desktop = WebLayout.isDesktopLayout(context);
         return Stack(
           fit: StackFit.expand,
           children: [
             backgroundImage(fallbackColor: fallbackColor),
+            if (desktop) webContrastOverlay(),
             scrim(isDarkMode: dark),
             child,
           ],

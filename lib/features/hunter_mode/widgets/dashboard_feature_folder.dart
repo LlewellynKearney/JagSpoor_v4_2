@@ -26,6 +26,10 @@ class DashboardFeatureFolder extends StatefulWidget {
   final bool initiallyExpanded;
   final Duration animationDuration;
 
+  /// Desktop/web presentation: larger radius + padding and a hover lift so the
+  /// folder reads as a card on a wide screen. Mobile keeps the compact design.
+  final bool isDesktop;
+
   const DashboardFeatureFolder({
     super.key,
     required this.theme,
@@ -35,6 +39,7 @@ class DashboardFeatureFolder extends StatefulWidget {
     required this.children,
     this.initiallyExpanded = false,
     this.animationDuration = const Duration(milliseconds: 280),
+    this.isDesktop = false,
   });
 
   /// Gold accent used for the folder glyph / count badge / chevron in dark
@@ -49,6 +54,7 @@ class DashboardFeatureFolder extends StatefulWidget {
 class DashboardFeatureFolderState extends State<DashboardFeatureFolder>
     with SingleTickerProviderStateMixin {
   late bool _expanded = widget.initiallyExpanded;
+  bool _hovered = false;
 
   bool get isExpanded => _expanded;
 
@@ -58,15 +64,20 @@ class DashboardFeatureFolderState extends State<DashboardFeatureFolder>
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final accent = DashboardFeatureFolder.accentColor(theme);
-    return Container(
+    final radius = widget.isDesktop ? 16.0 : 14.0;
+    final body = Container(
       decoration: BoxDecoration(
         color: HunterUi.cardColor(theme),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: HunterUi.cardBorderColor(theme)),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: _hovered && widget.isDesktop
+              ? accent.withValues(alpha: 0.55)
+              : HunterUi.cardBorderColor(theme),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(theme.isDarkMode ? 60 : 18),
-            blurRadius: 8,
+            blurRadius: _hovered && widget.isDesktop ? 14 : 8,
             offset: const Offset(0, 3),
           ),
         ],
@@ -76,14 +87,16 @@ class DashboardFeatureFolderState extends State<DashboardFeatureFolder>
         children: [
           Material(
             color: Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(radius),
             child: InkWell(
               key: ValueKey('folderHeader_${widget.title}'),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(radius),
               onTap: toggle,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.isDesktop ? 18 : 16,
+                  vertical: widget.isDesktop ? 16 : 14,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -125,18 +138,20 @@ class DashboardFeatureFolderState extends State<DashboardFeatureFolder>
                       ),
                     ),
                     Container(
+                      constraints: const BoxConstraints(minWidth: 26),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 9, vertical: 3),
                       decoration: BoxDecoration(
-                        color: accent.withAlpha(theme.isDarkMode ? 38 : 26),
+                        color: accent.withAlpha(theme.isDarkMode ? 46 : 32),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: accent.withAlpha(90)),
+                        border: Border.all(color: accent.withAlpha(120)),
                       ),
                       child: Text(
                         '${widget.children.length}',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w800,
                           color: accent,
                         ),
                       ),
@@ -186,6 +201,15 @@ class DashboardFeatureFolderState extends State<DashboardFeatureFolder>
           ),
         ],
       ),
+    );
+    // Desktop/web hover lift: a stronger shadow + accent border under the
+    // cursor so the folder reads as an interactive card on a wide screen.
+    if (!widget.isDesktop) return body;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: body,
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../../../core/layout/web_layout.dart';
 import '../services/offline_sync_queue.dart';
 import '../services/advanced_tactical_service.dart';
 import 'hunter_scaffold.dart';
@@ -177,17 +178,18 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
     // light/dark theme pair driven by ThemeController), so the banner picks
     // high-contrast colors in both Day and Night without a hardcoded palette.
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final isDesktop = WebLayout.isDesktopLayout(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Connection Status Bar
         if (_isOnline)
-          _buildOnlineBar(isDarkMode)
+          _buildOnlineBar(isDarkMode, isDesktop: isDesktop)
         else
-          _buildOfflineBar(isDarkMode),
+          _buildOfflineBar(isDarkMode, isDesktop: isDesktop),
 
         // AI Game Movement Activity Forecaster Row
-        _buildGameMovementForecaster(isDarkMode),
+        _buildGameMovementForecaster(isDarkMode, isDesktop: isDesktop),
       ],
     );
   }
@@ -199,7 +201,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   /// card surface with a defined deep-green border + deep espresso text; in
   /// Dark Mode a solid very-dark olive surface with a bright-green border.
   /// The SYNCED pill is likewise solid high-contrast in both modes.
-  Widget _buildOnlineBar(bool isDarkMode) {
+  Widget _buildOnlineBar(bool isDarkMode, {bool isDesktop = false}) {
     final surfaceColor =
         isDarkMode ? const Color(0xFF1E3011) : HunterUi.lightCard;
     final borderColor =
@@ -215,9 +217,15 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      // On web the bar reads as a proper app-bar-style status banner: taller
+      // with a larger glyph/label, so it is not a thin sliver on a wide screen.
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 20 : 16,
+        vertical: isDesktop ? 14 : 10,
+      ),
       decoration: BoxDecoration(
         color: surfaceColor,
+        borderRadius: BorderRadius.circular(isDesktop ? 12 : 0),
         border: Border.all(color: borderColor, width: 1.6),
         boxShadow: [
           BoxShadow(
@@ -233,7 +241,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           Icon(
             Icons.satellite_alt,
             color: iconColor,
-            size: 18,
+            size: isDesktop ? 22 : 18,
           ),
           const SizedBox(width: 10),
           Flexible(
@@ -242,7 +250,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: titleColor,
-                fontSize: 11,
+                fontSize: isDesktop ? 13 : 11,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
               ),
@@ -250,7 +258,10 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
           ),
           const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 10 : 8,
+              vertical: isDesktop ? 4 : 2,
+            ),
             decoration: BoxDecoration(
               color: pillSurface,
               borderRadius: BorderRadius.circular(4),
@@ -258,13 +269,13 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.cloud_done, color: pillContent, size: 14),
+                Icon(Icons.cloud_done, color: pillContent, size: isDesktop ? 16 : 14),
                 const SizedBox(width: 4),
                 Text(
                   'SYNCED',
                   style: TextStyle(
                     color: pillContent,
-                    fontSize: 9,
+                    fontSize: isDesktop ? 11 : 9,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -280,7 +291,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   /// The offline "CELL DISCONNECTED" banner — the same status component in
   /// its disconnected state. It gets the same mode-aware solid wrapper
   /// treatment as the online bar so it stays high-contrast in both modes.
-  Widget _buildOfflineBar(bool isDarkMode) {
+  Widget _buildOfflineBar(bool isDarkMode, {bool isDesktop = false}) {
     final gradientColors = isDarkMode
         ? [const Color(0xFF8B0000), Colors.amber.shade800]
         : [const Color(0xFFF7E3D7), const Color(0xFFEFD3C2)];
@@ -446,7 +457,8 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   /// Light Mode a warm cream/off-white card surface with a defined deep-green
   /// border + deep espresso text; in Dark Mode a solid very-dark olive surface
   /// with a bright-green border + bright light-green text.
-  Widget _buildGameMovementForecaster(bool isDarkMode) {
+  Widget _buildGameMovementForecaster(bool isDarkMode,
+      {bool isDesktop = false}) {
     // Determine activity level label and color based on probability
     String activityLabel;
     Color activityColor;
@@ -507,7 +519,12 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      // More compact on web so the forecaster stays a tidy strip beneath the
+      // taller status banner (keeps its green border + solid surface).
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 14 : 12,
+        vertical: isDesktop ? 7 : 8,
+      ),
       decoration: BoxDecoration(
         color: surfaceColor,
         border: Border.all(color: borderColor, width: 1.6),
