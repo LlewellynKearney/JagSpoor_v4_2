@@ -17029,3 +17029,77 @@ path.
   `test/saps_status_classifier_test.dart`, `test/firearm_safe_import_test.dart`
   (NEW), `test/saps_tracker_enquiry_test.dart` (NEW), `AGENTS.md`.
 - No Firestore rules / index / Storage / pubspec / manifest changes.
+
+## Phase -- Responsive desktop layout for the Flutter web build (added 2026-10-17)
+
+### Symptom
+On a wide browser window the web build rendered the mobile layout stretched
+edge-to-edge: full-width beige cards, no centred max-width container, and the
+Solitary Acacia background photo too bright/low-contrast behind the text.
+
+### Root cause
+Every dashboard body was a plain `ListView` with a fixed 16px horizontal
+padding, so it filled the whole viewport on desktop. The background scrim was
+mode-aware but tuned for a phone-width photo crop; on a 27 inch monitor the
+bright region washed out the cards.
+
+### Fix -- shared responsive contract (`lib/core/layout/web_layout.dart`, NEW)
+- `desktopBreakpoint = 800` (STRICT `>`), so the default 800x600 widget-test
+  surface stays on the MOBILE presentation and the existing mobile-layout
+  tests are unaffected.
+- `maxContentWidth = 1280` centred cap; `webHeaderHeight = 64`
+  (`headerHeight()` returns 64 on `kIsWeb`, `kToolbarHeight` elsewhere so the
+  Android/iOS header is unchanged).
+- `isDesktopWidth(width)` is a pure function (unit-testable).
+
+### `hunter_dashboard.dart`
+- Body is a `LayoutBuilder`; at `>800px` it switches to a centred
+  `ConstrainedBox(maxWidth: 1280)` column with 24px gutters.
+- TACTICAL MODULES folders and MORE MODULES cards lay out 2 per row via
+  `_twoColumnGrid` (a Column of Rows of Expanded pairs -- variable-height
+  expandable folders stay aligned without a fixed-aspect GridView).
+- Cards get 16px radius + elevation 3 on desktop, and a pointer-hover lift
+  (MouseRegion + accent border + shadow, tracked in `_hoveredFeatureIds`).
+
+### `hunter_scaffold.dart`
+- `HunterAcaciaBackground.stack` inserts a web-only `webContrastOverlay()`
+  (65% black Container) between the photo and the mode scrim when the
+  viewport is desktop. The `scrim()` colors are unchanged, so
+  `hunter_scaffold_rollout_test` still passes; mobile stays a 3-layer stack.
+
+### `dashboard_feature_folder.dart` / `network_diagnostic_hud.dart` / header
+- The folder gains `isDesktop` (radius/padding) + a hover lift + a bolder
+  count badge. The CLOUD SYNC banner reads as an app-bar-style status banner
+  on web (taller, larger glyph/label, rounded); the forecaster stays compact.
+  `JagspoorDashboardHeader.preferredSize` derives from `WebLayout.headerHeight()`.
+
+### `web/index.html`
+- Explicit viewport meta (`width=device-width, initial-scale=1.0,
+  viewport-fit=cover`); `flutter_bootstrap.js` preserved (the prior
+  hosting-overwrite fix still holds -- no marketing text).
+
+### Regression guard
+`test/web_responsive_layout_test.dart` (14 tests) locks the breakpoint, the
+centred 1280 cap, the 2-column grids at 1600px, the single-column mobile
+stack, the 65% web veil (and its absence on mobile), and the viewport meta.
+
+### Verification
+- `flutter analyze lib test`: 0 errors, 0 warnings (322 pre-existing infos).
+- `flutter test` (full suite): 2091 passed, 1 failed -- the DOCUMENTED
+  pre-existing `trial_onboarding_functions_contract_test` (v1-vs-v2 auth
+  trigger), which touches no file in this change. The 8 SQLite-FFI failures
+  on an intermediate run were purely the missing `~/libs/libsqlite3.so`
+  symlink (recreated).
+- `flutter build web --release`: SUCCESS; the built `build/web/index.html`
+  carries the viewport meta + `flutter_bootstrap.js` and NO marketing text.
+- Android (`za.co.jagspoor.app`) and `pubspec.yaml` / `pubspec.lock` NOT touched.
+
+### Files
+- NEW: `lib/core/layout/web_layout.dart`, `test/web_responsive_layout_test.dart`.
+- MODIFIED: `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/hunter_mode/widgets/dashboard_feature_folder.dart`,
+  `lib/features/hunter_mode/widgets/hunter_scaffold.dart`,
+  `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
+  `lib/features/shared/widgets/jagspoor_dashboard_header.dart`,
+  `web/index.html`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
