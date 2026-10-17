@@ -1,5 +1,132 @@
 # JagSpoor -- Agent Memory
 
+## Phase -- Flutter web build + Firebase Hosting deploy support (added 2026-10-17)
+
+### Symptom
+`flutter run -d chrome` / `flutter build web` failed with:
+`Error: Dart library 'dart:ffi' is not available on this platform.
+import 'dart:ffi';` originating from `tflite_flutter-0.12.1`. The web
+compiler cannot resolve `dart:ffi`, so any file that transitively imported
+`package:tflite_flutter` broke the web target.
+
+### Fix 1 -- TensorFlow Lite isolated behind a conditional import
+NEW `lib/services/tflite/`:
+- `tflite_interface.dart` -- platform-agnostic `TfliteInterpreter`
+  (`run(input, output)` / `close()`) + `TflitePlatform`
+  (`isSupported` / `loadFromAsset(path)`).
+- `tflite_mobile.dart` -- the REAL backend; the ONLY file that imports
+  `package:tflite_flutter`. Wraps `Interpreter.fromAsset` in a
+  `_FfiInterpreter`. Selected on Android / iOS / desktop.
+- `tflite_web.dart` -- the stub backend: `isSupported => false`,
+  `loadFromAsset => null`. Selected on the web.
+- `tflite_helper.dart` -- the conditional import
+  `import 'tflite_mobile.dart' if (dart.library.html) 'tflite_web.dart';`
+  exposing `tflitePlatform`, `isTfliteSupported`, and
+  `loadTfliteInterpreterFromAsset(path)` (returns `null` on web or any load
+  failure so callers degrade gracefully instead of throwing).
+
+`lib/features/track/data/services/spoor_ai_service.dart` (the only
+consumer) now imports `tflite_helper.dart` instead of `tflite_flutter`; the
+`Interpreter?` field became `TfliteInterpreter?`. `initialize()` gates the
+real model load behind `if (!kIsWeb)` and falls back to the deterministic
+heuristic scorer on web (and on any native load failure), so the Spoor
+Identifier keeps working in the browser. `tflite_flutter` REMAINS a
+dependency so Android keeps real on-device inference.
+
+RULE: nothing outside `lib/services/tflite/` may import
+`package:tflite_flutter` -- doing so breaks `flutter build web`.
+
+### Fix 2 -- Firebase Hosting now serves the Flutter web build
+`firebase.json` hosting: `public` `public` -> **`build/web`**; added a
+`predeploy` hook (`node scripts/prepare_hosting.js`) that copies the tracked
+`public/` assets (`.well-known/assetlinks.json`,
+`.well-known/apple-app-site-association`, `r/index.html`, `privacy/`,
+`delete-account/`) into the freshly built `build/web` (Flutter never emits
+those paths, so nothing is overwritten). Added `Cache-Control: no-cache` for
+`/flutter_service_worker.js` and a 1h cache for static assets. The
+`appAssociation: "NONE"` + `/.well-known` Content-Type headers and the
+`/r/**` rewrite are preserved; the `ignore` list deliberately does NOT
+re-add `**/.*` (that would exclude `.well-known` from the upload).
+
+NEW `scripts/prepare_hosting.js` -- the staging script; fails loudly if
+`build/web/index.html` is missing (i.e. `flutter build web --release` was
+not run first).
+
+`web/index.html` + `web/manifest.json`: replaced the Flutter template
+placeholders (`jagspoor_v4_2` / "A new Flutter project") with the JagSpoor
+name, description, and brand colour.
+
+### Fix 3 -- firebase_options.dart
+Already correct -- `DefaultFirebaseOptions` covers `web`, `android`, `ios`,
+`macos`, `windows` for projectId `jagspoor`, with `iosBundleId:
+'za.co.jagspoor.app'`. `flutterfire configure` was NOT run: it requires
+`firebase login` / `FIREBASE_TOKEN`, neither of which exists in this sandbox
+(`firebase login:list` -> "No authorized accounts"; the configstore is
+empty). Re-run it in a credentialed env only if the app registrations
+change.
+
+### Verification (real toolchain, in-sandbox)
+Toolchain provisioned from scratch: Flutter **3.44.9** (Dart 3.12.2) at
+`/workspace/sdk/flutter`, OpenJDK **21**, Android cmdline-tools +
+`platforms;android-36` + `build-tools;36.0.0` + `ndk;27.0.12077973` under
+`/workspace/sdk/android-sdk` (CMake 3.22.1 auto-installed by Gradle).
+- `flutter clean` -> `flutter pub get` -> **`flutter build web --release`
+  SUCCESS** (no `--web-renderer` flag; the only remaining console note is
+  the harmless wasm-dry-run list of packages that are not wasm-compatible,
+  which does not affect the JS build). `grep -c 'tflite' build/web/main.dart.js`
+  -> **0**; `dart:ffi` -> **0**.
+- Served `build/web` locally and loaded it in a browser: the app boots
+  (`/#/splash`, title "Jagspoor", Flutter view mounted, startup asset
+  seeding ran) -- proving the web build is functional, not just compilable.
+- **Android release APK built SUCCESSFULLY** (76.8 MB):
+  `build/app/outputs/flutter-apk/app-release.apk`; `aapt2 dump badging` ->
+  `package='za.co.jagspoor.app'`, `versionCode='19'`,
+  `versionName='1.0.16'`, `targetSdkVersion:'36'`. The APK still contains the
+  real LiteRT native libs (`lib/{arm64-v8a,armeabi-v7a,x86_64}/
+  libtensorflowlite_jni.so` + `libtensorflowlite_gpu_jni.so`), so on-device
+  inference is intact -- the abstraction did not break Android.
+- `flutter analyze lib/ test/`: **0 errors, 0 warnings** (106 pre-existing
+  info-level issues in `lib/`, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"` + the
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites): **2164 passed,
+  1 failed** -- the single failure is the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` ("is a Firebase Auth
+  user-creation trigger in us-central1"), PROVEN pre-existing by stashing
+  the changes (`git stash -u`) and re-running at HEAD (identical failure).
+
+### Tests added
+- `test/tflite_web_compat_test.dart` (3): the VM selects a supported native
+  backend; the backend implements `TflitePlatform`;
+  `loadTfliteInterpreterFromAsset` returns `null` (never throws) for an
+  unloadable asset.
+- `test/app_links_config_test.dart`: the hosting `public` assertion updated
+  to `build/web`; NEW test asserting the `predeploy` hook stages
+  `scripts/prepare_hosting.js`.
+
+### ⚠️ Deploy (cannot be done in this sandbox -- no Firebase credentials)
+```
+flutter clean && flutter pub get && flutter build web --release
+firebase deploy --only hosting --project=jagspoor
+```
+`firebase deploy` here fails with "An unexpected error has occurred" because
+no `firebase login` session / `FIREBASE_TOKEN` / service-account JSON is
+available (configstore is empty). Run the two commands above in a
+credentialed environment. The `predeploy` hook stages `public/` into
+`build/web` automatically, so no manual copy is needed. Note the app uses
+hash-based routing (`/#/splash`), so no SPA catch-all rewrite is required.
+
+### Files
+- NEW: `lib/services/tflite/tflite_interface.dart`,
+  `lib/services/tflite/tflite_mobile.dart`,
+  `lib/services/tflite/tflite_web.dart`,
+  `lib/services/tflite/tflite_helper.dart`,
+  `scripts/prepare_hosting.js`, `test/tflite_web_compat_test.dart`.
+- MODIFIED: `lib/features/track/data/services/spoor_ai_service.dart`,
+  `firebase.json`, `test/app_links_config_test.dart`, `web/index.html`,
+  `web/manifest.json`, `AGENTS.md`.
+- No pubspec / Firestore rules / index / Storage / manifest changes
+  (`tflite_flutter` is still a dependency; the Android build is unchanged).
+
 ## Play Compliance: google_play users -> manage via play.google.com/store/account/subscriptions, never via website.
 
 **This is a permanent, load-bearing policy contract for this repo. Do NOT

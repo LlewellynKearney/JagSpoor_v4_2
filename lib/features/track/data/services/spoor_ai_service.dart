@@ -2,14 +2,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:jagspoor/services/tflite/tflite_helper.dart';
 import '../track_taxonomy.dart';
 
 export '../track_taxonomy.dart' show TrackCategory, SpoorPrediction;
 
 class SpoorAIService {
   static final SpoorAIService _instance = SpoorAIService._internal();
-  static Interpreter? _interpreter;
+  static TfliteInterpreter? _interpreter;
   static List<String> _labels = [];
   static bool _isMockMode = false;
 
@@ -39,9 +39,25 @@ class SpoorAIService {
               .toList();
 
       try {
-        _interpreter = await Interpreter.fromAsset(_modelPath);
-        _isMockMode = false;
-        debugPrint('✓ SpoorAI: Loaded real model. Labels: ${_labels.length}');
+        if (kIsWeb) {
+          // TensorFlow Lite has no web runtime (it depends on dart:ffi), so
+          // the browser always uses the deterministic heuristic scorer below.
+          debugPrint('ℹ SpoorAI: web build — using heuristic scorer.');
+          _isMockMode = true;
+          _interpreter = null;
+        } else {
+          _interpreter = await loadTfliteInterpreterFromAsset(_modelPath);
+          _isMockMode = _interpreter == null;
+          if (_isMockMode) {
+            debugPrint(
+              '⚠ SpoorAI: model unavailable, falling back to mock mode.',
+            );
+          } else {
+            debugPrint(
+              '✓ SpoorAI: Loaded real model. Labels: ${_labels.length}',
+            );
+          }
+        }
       } catch (e) {
         debugPrint(
           '⚠ SpoorAI failed to load model, falling back to mock mode: $e',

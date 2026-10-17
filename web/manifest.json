@@ -1,11 +1,11 @@
 {
-    "name": "jagspoor_v4_2",
-    "short_name": "jagspoor_v4_2",
+    "name": "JagSpoor",
+    "short_name": "JagSpoor",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#2E7D32",
+    "theme_color": "#2E7D32",
+    "description": "JagSpoor — South African hunting, outfitting and game management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -89,11 +89,24 @@ void main() {
     test('firebase.json rewrites /r/** to the landing page', () {
       final config = jsonDecode(_read('firebase.json')) as Map;
       final hosting = config['hosting'] as Map;
-      expect(hosting['public'], 'public');
+      // Hosting serves the Flutter web build; the tracked public/ assets are
+      // staged into build/web by the predeploy hook (scripts/prepare_hosting.js).
+      expect(hosting['public'], 'build/web');
       final rewrites = hosting['rewrites'] as List;
       final rule = rewrites.first as Map;
       expect(rule['source'], '/r/**');
       expect(rule['destination'], '/r/index.html');
+    });
+
+    test('firebase.json stages the tracked public/ assets before deploy', () {
+      final config = jsonDecode(_read('firebase.json')) as Map;
+      final hosting = config['hosting'] as Map;
+      final predeploy = (hosting['predeploy'] as List).cast<String>();
+      expect(
+        predeploy.any((c) => c.contains('scripts/prepare_hosting.js')),
+        isTrue,
+        reason: 'the .well-known + /r assets must be copied into build/web',
+      );
     });
 
     test('firebase.json serves the .well-known association files', () {
