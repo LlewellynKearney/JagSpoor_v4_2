@@ -32,6 +32,11 @@ class WebLayout {
   /// Maximum content width for the centred desktop container.
   static const double maxContentWidth = 1280;
 
+  /// Maximum width for a centred single-column form (auth / login). Keeps the
+  /// sign-in card a comfortable reading width in the browser instead of
+  /// stretching a text field edge-to-edge across a wide monitor.
+  static const double authContentWidth = 480;
+
   /// Web header height (the native platforms keep `kToolbarHeight`).
   static const double webHeaderHeight = 64;
 

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
+import '../../core/layout/web_layout.dart';
 import '../../services/incoming_referral_handler.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../authentication/services/auth_gate_service.dart';
@@ -719,7 +720,17 @@ class _AuthScreenState extends State<AuthScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
-            child: Form(
+            // On the web/desktop presentation the sign-in card is capped at a
+            // comfortable reading width and centred, instead of stretching the
+            // form edge-to-edge across a wide browser window. On a phone-width
+            // viewport the cap is wider than the viewport, so the mobile
+            // layout is unchanged.
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: WebLayout.authContentWidth,
+                ),
+                child: Form(
               key: _formKey,
               // Grouping the email + password fields in a single
               // `AutofillGroup` lets the platform treat them as one
@@ -1072,6 +1083,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   ],
                 ),
               ),
+              ),
+                ),
               ),
             ),
           ),

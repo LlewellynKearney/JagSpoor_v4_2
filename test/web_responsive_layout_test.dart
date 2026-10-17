@@ -160,7 +160,7 @@ void main() {
   });
 
   group('web background contrast veil', () {
-    testWidgets('desktop: a 65% black veil sits over the photo',
+    testWidgets('desktop: a 62% black veil sits over the photo',
         (tester) async {
       tester.view.physicalSize = const Size(1600, 1200);
       tester.view.devicePixelRatio = 1.0;
@@ -186,8 +186,8 @@ void main() {
           reason: 'Desktop must add the contrast veil layer.');
       final veil = stack.children[1] as Container;
       final color = veil.color!;
-      expect(color.a, closeTo(0.65, 0.01),
-          reason: 'The web contrast veil must be 65% black.');
+      expect(color.a, closeTo(0.62, 0.01),
+          reason: 'The web contrast veil must be 62% black.');
       expect(color.r, 0);
       expect(color.g, 0);
       expect(color.b, 0);
@@ -259,6 +259,106 @@ void main() {
         isFalse,
         reason: 'The marketing landing page must never be the entry point.',
       );
+    });
+
+    test('web/index.html links the favicon and apple-touch-icon', () {
+      final html = File('web/index.html').readAsStringSync();
+      expect(
+        RegExp(r'<link rel="icon"[^>]*href="favicon\.png"').hasMatch(html),
+        isTrue,
+        reason: 'The tab icon must point at the JagSpoor favicon.png.',
+      );
+      expect(
+        RegExp(r'<link rel="apple-touch-icon"[^>]*href="icons/Icon-192\.png"')
+            .hasMatch(html),
+        isTrue,
+        reason: 'The iOS touch icon must point at the official Icon-192.png.',
+      );
+    });
+  });
+
+  group('official JagSpoor web icons', () {
+    test('web/manifest.json uses the JagSpoor name + brand colors', () {
+      final manifest =
+          File('web/manifest.json').readAsStringSync().replaceAll('\r\n', '\n');
+      expect(manifest.contains('"name": "JagSpoor"'), isTrue);
+      expect(manifest.contains('"short_name": "JagSpoor"'), isTrue);
+      expect(manifest.contains('"theme_color": "#2d2a1f"'), isTrue,
+          reason: 'theme_color must be the JagSpoor charcoal.');
+      expect(manifest.contains('"background_color": "#f5efe6"'), isTrue,
+          reason: 'background_color must be the JagSpoor cream.');
+      // All four icon entries point at the official files.
+      for (final icon in [
+        'icons/Icon-192.png',
+        'icons/Icon-512.png',
+        'icons/Icon-maskable-192.png',
+        'icons/Icon-maskable-512.png',
+      ]) {
+        expect(manifest.contains(icon), isTrue,
+            reason: 'manifest.json must reference $icon');
+      }
+    });
+
+    test('every web icon file exists and is a decodable PNG', () {
+      const paths = [
+        'web/favicon.png',
+        'web/icons/Icon-192.png',
+        'web/icons/Icon-512.png',
+        'web/icons/Icon-maskable-192.png',
+        'web/icons/Icon-maskable-512.png',
+      ];
+      for (final path in paths) {
+        final file = File(path);
+        expect(file.existsSync(), isTrue, reason: '$path must exist.');
+        final bytes = file.readAsBytesSync();
+        // PNG magic number.
+        expect(
+          bytes.length > 8 &&
+              bytes[0] == 0x89 &&
+              bytes[1] == 0x50 &&
+              bytes[2] == 0x4E &&
+              bytes[3] == 0x47,
+          isTrue,
+          reason: '$path must be a valid PNG.',
+        );
+        // Not the 917-byte default Flutter favicon (the official badge is
+        // larger / richer).
+        expect(bytes.length, greaterThan(1000),
+            reason: '$path must be the official JagSpoor badge, not the '
+                'Flutter template icon.');
+      }
+    });
+
+    test('the 192/512 icons carry the correct declared pixel sizes', () {
+      // PNG IHDR width/height live at bytes 16..24 (big-endian).
+      int dim(String path, int offset) {
+        final b = File(path).readAsBytesSync();
+        return (b[offset] << 24) | (b[offset + 1] << 16) |
+            (b[offset + 2] << 8) | b[offset + 3];
+      }
+
+      expect(dim('web/icons/Icon-192.png', 16), 192);
+      expect(dim('web/icons/Icon-192.png', 20), 192);
+      expect(dim('web/icons/Icon-512.png', 16), 512);
+      expect(dim('web/icons/Icon-512.png', 20), 512);
+      expect(dim('web/icons/Icon-maskable-192.png', 16), 192);
+      expect(dim('web/icons/Icon-maskable-512.png', 16), 512);
+    });
+  });
+
+  group('centred auth form', () {
+    test('WebLayout exposes a 480px auth content width', () {
+      expect(WebLayout.authContentWidth, 480);
+    });
+
+    test('the auth screen wraps the form in a centred 480px ConstrainedBox',
+        () {
+      final src =
+          File('lib/features/auth/auth_screen.dart').readAsStringSync();
+      expect(src.contains('WebLayout.authContentWidth'), isTrue,
+          reason: 'The auth card must be capped at the shared auth width.');
+      expect(src.contains('maxWidth: WebLayout.authContentWidth'), isTrue,
+          reason: 'The auth form must be wrapped in a ConstrainedBox.');
     });
   });
 }

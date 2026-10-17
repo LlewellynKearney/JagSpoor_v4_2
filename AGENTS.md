@@ -1,5 +1,97 @@
 # JagSpoor -- Agent Memory
 
+## Web build: official tab icon + real 2-column desktop dashboard (added 2026-10-17)
+
+### Problem 1 -- default Flutter tab icon
+`web/favicon.png` + `web/icons/Icon-{192,512}.png` +
+`web/icons/Icon-maskable-{192,512}.png` still shipped the Flutter template
+icon (917-byte blue square), so the browser tab showed the Flutter logo
+instead of the official JagSpoor badge.
+
+**Fix** (no uploaded file at `/tmp`, so the official logo asset was used):
+- Generated all five icons from the tracked official badge
+  `assets/app logo/logo1.png` (500x500 RGBA, transparent surround). The
+  generator alpha-trims the logo, squares it, and resamples with LANCZOS:
+  - `web/favicon.png` 48x48 (4% padding, transparent)
+  - `web/icons/Icon-192.png` 192x192 / `Icon-512.png` 512x512 (6% padding)
+  - `web/icons/Icon-maskable-192.png` 192x192 / `-512.png` 512x512
+    (18% safe-zone padding on a solid cream `#f5efe6` background, so the
+    Android mask never clips the badge)
+- `web/manifest.json`: `theme_color` `#2E7D32` -> **`#2d2a1f`**,
+  `background_color` `#2E7D32` -> **`#f5efe6`**; name/short_name already
+  "JagSpoor"; the four icon entries already point at the official files.
+- `web/index.html` already carried `<link rel="icon" href="favicon.png">`
+  and `<link rel="apple-touch-icon" href="icons/Icon-192.png">` (kept).
+
+RULE: the web icons MUST be generated from `assets/app logo/logo1.png`.
+Never let `flutter create` / a template regress them to the default blue
+Flutter icon. `test/web_responsive_layout_test.dart` asserts every icon is a
+valid PNG >1000 bytes with the correct IHDR dimensions.
+
+### Problem 2 -- desktop layout still single-column
+Commit `c792875` added the `WebLayout` contract but the *reported* symptom was
+that `/#/hunter_dashboard` still rendered full-width single-column cards in the
+browser. The desktop logic DID exist at HEAD (2-column `_twoColumnGrid` for the
+TACTICAL MODULES folders and the MORE MODULES cards, centred 1280px cap), but
+the body was a single `ListView` whose desktop branch wrapped the content in
+the centred box *inside* the list. This phase restructures it to the exact
+spec so the behaviour is unambiguous and testable:
+
+`lib/features/hunter_mode/hunter_dashboard.dart`:
+- Body stays a `LayoutBuilder`; `isDesktop = WebLayout.isDesktopWidth(
+  constraints.maxWidth)` (strictly `> 800`).
+- `if (!isDesktop)` -> the ORIGINAL mobile `ListView` (16px gutters), so the
+  phone layout is byte-for-byte unchanged.
+- Desktop -> `SingleChildScrollView` -> `Center` -> `ConstrainedBox(
+  maxWidth: WebLayout.maxContentWidth /* 1280 */)` -> `Column` with the full
+  content list. 24px gutters.
+- The 2-column module grids are unchanged: `_twoColumnGrid` pairs the three
+  TACTICAL MODULES folders into 2 rows (guns | market place; tools | empty)
+  and pairs the MORE MODULES cards 2-per-row.
+
+`lib/core/layout/web_layout.dart`:
+- NEW `authContentWidth = 480` constant.
+
+`lib/features/auth/auth_screen.dart`:
+- The sign-in form is now wrapped in `Center > ConstrainedBox(maxWidth:
+  WebLayout.authContentWidth)` so the card is a comfortable 480px reading
+  column in the browser instead of stretching edge-to-edge. On a phone-width
+  viewport the cap is wider than the viewport, so mobile is unchanged.
+
+`lib/features/hunter_mode/widgets/hunter_scaffold.dart`:
+- `webContrastOverlay()` changed from 65% to **62% black** (`Colors.black
+  .withValues(alpha: 0.62)`) per the spec; it is inserted between the photo
+  and the mode scrim on web/desktop widths only (mobile keeps the 3-layer
+  stack).
+
+### Verification (real toolchain, in-sandbox)
+- Flutter **3.44.9** (Dart 3.12.2) extracted to `$HOME/sdk/flutter`
+  (`/opt` is not writable).
+- `flutter build web --release` -> **SUCCESS**. `build/web/index.html`
+  contains the favicon link + `flutter_bootstrap.js` and NO marketing text;
+  `build/web/icons/` exists with the four official icons (correct IHDR sizes);
+  `build/web/manifest.json` carries `#2d2a1f` / `#f5efe6`.
+- A throwaway golden of `HunterDashboard` at 1600px confirmed the 2-column
+  layout: two card columns (~168-784 and ~820-1432) with a centre gap and the
+  content capped at 1280. (The golden + its temp test were deleted after the
+  check; the permanent contract lives in `test/web_responsive_layout_test.dart`.)
+- `flutter analyze lib/ test/`: **0 errors, 0 warnings** (322 pre-existing
+  infos, unchanged baseline).
+- `test/web_responsive_layout_test.dart` extended 14 -> 20 tests: favicon +
+  apple-touch-icon links, manifest name/colors/icons, PNG validity + IHDR
+  sizes for all five icon files, and the auth 480px ConstrainedBox contract.
+
+### Files
+- MODIFIED: `web/favicon.png`, `web/icons/Icon-192.png`,
+  `web/icons/Icon-512.png`, `web/icons/Icon-maskable-192.png`,
+  `web/icons/Icon-maskable-512.png` (regenerated from the official logo),
+  `web/manifest.json`, `lib/core/layout/web_layout.dart`,
+  `lib/features/auth/auth_screen.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/hunter_mode/widgets/hunter_scaffold.dart`,
+  `test/web_responsive_layout_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / Android / iOS changes.
+
 ## Hosting: prepare_hosting.js must NEVER overwrite the Flutter index.html
 
 `scripts/prepare_hosting.js` (run by the `hosting.predeploy` hook in

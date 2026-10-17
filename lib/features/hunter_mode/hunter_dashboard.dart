@@ -708,31 +708,41 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 const CopyrightFooter(),
               ];
 
-              return ListView(
+              // Mobile keeps the original single-column ListView.
+              if (!isDesktop) {
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    topInset,
+                    16,
+                    16 + MediaQuery.of(context).padding.bottom,
+                  ),
+                  children: content,
+                );
+              }
+
+              // Desktop/web presentation: a centred, max-width (1280) column
+              // with 24px gutters so the browser never stretches the mobile
+              // layout edge-to-edge across a wide monitor. The 2-column
+              // module grids above render inside this Column.
+              return SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
-                  isDesktop ? 24 : 16,
+                  24,
                   topInset,
-                  isDesktop ? 24 : 16,
+                  24,
                   16 + MediaQuery.of(context).padding.bottom,
                 ),
-                children: [
-                  if (isDesktop)
-                    // Centre + cap the content width so the desktop layout
-                    // never stretches edge-to-edge across a wide monitor.
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: WebLayout.maxContentWidth,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: content,
-                        ),
-                      ),
-                    )
-                  else
-                    ...content,
-                ],
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: WebLayout.maxContentWidth,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: content,
+                    ),
+                  ),
+                ),
               );
             },
           ),

@@ -77,11 +77,11 @@ class HunterAcaciaBackground {
   /// Desktop/web contrast veil.
   ///
   /// On a large monitor the acacia photo is stretched across the full viewport
-  /// and its bright regions wash out the card text. A flat 65% black layer
+  /// and its bright regions wash out the card text. A flat 62% black layer
   /// (per the web design spec) sits between the photo and the mode scrim on
   /// web/desktop widths only, so the mobile presentation is untouched.
   static Widget webContrastOverlay() => Container(
-        color: Colors.black.withValues(alpha: 0.65),
+        color: Colors.black.withValues(alpha: 0.62),
       );
 
   /// The responsive background stack: photo + contrast veil (web) + scrim +
