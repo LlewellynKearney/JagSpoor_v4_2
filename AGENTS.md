@@ -1,5 +1,23 @@
 # JagSpoor -- Agent Memory
 
+## Hosting: prepare_hosting.js must NEVER overwrite the Flutter index.html
+
+`scripts/prepare_hosting.js` (run by the `hosting.predeploy` hook in
+`firebase.json`) stages the tracked `public/` assets into `build/web` before a
+Hosting deploy. It MUST NOT copy the whole `public/` tree: a marketing
+`public/index.html` would clobber Flutter's generated entry point and the site
+would serve the landing page instead of the app (`/#/splash`).
+
+Two independent guards, both load-bearing:
+1. An explicit allow-list (`['.well-known', 'r', 'privacy',
+   'delete-account', '404.html']`) -- `public/index.html` is never staged.
+2. The recursive copy refuses any `dest` equal to `build/web/index.html`
+   ("SKIPPING overwrite of Flutter index.html").
+
+`hosting.public` is `build/web`; the `/r/**` -> `/r/index.html` rewrite and
+the `/.well-known` association files are preserved. `test/app_links_config_test.dart`
+has a regression guard asserting both properties.
+
 ## Phase -- Flutter web build + Firebase Hosting deploy support (added 2026-10-17)
 
 ### Symptom

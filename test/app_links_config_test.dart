@@ -109,6 +109,28 @@ void main() {
       );
     });
 
+    test('prepare_hosting.js can never overwrite the Flutter index.html', () {
+      // REGRESSION GUARD: a previous version copied the whole public/ tree
+      // into build/web, so a marketing public/index.html replaced the Flutter
+      // entry point (the site served the landing page instead of /#/splash).
+      final script = _read('scripts/prepare_hosting.js');
+      // Explicit allow-list of auxiliary paths -- public/index.html is never
+      // part of it, so it can never reach build/web.
+      expect(script, contains("'.well-known'"));
+      expect(script, contains("'r'"));
+      expect(script, contains("'privacy'"));
+      expect(script, contains("'delete-account'"));
+      // Second layer: the recursive copy refuses to clobber the Flutter entry.
+      expect(script, contains("buildDir, 'index.html'"));
+      expect(script, contains('SKIPPING overwrite of Flutter index.html'));
+      // The old blanket "copy all of public/" call must be gone.
+      expect(
+        RegExp(r'copyDir\(\s*publicDir\s*,\s*webDir\s*\)').hasMatch(script),
+        isFalse,
+        reason: 'the whole public/ tree must never be copied over build/web',
+      );
+    });
+
     test('firebase.json serves the .well-known association files', () {
       final config = jsonDecode(_read('firebase.json')) as Map;
       final hosting = config['hosting'] as Map;
