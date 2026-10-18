@@ -1,5 +1,49 @@
 # JagSpoor -- Agent Memory
 
+## Profile: Website link next to Facebook link (added 2026-10-18)
+
+Branch `feat/profile-website-link`, merged to `main` as `3081fb2`
+(fast-forward from `2ab2c9c`).
+
+Added a "Visit JagSpoor Website" row (`https://jag-spoor.co.za`) next to the
+existing Facebook row on BOTH profile surfaces:
+- `lib/features/hunter_mode/hunter_profile_screen.dart` (ACCOUNT SECURITY
+  section, directly beneath `FacebookLinkTile`).
+- `lib/features/outfitter_mode/outfitter_dashboard.dart` (settings bottom
+  sheet, beneath `FacebookLinkTile`).
+
+### Implementation
+- NEW `lib/features/shared/widgets/website_link_tile.dart` -- the reusable
+  `WebsiteLinkTile` (`Icons.language` + `open_in_new`), a near-mirror of
+  `FacebookLinkTile` (same ListTile shape + theme palette: gold `0xFFD4AF37`
+  dark / brown `0xFF795548` light). The URL lives ONCE as
+  `WebsiteLinkTile.websiteUrl`; the screens pass only a title/subtitle, so
+  there is no per-screen hardcoded URL.
+- `onTap` uses `launchUrl(uri, mode: LaunchMode.externalApplication)` -- the
+  SAME code path on web and Android (no `kIsWeb` branch): a new tab in the
+  browser, the external browser app on Android. A failed hand-off shows a
+  non-blocking snackbar.
+- `url_launcher` was already a dependency (`^6.3.0`); no pubspec change.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**.
+- `flutter test` (full suite): **2231 passed, 1 failed** -- the documented
+  pre-existing `trial_onboarding_functions_contract_test`. NEW
+  `test/website_link_tile_test.dart` (5 tests): URL constant, render, custom
+  title/subtitle, both-call-site presence, and no-hardcoded-URL-in-screen
+  contract.
+- `flutter build web --release`: **SUCCESS**; `build/web/main.dart.js`
+  contains `jag-spoor.co.za` (12 hits) and `Visit JagSpoor Website`.
+- `grep jag-spoor.co.za lib/` shows it in `hunter_profile_screen.dart` +
+  `outfitter_dashboard.dart` (subtitle) and the shared tile (canonical URL).
+
+### Files
+- NEW: `lib/features/shared/widgets/website_link_tile.dart`,
+  `test/website_link_tile_test.dart`.
+- MODIFIED: `lib/features/hunter_mode/hunter_profile_screen.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## Web: all Hunter + Outfitter screens adapted for web (desktop + mobile) (added 2026-10-18)
 
 Branch `fix/web-all-screens-hunter-outfitter-final`, merged to `main` as
