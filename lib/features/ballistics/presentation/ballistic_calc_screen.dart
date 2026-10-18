@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
+import '../../../core/layout/web_layout.dart';
 import '../../ballistics/data/ballistics_engine.dart';
 
 /// JagspoorTheme provides dynamic theme colors that can be overridden
@@ -327,7 +328,10 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: WebLayout.webResponsive(
+          maxWidth: WebLayout.webFormMaxWidth,
+          topPadding: true,
+          child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -680,6 +684,7 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
               const CopyrightFooter(),
             ],
           ),
+        ),
         ),
       ),
     );

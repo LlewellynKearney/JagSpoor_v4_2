@@ -361,4 +361,57 @@ void main() {
           reason: 'The auth form must be wrapped in a ConstrainedBox.');
     });
   });
+
+  group('web-only content caps (kIsWeb-gated)', () {
+    test('WebLayout exposes the web dashboard/table/form caps', () {
+      expect(WebLayout.webDashboardMaxWidth, 1000);
+      expect(WebLayout.webTableMaxWidth, 1200);
+      expect(WebLayout.webFormMaxWidth, 800);
+    });
+
+    test('webResponsive is a no-op off the web (returns the child verbatim)',
+        () {
+      // kIsWeb is a compile-time constant that is false on the VM test host,
+      // so the helper must return the EXACT same widget instance here.
+      const child = SizedBox(key: Key('probe'));
+      final wrapped = WebLayout.webResponsive(child: child);
+      expect(identical(wrapped, child), isTrue,
+          reason: 'Off-web the helper must not wrap (native UI untouched).');
+    });
+
+    test('the Hunter + Outfitter scaffolds cap content on the web', () {
+      final hunter =
+          File('lib/features/hunter_mode/widgets/hunter_scaffold.dart')
+              .readAsStringSync();
+      expect(hunter.contains('WebLayout.webResponsive'), isTrue);
+      expect(hunter.contains('webMaxWidth'), isTrue);
+
+      final outfitter =
+          File('lib/features/outfitter_mode/widgets/outfitter_scaffold.dart')
+              .readAsStringSync();
+      expect(outfitter.contains('WebLayout.webResponsive'), isTrue);
+      expect(outfitter.contains('webMaxWidth'), isTrue);
+    });
+
+    test('the spoor identifier camera preview opts out of the web cap', () {
+      final src = File('lib/features/hunter_mode/spoor_identifier_screen.dart')
+          .readAsStringSync();
+      expect(src.contains('webMaxWidth: null'), isTrue,
+          reason: 'The live camera preview must stay full-bleed on the web.');
+    });
+
+    test('the hunter dashboard uses a web-aware 1000px cap', () {
+      final src =
+          File('lib/features/hunter_mode/hunter_dashboard.dart').readAsStringSync();
+      expect(src.contains('WebLayout.webDashboardMaxWidth'), isTrue);
+    });
+
+    test('the subscription screen lays the two plans side-by-side on desktop '
+        'web only', () {
+      final src = File('lib/features/subscription/subscription_screen.dart')
+          .readAsStringSync();
+      expect(src.contains('kIsWeb && !WebLayout.isMobileWebWidth'), isTrue,
+          reason: 'The side-by-side row must be gated to the desktop web.');
+    });
+  });
 }
