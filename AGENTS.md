@@ -1,5 +1,88 @@
 # JagSpoor -- Agent Memory
 
+## Web: all Hunter + Outfitter screens adapted for web (desktop + mobile) (added 2026-10-18)
+
+Branch `fix/web-all-screens-hunter-outfitter-final`, merged to `main` as
+`5eb3838` (fast-forward from `91fd562`). History is linear:
+`main(91fd562)` -> `518b9e6` (payfast-final-pricing-logout-favicon) ->
+`f5bb459`/`abb4c4f` (subscription monthly+yearly + Google Sign-In removed) ->
+`ee4a65b`/`5eb3838` (this web-responsiveness work). Both `fix/*` branches
+are ancestors of `main`; no conflicts arose (fast-forward).
+
+### The core lever: `kIsWeb` is a COMPILE-TIME constant
+`kIsWeb` is `false` on the VM test host (all 2220+ tests) and on
+Android/iOS. Every web-only layout change in this phase is gated behind
+`kIsWeb`, so the **native UI is byte-for-byte untouched** and the locked
+contract tests (which run on the VM) still pass unchanged. This is the safe
+way to add browser presentation without risking Android or the test suite.
+
+### `WebLayout` (`lib/core/layout/web_layout.dart`)
+- Kept the width-based `responsive()` (locked by `web_responsive_layout_test`
+  + `subscription_web_billing_test` at 800px) and the 1280
+  `maxContentWidth` / 800 breakpoint / 64 header constants.
+- NEW `webResponsive({child, maxWidth=1100, horizontalPadding=24,
+  topPadding=false})` -- the **strict web-only** container: `!kIsWeb` returns
+  the child verbatim (identical instance); on a browser it centres the child
+  in a max-width column with 24px gutters, but a **mobile-web** viewport
+  (`< mobileWebBreakpoint`) ALSO returns the child verbatim so a phone-sized
+  browser keeps the exact native mobile layout.
+- NEW `mobileWebBreakpoint = 600`, `isMobileWebWidth(width)`.
+- NEW caps: `webDashboardMaxWidth = 1000`, `webTableMaxWidth = 1200`,
+  `webFormMaxWidth = 800`.
+
+### Scaffold-level caps (covers the whole portal)
+- `HunterScaffold` gained `webMaxWidth` (default 1100) applied to the
+  **content layer only** (the acacia photo stays full-bleed) via
+  `WebLayout.webResponsive`. Covers ~32 hunter screens at once. The live
+  camera screen (`spoor_identifier_screen.dart`) opts out with
+  `webMaxWidth: null`.
+- `OutfitterBushveldBackground.stack` gained `webMaxWidth` (default 1100)
+  applied to its content child (photo + veil + scrim layers untouched), which
+  covers all 7 outfitter screens + `OutfitterScaffold` (which forwards its
+  own `webMaxWidth`). Full-bleed surfaces opt out with `webMaxWidth: null`.
+
+### Dashboard / subscription specifics
+- Hunter dashboard: `_desktopGrid(context, items)` -- 3 columns on a **wide
+  browser** (`kIsWeb && width > 900`), else the existing `_twoColumnGrid`
+  (2 columns) so the VM's locked 2-per-row contract is unchanged. The
+  desktop cap is `kIsWeb ? 1000 : 1280` (1280 is test-locked).
+- Outfitter dashboard: cap `kIsWeb ? 1000 : 1280`.
+- Subscription screen: the Monthly + Yearly plan cards sit **side-by-side**
+  on desktop web (`kIsWeb && !isMobileWebWidth`) and stay stacked on
+  mobile-web + native. Existing `WebLayout.responsive(maxWidth: 800)` on the
+  checkout body is unchanged.
+- Ballistic calculator: scrollable wrapped in `WebLayout.webResponsive(
+  webFormMaxWidth)`.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing
+  info-level issues, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2226 passed,
+  1 failed** -- the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` ("is a Firebase Auth
+  user-creation trigger in us-central1"). No new failures.
+- `flutter build web --release`: **SUCCESS**. `build/web/index.html` has NO
+  `google-signin-client_id` meta and still carries `flutter_bootstrap.js`;
+  `build/web/main.dart.js` has **0** `google_sign_in` / `googleSignIn` /
+  `clientId` matches and contains all four prices (34.99, 349.99, 299.99,
+  2999.99).
+- Env: the sandbox was reset -- Flutter **3.44.9** was re-cloned to
+  `$HOME/sdk/flutter` (`apt-get install unzip xz-utils libsqlite3-dev`
+  first) + the `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/
+  libsqlite3.so.0` symlink for the sqflite-FFI suites.
+
+### Files
+- MODIFIED: `lib/core/layout/web_layout.dart`,
+  `lib/features/hunter_mode/widgets/hunter_scaffold.dart`,
+  `lib/features/hunter_mode/spoor_identifier_screen.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/ballistics/presentation/ballistic_calc_screen.dart`,
+  `test/web_responsive_layout_test.dart` (+7 web-only cap tests), `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## Subscription: Monthly+Yearly plan cards + Google Sign-In removed on ALL platforms (added 2026-10-18)
 
 Branch `fix/subscription-yearly-toggle-disable-google` (base 518b9e6).
