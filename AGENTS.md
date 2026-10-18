@@ -1,5 +1,150 @@
 # JagSpoor -- Agent Memory
 
+## Web SCAN LICENSE fixed: ML Kit is Android/iOS only, browser now decodes via bundled ZXing (added 2026-10-18)
+
+Branch `fix/web-scanner-pdf417` (base `main` @ `8d5d29e`).
+
+### Symptom
+On `jagspoor.web.app/#/scan_license` the camera opened but barcode detection
+failed with an "Unsupported operation" error. The licence form was never
+populated on the web.
+
+### Root cause
+`mobile_scanner` backs its decode pipeline with ML Kit / barhopper, which
+exists only on Android and iOS. `MobileScannerController.analyzeImage()` —
+the static-image/gallery decode path — explicitly throws `UnsupportedError`
+in a browser, and the live viewfinder has no ML Kit engine to feed. So both
+the live scan and the gallery fallback were unusable on web, and the throw
+surfaced to the user as "Unsupported operation".
+
+NOTE: `mobile_scanner` 6.0.11 DOES ship a working **web camera**
+implementation — it loads ZXing (`@zxing/library`) and decodes live frames
+with `BrowserMultiFormatReader`. It is only the Dart-side `analyzeImage()`
+static-image path that is unsupported on web. That is why the fix reuses the
+SAME ZXing library the plugin already fetches, rather than adding a new
+scanner dependency.
+
+### Fix 1 — conditional browser decoder (3 NEW files)
+- `lib/core/services/web_barcode_service.dart` — the platform-neutral façade.
+  Conditional import
+  `web_barcode_service_stub.dart if (dart.library.js_interop) web_barcode_service_web.dart`
+  (the same pattern `payfast_form.dart` uses) keeps `dart:js_interop` /
+  `package:web` out of the native build entirely. Exposes
+  `isWebBarcodeDecodingAvailable` and
+  `decodePdf417FromImageUrl(String imageUrl)`.
+- `lib/core/services/web_barcode_service_stub.dart` — native stub:
+  availability `false`, decode always `null`. Never throws, so a mis-wired
+  web-only call degrades to a message instead of crashing.
+- `lib/core/services/web_barcode_service_web.dart` — the real decoder.
+  Builds a `BrowserMultiFormatReader` with
+  `DecodeHintType.POSSIBLE_FORMATS = [BarcodeFormat.PDF_417]` (10) +
+  `TRY_HARDER` (3) — the symbology on SA licences — then calls
+  `decodeFromImageUrl`. ZXing wants hints in a real JS `Map`, so one is built
+  through the global `Map` constructor via `callAsConstructor`. The decoded
+  text is read from the `text` field with a `getText()` fallback. Returns
+  `null` (never throws) for a missing symbol, a failed load, or any interop
+  error.
+  - **Script loading**: `vendor/zxing.min.js` is tried FIRST (the vendored
+    copy is bundled into the app origin, so an offline or CDN-blocked browser
+    still decodes), with the unpkg CDN as a fallback. The `<script>` tag is
+    de-duplicated via a `data-jagspoor-src` attribute so concurrent calls
+    cannot double-inject, and the load is bounded by a 20s timeout so the UI
+    never hangs.
+
+### Fix 2 — `web/vendor/zxing.min.js` (NEW, 336 KB)
+Vendored copy of `@zxing/library@0.21.3` (sha256
+`d7cc8f69dd70bdcf3ac00c9ae572bf2acb9f4132ba379c72df842e4db918652d`). Flutter
+copies `web/` verbatim into `build/web/`, so the asset ships automatically and
+`scripts/prepare_hosting.js` needs no allow-list change.
+
+### Fix 3 — scanner screen web branch
+`lib/features/hunter_mode/license_scanner_screen.dart`:
+- New `forceWebMode` ctor flag (default `false`); `_webMode` is
+  `forceWebMode || kIsWeb`. The flag exists because widget tests run on the
+  VM where `kIsWeb` is false, so the fallback is otherwise unreachable from a
+  test.
+- `build()` returns `_buildWebFallback(theme)` FIRST when `_webMode` — the
+  native `MobileScanner` pipeline is never mounted in a browser. That is the
+  actual fix for the reported error.
+- `initState` skips `_checkCameraPermissions()` on web: the browser prompts
+  for camera access itself and the fallback opens no stream at all, so
+  running the native permission dance would only dead-end on a misleading
+  "Camera Permission Required" screen.
+- `_buildWebFallback` renders: a phone icon + "Auto-scan is only available on
+  Android", two numbered what-you-can-do-instead rows, a primary
+  **SELECT FROM GALLERY** button, a secondary **ENTER LICENSE MANUALLY**
+  button, the amber status line, and an Android-app tip. Keyed
+  `webScannerSelectFromGalleryButton` / `webScannerManualEntryButton` /
+  `webScannerStatusMessage`.
+- `_scanFromGalleryWeb()` — the browser equivalent of `_scanFromGallery`.
+  Picks an image with `image_picker` (which returns a `blob:` object URL on
+  web, loadable directly) and decodes it through
+  `decodePdf417FromImageUrl`. A successful decode is fed to the SAME
+  `LicenseScanProcessor.parseLicense` the native path uses, so the returned
+  map and every downstream form field are identical across platforms.
+  Shows a spinner ("READING PHOTO…") while decoding and a single
+  "No PDF417 barcode found in that image…" message on failure.
+- **Manual entry** pops the scanner (`Navigator.maybePop`) rather than pushing
+  a new form: every entry point opens the scanner FROM
+  `AddFirearmManualForm` (`/scan_license` from
+  `add_firearm_manual_form.dart:109`, and the `autoScan: true` action in
+  `firearm_safe_screen.dart:319`), so popping lands the user directly on the
+  typeable fields.
+
+### Fix 4 — `web/index.html`
+The meta viewport / `flutter_bootstrap.js` setup is unchanged; no camera
+permission is blocked there (the fallback opens no stream anyway).
+
+### Tests (`test/license_scanner_web_fallback_test.dart`, NEW, 10 tests)
+- `WebBarcodeService contract` (3): availability is `false` on the VM (the
+  stub is selected); the stub returns `null` and never throws for a blob URL;
+  same for an empty URL.
+- `LicenseScannerScreen web fallback` (5): the panel renders; **the native
+  `MobileScanner` is never mounted on web** (the direct regression guard);
+  the permission method channel is called **0 times** and the screen never
+  shows "Camera Permission Required" or a spinner; manual entry pops back to
+  the form; the gallery button stays interactive with no error banner.
+- `Web fallback decode wiring` (1): the exact 19-field payload the bundled
+  ZXing decoder returned for a real SA licence parses through
+  `LicenseScanProcessor.parseLicense` into the expected fields — locking the
+  decode→parse chain end to end.
+- `Native flow unchanged` (1): the non-web build still reaches the ML Kit
+  surface (live view or gallery fallback) and never renders the web panel.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (322 pre-existing
+  info-level issues, unchanged baseline). All 5 changed/new files:
+  "No issues found".
+- `flutter test` (full suite): **2266 passed, 1 failed** — the DOCUMENTED
+  pre-existing `trial_onboarding_functions_contract_test` (v1-vs-v2 auth
+  trigger), reproduced identically with the changes stashed.
+- `flutter build web --release`: **SUCCESS**. `build/web/vendor/zxing.min.js`
+  is present; `build/web/main.dart.js` carries
+  `jagspoor-zxing-barcode-reader`, `decodeFromImageUrl`,
+  `POSSIBLE_FORMATS`, `vendor/zxing.min.js`,
+  `Auto-scan is only available on Android`, `SELECT FROM GALLERY` and the two
+  `webScanner*` keys.
+- **The js_interop decode path was proven in a real browser**, not just
+  compiled: a minimal Dart web entry calling the actual
+  `web_barcode_service_web.dart` was compiled with `dart compile js` and run
+  in headless Chromium against a generated PDF417 image. It decoded
+  `LICENCE|9001015009087|X|JOHN SMITH|13|2024-01-15|2029-01-14|OB14468|Rifle|HOWA|1500|6MM MUSGRAVE|...|HOWA|L123456`.
+  The VM tests only exercise the stub, so this is the only way to verify the
+  web branch. (Scaffolding lived in `/tmp` and was deleted.)
+- Env: Flutter 3.44.9 at `$HOME/sdk/flutter`, `LD_LIBRARY_PATH=$HOME/libs`
+  with the `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites.
+
+### Files
+- NEW: `lib/core/services/web_barcode_service.dart`,
+  `lib/core/services/web_barcode_service_stub.dart`,
+  `lib/core/services/web_barcode_service_web.dart`,
+  `web/vendor/zxing.min.js`,
+  `test/license_scanner_web_fallback_test.dart`.
+- MODIFIED: `lib/features/hunter_mode/license_scanner_screen.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes (no new
+  dependency — the decoder is the library `mobile_scanner` already loads on
+  web). Android / iOS keep the ML Kit live-scan flow unchanged.
+
 ## Web NEVER shows "MANAGE IN GOOGLE PLAY" + splash logo shrunk to 200px (added 2026-10-18)
 
 Branch `fix/web-play-button-always-hide` (base `main` @ `8bcbf76`).
