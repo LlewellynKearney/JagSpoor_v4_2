@@ -21,7 +21,7 @@ import 'package:jagspoor/features/subscription/subscription_screen.dart';
 ///   3. the subscription checkout had no PayFast trust footer.
 void main() {
   group('splash logo is bounded (never fills the viewport)', () {
-    testWidgets('the logo is capped at 340px and 40% of the viewport height',
+    testWidgets('the logo is capped at 200px and 22% of the viewport height',
         (tester) async {
       // A wide, short viewport — the exact shape that used to balloon the
       // logo (width * 0.6 drove BOTH dimensions).
@@ -31,7 +31,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: Center(child: SplashLogo()))),
+        const MaterialApp(home: Scaffold(body: SplashLogo())),
       );
       await tester.pump();
 
@@ -45,7 +45,7 @@ void main() {
       expect(image.fit, BoxFit.contain);
 
       // The logo must sit inside a ConstrainedBox whose maxWidth is the
-      // 280/340 cap (NOT the raw viewport width) and whose maxHeight is 40%
+      // 160/200 cap (NOT the raw viewport width) and whose maxHeight is 22%
       // of the viewport height.
       final box = tester.widget<ConstrainedBox>(
         find.ancestor(
@@ -54,13 +54,29 @@ void main() {
         ).first,
       );
       final constraints = box.constraints;
-      expect(constraints.maxWidth, lessThanOrEqualTo(340));
-      expect(constraints.maxHeight, closeTo(900 * 0.4, 1.0));
+      expect(constraints.maxWidth, lessThanOrEqualTo(200));
+      expect(constraints.maxHeight, closeTo(900 * 0.22, 1.0));
 
       // And the rendered logo must be far smaller than the 1600px viewport.
       final size = tester.getSize(find.byType(Image));
-      expect(size.width, lessThanOrEqualTo(340));
-      expect(size.width, lessThan(1600 * 0.5));
+      expect(size.width, lessThanOrEqualTo(200));
+      expect(size.width, lessThan(1600 * 0.2));
+
+      // It is centred and padded.
+      expect(
+        find.ancestor(
+          of: find.byType(Image),
+          matching: find.byType(Center),
+        ),
+        findsWidgets,
+      );
+      final padding = tester.widget<Padding>(
+        find.ancestor(
+          of: find.byType(Image),
+          matching: find.byType(Padding),
+        ).first,
+      );
+      expect(padding.padding, const EdgeInsets.all(SplashLogo.padding));
     });
 
     test('the splash body is centred + scroll-safe and uses the bounded logo',
@@ -224,6 +240,112 @@ void main() {
 
       expect(find.byType(PayFastSecureFooter), findsOneWidget);
       expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+    });
+
+    // The exact reported scenario: a TRIAL user on the web taps Subscriptions.
+    // The red "MANAGE IN GOOGLE PLAY" button must never appear — not for the
+    // Hunter path, not for the Outfitter path.
+    testWidgets('a WEB HUNTER trial shows no Play button, PayFast CTA + footer',
+        (tester) async {
+      BillingService.usesPayFastForTesting = true;
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'subscriptionTier': 'hunter',
+        'subscriptionTrialEndsAt':
+            DateTime.now().add(const Duration(days: 20)),
+      });
+      await pumpScreen(tester);
+      await scrollToBottom(tester);
+
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.byType(PayFastSecureFooter), findsOneWidget);
+    });
+
+    testWidgets('a WEB OUTFITTER trial shows no Play button, PayFast CTA + '
+        'footer', (tester) async {
+      BillingService.usesPayFastForTesting = true;
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'subscriptionTier': 'outfitter',
+        'subscriptionTrialEndsAt':
+            DateTime.now().add(const Duration(days: 20)),
+      });
+      await tester.pumpWidget(MaterialApp(
+        home: SubscriptionScreen(
+          theme: ThemeController(),
+          tier: SubscriptionTier.outfitter,
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await scrollToBottom(tester);
+
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.byType(PayFastSecureFooter), findsOneWidget);
+      // Both Outfitter plan cards (Monthly + Yearly) render on the web.
+      expect(find.text('Outfitter Monthly'), findsOneWidget);
+      expect(find.text('Outfitter Yearly'), findsOneWidget);
+      expect(find.text('R 299.99/month'), findsOneWidget);
+      expect(find.text('R 2999.99/year'), findsOneWidget);
+    });
+
+    testWidgets('a WEB subscriber with a legacy PayFast platform also gets no '
+        'Play button', (tester) async {
+      BillingService.usesPayFastForTesting = true;
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionPlatform': 'payfast',
+        'subscriptionTier': 'outfitter',
+      });
+      await tester.pumpWidget(MaterialApp(
+        home: SubscriptionScreen(
+          theme: ThemeController(),
+          tier: SubscriptionTier.outfitter,
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await scrollToBottom(tester);
+
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsOneWidget);
+    });
+
+    test('the web branch of _buildSubscribeButton can never reach the Play '
+        'manager builder', () {
+      // Structural contract: the FIRST thing _buildSubscribeButton does is
+      // branch on the PLATFORM (`_isWebBilling` == kIsWeb) and return — so on
+      // a browser build the native block below (which is the only caller of
+      // _buildManageInGooglePlayButton) is unreachable. The Play manager
+      // builder is also independently guarded on `!_isWebBilling`.
+      final source = File('lib/features/subscription/subscription_screen.dart')
+          .readAsStringSync();
+      final methodStart = source.indexOf('Widget _buildSubscribeButton(');
+      // The DEFINITION (not the call site inside _buildSubscribeButton).
+      final methodEnd = source.indexOf('Widget _buildManageInGooglePlayButton(');
+      expect(methodStart, greaterThan(-1));
+      expect(methodEnd, greaterThan(methodStart));
+      final body = source.substring(methodStart, methodEnd);
+
+      // The web guard comes FIRST and returns before the native branch.
+      final webGuard = body.indexOf('if (_isWebBilling) {');
+      final nativeGuard = body.indexOf('if (sub.hasSubscription) {');
+      expect(webGuard, greaterThan(-1));
+      expect(nativeGuard, greaterThan(webGuard));
+      // Nothing between the start and the web guard calls the Play builder.
+      expect(body.substring(0, webGuard).contains('_buildManageInGooglePlay'),
+          isFalse);
+      // The Play manager builder is itself web-guarded (defense in depth).
+      expect(
+        source.substring(methodEnd, methodEnd + 300),
+        contains('if (_isWebBilling) return const SizedBox.shrink();'),
+      );
     });
   });
 }

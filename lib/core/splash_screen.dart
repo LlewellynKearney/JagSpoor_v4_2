@@ -299,10 +299,10 @@ class _SplashScreenState extends State<SplashScreen>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // App Logo — a bounded emblem so it never fills the
-                          // viewport (see [SplashLogo]: a maxWidth cap of 340
-                          // web / 280 mobile plus a 40%-of-viewport maxHeight,
-                          // BoxFit.contain, 24px padding, centred). Previously
+                          // App Logo — a small, bounded, centred emblem (see
+                          // [SplashLogo]: a maxWidth cap of 200 web / 160
+                          // mobile plus a 22%-of-viewport maxHeight,
+                          // BoxFit.contain, 32px padding, centred). Previously
                           // the width AND height were both `screenWidth * 0.6`,
                           // so on a wide browser window the logo ballooned past
                           // the viewport height.

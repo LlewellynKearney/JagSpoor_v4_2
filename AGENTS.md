@@ -1,5 +1,103 @@
 # JagSpoor -- Agent Memory
 
+## Web NEVER shows "MANAGE IN GOOGLE PLAY" + splash logo shrunk to 200px (added 2026-10-18)
+
+Branch `fix/web-play-button-always-hide` (base `main` @ `8bcbf76`).
+
+### 1. The Play manager button is now HARD-gated on `kIsWeb` (not on state)
+- **Symptom**: a WEB trial user tapping Subscriptions still hit the red
+  "MANAGE IN GOOGLE PLAY" button in some cases. The previous gate was
+  `if (_isWebBilling && sub.isActive) -> PayFast manage` then
+  `if (!_isWebBilling && sub.hasSubscription) -> Play manage`. That made the
+  web Play-manager branch *conditionally* unreachable — a change to
+  `isActive`/`hasSubscription`/platform resolution could re-open it.
+- **Fix**: `SubscriptionScreen._buildSubscribeButton` now branches on the
+  PLATFORM FIRST and returns:
+  - `if (_isWebBilling)` (== `kIsWeb`, the platform check, NOT the
+    subscription state) -> an ACTIVE subscriber gets
+    `_buildManageOnPayFastButton`, anything else (no sub / live trial) gets
+    the `SUBSCRIBE VIA PAYFAST` checkout CTA. The web branch RETURNS, so the
+    native block below (the only caller of the Play builder) is unreachable.
+  - otherwise (native) -> PayFast-billed gets the website manage link, any
+    other subscriber gets `_buildManageInGooglePlayButton`, no subscription
+    gets the Play checkout CTA.
+- The Play builder `_buildManageInGooglePlayButton` is extracted and
+  INDEPENDENTLY guarded a second time (`if (_isWebBilling) return const
+  SizedBox.shrink();`) — defense in depth so a future refactor cannot
+  resurface it in a browser. The four button builders are now separate,
+  single-purpose methods (`_buildManageInGooglePlayButton` /
+  `_buildManageOnPayFastButton` / `_buildManageOnWebsiteButton` /
+  `_buildCheckoutButton`) so the web/native split is explicit at each site.
+- The Monthly + Yearly plan cards (`PayFastHunterOutfitterButtons`) and the
+  `PayFastSecureFooter` remain rendered by the caller whenever
+  `_isWebBillingFor(sub)` — i.e. ALWAYS on the web, for a trial and for an
+  active subscriber alike. Nothing is gated on `isActive` for the web plan
+  cards.
+
+### 2. Splash logo shrunk further (200 web / 160 mobile, 22% of viewport)
+- `SplashLogo` caps were still too large at 340/280 with a 40% height.
+  Now: `webMaxWidth = 200`, `mobileMaxWidth = 160`,
+  `maxViewportHeightFraction = 0.22`, `padding = 32`, wrapped in an explicit
+  `Center` with `BoxFit.contain` — a small, centred, aspect-preserving
+  emblem on every viewport shape.
+- `splash_screen.dart` already had no cropping `Container`/decoration around
+  the logo (verified); the comment was updated to the new caps.
+
+### Tests
+`test/splash_subscription_web_fixes_test.dart` now 11 tests, all pass:
+- the logo cap (200/22%/padding/Center/contain) + a structural
+  centred/scroll-safe splash body contract;
+- `PayFastSecureFooter` logo + caption;
+- web hides the Play manager for an ACTIVE `google_play` / unknown-platform /
+  legacy `payfast` subscriber, and for a **WEB HUNTER TRIAL** and a **WEB
+  OUTFITTER TRIAL** (the exact reported scenario) — each asserting no
+  `MANAGE IN GOOGLE PLAY` / no `cancelSubscriptionButton` + the PayFast CTA
+  and footer;
+- the outfitter trial also asserts both `Outfitter Monthly` (R 299.99/month)
+  and `Outfitter Yearly` (R 2999.99/year) plan cards render;
+- a NATIVE active subscriber still gets `MANAGE IN GOOGLE PLAY` and NO
+  PayFast footer;
+- a STRUCTURAL source contract asserting the web guard is the FIRST branch of
+  `_buildSubscribeButton` (before the native `hasSubscription` guard), that
+  nothing before it calls the Play builder, and that the Play builder is
+  itself `if (_isWebBilling) return const SizedBox.shrink();` guarded.
+
+Mutation-tested: collapsing the web branch back to the old
+`_isWebBilling && sub.isActive` shape (letting a trial fall through to the
+native Play logic) fails **4** tests, including both trial cases and the
+structural contract.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (322 pre-existing
+  info-level issues, unchanged baseline).
+- `flutter test` (full suite): **2256 passed, 1 failed** — the DOCUMENTED
+  pre-existing `trial_onboarding_functions_contract_test`.
+- `flutter build web --release`: SUCCESS. **The whole Google Play surface is
+  ZERO occurrences in `build/web/main.dart.js`** — `kIsWeb` is a COMPILE-TIME
+  constant, so dart2js folds the `if (_isWebBilling)` branch and
+  dead-code-eliminates the entire native Play branch from the web bundle.
+  Verified absent: `MANAGE IN GOOGLE PLAY` (0), `GOOGLE PLAY` (0),
+  `SUBSCRIBE VIA GOOGLE PLAY` (0), `restorePurchasesButton` (0),
+  `cancelSubscriptionButton` (0). That is a stronger guarantee than a runtime
+  hide: none of it can exist in the web artifact at all. The native path is
+  unaffected (the full VM suite, where `kIsWeb == false`, still asserts the
+  button renders). The bundle still carries both plan prices
+  (`34.99`/`349.99`/`299.99`/`2999.99`), `SUBSCRIBE VIA PAYFAST`,
+  `MANAGE SUBSCRIPTION ON PAYFAST`, `managePayfastSubscriptionButton`,
+  `Secure payments by PayFast`, and the `payfast_logo.png` asset.
+- NOTE: the red Play-manage button has only ONE build site —
+  `SubscriptionScreen` is shared by the Hunter and Outfitter paths via its
+  `tier` param, so the single `_buildManageInGooglePlayButton` covers both.
+  The tests cover both tiers explicitly.
+- Env: Flutter at `$HOME/sdk/flutter`, `LD_LIBRARY_PATH=$HOME/libs` with the
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites.
+
+### Files
+- MODIFIED: `lib/features/subscription/subscription_screen.dart`,
+  `lib/core/widgets/splash_logo.dart`, `lib/core/splash_screen.dart`,
+  `test/splash_subscription_web_fixes_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## Splash logo bounded + Google Play hidden on web + PayFast trust footer (added 2026-10-18)
 
 Branch `fix/splash-size-web-payfast-logo`.

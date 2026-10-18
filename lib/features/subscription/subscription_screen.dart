@@ -1449,117 +1449,158 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Widget _buildSubscribeButton(ThemeController theme, UserSubscription sub) {
-    // Active subscription / live free trial: the primary checkout button is
-    // replaced by the platform-appropriate management action.
+    // ---------------------------------------------------------------------
+    // WEB BUILD (`kIsWeb`) — HARD RULE: the "MANAGE IN GOOGLE PLAY" affordance
+    // is NEVER rendered in a browser, under ANY circumstance. There is no
+    // Google Play Billing in a browser: no Play catalog, no Play purchase
+    // stream and no Play subscriptions manager. This is a PLATFORM check only
+    // — it is deliberately NOT conditioned on the subscription being active,
+    // on the recorded `subscriptionPlatform`, or on the trial state. If the
+    // build is the web build, the Play manager branch below is unreachable.
     //
-    // WEB (PayFast) build: there is NO Google Play Billing in a browser, so
-    // the Play manager affordance is NEVER rendered here — regardless of which
-    // platform the entitlement records (a browser cannot open the Play
-    // subscriptions centre for a web purchase). An ACTIVE web subscriber
-    // always manages their recurring billing on PayFast.
-    //
-    // A live free trial is NOT an active subscription — the trial user keeps
-    // the checkout CTA (plus the plan buttons) so they can convert to paid.
-    if (_isWebBilling && sub.isActive) {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          key: const ValueKey('managePayfastSubscriptionButton'),
-          onPressed: _isOpeningPlayStore ? null : _openPayfastDashboard,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: theme.accentColor,
-            side: BorderSide(color: theme.accentColor, width: 1.6),
-            disabledForegroundColor: theme.subtitleColor,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          icon: const Icon(Icons.language_rounded),
-          label: Text(
-            _isOpeningPlayStore
-                ? 'OPENING…'
-                : 'MANAGE SUBSCRIPTION ON PAYFAST',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-            ),
-          ),
-        ),
-      );
-    }
-    // NATIVE (Android / iOS) only from here: Google Play owns the recurring
-    // billing, so a Play-billed subscriber is routed to Google Play's
-    // subscriptions manager (never the website). A PayFast (website)
-    // subscriber — the only case where an external link is compliant — is
-    // routed to the website billing page.
-    if (!_isWebBilling && sub.hasSubscription) {
-      if (sub.isPayfastBilled) {
-        return SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            key: const ValueKey('manageWebsiteSubscriptionButton'),
-            onPressed: _isOpeningPlayStore ? null : _openWebsiteBilling,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: theme.accentColor,
-              side: BorderSide(color: theme.accentColor, width: 1.6),
-              disabledForegroundColor: theme.subtitleColor,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: const Icon(Icons.language_rounded),
-            label: const Text(
-              'MANAGE SUBSCRIPTION ON WEBSITE',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.1,
-              ),
-            ),
-          ),
-        );
+    // What the web shows instead:
+    //   * an ACTIVE subscriber -> "MANAGE SUBSCRIPTION ON PAYFAST"
+    //     (a browser cannot open the Play subscriptions centre for a web
+    //     purchase);
+    //   * otherwise (no subscription / live free trial) -> the green
+    //     "SUBSCRIBE VIA PAYFAST" checkout CTA, plus the Monthly + Yearly
+    //     plan buttons and the PayFast trust footer rendered by the caller.
+    // ---------------------------------------------------------------------
+    if (_isWebBilling) {
+      if (sub.isActive) {
+        return _buildManageOnPayFastButton(theme);
       }
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          key: const ValueKey('cancelSubscriptionButton'),
-          onPressed: _isOpeningPlayStore ? null : _cancelSubscription,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red.shade700,
-            side: BorderSide(color: Colors.red.shade700, width: 1.6),
-            disabledForegroundColor: theme.subtitleColor,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          icon: _isOpeningPlayStore
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.red.shade700,
-                  ),
-                )
-              : Icon(Icons.settings_rounded, color: Colors.red.shade700),
-          label: Text(
-            _isOpeningPlayStore ? 'OPENING…' : 'MANAGE IN GOOGLE PLAY',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-            ),
+      return _buildCheckoutButton(theme);
+    }
+
+    // ---------------------------------------------------------------------
+    // NATIVE (Android / iOS) — Google Play owns the recurring billing.
+    //   * a PayFast (website) subscriber -> the website manage link (the only
+    //     case where an external link is Play-policy-compliant);
+    //   * otherwise a subscriber (Play-billed / unknown platform) -> the Play
+    //     subscriptions manager;
+    //   * no subscription -> the native Play subscribe CTA.
+    // ---------------------------------------------------------------------
+    if (sub.hasSubscription) {
+      if (sub.isPayfastBilled) {
+        return _buildManageOnWebsiteButton(theme);
+      }
+      return _buildManageInGooglePlayButton(theme);
+    }
+    return _buildCheckoutButton(theme);
+  }
+
+  /// NATIVE-ONLY: the Google Play subscriptions manager action.
+  ///
+  /// Guarded a second time on `!_isWebBilling` (defense in depth) so even a
+  /// future refactor of [_buildSubscribeButton] can never surface this in a
+  /// browser. A `kIsWeb` build must never show this button.
+  Widget _buildManageInGooglePlayButton(ThemeController theme) {
+    if (_isWebBilling) return const SizedBox.shrink();
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const ValueKey('cancelSubscriptionButton'),
+        onPressed: _isOpeningPlayStore ? null : _cancelSubscription,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.red.shade700,
+          side: BorderSide(color: Colors.red.shade700, width: 1.6),
+          disabledForegroundColor: theme.subtitleColor,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
-      );
-    }
-    // The SUBSCRIBE button stays disabled until the Play catalog has resolved
-    // AND (once it has) the active product carries the base-plan offer token
-    // Google Play Billing v5+ requires. Tapping before that point is what
-    // produced the INVALID_OFFER_TOKEN failure. On the WEB build there is no
-    // Play catalog — the button is enabled immediately and charges via
-    // PayFast instead.
+        icon: _isOpeningPlayStore
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.red.shade700,
+                ),
+              )
+            : Icon(Icons.settings_rounded, color: Colors.red.shade700),
+        label: Text(
+          _isOpeningPlayStore ? 'OPENING…' : 'MANAGE IN GOOGLE PLAY',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// WEB-ONLY: the PayFast (website) subscriptions manager action, shown to an
+  /// ACTIVE subscriber on the web build.
+  Widget _buildManageOnPayFastButton(ThemeController theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const ValueKey('managePayfastSubscriptionButton'),
+        onPressed: _isOpeningPlayStore ? null : _openPayfastDashboard,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.accentColor,
+          side: BorderSide(color: theme.accentColor, width: 1.6),
+          disabledForegroundColor: theme.subtitleColor,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.language_rounded),
+        label: Text(
+          _isOpeningPlayStore
+              ? 'OPENING…'
+              : 'MANAGE SUBSCRIPTION ON PAYFAST',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// NATIVE-ONLY: the website (PayFast) manage link for a PayFast-billed
+  /// subscriber — the single case where an external link is compliant.
+  Widget _buildManageOnWebsiteButton(ThemeController theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const ValueKey('manageWebsiteSubscriptionButton'),
+        onPressed: _isOpeningPlayStore ? null : _openWebsiteBilling,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.accentColor,
+          side: BorderSide(color: theme.accentColor, width: 1.6),
+          disabledForegroundColor: theme.subtitleColor,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.language_rounded),
+        label: const Text(
+          'MANAGE SUBSCRIPTION ON WEBSITE',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The green checkout CTA. The label/icon/route branch on the platform:
+  /// PayFast on the web, Google Play Billing on native.
+  ///
+  /// On the WEB build the button is enabled as soon as it is not launching
+  /// (there is no Play catalog in a browser). On NATIVE it additionally waits
+  /// for the Play catalog to resolve AND for the base-plan offer token Google
+  /// Play Billing v5+ requires (tapping before that point produced the
+  /// INVALID_OFFER_TOKEN failure).
+  Widget _buildCheckoutButton(ThemeController theme) {
     final busy = _isLaunching || (!_isWebBilling && _catalogLoading);
     final String label;
     if (_paymentPending) {
