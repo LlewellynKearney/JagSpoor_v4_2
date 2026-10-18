@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,6 +16,7 @@ import '../services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/copyright_footer.dart';
 import 'widgets/force_update_dialog.dart';
+import 'widgets/splash_logo.dart';
 
 class SplashScreen extends StatefulWidget {
   final ThemeController theme;
@@ -283,43 +285,56 @@ class _SplashScreenState extends State<SplashScreen>
           body: Center(
             child: FadeTransition(
               opacity: _fadeAnimation,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // App Logo — upscaled emblem so it displays prominent and
-                  // high-resolution while Firebase auth / role checks run.
-                  // Uses a fraction of the screen width so it scales gracefully
-                  // across phone/tablet aspect ratios without cropping.
-                  Image.asset(
-                    'assets/app logo/logo1.png',
-                    width: MediaQuery.of(context).size.width * 0.6,
-                    height: MediaQuery.of(context).size.width * 0.6,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(height: 32),
-                  // App Name
-                  Text(
-                    'JAGSPOOR',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 4,
-                      color: widget.theme.textColor,
+              // Centred, but scrollable: on a short viewport (a landscape
+              // phone / a squat browser window) the capped logo + wordmark +
+              // spinner + footer could otherwise overflow the Column. The
+              // scroll view keeps every element reachable while the layout
+              // stays vertically centred whenever there IS room.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // App Logo — a bounded emblem so it never fills the
+                          // viewport (see [SplashLogo]: a maxWidth cap of 340
+                          // web / 280 mobile plus a 40%-of-viewport maxHeight,
+                          // BoxFit.contain, 24px padding, centred). Previously
+                          // the width AND height were both `screenWidth * 0.6`,
+                          // so on a wide browser window the logo ballooned past
+                          // the viewport height.
+                          const SplashLogo(),
+                          const SizedBox(height: 32),
+                          // App Name
+                          Text(
+                            'JAGSPOOR',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 4,
+                              color: widget.theme.textColor,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Loading indicator
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: CircularProgressIndicator(
+                              color: widget.theme.accentColor,
+                              strokeWidth: 3,
+                            ),
+                          ),
+                          const SizedBox(height: 48),
+                          const CopyrightFooter(),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Loading indicator
-                  SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(
-                      color: widget.theme.accentColor,
-                      strokeWidth: 3,
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-                  const CopyrightFooter(),
-                ],
+                  );
+                },
               ),
             ),
           ),

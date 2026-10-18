@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
+import '../../core/widgets/payfast_secure_footer.dart';
 import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
@@ -367,15 +368,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// checkout (or the PayFast management link) is the correct path.
   bool _isWebBillingFor(UserSubscription sub) =>
       BillingService.instance.usesPayFast || sub.isPayfastBilled;
-
-  /// Whether the subscription on file is an ACTIVE PayFast (website) purchase.
-  ///
-  /// A live free trial (`trialing`) is NOT an active PayFast subscription — the
-  /// user has nothing to manage yet and must still see the plan checkout
-  /// buttons. Only a genuinely active, PayFast-billed subscription swaps the
-  /// checkout for the "MANAGE SUBSCRIPTION ON PAYFAST" action.
-  bool _hasActivePayfastSubscription(UserSubscription sub) =>
-      sub.isPayfastBilled && sub.isActive;
 
   /// Platform-only check (no subscription context) — used in `initState`
   /// before the subscription doc has resolved.
@@ -855,12 +847,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       _buildSubscribeButton(theme, subscription),
                       // Web (PayFast) checkout: the two explicit plan buttons
                       // for the active role (Monthly + Yearly). Shown whenever
-                      // there is NO ACTIVE PayFast subscription to manage — a
-                      // live free trial still sees them so it can convert to
-                      // paid; only an active PayFast subscriber sees the manage
-                      // action instead.
+                      // the user is NOT already an active subscriber — a live
+                      // free trial still sees them so it can convert to paid;
+                      // an active subscriber sees the PayFast manage action
+                      // instead (the Play manager affordance is never rendered
+                      // in a browser).
                       if (_isWebBillingFor(subscription) &&
-                          !_hasActivePayfastSubscription(subscription)) ...[
+                          !subscription.isActive) ...[
                         const SizedBox(height: 20),
                         PayFastHunterOutfitterButtons(
                           theme: theme,
@@ -882,6 +875,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         const SizedBox(height: 16),
                         _buildDivergenceNotice(theme),
                       ],
+                      // PayFast trust footer — shown wherever PayFast is the
+                      // payment path for this view: ALWAYS on the web build
+                      // (the browser charges through PayFast) and on a native
+                      // build for a PayFast (website) subscription. It is
+                      // deliberately NOT rendered on a native Google Play
+                      // checkout — advertising a third-party payment provider
+                      // on a Play-billed screen would steer Play users
+                      // off-store, which the Play compliance contract forbids.
+                      // Sits below the plan cards, so it is visible on the
+                      // Hunter AND Outfitter, Monthly AND Yearly views.
+                      if (_isWebBillingFor(subscription))
+                        const PayFastSecureFooter(),
                       const CopyrightFooter(),
                     ],
                   ),
@@ -1447,12 +1452,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // Active subscription / live free trial: the primary checkout button is
     // replaced by the platform-appropriate management action.
     //
-    // WEB (PayFast) build: there is no Google Play Billing in a browser, so
-    // the Play manager affordance is never rendered here. An ACTIVE web
-    // subscriber manages their recurring billing on PayFast. A live free trial
-    // is NOT an active PayFast subscription — the trial user keeps the
-    // checkout CTA (plus the plan buttons) so they can convert to paid.
-    if (_isWebBilling && _hasActivePayfastSubscription(sub)) {
+    // WEB (PayFast) build: there is NO Google Play Billing in a browser, so
+    // the Play manager affordance is NEVER rendered here — regardless of which
+    // platform the entitlement records (a browser cannot open the Play
+    // subscriptions centre for a web purchase). An ACTIVE web subscriber
+    // always manages their recurring billing on PayFast.
+    //
+    // A live free trial is NOT an active subscription — the trial user keeps
+    // the checkout CTA (plus the plan buttons) so they can convert to paid.
+    if (_isWebBilling && sub.isActive) {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
@@ -1480,11 +1488,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         ),
       );
     }
-    // Play compliance: a Google Play-billed subscriber is routed to Google
-    // Play's subscriptions manager (never the website). A PayFast (website)
+    // NATIVE (Android / iOS) only from here: Google Play owns the recurring
+    // billing, so a Play-billed subscriber is routed to Google Play's
+    // subscriptions manager (never the website). A PayFast (website)
     // subscriber — the only case where an external link is compliant — is
     // routed to the website billing page.
-    if (sub.hasSubscription) {
+    if (!_isWebBilling && sub.hasSubscription) {
       if (sub.isPayfastBilled) {
         return SizedBox(
           width: double.infinity,

@@ -1,5 +1,105 @@
 # JagSpoor -- Agent Memory
 
+## Splash logo bounded + Google Play hidden on web + PayFast trust footer (added 2026-10-18)
+
+Branch `fix/splash-size-web-payfast-logo`.
+
+### 1. Splash / boot logo filled the viewport on web (fixed)
+- Root cause: `SplashScreen.build` rendered the emblem with
+  `width: size.width * 0.6, height: size.width * 0.6`. On a wide browser
+  window (1600px+) the *width* drove both dimensions, so the logo ballooned
+  past the viewport height and dominated the screen.
+- Fix: extracted a NEW `lib/core/widgets/splash_logo.dart` (`SplashLogo`)
+  that bounds the emblem — `maxWidth: kIsWeb ? 340 : 280`, `maxHeight:
+  size.height * 0.4`, `BoxFit.contain` (aspect preserved, never stretched),
+  24px padding. The splash body is now `Center > FadeTransition >
+  LayoutBuilder > SingleChildScrollView > ConstrainedBox(minHeight:
+  constraints.maxHeight) > Column(center)` so the logo + wordmark + spinner +
+  footer stay centred when there is room and never overflow a short
+  (landscape) viewport.
+- `SplashLogo` is a standalone widget so its sizing contract is directly
+  testable (the live splash runs a boot gate with Firebase reads + timers,
+  which is awkward to mount in a widget test).
+
+### 2. "MANAGE IN GOOGLE PLAY" shown on web (fixed)
+- Root cause: `SubscriptionScreen._buildSubscribeButton` only swapped to the
+  PayFast manage action when the subscription was **PayFast-billed** AND
+  active (`_hasActivePayfastSubscription`). On the web build an active
+  subscriber whose entitlement recorded `google_play` — or had no
+  `subscriptionPlatform` at all — fell through to the red
+  `MANAGE IN GOOGLE PLAY` button. A browser cannot open the Play
+  subscriptions centre, so that affordance is meaningless there.
+- Fix: the web branch is now `if (_isWebBilling && sub.isActive)` — ANY
+  active subscriber on the web is managed on PayFast. The Play manager branch
+  is gated `if (!_isWebBilling && sub.hasSubscription)` so it can never render
+  in a browser. The web plan-button gate was aligned to the same
+  `!subscription.isActive` condition, and the now-unused
+  `_hasActivePayfastSubscription` helper was removed.
+- Also hid the review modal's `GOOGLE PLAY RATE` button on the web
+  (`jagspoor_review_modal.dart`, `if (!kIsWeb)`) — `InAppReview` / the Play
+  Store listing do not exist in a browser. The web prompt keeps WhatsApp +
+  Facebook.
+- Play compliance preserved: the paywall (`paywall_screen.dart`) and the
+  settings tile (`subscription_management_tile.dart`) already branched on
+  `_isWebBilling` / `BillingService.usesPayFast`; a Play-billed NATIVE user is
+  still routed to the Play manager and is never steered off-store.
+
+### 3. PayFast trust footer (NEW)
+- NEW `lib/core/widgets/payfast_secure_footer.dart` (`PayFastSecureFooter`):
+  the official PayFast logo (`assets/images/payfast_logo.png`, rasterized from
+  PayFast's published `Payfast-logo.svg` with cairosvg — 672x240, brand
+  colours `#0069b1` blue + `#e54360` red) at 32px height with `BoxFit.contain`
+  + a muted "Secure payments by PayFast" caption, at 0.75 opacity. An
+  `errorBuilder` degrades to caption-only if the asset is ever missing.
+- Wired into the subscription checkout below the plan cards, gated
+  `if (_isWebBillingFor(subscription))` — so it shows on the web build
+  (PayFast is the payment path) and on a native PayFast-billed account, but
+  NEVER on a native Google Play checkout (advertising a third-party payment
+  provider on a Play screen would steer Play users off-store).
+- `assets/images/` was already declared in `pubspec.yaml`, so no pubspec
+  change was needed.
+
+### Tests
+NEW `test/splash_subscription_web_fixes_test.dart` (7 tests, all pass):
+- the bounded logo (maxWidth <= 340, maxHeight == 40% of a 900px viewport,
+  BoxFit.contain, rendered width far below the 1600px viewport) + a
+  structural source-parse contract for the centred/scroll-safe splash body;
+- `PayFastSecureFooter` logo asset + caption + 32px height + contain;
+- web hides `MANAGE IN GOOGLE PLAY` for an active subscriber whose platform is
+  `google_play` AND for one with no platform (both show
+  `MANAGE SUBSCRIPTION ON PAYFAST` + the PayFast footer);
+- a NATIVE active subscriber still gets `MANAGE IN GOOGLE PLAY` and NO PayFast
+  footer;
+- the web trial checkout shows the PayFast footer.
+
+Mutation-tested: reverting the web guard (PayFast-only condition + allowing the
+Play branch on web) fails 3 of the tests; removing the logo cap fails the logo
+test.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (323 pre-existing
+  info-level issues, unchanged baseline).
+- `flutter test` (full suite): all pass except the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test`.
+- Subscription + compliance suites (`subscription_screen_test`,
+  `subscription_web_billing_test`, `play_billing_compliance_test`,
+  `subscription_screen_fallback_test`, `payfast_buttons_test`,
+  `billing_service_test`): **80/80 pass**.
+- `flutter build web --release`: bundle checked for the price amounts +
+  PayFast logo asset.
+- Env: Flutter at `$HOME/sdk/flutter` (`PATH`), `LD_LIBRARY_PATH=$HOME/libs`
+  with the `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites.
+
+### Files
+- NEW: `lib/core/widgets/splash_logo.dart`,
+  `lib/core/widgets/payfast_secure_footer.dart`,
+  `assets/images/payfast_logo.png`,
+  `test/splash_subscription_web_fixes_test.dart`.
+- MODIFIED: `lib/core/splash_screen.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/widgets/jagspoor_review_modal.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## Subscription screen stays on the screen when active (added 2026-10-18)
 
 Branch `fix/subscription-screen-fallback`, merged to `main`.

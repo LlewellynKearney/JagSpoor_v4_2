@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:share_plus/share_plus.dart';
@@ -246,16 +247,21 @@ class JagspoorReviewModal extends StatelessWidget {
                 onTap: (navigator) => _launchFacebook(navigator),
               ),
               const SizedBox(height: 10),
-              _buildActionButton(
-                context,
-                key: const ValueKey('reviewRatePlayStoreButton'),
-                icon: Icons.rate_review_rounded,
-                iconColor: JagspoorReviewPalette.gold,
-                label: 'GOOGLE PLAY RATE',
-                subtitle: 'Rate us on Google Play Store',
-                onTap: (navigator) => _launchPlayStore(navigator),
-              ),
-              const SizedBox(height: 8),
+              // The Google Play rating affordance is a NATIVE store action —
+              // `InAppReview` / the Play Store listing do not exist in a
+              // browser, so it is hidden on the web build. The web prompt
+              // keeps WhatsApp + Facebook.
+              if (!kIsWeb)
+                _buildActionButton(
+                  context,
+                  key: const ValueKey('reviewRatePlayStoreButton'),
+                  icon: Icons.rate_review_rounded,
+                  iconColor: JagspoorReviewPalette.gold,
+                  label: 'GOOGLE PLAY RATE',
+                  subtitle: 'Rate us on Google Play Store',
+                  onTap: (navigator) => _launchPlayStore(navigator),
+                ),
+              if (!kIsWeb) const SizedBox(height: 8),
               TextButton(
                 key: const ValueKey('reviewMaybeLaterButton'),
                 onPressed: () => Navigator.of(context).pop(false),
