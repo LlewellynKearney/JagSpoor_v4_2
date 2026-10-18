@@ -131,6 +131,13 @@ class BillingService {
   /// Whether this platform uses PayFast (web) rather than Play Billing.
   bool get usesPayFast => usesPayFastForTesting ?? kIsWeb;
 
+  /// The PayFast site a web subscriber uses to manage their recurring billing.
+  ///
+  /// PayFast has no per-subscription deep link comparable to Google Play's
+  /// subscriptions centre, so the web build links to the PayFast dashboard
+  /// root. Only ever shown to a PayFast-billed (web) subscriber.
+  static const String payfastDashboardUrl = 'https://www.payfast.co.za/';
+
   String? get _uid {
     final resolver = currentUserIdResolverForTesting;
     if (resolver != null) return resolver();

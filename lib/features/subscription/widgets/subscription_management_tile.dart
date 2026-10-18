@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../services/entitlement_service.dart';
+import '../../billing/billing_service.dart';
 import '../services/play_billing_service.dart';
 import '../services/subscription_pricing.dart';
 
@@ -84,17 +85,27 @@ class SubscriptionManagementTile extends StatelessWidget {
         final active = entitlement.isPremiumActive(DateTime.now());
         final playBilled = entitlement.isPlayBilled;
         final payfastBilled = entitlement.isPayfastBilled;
+        // On the WEB build there is no Google Play Billing, so an active
+        // subscriber is always managed on PayFast — regardless of which
+        // platform the entitlement records (a browser cannot open the Play
+        // subscriptions centre for a web purchase).
+        final isWeb = BillingService.instance.usesPayFast;
 
         // Play compliance: branch on the billing platform. Anything other than
         // an explicit PayFast subscription is treated as Play (or
         // informational) — never steered to an external checkout.
-        if (active && payfastBilled) {
+        if (active && (payfastBilled || isWeb)) {
           return _tile(
             key: const ValueKey('settingsManageWebsiteSubscriptionTile'),
             icon: Icons.language_rounded,
-            title: 'Manage subscription on website',
+            title: isWeb
+                ? 'Manage subscription on PayFast'
+                : 'Manage subscription on website',
             subtitle: 'Billed via the JagSpoor website (PayFast).',
-            onTap: () => _launch(context, websiteBillingUrl),
+            onTap: () => _launch(
+              context,
+              isWeb ? BillingService.payfastDashboardUrl : websiteBillingUrl,
+            ),
           );
         }
         if (active) {

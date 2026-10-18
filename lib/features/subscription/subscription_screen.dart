@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../services/entitlement_service.dart';
@@ -569,6 +570,43 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
+  /// Opens the PayFast site so a web subscriber can manage their recurring
+  /// billing. Shown ONLY on the web build (and only to a subscriber) — never
+  /// to a Play-billed user (Play policy).
+  Future<void> _openPayfastDashboard() async {
+    if (_isOpeningPlayStore) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    setState(() => _isOpeningPlayStore = true);
+    try {
+      final opened = await launchUrl(
+        Uri.parse(BillingService.payfastDashboardUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to open PayFast. Please visit '
+              '${BillingService.payfastDashboardUrl} in your browser.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('Unable to open PayFast: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isOpeningPlayStore = false);
+    }
+  }
+
   /// Shows a confirmation dialog explaining that cancellation is handled in
   /// Google Play. Returns `true` when the user chooses to open the Play
   /// subscription center.
@@ -661,30 +699,56 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           stream: SubscriptionStatusService.instance.watchMySubscription(),
           builder: (context, snapshot) {
             final subscription = snapshot.data ?? const UserSubscription();
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              children: [
-                _buildStatusBanner(theme, subscription),
-                if (_paymentPending) ...[
-                  const SizedBox(height: 12),
-                  _buildPendingBanner(theme),
-                ],
-                const SizedBox(height: 20),
-                _buildTierCards(theme),
-                const SizedBox(height: 20),
-                _buildPromoSection(theme),
-                const SizedBox(height: 20),
-                _buildTotalCard(theme),
-                const SizedBox(height: 24),
-                _buildSubscribeButton(theme, subscription),
-                const SizedBox(height: 12),
-                _buildRestoreButton(theme),
-                if (_hasPriceDivergence) ...[
-                  const SizedBox(height: 16),
-                  _buildDivergenceNotice(theme),
-                ],
-                const CopyrightFooter(),
-              ],
+            // Responsive container: on a wide browser window the checkout is
+            // centred at 800px (narrower than the 1280px dashboards) so the
+            // tier cards / promo field / price breakdown stay a comfortable
+            // reading width instead of stretching edge-to-edge. On a
+            // mobile-width viewport the child is returned unchanged.
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final isDesktop =
+                    WebLayout.isDesktopWidth(constraints.maxWidth);
+                return WebLayout.responsive(
+                  context: context,
+                  maxWidth: 800,
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      isDesktop ? 24 : 20,
+                      12,
+                      isDesktop ? 24 : 20,
+                      24,
+                    ),
+                    children: [
+                      _buildStatusBanner(theme, subscription),
+                      if (_paymentPending) ...[
+                        const SizedBox(height: 12),
+                        _buildPendingBanner(theme),
+                      ],
+                      const SizedBox(height: 20),
+                      _buildTierCards(theme),
+                      const SizedBox(height: 20),
+                      _buildPromoSection(theme),
+                      const SizedBox(height: 20),
+                      _buildTotalCard(theme),
+                      const SizedBox(height: 24),
+                      _buildSubscribeButton(theme, subscription),
+                      // The Play "Restore Purchases" affordance is a Google
+                      // Play Billing requirement — it has no meaning on the
+                      // web build (the PayFast entitlement is server-written
+                      // by the ITN webhook), so it is hidden there.
+                      if (!_isWebBilling) ...[
+                        const SizedBox(height: 12),
+                        _buildRestoreButton(theme),
+                      ],
+                      if (_hasPriceDivergence) ...[
+                        const SizedBox(height: 16),
+                        _buildDivergenceNotice(theme),
+                      ],
+                      const CopyrightFooter(),
+                    ],
+                  ),
+                );
+              },
             );
           },
         ),
@@ -1097,6 +1161,37 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // Active subscription / live free trial: the primary checkout button is
     // replaced by the platform-appropriate management action.
     //
+    // WEB (PayFast) build: there is no Google Play Billing in a browser, so
+    // the Play manager affordance is never rendered here. An active web
+    // subscriber manages their recurring billing on PayFast.
+    if (_isWebBilling && sub.hasSubscription) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: const ValueKey('managePayfastSubscriptionButton'),
+          onPressed: _isOpeningPlayStore ? null : _openPayfastDashboard,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.accentColor,
+            side: BorderSide(color: theme.accentColor, width: 1.6),
+            disabledForegroundColor: theme.subtitleColor,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: const Icon(Icons.language_rounded),
+          label: Text(
+            _isOpeningPlayStore
+                ? 'OPENING…'
+                : 'MANAGE SUBSCRIPTION ON PAYFAST',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+      );
+    }
     // Play compliance: a Google Play-billed subscriber is routed to Google
     // Play's subscriptions manager (never the website). A PayFast (website)
     // subscriber — the only case where an external link is compliant — is

@@ -1,5 +1,92 @@
 # JagSpoor -- Agent Memory
 
+## Web: subscription screen 800px responsive + PayFast-only on web (added 2026-10-18)
+
+Follow-up to the all-role responsive + PayFast phase. Two web-build bugs
+found on the live site (`jagspoor.web.app`).
+
+### Bug 1 -- sub-screens stretched edge-to-edge on desktop
+The subscription checkout and the paywall were the only surfaces NOT wrapped
+in `WebLayout.responsive` (the dashboards were done in the prior phase), so
+on a wide browser the tier cards / promo field / price breakdown filled the
+whole viewport as one beige column.
+- `subscription_screen.dart`: body is now a `LayoutBuilder` -> 
+  `WebLayout.responsive(maxWidth: 800)` with 24px gutters on desktop (20 on
+  mobile). **800, not 1280** -- the checkout is deliberately narrower than
+  the dashboards for readability. All the content (tier cards, promo, price
+  breakdown, buttons) sits inside that cap.
+- `paywall_screen.dart`: body wrapped in the same 800px container.
+
+### Bug 2 -- Google Play affordances shown on the web build
+`BillingService.usesPayFast` (kIsWeb) was already consulted by the
+*subscribe* button, but two Play-only affordances were rendered
+unconditionally, so the web build showed "MANAGE IN GOOGLE PLAY" and
+"RESTORE PURCHASES":
+- The active-subscription branch in `subscription_screen.dart`
+  `_buildSubscribeButton` was gated ONLY on `sub.isPayfastBilled` /
+  `sub.hasSubscription` -- it never consulted the platform. Now a
+  `_isWebBilling && sub.hasSubscription` branch is checked FIRST and renders
+  "MANAGE SUBSCRIPTION ON PAYFAST" (opens `BillingService.payfastDashboardUrl`
+  = `https://www.payfast.co.za/`). The Play manager branch is therefore
+  unreachable on web.
+- `_buildRestoreButton` (the Play "RESTORE PURCHASES" action) is now hidden
+  entirely on web (`if (!_isWebBilling)`) -- Play Billing has no meaning in a
+  browser.
+- `paywall_screen.dart` web branch: label is now "Manage subscription on
+  PayFast" and opens the PayFast dashboard (was the website billing page).
+- `subscription_management_tile.dart` (settings tile): an active subscriber
+  on web is routed to PayFast even when the entitlement records
+  `google_play` -- a browser cannot open the Play subscriptions centre for a
+  web purchase.
+- NEW `BillingService.payfastDashboardUrl` -- PayFast has no per-subscription
+  deep link comparable to Play's subscriptions centre, so the web build links
+  to the PayFast root.
+
+Play compliance is preserved: the website/PayFast link is only ever shown for
+a web build or an explicit PayFast subscription; a Play-billed native user is
+never steered off-store. `play_billing_compliance_test.dart` (45 tests across
+three suites) stays green.
+
+### Task 6 -- PayFast function config verified (no change)
+`functions/src/payfast/payfast.service.ts` carries the public
+`PAYFAST_MERCHANT_ID = "37584965"`; the merchant KEY + passphrase are
+`defineSecret` bindings read via `process.env`, never committed and never
+returned to the client.
+
+### Tests
+NEW `test/subscription_web_billing_test.dart` (7 tests): web hides
+`restorePurchasesButton` + "MANAGE IN GOOGLE PLAY" and shows
+"SUBSCRIBE VIA PAYFAST"; an active web subscriber gets
+"MANAGE SUBSCRIPTION ON PAYFAST"; native keeps RESTORE + "SUBSCRIBE VIA
+GOOGLE PLAY" + "MANAGE IN GOOGLE PLAY"; desktop caps the checkout at 800px
+while mobile stays full-width; the PayFast URL contract. Note the tests
+`drag` the lazy `ListView` to the bottom before asserting on the action
+buttons -- an unscrolled `findsNothing` would pass trivially.
+
+### Verification
+- `flutter analyze lib`: **0 errors, 0 warnings** (106 pre-existing infos).
+  Changed files: "No issues found".
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2209 passed,
+  1 failed** -- the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` ("is a Firebase Auth
+  user-creation trigger in us-central1"), PROVEN pre-existing via
+  `git stash -u` at HEAD (identical failure).
+- `flutter build web --release`: **SUCCESS**; `build/web/index.html` keeps
+  the favicon + apple-touch-icon + `flutter_bootstrap.js` with 0 marketing
+  matches; `build/web/icons/` holds the four official icons.
+- Env: Flutter **3.44.9** re-cloned to `$HOME/sdk/flutter` (`apt-get install
+  unzip` first -- the bootstrap needs it); the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink for the sqflite-FFI suites.
+
+### Files
+- MODIFIED: `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/features/subscription/widgets/subscription_management_tile.dart`,
+  `lib/features/billing/billing_service.dart`, `AGENTS.md`.
+- NEW: `test/subscription_web_billing_test.dart`.
+- No Firestore rules / index / Storage / pubspec / functions changes.
+
 ## Web: all-role responsive layout + PayFast web billing (added 2026-10-17)
 
 Extends the prior web phase (icon + hunter dashboard 2-column). Three parts:

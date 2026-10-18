@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
@@ -445,6 +446,25 @@ class _PaywallScreenState extends State<PaywallScreen> {
     }
   }
 
+  /// Opens the PayFast site for a web subscriber to manage their recurring
+  /// billing. Only reachable on the web build.
+  Future<void> _openPayfastDashboard(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final launched =
+        await _launchExternal(BillingService.payfastDashboardUrl);
+    if (!launched) {
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to open PayFast. Please visit '
+            '${BillingService.payfastDashboardUrl} in your browser.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
   Future<void> _subscribeViaGooglePlay(BuildContext context) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final product = _activeProduct;
@@ -554,9 +574,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-          child: Column(
+        child: WebLayout.responsive(
+          context: context,
+          maxWidth: 800,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
@@ -702,7 +725,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 // here; a Play-billed subscriber is never steered off-store.)
                 OutlinedButton.icon(
                   key: const ValueKey('paywallManageWebsiteButton'),
-                  onPressed: () => _openWebsiteBilling(context),
+                  onPressed: () => _openPayfastDashboard(context),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: theme.accentColor,
                     side: BorderSide(color: theme.accentColor, width: 1.4),
@@ -713,7 +736,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   ),
                   icon: const Icon(Icons.language_rounded),
                   label: const Text(
-                    'Manage subscription on website',
+                    'Manage subscription on PayFast',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.1,
@@ -837,6 +860,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
