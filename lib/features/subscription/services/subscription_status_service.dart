@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/services/offline_stream_guard.dart';
 import '../../../services/entitlement_service.dart'
     show trialEndFieldAliases, trialStartFieldAliases, SubscriptionSource;
 import 'subscription_pricing.dart';
@@ -29,6 +30,12 @@ class UserSubscription {
   /// manager, never to an external website checkout.
   final String? platform;
 
+  /// The server-owned `subscriptionProduct` (the plan id, e.g.
+  /// `hunter_monthly` / `outfitter_yearly`, or a Play product id). Used to
+  /// mark the ACTIVE plan card ("YOUR TIER") so an existing subscriber sees
+  /// which of the two plans they are on. Empty when the field is absent.
+  final String planId;
+
   const UserSubscription({
     this.status = SubscriptionStatus.none,
     this.tier,
@@ -36,6 +43,7 @@ class UserSubscription {
     this.renewalDate,
     this.promoCode = '',
     this.platform,
+    this.planId = '',
   });
 
   bool get isActive => status == SubscriptionStatus.active;
@@ -52,6 +60,27 @@ class UserSubscription {
   /// only case where a "Manage subscription on website" affordance is
   /// policy-compliant).
   bool get isPayfastBilled => platform == SubscriptionSource.payfast;
+
+  /// The billing cycle the active subscription bills on, resolved from the
+  /// server-owned plan id. `'yearly'` when the plan id names an annual plan
+  /// (`hunter_yearly` / `outfitter_yearly` / any id containing `year`),
+  /// otherwise `'monthly'`. Returns `null` when there is no plan id on file
+  /// (legacy docs / a not-yet-mirrored purchase), so the UI can avoid
+  /// mis-claiming which card is the subscriber's.
+  String? get activeCycle {
+    final id = planId.trim().toLowerCase();
+    if (id.isEmpty) return null;
+    return id.contains('year') ? 'yearly' : 'monthly';
+  }
+
+  /// Whether the given [cycle] (`'monthly'` / `'yearly'`) is the plan the
+  /// active subscription is on. False when no plan id is on file, so no card
+  /// is wrongly badged.
+  bool isActiveCycle(String cycle) {
+    final active = activeCycle;
+    if (active == null) return false;
+    return active == cycle.trim().toLowerCase();
+  }
 
   /// Days remaining in the trial (0 when not in trial / expired).
   int trialDaysRemaining(DateTime now) {
@@ -74,7 +103,26 @@ class UserSubscription {
       renewalDate: _toDate(data['subscriptionRenewalDate']),
       promoCode: (data['subscriptionPromoCode'] as String?) ?? '',
       platform: _resolvePlatform(data),
+      planId: _resolvePlanId(data),
     );
+  }
+
+  /// Resolves the server-owned plan id, tolerating the documented aliases.
+  /// The canonical `subscriptionProduct` (written by `writeEntitlement` on a
+  /// Play or PayFast grant) wins; the snake_case / `plan` / `billingCycle`
+  /// spellings are accepted for legacy / third-party-written docs.
+  static String _resolvePlanId(Map<String, dynamic> data) {
+    for (final raw in <dynamic>[
+      data['subscriptionProduct'],
+      data['subscription_product'],
+      data['planId'],
+      data['plan'],
+      data['billingCycle'],
+    ]) {
+      final value = (raw ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   /// Resolves the billing platform from the raw document, preferring the
@@ -144,10 +192,31 @@ class SubscriptionStatusService {
   @visibleForTesting
   static String? Function()? currentUserIdResolverForTesting;
 
+  /// Counts how many times [watchMySubscription] has built a Firestore
+  /// subscription. A screen must build this ONCE per State (caching the
+  /// stream), never on every `build()`; a rising count across a rebuild is the
+  /// exact regression that flickered the subscription screen back to the empty
+  /// selector state. Test-only.
+  @visibleForTesting
+  static int watchMySubscriptionCalls = 0;
+
+  /// Optional override for [watchMySubscription] (tests only). Lets a test
+  /// supply a *delayed* stream so the screen's first frame is provably driven
+  /// by the one-shot seed rather than the stream's initial snapshot.
+  @visibleForTesting
+  static Stream<UserSubscription> Function()? streamForTesting;
+
+  /// Optional override for [getMySubscription] (tests only).
+  @visibleForTesting
+  static Future<UserSubscription> Function()? oneShotForTesting;
+
   @visibleForTesting
   static void resetTestSeams() {
     firestoreForTesting = null;
     currentUserIdResolverForTesting = null;
+    watchMySubscriptionCalls = 0;
+    streamForTesting = null;
+    oneShotForTesting = null;
   }
 
   FirebaseFirestore get _db {
@@ -168,21 +237,38 @@ class SubscriptionStatusService {
 
   /// Reactive stream of the current user's subscription state. Emits the
   /// empty state for an unauthenticated caller or on a hard stream error.
+  ///
+  /// The Firestore `snapshots()` subscription is wrapped in
+  /// [OfflineStreamGuard.offlineResilient] so a hard error (a missing
+  /// composite index, a permissions change, or an unrecoverable network
+  /// error with nothing in cache) serves a defined empty emission and
+  /// **completes** instead of hanging. The previous `.handleError` form was a
+  /// silent trap: `Stream.handleError` ignores the callback's return value, so
+  /// the error was discarded and the stream never emitted — leaving the
+  /// consuming `StreamBuilder` stuck in `ConnectionState.waiting` and the
+  /// subscription screen rendering its empty "NO ACTIVE SUBSCRIPTION" state
+  /// forever (the "stays on the selector" symptom).
   Stream<UserSubscription> watchMySubscription() {
+    watchMySubscriptionCalls++;
+    final override = streamForTesting;
+    if (override != null) return override();
     final uid = _uid;
     if (uid == null) return Stream.value(const UserSubscription());
-    return _db
-        .collection('users')
-        .doc(uid)
-        .snapshots()
-        .map((snap) => UserSubscription.fromMap(snap.data()))
-        .handleError((Object e) {
-      debugPrint('SubscriptionStatusService.watchMySubscription error: $e');
-    });
+    return OfflineStreamGuard.offlineResilient(
+      _db
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .map((snap) => UserSubscription.fromMap(snap.data())),
+      fallback: const UserSubscription(),
+      debugLabel: 'watchMySubscription',
+    );
   }
 
   /// One-shot read of the current user's subscription state.
   Future<UserSubscription> getMySubscription() async {
+    final override = oneShotForTesting;
+    if (override != null) return override();
     final uid = _uid;
     if (uid == null) return const UserSubscription();
     try {

@@ -80,6 +80,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// plan button.
   BillingCycle _selectedCycle = BillingCycle.monthly;
 
+  /// The reactive subscription stream, cached ONCE for the screen's lifetime.
+  ///
+  /// Caching is load-bearing: `watchMySubscription()` builds a FRESH Firestore
+  /// `.snapshots()` subscription on every call, so re-creating it inside
+  /// `build()` (as the screen previously did) tears the subscription down and
+  /// re-subscribes on every rebuild. Each rebuild then resets the
+  /// `StreamBuilder` to `ConnectionState.waiting` with no data, so an ACTIVE
+  /// subscriber briefly renders the empty "NO ACTIVE SUBSCRIPTION" state
+  /// (the plan selector) before the next snapshot lands — the reported
+  /// "stays on / flashes back to the selector" defect. Holding a single
+  /// cached stream keeps the resolved subscription stable across rebuilds.
+  /// Mirrors the documented fix for the Custom Package Builder.
+  late Stream<UserSubscription> _subscriptionStream;
+
+  /// The last resolved subscription, seeded by a one-shot read in `initState`
+  /// and kept current by every stream emission. Used as the `StreamBuilder`
+  /// fallback so the FIRST frame after entry already shows the active banner +
+  /// plan cards instead of the empty state — no flash of "NO ACTIVE
+  /// SUBSCRIPTION" for a subscriber whose `users/{uid}` doc is already active.
+  UserSubscription _resolvedSubscription = const UserSubscription();
+
   SubscriptionTier get _tier =>
       widget.tier ??
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
@@ -186,6 +207,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   @override
   void initState() {
     super.initState();
+    // Cache the subscription stream ONCE. Re-creating it in `build()` would
+    // re-subscribe on every rebuild and flicker the screen back to the empty
+    // selector state for an active subscriber (see the field doc).
+    _subscriptionStream =
+        SubscriptionStatusService.instance.watchMySubscription();
+    _seedSubscription();
     _initBilling();
     // The Play purchase stream + recorder are Android/iOS only — the web build
     // charges through PayFast (whose ITN webhook writes the entitlement).
@@ -200,6 +227,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void dispose() {
     _promoController.dispose();
     super.dispose();
+  }
+
+  /// One-shot read of the subscription state so the first frame renders the
+  /// active banner + plan cards immediately.
+  ///
+  /// The reactive stream delivers its first Firestore snapshot asynchronously,
+  /// so without this seed an active subscriber would see the empty
+  /// "NO ACTIVE SUBSCRIPTION" state for a frame. Best-effort: a read failure
+  /// (offline / no session) leaves the empty default in place and the stream
+  /// still delivers the real value a moment later.
+  Future<void> _seedSubscription() async {
+    try {
+      final sub = await SubscriptionStatusService.instance.getMySubscription();
+      if (!mounted) return;
+      setState(() => _resolvedSubscription = sub);
+    } catch (e) {
+      debugPrint('SubscriptionScreen: subscription seed failed: $e');
+    }
   }
 
   /// Resolves billing availability + the Play catalog so the UI can show the
@@ -764,9 +809,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
       body: SafeArea(
         child: StreamBuilder<UserSubscription>(
-          stream: SubscriptionStatusService.instance.watchMySubscription(),
+          // The cached stream — NEVER re-created here (see [_subscriptionStream]).
+          stream: _subscriptionStream,
           builder: (context, snapshot) {
-            final subscription = snapshot.data ?? const UserSubscription();
+            // Fall back to the last resolved subscription (seeded by the
+            // one-shot read) rather than the empty default, so a rebuild — or
+            // the first frame before the stream's initial snapshot — never
+            // flickers an active subscriber back to the empty selector state.
+            final subscription = snapshot.data ?? _resolvedSubscription;
+            // Keep the seed current with every emission so a later rebuild
+            // (before the stream re-emits) uses the freshest value.
+            _resolvedSubscription = subscription;
             // Responsive container: on a wide browser window the checkout is
             // centred at 800px (narrower than the 1280px dashboards) so the
             // tier cards / promo field / price breakdown stay a comfortable
@@ -793,7 +846,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         _buildPendingBanner(theme),
                       ],
                       const SizedBox(height: 20),
-                      _buildTierCards(theme),
+                      _buildTierCards(theme, subscription),
                       const SizedBox(height: 20),
                       _buildPromoSection(theme),
                       const SizedBox(height: 20),
@@ -974,7 +1027,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// R2999.99/year for outfitters). Tapping a card selects that billing cycle
   /// (it drives the order summary + the highlighted PayFast button). Only the
   /// active tier (Hunter or Outfitter) is shown — the other tier is hidden.
-  Widget _buildTierCards(ThemeController theme) {
+  ///
+  /// When [sub] is an ACTIVE subscription, the card matching the subscriber's
+  /// plan is badged **YOUR TIER** (resolved from the server-owned plan id) —
+  /// the layout the brief specifies: the active banner stays at the top and
+  /// BOTH plan cards remain visible below it, with the current plan marked.
+  Widget _buildTierCards(ThemeController theme, UserSubscription sub) {
     final isOutfitter = _tier == SubscriptionTier.outfitter;
     final roleLabel = isOutfitter ? 'Outfitter' : 'Hunter';
     final perks = isOutfitter ? _outfitterPerks : _hunterPerks;
@@ -982,6 +1040,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     final yearly = _yearlyPlan;
     final savings = yearly.savingsPercent(_monthlyAmount);
     final fullYear = _monthlyAmount * 12;
+    // Only badge a card as the subscriber's plan when there IS an active
+    // subscription — a trialing / cancelled / free user sees the plain
+    // selector with no "YOUR TIER" claim.
+    final active = sub.isActive;
     final monthlyCard = _planCard(
       theme,
       plan: monthly,
@@ -991,6 +1053,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       key: ValueKey('tierCard_${_tier.key}_monthly'),
       keyBase: 'tierCard_${_tier.key}_monthly',
       perks: perks,
+      isActivePlan: active && sub.isActiveCycle('monthly'),
     );
     final yearlyCard = _planCard(
       theme,
@@ -1006,6 +1069,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       key: ValueKey('tierCard_${_tier.key}_yearly'),
       keyBase: 'tierCard_${_tier.key}_yearly',
       perks: perks,
+      isActivePlan: active && sub.isActiveCycle('yearly'),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1057,6 +1121,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       _playVatPrice?.primaryLabel ?? 'R ${_monthlyAmount.toStringAsFixed(2)}/month';
 
   /// A single selectable plan card (Monthly or Yearly) for the active tier.
+  ///
+  /// [isActivePlan] marks the card the current ACTIVE subscription bills on
+  /// with a green **YOUR TIER** badge (and a green border) so an existing
+  /// subscriber can see at a glance which plan they hold while both plan cards
+  /// remain visible.
   Widget _planCard(
     ThemeController theme, {
     required BillingPlan plan,
@@ -1067,6 +1136,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     required Key key,
     required String keyBase,
     String? savingsLabel,
+    bool isActivePlan = false,
   }) {
     final isSelected = plan.cycle == _selectedCycle;
     return Material(
@@ -1081,10 +1151,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             color: theme.cardColor,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isSelected
-                  ? theme.accentColor
-                  : theme.subtitleColor.withValues(alpha: 0.25),
-              width: isSelected ? 2 : 1,
+              color: isActivePlan
+                  ? Colors.green
+                  : (isSelected
+                      ? theme.accentColor
+                      : theme.subtitleColor.withValues(alpha: 0.25)),
+              width: (isActivePlan || isSelected) ? 2 : 1,
             ),
           ),
           child: Column(
@@ -1102,6 +1174,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       ),
                     ),
                   ),
+                  if (isActivePlan) ...[
+                    Container(
+                      key: ValueKey('${keyBase}_yourTier'),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.green),
+                      ),
+                      child: const Text(
+                        'YOUR TIER',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   if (savingsLabel != null && !isSelected) ...[
                     Container(
                       padding:

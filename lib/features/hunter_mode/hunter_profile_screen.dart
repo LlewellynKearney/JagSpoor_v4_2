@@ -18,6 +18,8 @@ import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
 import '../shared/widgets/website_link_tile.dart';
+import '../subscription/services/subscription_pricing.dart';
+import '../subscription/subscription_screen.dart';
 import '../subscription/widgets/subscription_management_tile.dart';
 import 'models/hunter_profile.dart';
 import 'services/battery_saver_manager.dart';
@@ -1094,7 +1096,10 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   // Subscription management — Play-policy compliant. A
                   // Google Play-billed subscriber is routed to Google Play's
                   // subscriptions manager (one tap, no JagSpoor login); only a
-                  // PayFast subscriber sees a website link.
+                  // PayFast subscriber sees a website link. With NO active
+                  // subscription the tile opens the subscription checkout
+                  // (the plan selector + both plan cards), so the screen is
+                  // always reachable from here.
                   Card(
                     color: HunterUi.cardColor(widget.theme),
                     shape: RoundedRectangleBorder(
@@ -1103,7 +1108,20 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                         color: widget.theme.accentColor.withValues(alpha: 0.2),
                       ),
                     ),
-                    child: SubscriptionManagementTile(theme: widget.theme),
+                    child: SubscriptionManagementTile(
+                      theme: widget.theme,
+                      onSubscribe: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SubscriptionScreen(
+                              theme: widget.theme,
+                              tier: SubscriptionTier.hunter,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(

@@ -1,5 +1,113 @@
 # JagSpoor -- Agent Memory
 
+## Subscription screen stays on the screen when active (added 2026-10-18)
+
+Branch `fix/subscription-screen-fallback`, merged to `main`.
+
+### Symptom
+An ACTIVE subscriber tapped Subscriptions and the screen rendered the empty
+plan selector ("NO ACTIVE SUBSCRIPTION" + subscribe CTA) instead of the
+green "SUBSCRIPTION ACTIVE" banner with the pricing cards below it —
+"stays on / flashes back to the selector".
+
+### Root cause (two compounding defects in `SubscriptionScreen`)
+1. **The subscription stream was re-created on every `build()`.** The
+   `StreamBuilder` used `stream: SubscriptionStatusService.instance
+   .watchMySubscription()` INLINE. That method builds a FRESH Firestore
+   `.snapshots()` subscription per call, so every rebuild (the async
+   `_initBilling()` `setState`, the theme `AnimatedBuilder`, the purchase
+   stream) tore the subscription down and re-subscribed → the builder reset
+   to `ConnectionState.waiting` with no data → an active subscriber rendered
+   the empty state until the next snapshot landed. Same bug class already
+   fixed for the Custom Package Builder.
+2. **`.handleError` silently swallowed the error.** `watchMySubscription`
+   ended with `.handleError((e) { debugPrint(...); })`. `Stream.handleError`
+   IGNORES the callback's return value — it discards the error and the
+   stream never emits nor completes, so the `StreamBuilder` hung in
+   `waiting` forever → the screen rendered the empty selector state
+   permanently. (Identical to the Client Roster / Guided Hunt Log bug from
+   Phases 16/17.)
+
+**Audited and ruled out**: there is NO auto-redirect ("if subscription active
+→ profile") in `subscription_screen.dart`, `auth_gate_service.dart` (which
+has no `StreamBuilder` and no subscription listener at all), or either
+dashboard. There is no `Drawer` and no `checkSubscription()` anywhere. Every
+entry point already uses `Navigator.push` (not `pushReplacement`). The tier
+cards were already rendered below the banner unconditionally — the bug was
+purely the stream lifecycle.
+
+### Fix
+- `subscription_status_service.dart`:
+  - `watchMySubscription()` wraps the Firestore stream in
+    `OfflineStreamGuard.offlineResilient(..., fallback: const
+    UserSubscription())` — a hard error now serves a defined empty emission
+    and **completes** instead of hanging the `StreamBuilder`.
+  - `UserSubscription` gained `planId` (from the server-owned
+    `subscriptionProduct`, alias-tolerant) plus `activeCycle` /
+    `isActiveCycle(cycle)` so the UI can mark the subscriber's plan.
+  - Test seams: `watchMySubscriptionCalls` (call counter — a screen must
+    build the stream ONCE per State), `streamForTesting` and
+    `oneShotForTesting` (inject a delayed stream / one-shot read so the
+    first-frame seed is provably load-bearing).
+- `subscription_screen.dart`:
+  - The stream is cached in `initState` (`late Stream<UserSubscription>
+    _subscriptionStream`) and `build()` references the cached field — no
+    re-subscribe on rebuild.
+  - A one-shot `_seedSubscription()` read in `initState` populates
+    `_resolvedSubscription`, which is the `StreamBuilder`'s fallback
+    (`snapshot.data ?? _resolvedSubscription`) so the FIRST frame already
+    shows the active banner + plan cards (no flash of the empty state).
+  - `_buildTierCards(theme, subscription)` / `_planCard(..., isActivePlan:)`
+    render a green **YOUR TIER** badge + green border on the card matching
+    the active plan's cycle. Both plan cards remain visible; the badge only
+    appears for an ACTIVE subscription with a resolvable plan id.
+- `hunter_profile_screen.dart`: the `SubscriptionManagementTile` now passes
+  `onSubscribe` (push `SubscriptionScreen(tier: hunter)`), so with no active
+  subscription the tile opens the checkout instead of doing nothing. The
+  Play/PayFast compliance branching in the tile is unchanged.
+
+### Layout when active (as specified)
+```
+[GREEN BANNER: SUBSCRIPTION ACTIVE]
+[TIER PRICING]
+  Card: Hunter Monthly  R 34.99/month  [YOUR TIER]   (if monthly)
+  Card: Hunter Yearly   R 349.99/year
+```
+Outfitter mirrors it: R 299.99/month + R 2999.99/year.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing
+  info-level issues, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2245 passed,
+  1 failed** — the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` ("is a Firebase Auth
+  user-creation trigger in us-central1"), reproduced identically with these
+  changes stashed.
+- NEW `test/subscription_screen_fallback_test.dart` (14 tests): active hunter
+  keeps the banner + BOTH cards (never only the selector); the active plan is
+  badged YOUR TIER (monthly / yearly); the screen survives an in-place
+  rebuild with **`watchMySubscriptionCalls == 1`** (the stream is not
+  re-created); the active banner renders on the FIRST frame with a
+  not-yet-emitted stream (the seed is load-bearing); a trialing account and an
+  active sub with no plan id get NO badge; `activeCycle` resolution incl.
+  aliases; the stream is resilient and rebuilt per call. **Mutation-tested**:
+  restoring the inline stream fails the call-count assertion; removing the
+  seed fails the first-frame test.
+- `flutter build web --release`: **SUCCESS**; `build/web/main.dart.js`
+  contains `34.99`, `349.99`, `299.99`, `2999.99`, `/month`, `/year`,
+  `SUBSCRIPTION ACTIVE`, `YOUR TIER`, `TIER PRICING` (prices compose at
+  runtime as `"R " + amount + "/month"`, matching the existing architecture
+  and the `billing_service_test` contract).
+- Env: Flutter 3.44.9 at `$HOME/sdk/flutter`; run the sqflite-FFI suites with
+  `LD_LIBRARY_PATH="$HOME/libs"` (the `~/libs/libsqlite3.so` symlink).
+
+### Files
+- MODIFIED: `lib/features/subscription/services/subscription_status_service.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/hunter_mode/hunter_profile_screen.dart`, `AGENTS.md`.
+- NEW: `test/subscription_screen_fallback_test.dart`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## Profile: Website link next to Facebook link (added 2026-10-18)
 
 Branch `feat/profile-website-link`, merged to `main` as `3081fb2`
