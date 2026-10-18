@@ -98,19 +98,27 @@ class OutfitterBushveldBackground {
     required Widget child,
     Color? fallbackColor,
     bool? isDarkMode,
+    double? webMaxWidth = 1100,
   }) {
     return Builder(
       builder: (context) {
         final dark = isDarkMode ??
             Theme.of(context).brightness == Brightness.dark;
         final desktop = WebLayout.isDesktopLayout(context);
+        // Web-only: centre the content in a max-width column on a desktop
+        // browser (no-op on Android/iOS + the VM host via the `!kIsWeb` guard
+        // inside [WebLayout.webResponsive]). A full-bleed surface opts out by
+        // passing `webMaxWidth: null`.
+        final content = webMaxWidth == null
+            ? child
+            : WebLayout.webResponsive(maxWidth: webMaxWidth, child: child);
         return Stack(
           fit: StackFit.expand,
           children: [
             backgroundImage(fallbackColor: fallbackColor),
             if (desktop) webContrastOverlay(),
             scrim(isDarkMode: dark),
-            child,
+            content,
           ],
         );
       },
@@ -228,6 +236,15 @@ class OutfitterScaffold extends StatelessWidget {
   final bool resizeToAvoidBottomInset;
   final Color? backgroundColor;
 
+  /// Web-only content cap (logical px). On the **browser** the body content is
+  /// centred in a max-width column with 24px gutters so a desktop window never
+  /// stretches the mobile layout edge-to-edge. On Android / iOS (and the VM
+  /// test host) it is a no-op via the `!kIsWeb` guard in
+  /// [WebLayout.webResponsive], so the native UI is untouched.
+  ///
+  /// Pass `null` to opt a full-bleed surface (map / radar) out of the cap.
+  final double? webMaxWidth;
+
   const OutfitterScaffold({
     super.key,
     this.theme,
@@ -237,6 +254,7 @@ class OutfitterScaffold extends StatelessWidget {
     this.bottomNavigationBar,
     this.resizeToAvoidBottomInset = true,
     this.backgroundColor,
+    this.webMaxWidth = 1100,
   });
 
   @override
@@ -256,6 +274,7 @@ class OutfitterScaffold extends StatelessWidget {
       body: OutfitterBushveldBackground.stack(
         fallbackColor: bg,
         isDarkMode: dark,
+        webMaxWidth: webMaxWidth,
         child: body,
       ),
     );

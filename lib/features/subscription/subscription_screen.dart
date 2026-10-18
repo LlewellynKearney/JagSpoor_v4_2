@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -981,6 +982,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     final yearly = _yearlyPlan;
     final savings = yearly.savingsPercent(_monthlyAmount);
     final fullYear = _monthlyAmount * 12;
+    final monthlyCard = _planCard(
+      theme,
+      plan: monthly,
+      title: '$roleLabel Monthly',
+      priceLabel: _monthlyPriceLabel(monthly),
+      caption: 'Billed every month · incl. VAT',
+      key: ValueKey('tierCard_${_tier.key}_monthly'),
+      keyBase: 'tierCard_${_tier.key}_monthly',
+      perks: perks,
+    );
+    final yearlyCard = _planCard(
+      theme,
+      plan: yearly,
+      title: '$roleLabel Yearly',
+      priceLabel: 'R ${yearly.amountZar.toStringAsFixed(2)}/year',
+      caption: 'Billed once a year · incl. VAT',
+      savingsLabel: savings == null
+          ? null
+          : 'SAVE ~$savings% '
+              '(R${yearly.amountZar.toStringAsFixed(2)} vs '
+              'R${fullYear.toStringAsFixed(2)})',
+      key: ValueKey('tierCard_${_tier.key}_yearly'),
+      keyBase: 'tierCard_${_tier.key}_yearly',
+      perks: perks,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -994,31 +1020,32 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        _planCard(
-          theme,
-          plan: monthly,
-          title: '$roleLabel Monthly',
-          priceLabel: _monthlyPriceLabel(monthly),
-          caption: 'Billed every month · incl. VAT',
-          key: ValueKey('tierCard_${_tier.key}_monthly'),
-          keyBase: 'tierCard_${_tier.key}_monthly',
-          perks: perks,
-        ),
-        const SizedBox(height: 12),
-        _planCard(
-          theme,
-          plan: yearly,
-          title: '$roleLabel Yearly',
-          priceLabel: 'R ${yearly.amountZar.toStringAsFixed(2)}/year',
-          caption: 'Billed once a year · incl. VAT',
-          savingsLabel: savings == null
-              ? null
-              : 'SAVE ~$savings% '
-                  '(R${yearly.amountZar.toStringAsFixed(2)} vs '
-                  'R${fullYear.toStringAsFixed(2)})',
-          key: ValueKey('tierCard_${_tier.key}_yearly'),
-          keyBase: 'tierCard_${_tier.key}_yearly',
-          perks: perks,
+        // On a desktop browser the two plans sit side-by-side so both prices
+        // are visible at a glance; on mobile web (and every native platform /
+        // the VM test host) they stay stacked, unchanged.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final sideBySide =
+                kIsWeb && !WebLayout.isMobileWebWidth(constraints.maxWidth);
+            if (!sideBySide) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  monthlyCard,
+                  const SizedBox(height: 12),
+                  yearlyCard,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: monthlyCard),
+                const SizedBox(width: 16),
+                Expanded(child: yearlyCard),
+              ],
+            );
+          },
         ),
       ],
     );

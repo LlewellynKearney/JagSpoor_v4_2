@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../core/theme/app_theme.dart';
@@ -188,10 +189,15 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                     ),
                     child: WebLayout.responsive(
                       // Constrain the feature-card column on wide / desktop
-                      // screens so cards don't stretch edge-to-edge (the same
-                      // centred 1280 max-width container the hunter dashboard
-                      // uses). On a mobile-width viewport the child is returned
-                      // unchanged, so the existing mobile layout is untouched.
+                      // screens so cards don't stretch edge-to-edge. On the
+                      // browser the cap is 1000px (web design spec); on the
+                      // native platforms / VM host it stays the 1280px
+                      // [WebLayout.maxContentWidth]. On a mobile-width viewport
+                      // the child is returned unchanged, so the existing mobile
+                      // layout is untouched.
+                      maxWidth: kIsWeb
+                          ? WebLayout.webDashboardMaxWidth
+                          : WebLayout.maxContentWidth,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20.0,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/layout/web_layout.dart';
@@ -625,7 +626,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 _buildSectionLabel(context, theme, 'TACTICAL MODULES'),
                 const SizedBox(height: 12),
                 if (isDesktop)
-                  _twoColumnGrid([
+                  _desktopGrid(
+                    context,
+                    [
                     buildFolder(
                       icon: Icons.gps_fixed_rounded,
                       title: 'All things guns',
@@ -696,7 +699,9 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 _buildSectionLabel(context, theme, 'MORE MODULES'),
                 const SizedBox(height: 12),
                 if (isDesktop)
-                  _twoColumnGrid([
+                  _desktopGrid(
+                    context,
+                    [
                     for (final feature in remainingFeatures)
                       _buildCard(context, theme, feature, isDesktop: true),
                   ])
@@ -721,10 +726,16 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 );
               }
 
-              // Desktop/web presentation: a centred, max-width (1280) column
-              // with 24px gutters so the browser never stretches the mobile
-              // layout edge-to-edge across a wide monitor. The 2-column
-              // module grids above render inside this Column.
+              // Desktop/web presentation: a centred, max-width column with
+              // 24px gutters so the browser never stretches the mobile layout
+              // edge-to-edge across a wide monitor. On the browser the cap is
+              // 1000px (per the web design spec); on the native platforms / VM
+              // host it stays the 1280px [WebLayout.maxContentWidth] the
+              // existing contract tests lock. The 2/3-column module grids
+              // above render inside this Column.
+              final desktopMaxWidth = kIsWeb
+                  ? WebLayout.webDashboardMaxWidth
+                  : WebLayout.maxContentWidth;
               return SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
                   24,
@@ -734,9 +745,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
                 ),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: WebLayout.maxContentWidth,
-                    ),
+                    constraints: BoxConstraints(maxWidth: desktopMaxWidth),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: content,
@@ -837,6 +846,49 @@ class _HunterDashboardState extends State<HunterDashboard> {
             ),
           ],
         ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+
+  /// Desktop/web module grid.
+  ///
+  /// On a **wide browser** (`kIsWeb` and viewport > 900px) the modules lay out
+  /// in [wideWebColumns] (3) columns so a large monitor shows more at a glance.
+  /// On every native platform (Android / iOS) and the VM test host this
+  /// delegates to [_twoColumnGrid] (2 columns), so the proven native / test
+  /// layout is unchanged. The `kIsWeb` guard is a compile-time constant, so
+  /// the 3-column branch is stripped entirely from the native build.
+  Widget _desktopGrid(
+    BuildContext context,
+    List<Widget> items, {
+    double spacing = 16,
+    int wideWebColumns = 3,
+    double wideWebBreakpoint = 900,
+  }) {
+    final width = MediaQuery.sizeOf(context).width;
+    final useWideWeb =
+        kIsWeb && width > wideWebBreakpoint && wideWebColumns > 2;
+    if (!useWideWeb) return _twoColumnGrid(items, spacing: spacing);
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += wideWebColumns) {
+      if (i > 0) rows.add(SizedBox(height: spacing));
+      final cells = <Widget>[];
+      for (var c = 0; c < wideWebColumns; c++) {
+        if (c > 0) cells.add(SizedBox(width: spacing));
+        cells.add(
+          Expanded(
+            child: i + c < items.length
+                ? items[i + c]
+                : const SizedBox.shrink(),
+          ),
+        );
+      }
+      rows.add(
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: cells),
       );
     }
     return Column(

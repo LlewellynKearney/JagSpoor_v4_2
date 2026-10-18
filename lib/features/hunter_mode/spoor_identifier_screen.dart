@@ -243,6 +243,8 @@ class _SpoorIdentifierScreenState extends State<SpoorIdentifierScreen> {
         return HunterScaffold(
           theme: widget.theme,
           padBodyForAppBar: true,
+          // The live camera preview is intentionally full-bleed.
+          webMaxWidth: null,
           appBar: AppBar(
             title: Text(
               'Track (Spoor) Identifier',

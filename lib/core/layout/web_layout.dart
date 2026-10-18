@@ -37,6 +37,22 @@ class WebLayout {
   /// stretching a text field edge-to-edge across a wide monitor.
   static const double authContentWidth = 480;
 
+  /// Content cap (logical px) for the **browser** dashboards. The web design
+  /// spec uses 1000px for the hunter / outfitter dashboards (slightly wider
+  /// than the 800px checkout, narrower than the 1280px native desktop cap) so
+  /// a monitor shows the module grids without over-stretched card rows.
+  static const double webDashboardMaxWidth = 1000;
+
+  /// Content cap (logical px) for the **browser** tables / data screens
+  /// (farm control panel, booking requests, revenue BI). Wider than the
+  /// dashboards so data-dense tables have room, still capped so text lines
+  /// never run edge-to-edge on a large monitor.
+  static const double webTableMaxWidth = 1200;
+
+  /// Content cap (logical px) for the **browser** single-column forms and
+  /// reading screens (profile, settings, checkout).
+  static const double webFormMaxWidth = 800;
+
   /// Web header height (the native platforms keep `kToolbarHeight`).
   static const double webHeaderHeight = 64;
 
@@ -88,6 +104,58 @@ class WebLayout {
           child: child,
         ),
       ),
+    );
+  }
+
+  /// Viewport width (logical px) below which a browser window is treated as
+  /// "mobile web" (a phone-sized browser / a narrow desktop window). Matches
+  /// the `600` breakpoint the web design spec uses for the single-column
+  /// mobile-web presentation.
+  static const double mobileWebBreakpoint = 600;
+
+  /// Whether the viewport is a **mobile-web** (narrow browser) presentation.
+  static bool isMobileWebWidth(double width) => width < mobileWebBreakpoint;
+
+  /// The strict **web-only** responsive container.
+  ///
+  /// On a **desktop browser** (viewport ≥ [mobileWebBreakpoint]) the content is
+  /// centred in a max-width column with symmetric 24px gutters so a wide
+  /// window never stretches the mobile layout edge-to-edge. On a **narrow
+  /// (mobile-web) browser**, and on **every native platform** (Android / iOS)
+  /// plus the VM test host, the child is returned completely unchanged.
+  ///
+  /// The `!kIsWeb` short-circuit is what guarantees the Android / iOS native
+  /// UI is byte-for-byte untouched — `kIsWeb` is a compile-time constant that
+  /// is `false` on the native platforms (and on the VM test host), so this
+  /// helper is a no-op there. The `>= breakpoint` guard additionally keeps a
+  /// phone-sized browser window on the exact native mobile layout (the layout
+  /// proven to fit a 320px screen), so only genuinely wide windows are
+  /// re-centred. Use it for every screen that must gain the centred browser
+  /// presentation without risking the native layout.
+  static Widget webResponsive({
+    required Widget child,
+    double maxWidth = 1100,
+    double horizontalPadding = 24,
+    bool topPadding = false,
+  }) {
+    if (!kIsWeb) return child; // Native (Android/iOS) + VM tests: NO CHANGE.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Mobile-web keeps the native single-column layout verbatim.
+        if (isMobileWebWidth(constraints.maxWidth)) return child;
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: topPadding ? 24 : 0,
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 

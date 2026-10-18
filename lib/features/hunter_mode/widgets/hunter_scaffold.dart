@@ -233,6 +233,16 @@ class HunterScaffold extends StatelessWidget {
   /// already manage its own top inset.
   final bool padBodyForAppBar;
 
+  /// Web-only content cap (logical px). On the **browser** the body content is
+  /// centred in a max-width column with symmetric gutters so a desktop window
+  /// never stretches the mobile layout edge-to-edge. On the native platforms
+  /// (Android / iOS) and the VM test host this is a **no-op** (the cap is
+  /// applied inside a `!kIsWeb` short-circuit), so the native UI is untouched.
+  ///
+  /// Pass `null` to opt a full-bleed surface (live camera / map preview) out
+  /// of the cap.
+  final double? webMaxWidth;
+
   const HunterScaffold({
     super.key,
     this.theme,
@@ -243,6 +253,7 @@ class HunterScaffold extends StatelessWidget {
     this.resizeToAvoidBottomInset = true,
     this.backgroundColor,
     this.padBodyForAppBar = false,
+    this.webMaxWidth = 1100,
   });
 
   @override
@@ -262,6 +273,17 @@ class HunterScaffold extends StatelessWidget {
           removeTop: true,
           child: body,
         ),
+      );
+    }
+    // Web-only: centre the content in a max-width column on a desktop browser.
+    // A no-op on Android/iOS (and the VM test host) via the `!kIsWeb` guard
+    // inside [WebLayout.webResponsive], so the native UI is untouched. Screens
+    // that are intentionally full-bleed (live camera / map preview) opt out by
+    // passing `webMaxWidth: null`.
+    if (webMaxWidth != null) {
+      effectiveBody = WebLayout.webResponsive(
+        maxWidth: webMaxWidth!,
+        child: effectiveBody,
       );
     }
     return Scaffold(
