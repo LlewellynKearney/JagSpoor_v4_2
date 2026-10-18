@@ -1,5 +1,118 @@
 # JagSpoor -- Agent Memory
 
+## Web: FINAL PayFast pricing + logout null-crash fix + favicon restored (added 2026-10-18)
+
+### 1. PayFast plan catalog — final recurring pricing
+`functions/src/payfast/plans.ts` `PAYFAST_PLAN_CATALOG` now carries the
+confirmed **VAT-inclusive** charges AND the PayFast recurring fields
+(`recurringAmountZar`, `frequency`, `cycles`):
+- `hunter_monthly` 34.99, freq 3 (monthly), cycles 0, "JagSpoor Hunter Monthly"
+- `hunter_yearly` 349.99, freq 6 (yearly), cycles 0, "JagSpoor Hunter Yearly"
+- `outfitter_monthly` 299.99, freq 3, cycles 0, "JagSpoor Outfitter Monthly"
+- `outfitter_yearly` 2999.99, freq 6, cycles 0, "JagSpoor Outfitter Yearly"
+
+`buildPaymentForm` (`payfast.service.ts`) now emits `subscription_type=1`,
+`frequency`, `cycles`, `recurring_amount` (all covered by the MD5 signature)
+whenever a `frequency` is supplied — so a completed checkout creates a REAL
+PayFast recurring subscription (bills until cancelled). `payfast.ts`
+`createPayFastPayment` passes the plan's recurring fields through. The
+public `PAYFAST_MERCHANT_ID = 37584965` stays a constant; the merchant KEY +
+passphrase remain `defineSecret` bindings never returned to the client.
+`custom_str1 = uid` (so `payfastNotify` can mark `users/{uid}` active),
+`custom_str2 = planId`, `custom_str3 = role`.
+
+### 2. Client PayFast buttons + web-only Play suppression
+NEW `lib/features/billing/payfast_buttons.dart`
+(`PayFastHunterOutfitterButtons`): four buttons — HUNTER MONTHLY R34.99 /
+HUNTER YEARLY R349.99 / OUTFITTER MONTHLY R299.99 / OUTFITTER YEARLY
+R2999.99 — each calling `BillingService.payWithPlanId(role, planId)` ->
+`createPayFastPayment` -> the hosted checkout. Rendered ONLY on the web
+(`kIsWeb`; `forceShow` for VM tests). Wired into
+`subscription_screen.dart`'s web branch (shown when there is no active
+subscription to manage). `BillingPlans` (`billing_plans.dart`) already
+mirrored these four amounts.
+- `subscription_screen.dart` gained `_isWebBillingFor(sub)` = `usesPayFast ||
+  sub.isPayfastBilled` for the build-time branching; the platform-only
+  `_isWebBilling` (kIsWeb) still drives `initState`. The Play
+  `RESTORE PURCHASES` affordance is hidden whenever that is true.
+- The paywall's `_isWebBilling` is deliberately the PLATFORM check only —
+  the paywall compliance contract requires a PayFast-billed NATIVE user to
+  still see "Manage subscription on website" (and a Play user to never be
+  steered off-store), so widening it there would break
+  `play_billing_compliance_test`. An active web subscriber gets "MANAGE
+  SUBSCRIPTION ON PAYFAST" -> `BillingService.payfastDashboardUrl`.
+- Both `subscription_screen` + `paywall_screen` bodies remain wrapped in
+  `WebLayout.responsive(maxWidth: 800)` with 24px desktop gutters.
+
+### 3. Logout null-crash fix ("Null check operator used on a null value")
+`lib/features/authentication/services/auth_gate_service.dart` `signOut()` is
+now fully failure-tolerant: it reads `currentUser` (never `currentUser!`),
+returns early (still clearing cached role/admin state) when there is no user,
+and wraps the FCM-token cleanup + `FirebaseAuth.signOut()` +
+`GoogleSignIn.signOut()` each in its own try/catch. `_firebaseAuth` /
+`_googleSignIn` / `_firestore` became LAZY getters (cached GoogleSignIn
+instance) so constructing the service before `Firebase.initializeApp()`
+cannot throw. `hunter_profile_screen.dart` `_logout()` now navigates to `/`
+even if sign-out throws (no more red "Sign out failed" snackbar crash);
+`outfitter_dashboard.dart` gained a shared `_signOut()` (AuthGateService +
+`UserRoleResolver.reset()` + navigate) replacing the inline handler that
+bypassed the safe path; `admin_analytics_service.dart` `signOut()` is
+try/catch guarded.
+
+### 4. Favicon / web assets (verified, no change)
+`web/favicon.png` (5481 B), `web/icons/Icon-{192,512}.png` +
+`Icon-maskable-{192,512}.png` are the official warm-brown JagSpoor badge
+(dominant RGB ≈ (128,96,64) — NOT Flutter blue), all git-tracked, referenced
+by `web/manifest.json` (`theme_color #2d2a1f`, 4 icon entries) and
+`web/index.html` (`<link rel="icon" href="favicon.png">` + apple-touch-icon).
+A `flutter build web --release` reproduces them into `build/web/`.
+
+### Tests
+NEW `test/payfast_buttons_test.dart` (5): the four buttons + their verbatim
+prices render; nothing renders off the web when not forced; tapping a button
+requests the matching plan id + launches; a failed checkout surfaces the
+error; `BillingPlans` mirrors the four amounts. `functions/test/payfast.test.js`
++2 (recurring fields on every plan; `buildPaymentForm` emits
+`subscription_type/frequency/cycles/recurring_amount` when a frequency is set
+and omits them for a one-off).
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (106 pre-existing
+  infos in lib).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2214 passed,
+  1 failed** — the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` (proven by running the suite at
+  HEAD before any change: identical 2209 passed / 1 failed baseline; this
+  change adds the 5 new passing tests).
+- `functions`: `npm run build` clean; `npm test` **123/123** (was 121).
+- `flutter build web --release`: **SUCCESS**; `build/web/favicon.png` +
+  `build/web/icons/` (4 icons) present; `build/web/index.html` carries the
+  favicon + apple-touch-icon links; `build/web/main.dart.js` contains **no**
+  `merchant_key` / `passphrase` / `37584965` (all server-side).
+- Env: Flutter 3.44.9 at `/workspace/sdk/flutter`; the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0`
+  symlink for the sqflite-FFI suites.
+
+### Operator steps (cannot be done in this sandbox)
+1. `firebase functions:secrets:set PAYFAST_MERCHANT_KEY` and
+   `firebase functions:secrets:set PAYFAST_PASSPHRASE` in project `jagspoor`.
+2. `npx firebase-tools deploy --only functions` to ship the recurring-field
+   form builder.
+3. Point the PayFast merchant's ITN notify URL at
+   `https://us-central1-jagspoor.cloudfunctions.net/payfastNotify`.
+
+### Files
+- MODIFIED: `functions/src/payfast/plans.ts`, `functions/src/payfast/payfast.service.ts`,
+  `functions/src/payfast/payfast.ts`, `functions/test/payfast.test.js`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/authentication/services/auth_gate_service.dart`,
+  `lib/features/hunter_mode/hunter_profile_screen.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/admin/services/admin_analytics_service.dart`, `AGENTS.md`.
+- NEW: `lib/features/billing/payfast_buttons.dart`, `test/payfast_buttons_test.dart`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
+
 ## Web: subscription screen 800px responsive + PayFast-only on web (added 2026-10-18)
 
 Follow-up to the all-role responsive + PayFast phase. Two web-build bugs

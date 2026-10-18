@@ -46,6 +46,72 @@ test("plan catalog: hunter + outfitter monthly/yearly at the Option-A prices", (
   assert.strictEqual(PAYFAST_PLAN_CATALOG.hunter_yearly.months, 12);
 });
 
+test("plan catalog: recurring amount, frequency (3=monthly/6=yearly) + cycles 0", () => {
+  // Every plan bills the same amount each cycle and never expires (cycles 0).
+  const expected = {
+    hunter_monthly: { freq: 3, amt: 34.99, name: "JagSpoor Hunter Monthly" },
+    hunter_yearly: { freq: 6, amt: 349.99, name: "JagSpoor Hunter Yearly" },
+    outfitter_monthly: {
+      freq: 3,
+      amt: 299.99,
+      name: "JagSpoor Outfitter Monthly",
+    },
+    outfitter_yearly: {
+      freq: 6,
+      amt: 2999.99,
+      name: "JagSpoor Outfitter Yearly",
+    },
+  };
+  for (const [planId, want] of Object.entries(expected)) {
+    const plan = PAYFAST_PLAN_CATALOG[planId];
+    assert.strictEqual(plan.frequency, want.freq, `${planId} frequency`);
+    assert.strictEqual(plan.cycles, 0, `${planId} cycles`);
+    assert.strictEqual(plan.recurringAmountZar, want.amt, `${planId} recurring`);
+    assert.strictEqual(plan.itemName, want.name, `${planId} item name`);
+  }
+});
+
+test("buildPaymentForm emits the recurring subscription fields when a frequency is set", () => {
+  const form = buildPaymentForm({
+    userId: "uid-7",
+    role: "hunter",
+    planId: "hunter_yearly",
+    amount: 349.99,
+    recurringAmount: 349.99,
+    frequency: 6,
+    cycles: 0,
+    itemName: "JagSpoor Hunter Yearly",
+    returnUrl: "r",
+    cancelUrl: "c",
+    notifyUrl: "n",
+    merchantKey: "k",
+    passphrase: "pass",
+  });
+  assert.strictEqual(form.fields.subscription_type, "1");
+  assert.strictEqual(form.fields.frequency, "6");
+  assert.strictEqual(form.fields.cycles, "0");
+  assert.strictEqual(form.fields.recurring_amount, "349.99");
+  // The signature covers the recurring fields too.
+  assert.strictEqual(verifySignature(form.fields, "pass"), true);
+
+  // No frequency -> a one-off payment with no subscription fields.
+  const oneOff = buildPaymentForm({
+    userId: "uid-7",
+    role: "hunter",
+    planId: "hunter_monthly",
+    amount: 34.99,
+    itemName: "x",
+    returnUrl: "r",
+    cancelUrl: "c",
+    notifyUrl: "n",
+    merchantKey: "k",
+  });
+  assert.ok(!("subscription_type" in oneOff.fields));
+  assert.ok(!("frequency" in oneOff.fields));
+  assert.ok(!("cycles" in oneOff.fields));
+  assert.ok(!("recurring_amount" in oneOff.fields));
+});
+
 test("resolvePlan: an explicit planId wins, else role+cycle, else null", () => {
   assert.strictEqual(
     resolvePlan({ planId: "outfitter_yearly" }).planId,

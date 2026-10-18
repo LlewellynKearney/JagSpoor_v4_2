@@ -119,6 +119,11 @@ export const createPayFastPayment = onCall(
       role: plan.role,
       planId: plan.planId,
       amount: plan.amountZar,
+      // Recurring subscription: the same amount is billed each month (freq 3)
+      // or year (freq 6) until the subscriber cancels (cycles 0).
+      recurringAmount: plan.recurringAmountZar,
+      frequency: plan.frequency,
+      cycles: plan.cycles,
       itemName: plan.itemName,
       returnUrl: PAYFAST_SUCCESS_URL,
       cancelUrl: PAYFAST_CANCEL_URL,
@@ -133,6 +138,7 @@ export const createPayFastPayment = onCall(
       uid,
       planId: plan.planId,
       amount: plan.amountZar,
+      frequency: plan.frequency,
       sandbox: isSandbox(),
     });
 

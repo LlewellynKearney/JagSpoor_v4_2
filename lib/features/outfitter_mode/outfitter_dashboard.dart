@@ -7,7 +7,6 @@ import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
 import '../../core/widgets/version_info.dart';
 import '../shared/widgets/hunter_media_card.dart';
-import '../auth/auth_screen.dart';
 import '../auth/change_password_dialog.dart';
 import '../hunter_mode/screens/outfitter_enterprise_panel_screen.dart';
 import '../hunter_mode/screens/outfitter_trophy_stock_screen.dart';
@@ -25,6 +24,7 @@ import '../admin/services/admin_auth_guard.dart';
 import '../admin/services/usage_analytics_service.dart';
 import '../admin/widgets/admin_mode_switcher.dart';
 import '../auth/services/user_role_provider.dart';
+import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../auth/screens/privacy_policy_screen.dart';
 import '../subscription/subscription_screen.dart';
@@ -541,13 +541,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
       _headerAction(
         icon: Icons.lock_reset_rounded,
         tooltip: 'Sign out',
-        onPressed: () {
-          UserRoleResolver.instance.reset();
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => AuthScreen(themedata: theme)),
-          );
-        },
+        onPressed: _signOut,
       ),
     ];
     return JagSpoorDashboardHeader(
@@ -700,6 +694,22 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
         ),
       ),
     );
+  }
+
+  /// Signs the outfitter out via the shared, failure-tolerant
+  /// [AuthGateService.signOut] (which also clears the cached role + admin
+  /// state), then returns to the login screen. Never throws and always
+  /// navigates, so a plugin / null-user error can never strand the user (the
+  /// "Sign out failed: Null check operator used on a null value" regression).
+  Future<void> _signOut() async {
+    try {
+      await AuthGateService().signOut();
+    } catch (e) {
+      debugPrint('OutfitterDashboard._signOut error: $e');
+    }
+    if (!mounted) return;
+    UserRoleResolver.instance.reset();
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   void _showSettingsBottomSheet(BuildContext context, ThemeController theme) {

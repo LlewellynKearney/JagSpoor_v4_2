@@ -45,11 +45,14 @@ class AuthGateService {
   factory AuthGateService() => _instance;
   AuthGateService._internal();
 
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    signInOption: SignInOption.standard,
-  );
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Lazily resolved so constructing the service before `Firebase.initializeApp()`
+  // (cold-launch race / widget tests) does not throw `[core/no-app]`.
+  FirebaseAuth get _firebaseAuth => FirebaseAuth.instance;
+  GoogleSignIn? _googleSignInInstance;
+  GoogleSignIn get _googleSignIn => _googleSignInInstance ??= GoogleSignIn(
+        signInOption: SignInOption.standard,
+      );
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   // SMS Gateway Configuration (configure your SMS provider here)
   // Options: 'twilio', 'bulksms', 'custom'
@@ -254,18 +257,49 @@ class AuthGateService {
   /// Check if user is signed in
   bool get isSignedIn => _firebaseAuth.currentUser != null;
 
-  /// Sign out from all providers
+  /// Sign out from all providers.
+  ///
+  /// This is deliberately **failure-tolerant**: every step is independently
+  /// guarded and the method never throws, so a caller's navigation to the
+  /// login screen always proceeds. Previously an unguarded
+  /// `FirebaseAuth.instance.currentUser!` / plugin call could raise
+  /// `Null check operator used on a null value` and abort the sign-out (the
+  /// "Sign out failed" crash).
   Future<void> signOut() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) {
+      // Already signed out — clear the cached role/admin state so a stale
+      // session can never linger, then return without touching the plugins.
+      UserRoleProvider.instance.reset();
+      AdminAuthGuard.instance.reset();
+      return;
+    }
+
     // Remove this device's FCM token from the user document BEFORE the auth
     // session ends (the uid must still be resolvable), so the account stops
     // receiving pushes on this device. Best-effort: never blocks sign-out.
     try {
       await PushNotificationService.instance.unregisterCurrentDevice();
-    } catch (_) {
-      // Push cleanup is a convenience — never block the sign-out.
+    } catch (e) {
+      debugPrint('AuthGateService.signOut: FCM unregister failed: $e');
     }
-    await _firebaseAuth.signOut();
-    await _googleSignIn.signOut();
+
+    // Sign out of Firebase Auth. Guarded so a plugin/platform error cannot
+    // abort the flow (the local caches are cleared regardless).
+    try {
+      await _firebaseAuth.signOut();
+    } catch (e) {
+      debugPrint('AuthGateService.signOut: FirebaseAuth.signOut failed: $e');
+    }
+
+    // Sign out of Google (federated) — best-effort; a browser / plugin error
+    // must never block the sign-out.
+    try {
+      await _googleSignIn.signOut();
+    } catch (e) {
+      debugPrint('AuthGateService.signOut: GoogleSignIn.signOut failed: $e');
+    }
+
     // Clear cached role state so the next sign-in re-resolves from scratch.
     UserRoleProvider.instance.reset();
     AdminAuthGuard.instance.reset();

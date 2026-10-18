@@ -112,6 +112,18 @@ export interface CreatePaymentInput {
   planId: string;
   /** ZAR amount (resolved server-side from the plan). */
   amount: number;
+  /**
+   * The recurring ZAR amount billed each cycle (PayFast `recurring_amount`).
+   * Defaults to [amount] when omitted.
+   */
+  recurringAmount?: number;
+  /**
+   * PayFast `frequency` code for a recurring subscription: 3 = monthly,
+   * 6 = yearly. Omitted -> a one-off payment (no `subscription_type`).
+   */
+  frequency?: number;
+  /** PayFast `cycles` (0 = until cancelled). Only used with [frequency]. */
+  cycles?: number;
   /** Item name shown on the checkout. */
   itemName: string;
   /** URL PayFast redirects to on success. */
@@ -167,6 +179,16 @@ export function buildPaymentForm(input: CreatePaymentInput): PaymentForm {
     custom_str2: input.planId,
     custom_str3: input.role,
   };
+  // Recurring subscription fields (PayFast `subscription_type=1`). The
+  // recurring amount equals the first charge; `cycles=0` bills until the
+  // subscriber cancels. Omitted when no `frequency` is supplied so a plan
+  // without a billing cycle stays a one-off payment.
+  if (input.frequency != null) {
+    fields.subscription_type = "1";
+    fields.frequency = String(input.frequency);
+    fields.cycles = String(input.cycles ?? 0);
+    fields.recurring_amount = (input.recurringAmount ?? input.amount).toFixed(2);
+  }
   fields.signature = generateSignature(fields, input.passphrase);
   return {
     processUrl: input.sandbox

@@ -148,6 +148,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// native Google Play Billing flow. On the web there is no Play catalog, no
   /// Play purchase stream and no Play subscriptions manager — the PayFast
   /// hosted checkout is the purchase path.
+  ///
+  /// This is the PLATFORM check only (`kIsWeb`). A PayFast-billed subscriber
+  /// on a native build is handled by the dedicated `_isPayfastBilled` branch
+  /// below ("Manage subscription on website"), which keeps a Play-billed user
+  /// from ever being steered off-store.
   bool get _isWebBilling => BillingService.instance.usesPayFast;
 
   /// The PayFast plan id for the active tier (used by the web checkout).

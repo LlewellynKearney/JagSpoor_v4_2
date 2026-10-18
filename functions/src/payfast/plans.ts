@@ -20,20 +20,43 @@ export interface PayFastPlan {
   billingCycle: BillingCycle;
   /** ZAR amount (VAT inclusive) the customer is charged. */
   amountZar: number;
+  /**
+   * The recurring ZAR amount billed on each cycle (VAT inclusive). PayFast's
+   * `recurring_amount` field — equal to [amountZar] for every plan here.
+   */
+  recurringAmountZar: number;
+  /**
+   * PayFast `frequency` code: 3 = monthly, 6 = yearly (annual). See
+   * https://developers.payfast.co.za/docs#subscriptions
+   */
+  frequency: number;
+  /** PayFast `cycles` — 0 means bill until cancelled (no fixed term). */
+  cycles: number;
   /** Human-readable item name shown on the PayFast checkout. */
   itemName: string;
   /** How many months of entitlement a completed payment grants. */
   months: number;
 }
 
-/** The full plan catalog, keyed by plan id. */
+/**
+ * The full plan catalog, keyed by plan id.
+ *
+ * Amounts are the FINAL, VAT-inclusive charges (Option A — 15% SA VAT is
+ * absorbed out of the listed price, matching `subscription_screen`). The
+ * recurring amount equals the first charge and the subscription bills every
+ * month (`frequency: 3`) or every year (`frequency: 6`) with `cycles: 0`
+ * (until cancelled).
+ */
 export const PAYFAST_PLAN_CATALOG: Record<string, PayFastPlan> = {
   hunter_monthly: {
     planId: "hunter_monthly",
     role: "hunter",
     billingCycle: "monthly",
     amountZar: 34.99,
-    itemName: "JagSpoor Hunter — Monthly",
+    recurringAmountZar: 34.99,
+    frequency: 3,
+    cycles: 0,
+    itemName: "JagSpoor Hunter Monthly",
     months: 1,
   },
   hunter_yearly: {
@@ -41,7 +64,10 @@ export const PAYFAST_PLAN_CATALOG: Record<string, PayFastPlan> = {
     role: "hunter",
     billingCycle: "yearly",
     amountZar: 349.99,
-    itemName: "JagSpoor Hunter — Yearly",
+    recurringAmountZar: 349.99,
+    frequency: 6,
+    cycles: 0,
+    itemName: "JagSpoor Hunter Yearly",
     months: 12,
   },
   outfitter_monthly: {
@@ -49,7 +75,10 @@ export const PAYFAST_PLAN_CATALOG: Record<string, PayFastPlan> = {
     role: "outfitter",
     billingCycle: "monthly",
     amountZar: 299.99,
-    itemName: "JagSpoor Outfitter — Monthly",
+    recurringAmountZar: 299.99,
+    frequency: 3,
+    cycles: 0,
+    itemName: "JagSpoor Outfitter Monthly",
     months: 1,
   },
   outfitter_yearly: {
@@ -57,7 +86,10 @@ export const PAYFAST_PLAN_CATALOG: Record<string, PayFastPlan> = {
     role: "outfitter",
     billingCycle: "yearly",
     amountZar: 2999.99,
-    itemName: "JagSpoor Outfitter — Yearly",
+    recurringAmountZar: 2999.99,
+    frequency: 6,
+    cycles: 0,
+    itemName: "JagSpoor Outfitter Yearly",
     months: 12,
   },
 };

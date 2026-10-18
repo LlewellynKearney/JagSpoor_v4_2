@@ -11,6 +11,7 @@ import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
 import '../billing/billing_plans.dart';
 import '../billing/billing_service.dart';
+import '../billing/payfast_buttons.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
@@ -267,8 +268,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     });
   }
 
-  /// Whether the current build charges through PayFast (web) instead of the
-  /// native Google Play Billing flow.
+  /// Whether this build charges through PayFast (web) rather than the native
+  /// Google Play Billing flow.
+  ///
+  /// True when the platform is the web build ([BillingService.usesPayFast],
+  /// which is `kIsWeb`) OR when the subscription on file was itself billed
+  /// through PayFast (`sub.isPayfastBilled`). Either way the Play catalog /
+  /// purchase stream / restore affordances are meaningless and the PayFast
+  /// checkout (or the PayFast management link) is the correct path.
+  bool _isWebBillingFor(UserSubscription sub) =>
+      BillingService.instance.usesPayFast || sub.isPayfastBilled;
+
+  /// Platform-only check (no subscription context) — used in `initState`
+  /// before the subscription doc has resolved.
   bool get _isWebBilling => BillingService.instance.usesPayFast;
 
   /// Launches the platform-appropriate subscription checkout.
@@ -732,11 +744,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       _buildTotalCard(theme),
                       const SizedBox(height: 24),
                       _buildSubscribeButton(theme, subscription),
+                      // Web (PayFast) checkout: the four explicit plan buttons
+                      // (Hunter/Outfitter × Monthly/Yearly). Shown only when
+                      // there is no active subscription to manage — an active
+                      // subscriber sees the manage action instead.
+                      if (_isWebBillingFor(subscription) &&
+                          !subscription.hasSubscription) ...[
+                        const SizedBox(height: 20),
+                        PayFastHunterOutfitterButtons(theme: theme),
+                      ],
                       // The Play "Restore Purchases" affordance is a Google
                       // Play Billing requirement — it has no meaning on the
                       // web build (the PayFast entitlement is server-written
                       // by the ITN webhook), so it is hidden there.
-                      if (!_isWebBilling) ...[
+                      if (!_isWebBillingFor(subscription)) ...[
                         const SizedBox(height: 12),
                         _buildRestoreButton(theme),
                       ],

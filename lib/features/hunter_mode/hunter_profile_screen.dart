@@ -1519,21 +1519,17 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _isLoading = true);
+    // Sign-out is failure-tolerant (it never throws), but guard the whole flow
+    // anyway: even if something unexpected happens, the user is taken back to
+    // the login screen instead of being left stranded (the "Sign out failed"
+    // crash regression).
     try {
       await AuthGateService().signOut();
-      if (!mounted) return;
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ Sign out failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      debugPrint('HunterProfile._logout error: $e');
     }
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   Future<void> _handleAccountDeletion() async {

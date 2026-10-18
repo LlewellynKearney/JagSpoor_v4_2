@@ -243,8 +243,15 @@ class AdminAnalyticsService {
   }
 
   /// Sign out the admin (used by the dashboard sign-out action).
+  ///
+  /// Failure-tolerant: a plugin / null-user error is swallowed so the caller's
+  /// navigation to the login screen always proceeds.
   Future<void> signOut() async {
-    await _auth.signOut();
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      debugPrint('AdminAnalyticsService.signOut error: $e');
+    }
     // Clear cached role state so the next sign-in re-resolves from scratch.
     UserRoleProvider.instance.reset();
     AdminAuthGuard.instance.reset();
