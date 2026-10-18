@@ -17,6 +17,7 @@ import '../auth/services/user_role_provider.dart';
 import '../authentication/services/auth_gate_service.dart';
 import '../referral/widgets/referral_share_widget.dart';
 import '../shared/widgets/facebook_link_tile.dart';
+import '../shared/widgets/website_link_tile.dart';
 import '../subscription/widgets/subscription_management_tile.dart';
 import 'models/hunter_profile.dart';
 import 'services/battery_saver_manager.dart';
@@ -1219,6 +1220,10 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                           subtitle:
                               'Connect with the JagSpoor community for tips, '
                               'hunting news and updates.',
+                        ),
+                        const WebsiteLinkTile(
+                          title: 'Visit JagSpoor Website',
+                          subtitle: 'jag-spoor.co.za',
                         ),
                       ],
                     ),

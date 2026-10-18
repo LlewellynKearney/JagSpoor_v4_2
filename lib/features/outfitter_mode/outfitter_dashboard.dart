@@ -38,6 +38,7 @@ import '../subscription/paywall_screen.dart';
 import '../../services/entitlement_service.dart';
 import '../shared/widgets/jagspoor_dashboard_header.dart';
 import '../shared/widgets/facebook_link_tile.dart';
+import '../shared/widgets/website_link_tile.dart';
 import 'widgets/outfitter_scaffold.dart';
 import 'data/services/outfitter_account_deletion_service.dart';
 
@@ -930,6 +931,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                   subtitle:
                       'Connect with the JagSpoor community for tips, hunting '
                       'news and updates.',
+                ),
+                const WebsiteLinkTile(
+                  title: 'Visit JagSpoor Website',
+                  subtitle: 'jag-spoor.co.za',
                 ),
                 const SizedBox(height: 16),
                 const VersionInfoCaption(),
