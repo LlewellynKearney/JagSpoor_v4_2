@@ -74,9 +74,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// completes; the hard-coded last resort applies until then.
   double? _adminFallbackPrice;
 
+  /// The billing cycle the user has selected in the TIER PRICING section
+  /// (Monthly by default). Drives the order summary + the highlighted PayFast
+  /// plan button.
+  BillingCycle _selectedCycle = BillingCycle.monthly;
+
   SubscriptionTier get _tier =>
       widget.tier ??
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
+
+  /// The Monthly plan for the active tier (client mirror of the server
+  /// catalog — `hunter_monthly` / `outfitter_monthly`).
+  BillingPlan get _monthlyPlan => BillingPlans.monthlyFor(_tier);
+
+  /// The Yearly plan for the active tier (`hunter_yearly` /
+  /// `outfitter_yearly`).
+  BillingPlan get _yearlyPlan =>
+      BillingPlans.forTier(_tier).firstWhere((p) => p.isYearly);
+
+  /// The plan the user has selected (drives the order summary + checkout).
+  BillingPlan get _selectedPlan =>
+      _selectedCycle == BillingCycle.yearly ? _yearlyPlan : _monthlyPlan;
 
   /// The recurring monthly amount for the current tier, **including VAT**.
   ///
@@ -136,8 +154,33 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     ).matches;
   }
 
-  double get _checkoutAmount =>
-      _appliedPromo == null ? _baseAmount : _appliedPromo!.apply(_baseAmount);
+  /// The Monthly plan amount, VAT inclusive.
+  ///
+  /// Prefers the live Play catalog / admin control-plane amount ([_baseAmount])
+  /// so the operator stays the control plane when the catalog is unavailable.
+  double get _monthlyAmount => _baseAmount;
+
+  /// The Yearly plan amount, VAT inclusive.
+  ///
+  /// Taken from the client plan catalog (the mirror of the server
+  /// `PAYFAST_PLAN_CATALOG`): R349.99 (hunter) / R2999.99 (outfitter). The
+  /// server is the authority for the actual charge; this is only the display
+  /// figure.
+  double get _yearlyAmount => _yearlyPlan.amountZar;
+
+  /// The amount for the currently selected billing cycle (VAT inclusive).
+  double get _selectedBaseAmount =>
+      _selectedCycle == BillingCycle.yearly ? _yearlyAmount : _monthlyAmount;
+
+  double get _checkoutAmount => _appliedPromo == null
+      ? _selectedBaseAmount
+      : _appliedPromo!.apply(_selectedBaseAmount);
+
+  /// Selects a billing cycle and re-renders the tier cards + order summary.
+  void _selectCycle(BillingCycle cycle) {
+    if (_selectedCycle == cycle) return;
+    setState(() => _selectedCycle = cycle);
+  }
 
   @override
   void initState() {
@@ -279,6 +322,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _isWebBillingFor(UserSubscription sub) =>
       BillingService.instance.usesPayFast || sub.isPayfastBilled;
 
+  /// Whether the subscription on file is an ACTIVE PayFast (website) purchase.
+  ///
+  /// A live free trial (`trialing`) is NOT an active PayFast subscription — the
+  /// user has nothing to manage yet and must still see the plan checkout
+  /// buttons. Only a genuinely active, PayFast-billed subscription swaps the
+  /// checkout for the "MANAGE SUBSCRIPTION ON PAYFAST" action.
+  bool _hasActivePayfastSubscription(UserSubscription sub) =>
+      sub.isPayfastBilled && sub.isActive;
+
   /// Platform-only check (no subscription context) — used in `initState`
   /// before the subscription doc has resolved.
   bool get _isWebBilling => BillingService.instance.usesPayFast;
@@ -378,7 +430,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   Future<void> _subscribeViaPayFast(ScaffoldMessengerState? messenger) async {
     setState(() => _isLaunching = true);
     try {
-      final plan = BillingPlans.monthlyFor(_tier);
+      // The plan matches the billing cycle selected in TIER PRICING
+      // (hunter_monthly / hunter_yearly / outfitter_monthly /
+      // outfitter_yearly) — the server resolves the authoritative amount.
+      final plan = _selectedPlan;
       final result = await BillingService.instance.pay(
         role: _tier.key,
         plan: plan,
@@ -744,14 +799,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       _buildTotalCard(theme),
                       const SizedBox(height: 24),
                       _buildSubscribeButton(theme, subscription),
-                      // Web (PayFast) checkout: the four explicit plan buttons
-                      // (Hunter/Outfitter × Monthly/Yearly). Shown only when
-                      // there is no active subscription to manage — an active
-                      // subscriber sees the manage action instead.
+                      // Web (PayFast) checkout: the two explicit plan buttons
+                      // for the active role (Monthly + Yearly). Shown whenever
+                      // there is NO ACTIVE PayFast subscription to manage — a
+                      // live free trial still sees them so it can convert to
+                      // paid; only an active PayFast subscriber sees the manage
+                      // action instead.
                       if (_isWebBillingFor(subscription) &&
-                          !subscription.hasSubscription) ...[
+                          !_hasActivePayfastSubscription(subscription)) ...[
                         const SizedBox(height: 20),
-                        PayFastHunterOutfitterButtons(theme: theme),
+                        PayFastHunterOutfitterButtons(
+                          theme: theme,
+                          tier: _tier,
+                          selectedCycle: _selectedCycle,
+                          onPlanSelected: (plan) =>
+                              _selectCycle(plan.cycle),
+                        ),
                       ],
                       // The Play "Restore Purchases" affordance is a Google
                       // Play Billing requirement — it has no meaning on the
@@ -904,11 +967,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  /// Renders ONLY the active mode's tier card — Hunter Mode shows the Hunter
-  /// tier, Outfitter Mode shows the Outfitter tier; the other tier card is
-  /// hidden completely.
+  /// Renders the active mode's tier pricing as TWO stacked plan cards —
+  /// **Monthly** and **Yearly** — so both prices are always visible
+  /// (R34.99/month AND R349.99/year for hunters; R299.99/month AND
+  /// R2999.99/year for outfitters). Tapping a card selects that billing cycle
+  /// (it drives the order summary + the highlighted PayFast button). Only the
+  /// active tier (Hunter or Outfitter) is shown — the other tier is hidden.
   Widget _buildTierCards(ThemeController theme) {
     final isOutfitter = _tier == SubscriptionTier.outfitter;
+    final roleLabel = isOutfitter ? 'Outfitter' : 'Hunter';
+    final perks = isOutfitter ? _outfitterPerks : _hunterPerks;
+    final monthly = _monthlyPlan;
+    final yearly = _yearlyPlan;
+    final savings = yearly.savingsPercent(_monthlyAmount);
+    final fullYear = _monthlyAmount * 12;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -922,117 +994,186 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        _tierCard(
+        _planCard(
           theme,
-          tier: _tier,
-          title: isOutfitter ? 'Outfitter' : 'Hunter',
-          amount: _baseAmount,
-          vatPrice: _playVatPrice,
-          perks: isOutfitter ? _outfitterPerks : _hunterPerks,
+          plan: monthly,
+          title: '$roleLabel Monthly',
+          priceLabel: _monthlyPriceLabel(monthly),
+          caption: 'Billed every month · incl. VAT',
+          key: ValueKey('tierCard_${_tier.key}_monthly'),
+          keyBase: 'tierCard_${_tier.key}_monthly',
+          perks: perks,
+        ),
+        const SizedBox(height: 12),
+        _planCard(
+          theme,
+          plan: yearly,
+          title: '$roleLabel Yearly',
+          priceLabel: 'R ${yearly.amountZar.toStringAsFixed(2)}/year',
+          caption: 'Billed once a year · incl. VAT',
+          savingsLabel: savings == null
+              ? null
+              : 'SAVE ~$savings% '
+                  '(R${yearly.amountZar.toStringAsFixed(2)} vs '
+                  'R${fullYear.toStringAsFixed(2)})',
+          key: ValueKey('tierCard_${_tier.key}_yearly'),
+          keyBase: 'tierCard_${_tier.key}_yearly',
+          perks: perks,
         ),
       ],
     );
   }
 
-  Widget _tierCard(
+  /// The Monthly plan's displayed price label. Prefers the live Play catalog
+  /// label when available, else the control-plane amount.
+  String _monthlyPriceLabel(BillingPlan monthly) =>
+      _playVatPrice?.primaryLabel ?? 'R ${_monthlyAmount.toStringAsFixed(2)}/month';
+
+  /// A single selectable plan card (Monthly or Yearly) for the active tier.
+  Widget _planCard(
     ThemeController theme, {
-    required SubscriptionTier tier,
+    required BillingPlan plan,
     required String title,
-    required double amount,
+    required String priceLabel,
+    required String caption,
     required List<String> perks,
-    SubscriptionVatPrice? vatPrice,
+    required Key key,
+    required String keyBase,
+    String? savingsLabel,
   }) {
-    final isCurrent = tier == _tier;
-    return Container(
-      key: ValueKey('tierCard_${tier.key}'),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
+    final isSelected = plan.cycle == _selectedCycle;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: key,
+        onTap: () => _selectCycle(plan.cycle),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isCurrent ? theme.accentColor : theme.subtitleColor.withValues(alpha: 0.25),
-          width: isCurrent ? 2 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? theme.accentColor
+                  : theme.subtitleColor.withValues(alpha: 0.25),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: theme.textColor,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 17,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                      ),
+                    ),
                   ),
+                  if (savingsLabel != null && !isSelected) ...[
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.green),
+                      ),
+                      child: Text(
+                        'SAVE ~${plan.savingsPercent(_monthlyAmount)}%',
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? theme.accentColor
+                          : theme.subtitleColor.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isSelected ? 'SELECTED' : 'SELECT',
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : theme.subtitleColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                priceLabel,
+                key: ValueKey('${keyBase}_price'),
+                style: TextStyle(
+                  color: theme.accentColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
                 ),
               ),
-              if (isCurrent)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: theme.accentColor,
-                    borderRadius: BorderRadius.circular(20),
+              const SizedBox(height: 4),
+              Text(
+                caption,
+                key: ValueKey('${keyBase}_caption'),
+                style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+              ),
+              if (savingsLabel != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  savingsLabel,
+                  key: ValueKey('${keyBase}_savings'),
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
-                  child: const Text(
-                    'YOUR TIER',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                    ),
+                ),
+              ],
+              const SizedBox(height: 4),
+              Text(
+                'After a ${SubscriptionTrial.trialDays}-day free trial',
+                style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              for (final perk in perks)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded,
+                          color: theme.accentColor, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(perk,
+                            style: TextStyle(
+                                color: theme.textColor, fontSize: 13)),
+                      ),
+                    ],
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            // The VAT-inclusive amount the customer is charged. Under Option A
-            // the live Play catalog amount (and the control-plane amount) is
-            // already the final listed charge, so it is shown verbatim. Never a
-            // hardcoded literal.
-            vatPrice?.primaryLabel ??
-                'R ${amount.toStringAsFixed(2)}/month',
-            style: TextStyle(
-              color: theme.accentColor,
-              fontWeight: FontWeight.w800,
-              fontSize: 20,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            // `Incl. 15% VAT` when the live Play catalog resolved the amount,
-            // else the inclusive-price caption.
-            vatPrice?.vatNote ?? 'Price includes 15% VAT',
-            key: ValueKey('tierVatNote_${tier.key}'),
-            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'After a ${SubscriptionTrial.trialDays}-day free trial',
-            style: TextStyle(color: theme.subtitleColor, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          for (final perk in perks)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle_rounded, color: theme.accentColor, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(perk, style: TextStyle(color: theme.textColor, fontSize: 13)),
-                  ),
-                ],
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
+
 
   Widget _buildPromoSection(ThemeController theme) {
     return Column(
@@ -1115,7 +1256,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Widget _buildTotalCard(ThemeController theme) {
-    final discounted = _appliedPromo != null && _checkoutAmount < _baseAmount;
+    final discounted =
+        _appliedPromo != null && _checkoutAmount < _selectedBaseAmount;
+    final isYearly = _selectedCycle == BillingCycle.yearly;
+    final cycleLabel = isYearly ? 'yearly' : 'monthly';
     return Container(
       key: const ValueKey('checkoutTotalCard'),
       padding: const EdgeInsets.all(16),
@@ -1134,15 +1278,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           const SizedBox(height: 8),
           _totalRow(
             theme,
-            'Then monthly (${_tier.key}) · incl. VAT',
-            'R ${_baseAmount.toStringAsFixed(2)}',
+            'Then $cycleLabel (${_tier.key}) · incl. VAT',
+            'R ${_selectedBaseAmount.toStringAsFixed(2)}',
             strikethrough: discounted,
           ),
           if (discounted) ...[
             const SizedBox(height: 8),
             _totalRow(
               theme,
-              'Promo-adjusted monthly · incl. VAT',
+              'Promo-adjusted $cycleLabel · incl. VAT',
               'R ${_checkoutAmount.toStringAsFixed(2)}',
               highlight: true,
             ),
@@ -1183,9 +1327,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // replaced by the platform-appropriate management action.
     //
     // WEB (PayFast) build: there is no Google Play Billing in a browser, so
-    // the Play manager affordance is never rendered here. An active web
-    // subscriber manages their recurring billing on PayFast.
-    if (_isWebBilling && sub.hasSubscription) {
+    // the Play manager affordance is never rendered here. An ACTIVE web
+    // subscriber manages their recurring billing on PayFast. A live free trial
+    // is NOT an active PayFast subscription — the trial user keeps the
+    // checkout CTA (plus the plan buttons) so they can convert to paid.
+    if (_isWebBilling && _hasActivePayfastSubscription(sub)) {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(

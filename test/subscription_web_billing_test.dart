@@ -106,6 +106,27 @@ void main() {
       // The subscribe CTA is replaced by the manage action.
       expect(find.text('SUBSCRIBE VIA PAYFAST'), findsNothing);
     });
+
+    testWidgets(
+        'a live free trial still shows BOTH monthly + yearly plan buttons',
+        (tester) async {
+      // A trialing account has NOTHING to manage yet — the plan checkout
+      // (Monthly + Yearly buttons) must remain visible so the trial user can
+      // convert to a paid PayFast subscription.
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'subscriptionTier': 'hunter',
+        'subscriptionTrialEndsAt': DateTime.now().add(const Duration(days: 20)),
+      });
+      await pumpScreen(tester);
+      await scrollToBottom(tester);
+
+      // Manage action is NOT shown for a mere trial.
+      expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsNothing);
+      // The tier pricing section renders BOTH the monthly AND yearly prices.
+      expect(find.text('R 34.99/month'), findsWidgets);
+      expect(find.text('R 349.99/year'), findsWidgets);
+    });
   });
 
   group('native build keeps the Google Play affordances', () {

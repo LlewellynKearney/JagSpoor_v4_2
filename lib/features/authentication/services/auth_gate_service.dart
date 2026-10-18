@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../../admin/services/admin_auth_guard.dart';
 import '../../auth/services/user_role_provider.dart';
 import '../../../core/services/push_notification_service.dart';
@@ -48,11 +47,16 @@ class AuthGateService {
   // Lazily resolved so constructing the service before `Firebase.initializeApp()`
   // (cold-launch race / widget tests) does not throw `[core/no-app]`.
   FirebaseAuth get _firebaseAuth => FirebaseAuth.instance;
-  GoogleSignIn? _googleSignInInstance;
-  GoogleSignIn get _googleSignIn => _googleSignInInstance ??= GoogleSignIn(
-        signInOption: SignInOption.standard,
-      );
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+
+  /// Whether Google Sign-In is available.
+  ///
+  /// **Disabled on all platforms.** The app ships email/password
+  /// authentication only — the Google federated flow was removed so no
+  /// platform shows a "Continue with Google" button and no Google client id /
+  /// plugin is required at runtime (web or native). The `google_sign_in`
+  /// dependency is retained in `pubspec.yaml` but is no longer used.
+  static const bool googleSignInEnabled = false;
 
   // SMS Gateway Configuration (configure your SMS provider here)
   // Options: 'twilio', 'bulksms', 'custom'
@@ -64,70 +68,18 @@ class AuthGateService {
   static const int _otpLength = 6;
   static const Duration _otpExpiry = Duration(minutes: 5);
 
-  /// Google Sign In - OAuth credential handshake
-  /// Initiates absolute Google OAuth login layer on Android/iOS
-  /// Extracts token parameters and provisions authenticates user profile.
+  /// Google Sign In — **disabled on all platforms**.
   ///
-  /// Returns a [GoogleSignInResult] that distinguishes a genuine failure
-  /// (with a user-actionable [GoogleSignInResult.errorMessage]) from a user
-  /// cancellation, so the UI no longer treats every failure as a silent
-  /// cancel (the defect that made Google Sign-In appear to "do nothing").
+  /// The federated Google flow was removed so no platform (web, Android or
+  /// iOS) exposes a Google sign-in affordance and no Google client id / plugin
+  /// is required at runtime. This method is retained as a no-op so any legacy
+  /// caller compiles and fails soft: it always returns a
+  /// [GoogleSignInResult.cancelled] (never a crash, never a credential).
+  ///
+  /// Email/password authentication is the only supported sign-in path.
   Future<GoogleSignInResult> signInWithGoogle() async {
-    try {
-      // Trigger Google authentication flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        // User cancelled the sign-in flow
-        return GoogleSignInResult.cancelled();
-      }
-
-      // Obtain auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-
-      // When the app's SHA-1/SHA-256 fingerprint is not registered in the
-      // Firebase Console, the plugin returns an account but BOTH tokens come
-      // back null — building a credential from them would throw. Detect it
-      // and surface an actionable message instead of a silent failure.
-      if (googleAuth.idToken == null && googleAuth.accessToken == null) {
-        debugPrint(
-          'AuthGateService: Google Sign-In returned no tokens '
-          '(likely unregistered SHA fingerprint)',
-        );
-        return GoogleSignInResult.failure(
-          friendlyGoogleSignInError(
-            PlatformException(code: 'sign_in_failed', details: 'no_tokens'),
-          ),
-        );
-      }
-
-      // Create a new credential using the Google auth tokens
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      // Sign in to Firebase with the Google credential
-      // This will either authenticate an existing user or create a new one
-      final UserCredential userCredential =
-          await _firebaseAuth.signInWithCredential(credential);
-
-      return GoogleSignInResult.success(userCredential);
-    } on PlatformException catch (e) {
-      // google_sign_in plugin errors (ApiException: 10 DEVELOPER_ERROR,
-      // network_error, sign_in_failed, ...)
-      debugPrint('AuthGateService: Google Sign-In failed - ${e.code}: ${e.message}');
-      return GoogleSignInResult.failure(friendlyGoogleSignInError(e));
-    } on FirebaseAuthException catch (e) {
-      debugPrint('AuthGateService: Firebase rejected Google credential - ${e.code}');
-      return GoogleSignInResult.failure(
-        'Firebase rejected the Google credential: ${e.message ?? e.code}',
-      );
-    } catch (e) {
-      debugPrint('AuthGateService: Google Sign-In failed - $e');
-      return GoogleSignInResult.failure('Google Sign-In failed: $e');
-    }
+    debugPrint('AuthGateService: Google Sign-In is disabled on all platforms.');
+    return GoogleSignInResult.cancelled();
   }
 
   /// Maps a Google Sign-In failure to a user-actionable message.
@@ -292,40 +244,27 @@ class AuthGateService {
       debugPrint('AuthGateService.signOut: FirebaseAuth.signOut failed: $e');
     }
 
-    // Sign out of Google (federated) — best-effort; a browser / plugin error
-    // must never block the sign-out.
-    try {
-      await _googleSignIn.signOut();
-    } catch (e) {
-      debugPrint('AuthGateService.signOut: GoogleSignIn.signOut failed: $e');
-    }
+    // NOTE: Google Sign-In is disabled on all platforms, so there is no
+    // federated session to end here. The Firebase Auth sign-out above is the
+    // complete, platform-independent sign-out (previously a
+    // `GoogleSignIn().signOut()` call was made — and on the web it threw a
+    // null crash; it is removed entirely).
 
     // Clear cached role state so the next sign-in re-resolves from scratch.
     UserRoleProvider.instance.reset();
     AdminAuthGuard.instance.reset();
   }
 
-  /// Re-authenticate user with Google (for sensitive operations)
+  /// Re-authenticate the user with Google — **disabled on all platforms**.
+  ///
+  /// Retained as a no-op so legacy callers compile and fail soft (returns
+  /// false rather than throwing). Email/password is the only supported
+  /// re-authentication path.
   Future<bool> reauthenticateWithGoogle() async {
-    try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) return false;
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      await _firebaseAuth.currentUser?.reauthenticateWithCredential(credential);
-      return true;
-    } catch (e) {
-      print('AuthGateService: Re-authentication failed - $e');
-      return false;
-    }
+    debugPrint(
+      'AuthGateService: reauthenticateWithGoogle is disabled on all platforms.',
+    );
+    return false;
   }
 
   /// Link phone number to existing account (for 2FA setup)

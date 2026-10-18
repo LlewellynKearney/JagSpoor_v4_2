@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// Paths covered:
 ///  - client registration wires `deviceFingerprint` into `users/{uid}`
-///    (email/password + Google sign-in);
+///    (email/password registration only — Google sign-in was removed);
 ///  - `firestore.rules` freezes `deviceFingerprint` once set (immutability).
 ///
 /// The backend device-level trial-abuse check in the
@@ -41,9 +41,12 @@ void main() {
       expect(authScreenSource, contains("'deviceFingerprint': deviceFingerprint"));
     });
 
-    test('Google sign-in stamps the fingerprint on first sign-in', () {
-      expect(authScreenSource, contains('_stampDeviceFingerprint'));
-      expect(authScreenSource, contains('stampDeviceFingerprint(user.uid)'));
+    test('Google sign-in is removed from the auth screen (no stamp path)', () {
+      // Google Sign-In was disabled on all platforms, so the screen no longer
+      // carries the federated fingerprint-stamp helper or a Google button.
+      expect(authScreenSource, isNot(contains('_stampDeviceFingerprint')));
+      expect(authScreenSource, isNot(contains('stampDeviceFingerprint(user.uid)')));
+      expect(authScreenSource, isNot(contains('Continue with Google')));
     });
   });
 

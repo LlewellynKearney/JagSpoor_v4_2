@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,7 +7,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/layout/web_layout.dart';
 import '../../services/incoming_referral_handler.dart';
 import '../../core/widgets/copyright_footer.dart';
-import '../authentication/services/auth_gate_service.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
 import 'screens/email_verification_screen.dart';
@@ -29,12 +27,6 @@ import '../referral/services/referral_repository.dart';
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
 
-  /// Test seam: overrides the Google Sign-In invocation so widget tests can
-  /// exercise the failure / cancellation UI paths without a Firebase app or
-  /// the `google_sign_in` platform plugin.
-  @visibleForTesting
-  final Future<GoogleSignInResult> Function()? googleSignInOverride;
-
   /// Test seam: overrides the demo-reviewer sign-in invocation so widget
   /// tests can verify the "Demo Reviewer Login" flow without a Firebase app.
   @visibleForTesting
@@ -43,7 +35,6 @@ class AuthScreen extends StatefulWidget {
   const AuthScreen({
     super.key,
     required this.themedata,
-    this.googleSignInOverride,
     this.demoSignInOverride,
   });
 
@@ -55,13 +46,11 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _otpController = TextEditingController();
   final _referralCodeController = TextEditingController();
 
-  // Lazy: `AuthGateService` eagerly resolves `FirebaseAuth.instance`, which
-  // throws `[core/no-app]` before Firebase initializes (cold-launch race /
-  // widget tests). Defer construction to first use (Google sign-in / 2FA).
-  AuthGateService get _authGateService => AuthGateService();
+  // NOTE: `AuthGateService` is no longer used by this screen — its only
+  // callers were the Google Sign-In flow and the SMS-2FA cancel path, both of
+  // which were removed with Google Sign-In.
 
   bool _isLoginMode = true;
   bool _obscurePassword = true;
@@ -114,7 +103,6 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _otpController.dispose();
     _referralCodeController.dispose();
     super.dispose();
   }
@@ -124,68 +112,6 @@ class _AuthScreenState extends State<AuthScreen> {
   /// live "Resend in Ns" label.
   void _engageResetCooldown() {
     _resetCooldownUntil = PasswordResetCooldown.expiry(from: DateTime.now());
-  }
-
-  /// Handle Google Sign-In
-  Future<void> _handleGoogleSignIn() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final override = widget.googleSignInOverride;
-      final result =
-          override != null
-              ? await override()
-              : await _authGateService.signInWithGoogle();
-
-      // Guard every post-async-gap use of context / setState — without this
-      // an unmounted State throws "setState() called after dispose()" (the
-      // unhandled-exception crash reported in this flow).
-      if (!mounted) return;
-
-      if (result.isSuccess) {
-        // Check if user needs 2FA
-        if (_requires2FA(result.credential!.user)) {
-          _show2FAVerificationSheet();
-        } else {
-          // Stamp the device fingerprint (merge-write onto users/{uid}) so the
-          // backend trial trigger can read it at first sign-in; retry loops in
-          // the trigger bridge the small write race window.
-          final user = result.credential!.user;
-          if (user != null) {
-            await _stampDeviceFingerprint(user);
-          }
-          _routeAfterAuth();
-        }
-        return;
-      }
-
-      setState(() => _isLoading = false);
-
-      // A user-initiated cancel is silent (correct UX); a genuine failure
-      // surfaces the specific reason so the user (and support) can act.
-      if (result.cancelled) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.errorMessage ??
-                'Google Sign-In failed. Please try again.',
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Google Sign-In failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 
   /// Handle the "Demo Reviewer Login" quick-tap — for Google Play reviewers.
@@ -243,38 +169,9 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  /// Check if user requires 2FA (outfitter/enterprise accounts)
-  bool _requires2FA(User? user) {
-    // For now, check if user has phone number linked
-    // In production, check Firestore user profile for 2FA flag
-    return user?.phoneNumber != null;
-  }
-
-  /// Stamps the hardware-backed device fingerprint onto `users/{uid}` so the
-  /// backend trial-abuse check (`initializeNewUserTrial` Cloud Function) can
-  /// honor the one-trial-per-device policy. Best-effort: failures are logged
-  /// inside the service and never block the auth route.
-  Future<void> _stampDeviceFingerprint(User user) async {
-    await DeviceFingerprintService.instance
-        .stampDeviceFingerprint(user.uid);
-  }
-
-  /// Show 2FA Verification Bottom Sheet
-  void _show2FAVerificationSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _TwoFAVerificationSheet(
-        onVerified: _routeAfterAuth,
-        onCancel: () {
-          Navigator.pop(context);
-          _authGateService.signOut();
-          setState(() => _isLoading = false);
-        },
-      ),
-    );
-  }
+  // NOTE: the SMS-2FA helpers (requires-2FA check, fingerprint stamp, and the
+  // 2FA bottom sheet) were only reachable from the Google Sign-In flow, which
+  // is disabled on all platforms, so they were removed.
 
   /// Whether the signed-in account must verify its email before continuing.
   ///
@@ -1056,8 +953,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 12.0),
                     
-                    // Google Sign-In Button
-                    _buildGoogleSignInButton(),
+                    // Google Sign-In was removed on ALL platforms (web,
+                    // Android, iOS) — email/password is the only sign-in path.
+                    // See `AuthGateService.signInWithGoogle` (a no-op).
 
                     if (DemoReviewerConfig.enabled) ...[
                       const SizedBox(height: 12.0),
@@ -1125,290 +1023,9 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// Premium Google Sign-In Button
-  Widget _buildGoogleSignInButton() {
-    final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        gradient: LinearGradient(
-          colors: [
-            accent.withValues(alpha: 0.85),
-            accent,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: accent.withValues(alpha: 0.4),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _isLoading ? null : _handleGoogleSignIn,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Official Google "G" logo (public-domain SVG, Google brand
-                // colors). Per Google brand guidelines the full-color G sits on
-                // a white background so the colors render correctly.
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: SvgPicture.asset(
-                      'assets/images/google_logo.svg',
-                      width: 20,
-                      height: 20,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Continue with Google',
-                  style: TextStyle(
-                    color: theme.colorScheme.onPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 2FA SMS OTP Verification Bottom Sheet
-class _TwoFAVerificationSheet extends StatefulWidget {
-  final VoidCallback onVerified;
-  final VoidCallback onCancel;
-
-  const _TwoFAVerificationSheet({
-    required this.onVerified,
-    required this.onCancel,
-  });
-
-  @override
-  State<_TwoFAVerificationSheet> createState() => _TwoFAVerificationSheetState();
-}
-
-class _TwoFAVerificationSheetState extends State<_TwoFAVerificationSheet> {
-  final _otpController = TextEditingController();
-  final _authGateService = AuthGateService();
-  bool _isVerifying = false;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _otpController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _verifyOTP() async {
-    if (_otpController.text.length != 6) {
-      setState(() => _errorMessage = 'Please enter 6-digit code');
-      return;
-    }
-
-    setState(() {
-      _isVerifying = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final credential = await _authGateService.verifySMSOTP(
-        verificationId: _otpController.text,
-        smsCode: _otpController.text,
-      );
-
-      if (credential != null) {
-        if (!mounted) return;
-        Navigator.pop(context);
-        widget.onVerified();
-      } else {
-        setState(() {
-          _errorMessage = 'Invalid verification code';
-          _isVerifying = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Verification failed: $e';
-        _isVerifying = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
-    return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border(
-          top: BorderSide(color: accent, width: 2),
-          left: BorderSide(color: accent, width: 1),
-          right: BorderSide(color: accent, width: 1),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.24),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Header
-            Row(
-              children: [
-                Icon(Icons.security, color: accent, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'TWO-FACTOR AUTHENTICATION',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Enter the 6-digit security code sent to your verified phone number.',
-              style: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-
-            // OTP Input
-            TextFormField(
-              controller: _otpController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 8,
-                color: theme.colorScheme.onSurface,
-              ),
-              decoration: InputDecoration(
-                counterText: '',
-                hintText: '------',
-                hintStyle: TextStyle(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                  fontSize: 28,
-                  letterSpacing: 8,
-                ),
-                filled: true,
-                fillColor: theme.cardColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: accent.withValues(alpha: 0.5),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: accent, width: 2),
-                ),
-              ),
-            ),
-
-            // Error message
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.red, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 24),
-
-            // Verify Button
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: theme.colorScheme.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: _isVerifying ? null : _verifyOTP,
-              child: _isVerifying
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'VERIFY IDENTITY',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 12),
-
-            // Cancel Button
-            TextButton(
-              onPressed: widget.onCancel,
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: theme.textTheme.bodySmall?.color),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // NOTE: `_buildGoogleSignInButton` + `_handleGoogleSignIn` were removed —
+  // Google Sign-In is disabled on all platforms. Email/password is the only
+  // sign-in path.
 }
 
 /// Self-contained "Forgot Password?" dialog that owns its own 1-second

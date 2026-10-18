@@ -44,8 +44,8 @@ class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
 
   /// Test seam: overrides the account-deletion cascade so widget tests never
-  /// touch real Firebase Auth / Firestore (mirrors the `demoSignInOverride` /
-  /// `googleSignInOverride` screen seams).
+  /// touch real Firebase Auth / Firestore (mirrors the `demoSignInOverride`
+  /// screen seam).
   @visibleForTesting
   final Future<void> Function()? accountDeletionRunner;
 

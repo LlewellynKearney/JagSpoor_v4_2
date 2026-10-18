@@ -75,7 +75,9 @@ dependencies:
   # (6.6.0+ require firebase_core ^4.14.0 and would force a core bump across
   # the whole Firebase platform package set.)
   firebase_remote_config: ^6.5.6
-  google_sign_in: ^6.2.1
+  # NOTE: `google_sign_in` was REMOVED — Google Sign-In is disabled on all
+  # platforms (email/password is the only sign-in path). Dropping the package
+  # also removes its web `google-signin-client_id` meta lookup from the build.
 
   # Offline-capable animal profile images (SA Game Guide)
   cached_network_image: ^3.4.1

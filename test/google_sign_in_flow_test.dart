@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jagspoor/core/theme/app_theme.dart';
@@ -103,79 +104,43 @@ void main() {
     });
   });
 
-  group('AuthScreen Google Sign-In handler (widget)', () {
-    Widget buildScreen(Future<GoogleSignInResult> Function() override) {
+  group('Google Sign-In is DISABLED on all platforms', () {
+    Widget buildScreen() {
       final theme = ThemeController();
       return MaterialApp(
         theme: ThemeData.light(),
-        home: AuthScreen(themedata: theme, googleSignInOverride: override),
+        home: AuthScreen(themedata: theme),
       );
     }
 
-    Future<void> tapGoogleButton(WidgetTester tester) async {
-      final label = find.text('Continue with Google');
-      await tester.ensureVisible(label);
-      await tester.pumpAndSettle();
-      await tester.tap(label);
-      await tester.pump();
-      await tester.pump();
-    }
-
     testWidgets(
-      'a genuine failure surfaces the specific error in a snackbar',
+      'the "Continue with Google" button is not rendered anywhere',
       (tester) async {
-        await tester.pumpWidget(
-          buildScreen(
-            () async =>
-                GoogleSignInResult.failure('SHA-1/SHA-256 not registered'),
-          ),
-        );
+        await tester.pumpWidget(buildScreen());
         await tester.pumpAndSettle();
 
-        await tapGoogleButton(tester);
-        await tester.pump(const Duration(seconds: 1));
-
-        expect(
-          find.text('SHA-1/SHA-256 not registered'),
-          findsOneWidget,
-          reason:
-              'a failed Google Sign-In must surface the failure reason, '
-              'not fail silently',
-        );
+        // The button itself and its label must be gone — on every platform,
+        // including the VM test host.
+        expect(find.text('Continue with Google'), findsNothing);
+        // No Google G logo asset either.
+        expect(find.byType(SvgPicture), findsNothing);
       },
     );
 
-    testWidgets(
-      'a user cancellation stops the spinner silently (no error snackbar)',
-      (tester) async {
-        await tester.pumpWidget(
-          buildScreen(() async => GoogleSignInResult.cancelled()),
-        );
-        await tester.pumpAndSettle();
+    test('signInWithGoogle is a no-op that returns cancelled (never throws)',
+        () async {
+      final result = await AuthGateService().signInWithGoogle();
+      expect(result.isSuccess, isFalse);
+      expect(result.cancelled, isTrue);
+      expect(result.credential, isNull);
+    });
 
-        await tapGoogleButton(tester);
-        await tester.pump(const Duration(seconds: 1));
+    test('reauthenticateWithGoogle is a no-op returning false', () async {
+      expect(await AuthGateService().reauthenticateWithGoogle(), isFalse);
+    });
 
-        // No failure message is shown for an intentional cancel.
-        expect(find.byType(SnackBar), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'the handler swallows a throwing override without crashing',
-      (tester) async {
-        await tester.pumpWidget(
-          buildScreen(() async => throw StateError('plugin exploded')),
-        );
-        await tester.pumpAndSettle();
-
-        await tapGoogleButton(tester);
-        await tester.pump(const Duration(seconds: 1));
-
-        // The defensive catch surfaces a snackbar instead of an
-        // unhandled exception.
-        expect(find.byType(SnackBar), findsOneWidget);
-      },
-    );
+    test('googleSignInEnabled is false (global kill switch)', () {
+      expect(AuthGateService.googleSignInEnabled, isFalse);
+    });
   });
 }
