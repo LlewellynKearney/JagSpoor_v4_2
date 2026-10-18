@@ -231,6 +231,11 @@ void main() {
       // server-owned so a client cannot flip a Play subscription to 'payfast'
       // to unlock an external checkout link.
       'subscriptionPlatform',
+      // Web (PayFast) billing: the nested `subscription` map (status / plan /
+      // expiresAt) is the entitlement mirror `payfastNotify` writes via
+      // `writeEntitlement`. Server-owned so a client cannot forge an active
+      // subscription.
+      'subscription',
     ];
 
     test('no server-owned field is denied by standalone key presence', () {

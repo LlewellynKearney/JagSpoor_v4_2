@@ -104,6 +104,10 @@ dependencies:
   # Hardware compass for tactical navigation
   flutter_compass: ^0.8.1
 
+  # DOM access for the PayFast web checkout (hidden auto-submitted form post).
+  # Only used on the web build via a conditional import; harmless on native.
+  web: ^1.1.0
+
   # Accelerometer and gyroscope sensors for gyro leveler (v20.2)
   sensors_plus: ^6.1.1
 

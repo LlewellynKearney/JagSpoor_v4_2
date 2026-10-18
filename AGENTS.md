@@ -1,5 +1,135 @@
 # JagSpoor -- Agent Memory
 
+## Web: all-role responsive layout + PayFast web billing (added 2026-10-17)
+
+Extends the prior web phase (icon + hunter dashboard 2-column). Three parts:
+
+### PART 1 -- official tab icon (completed + verified)
+Already landed in the previous commit; re-verified this pass: all five icons
+are real PNGs at the correct IHDR size (48/192/512), average opaque RGB is
+the warm badge brown (~150,116,82) -- NOT the Flutter blue -- and
+`build/web/` ships them plus `favicon.png` (5481 bytes) with the favicon +
+`apple-touch-icon` links and `flutter_bootstrap.js`, and no marketing text.
+
+### PART 2 -- responsive layout for ALL roles (was hunter-only)
+`lib/core/layout/web_layout.dart` gained the shared
+`WebLayout.responsive({child, context, maxWidth, horizontalPadding})` helper:
+desktop (`> 800`) -> `Center > ConstrainedBox(1280) > Padding(24) > child`;
+mobile -> the child unchanged. This is the single contract every role uses
+instead of each screen re-implementing the container.
+- **hunter** -- already had the full spec implementation in
+  `hunter_dashboard.dart` (LayoutBuilder, 2-column TACTICAL MODULES +
+  MORE MODULES grids, centred 1280 column).
+- **outfitter** (`outfitter_mode/outfitter_dashboard.dart`) -- the feature
+  column is now wrapped in `WebLayout.responsive`; a web-only 62% black veil
+  (`OutfitterBushveldBackground.webContrastOverlay`) sits between the photo
+  and the mode scrim.
+- **admin** (`admin/screens/admin_dashboard_screen.dart`) -- the analytics
+  ListView is wrapped in `WebLayout.responsive`.
+- `OutfitterBushveldBackground.stack` now mirrors `HunterAcaciaBackground`:
+  photo -> web veil (desktop only) -> scrim -> content, so every outfitter
+  screen gets the same browser contrast treatment.
+- The veil's Container at `outfitter_dashboard.dart` was replaced with a
+  `DecoratedBox` (it only ever carried a decoration + child), which cleared
+  the `avoid_unnecessary_containers` info introduced by the new wrapping.
+
+### PART 3 -- PayFast payment integration for Hunter & Outfitter (NEW)
+The web build cannot use Google Play Billing, so the browser charges
+subscriptions through **PayFast**. Billing is routed by platform:
+`BillingService.instance.usesPayFast` is true only on web; Android/iOS keep
+the native Play Billing flow (Play policy requires it in-app).
+
+**Server** (`functions/src/payfast/`, NEW):
+- `payfast.service.ts` -- the pure crypto/form layer: `payfastEncode` (PHP
+  `urlencode` semantics -- spaces as `+`, `~` -> `%7E`),
+  `buildSignatureSource` (sorted, urlencoded, excludes
+  `signature`/`passphrase`), `generateSignature`/`verifySignature` (MD5,
+  passphrase appended when set), `buildPaymentForm` (returns the signed form
+  -- the merchant KEY is signed with but the PASSPHRASE never appears in the
+  returned fields), `parseItnBody`, `validateItn` (signature -> COMPLETE ->
+  amount vs catalog -> user id).
+- `plans.ts` -- the authoritative plan catalog (`hunter_monthly` 34.99,
+  `hunter_yearly` 349.99, `outfitter_monthly` 299.99, `outfitter_yearly`
+  2999.99; VAT-inclusive Option A) + `resolvePlan` / `plansForRole`. The
+  client NEVER sends an amount.
+- `payfast.ts` -- the endpoints: `createPayFastPayment` (callable,
+  authenticated, returns the signed form), `payfastNotify` (public ITN
+  webhook -> `writeEntitlement`), `payfastReturn` / `payfastCancel`
+  (redirects), `getBillingPlans` (callable).
+- `params.ts` -- `payfastMerchantKey` / `payfastPassphrase` `defineSecret`s.
+  The merchant id (37584965) is PUBLIC (embedded in the form) and is a
+  constant, never a secret. Exported from `index.ts`.
+
+**Client** (`lib/features/billing/`, NEW):
+- `billing_plans.dart` -- `BillingCycle` + `BillingPlan` mirroring the
+  server catalog (ids/amounts match `plans.ts`).
+- `billing_service.dart` -- `BillingService.instance`: `requestPayFastPayment`
+  calls the `createPayFastPayment` callable over HTTPS with the ID token;
+  `pay` / `payWithPlanId` submit the returned form. `usesPayFast` (kIsWeb,
+  overridable in tests) drives the routing.
+- `payfast_form.dart` + `payfast_form_web.dart` / `payfast_form_stub.dart` --
+  conditional import: a hidden auto-submitted DOM form on web, a no-op stub
+  on native (so `dart:html`/`web` never leaks into the mobile build).
+- `subscription_screen.dart` + `paywall_screen.dart` now branch on
+  `usesPayFast`: web skips the Play catalog/purchase stream entirely, prices
+  from `admin_config/pricing`, and the primary CTA reads "SUBSCRIBE VIA
+  PAYFAST". The Play-billed management branch is gated to native so a Play
+  user is never steered off-store; a web subscriber manages billing on the
+  website.
+
+**Entitlement** -- `writeEntitlement` now also writes a canonical nested
+`subscription` map (status / isActive / plan / expiresAt / platform);
+`firestore.rules` freezes it (change detection) as server-owned, and
+`UserEntitlement.fromMap` / `fromEntitlementMirror` read it as a fallback so
+a web grant is visible to the app.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 322 pre-existing
+  infos (unchanged baseline).
+- `flutter test`: **2202 passed, 1 failed** -- the documented pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), proven
+  pre-existing by stashing at HEAD.
+- `flutter build web --release`: **SUCCESS**; `build/web/index.html` carries
+  the favicon + `apple-touch-icon` + `flutter_bootstrap.js`, no marketing
+  text; `build/web/icons/` holds the four official icons.
+- `functions`: `npm run build` clean; `npm test` **121/121** (13 new PayFast
+  contract tests: signature shape, tamper rejection, amount/plan/status
+  validation, and that the key/passphrase come from secrets).
+
+NOTE (env): the Flutter SDK at `$HOME/sdk/flutter` was removed by an
+environment reset AFTER the verification pass above; the `build/web/`
+artifacts it produced persist and were re-checked (favicon + apple-touch-icon
++ `flutter_bootstrap.js` present, 0 marketing matches, five PNGs at
+48/192/512 with the official badge). Re-install the SDK
+(`git clone -b 3.44.9 https://github.com/flutter/flutter.git`) plus the
+`~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink
+before re-running `flutter test` (the sqflite-FFI suites need
+`LD_LIBRARY_PATH="$HOME/libs"`).
+
+### Operator steps (cannot be done in this sandbox)
+1. `firebase functions:secrets:set PAYFAST_MERCHANT_KEY` and
+   `firebase functions:secrets:set PAYFAST_PASSPHRASE` in project `jagspoor`.
+2. `npx firebase-tools deploy --only functions,firestore:rules`.
+3. Point the PayFast merchant's ITN notify URL at
+   `https://us-central1-jagspoor.cloudfunctions.net/payfastNotify`.
+
+### Files
+- NEW: `functions/src/payfast/{payfast.ts,payfast.service.ts,plans.ts}`,
+  `functions/test/payfast.test.js`, `lib/features/billing/{billing_plans.dart,
+  billing_service.dart,payfast_form.dart,payfast_form_web.dart,
+  payfast_form_stub.dart}`, `test/billing_service_test.dart`,
+  `scripts/generate_web_icons.py`.
+- MODIFIED: `lib/core/layout/web_layout.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/outfitter_mode/widgets/outfitter_scaffold.dart`,
+  `lib/features/admin/screens/admin_dashboard_screen.dart`,
+  `lib/features/subscription/{subscription_screen.dart,paywall_screen.dart}`,
+  `lib/services/entitlement_service.dart`, `firestore.rules`,
+  `functions/src/{entitlement.ts,index.ts,params.ts}`,
+  `functions/.env.example`, `pubspec.yaml` / `pubspec.lock` (`web` direct),
+  `test/{entitlement_trial_status_test.dart,firestore_rules_seeding_test.dart}`,
+  `AGENTS.md`.
+
 ## Web build: official tab icon + real 2-column desktop dashboard (added 2026-10-17)
 
 ### Problem 1 -- default Flutter tab icon

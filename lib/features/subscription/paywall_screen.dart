@@ -6,7 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/entitlement_service.dart';
+import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
+import '../billing/billing_plans.dart';
+import '../billing/billing_service.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
@@ -140,19 +143,53 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   ThemeController get theme => widget.theme;
 
+  /// Whether the current build charges through PayFast (web) instead of the
+  /// native Google Play Billing flow. On the web there is no Play catalog, no
+  /// Play purchase stream and no Play subscriptions manager — the PayFast
+  /// hosted checkout is the purchase path.
+  bool get _isWebBilling => BillingService.instance.usesPayFast;
+
+  /// The PayFast plan id for the active tier (used by the web checkout).
+  String get _payFastPlanId => BillingPlans.monthlyFor(_tier).planId;
+
   SubscriptionTier get _tier =>
       SubscriptionTier.fromAppRole(UserRoleProvider.instance.role);
 
   @override
   void initState() {
     super.initState();
-    // Record any Google Play purchase (new or restored) onto `purchases`.
-    // Idempotent, so it is safe to start from every subscription surface.
-    PlayPurchaseRecorder.instance.startListening();
-    _listenForPurchases();
-    _checkPurchasesCollection();
+    // The Play purchase stream + recorder are Android/iOS only. On the web
+    // build the PayFast ITN webhook writes the entitlement, so there is no
+    // Play stream to listen to.
+    if (!_isWebBilling) {
+      // Record any Google Play purchase (new or restored) onto `purchases`.
+      // Idempotent, so it is safe to start from every subscription surface.
+      PlayPurchaseRecorder.instance.startListening();
+      _listenForPurchases();
+      _checkPurchasesCollection();
+      _loadPlayPrice();
+    } else {
+      _loadAdminPrice();
+    }
     _loadEntitlement();
-    _loadPlayPrice();
+  }
+
+  /// Web price: the admin control-plane amount (`admin_config/pricing`), since
+  /// no Play catalog exists in the browser. Never hardcoded — until the doc
+  /// resolves the paywall shows the neutral loading label.
+  Future<void> _loadAdminPrice() async {
+    try {
+      final amount = await SubscriptionConfigService.instance
+          .getFallbackPrice(_tier.key);
+      if (!mounted) return;
+      setState(() {
+        _catalogLoading = false;
+        _price = SubscriptionVatPrice.fromInclusive(amount);
+      });
+    } catch (e) {
+      debugPrint('PaywallScreen.loadAdminPrice failed: $e');
+      if (mounted) setState(() => _catalogLoading = false);
+    }
   }
 
   /// One-shot read of the server-authoritative entitlement so the management
@@ -451,6 +488,56 @@ class _PaywallScreenState extends State<PaywallScreen> {
     }
   }
 
+  /// Web checkout: request the server-signed PayFast form and post it to the
+  /// hosted checkout. The merchant key never reaches the browser — the
+  /// `createPayFastPayment` Cloud Function signs the payload server-side and
+  /// the `payfastNotify` ITN webhook writes the authoritative entitlement.
+  Future<void> _subscribeViaPayFast(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    setState(() {
+      _paymentPending = false;
+      _catalogLoading = true;
+    });
+    try {
+      final result = await BillingService.instance.payWithPlanId(
+        role: _tier.key,
+        planId: _payFastPlanId,
+      );
+      if (!mounted) return;
+      setState(() => _catalogLoading = false);
+      if (!result.launched) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ??
+                  'Unable to start the PayFast checkout. Please try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Opening the secure PayFast checkout — complete the payment to '
+            'activate your subscription.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint('PaywallScreen.subscribeViaPayFast failed: $e');
+      if (mounted) setState(() => _catalogLoading = false);
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('Subscription purchase failed. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = this.theme;
@@ -608,13 +695,39 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              if (_isPlayBilled ||
-                  _alreadySubscribed ||
-                  // An active subscriber whose platform is unknown (no mirror
-                  // yet) is routed to the Play manager — never the website
-                  // link. This is the compliance-safe default: a Play user is
-                  // never steered off-store.
-                  (!_isPayfastBilled && _hasActiveSubscription)) ...[
+              if (_isWebBilling && _hasActiveSubscription) ...[
+                // WEB (PayFast) subscriber with an active subscription — the
+                // single case where an external billing link is compliant.
+                // (A PayFast-billed subscriber on any platform is also routed
+                // here; a Play-billed subscriber is never steered off-store.)
+                OutlinedButton.icon(
+                  key: const ValueKey('paywallManageWebsiteButton'),
+                  onPressed: () => _openWebsiteBilling(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.accentColor,
+                    side: BorderSide(color: theme.accentColor, width: 1.4),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.language_rounded),
+                  label: const Text(
+                    'Manage subscription on website',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
+              ] else if (!_isWebBilling &&
+                  (_isPlayBilled ||
+                      _alreadySubscribed ||
+                      // An active subscriber whose platform is unknown (no
+                      // mirror yet) is routed to the Play manager — never the
+                      // website link. This is the compliance-safe default: a
+                      // Play user is never steered off-store.
+                      (!_isPayfastBilled && _hasActiveSubscription))) ...[
                 // COMPLIANT for Google Play. A Play-billed subscriber is
                 // routed to Google Play's own subscriptions manager — there is
                 // deliberately NO external/website checkout affordance here
@@ -673,13 +786,16 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   ),
                 ),
               ] else
-                // No active subscription — the native Google Play subscribe
-                // call-to-action (the only purchase path in the app).
+                // No active subscription — the platform-appropriate subscribe
+                // call-to-action: PayFast hosted checkout on the web, Google
+                // Play Billing on Android/iOS.
                 FilledButton.icon(
                   key: const ValueKey('paywallPlaySubscribeButton'),
                   onPressed: (_paymentPending || !_subscribeEnabled)
                       ? null
-                      : () => _subscribeViaGooglePlay(context),
+                      : () => _isWebBilling
+                          ? _subscribeViaPayFast(context)
+                          : _subscribeViaGooglePlay(context),
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.green.shade700,
                     foregroundColor: Colors.white,
@@ -699,11 +815,19 @@ class _PaywallScreenState extends State<PaywallScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.play_circle_fill_rounded),
+                      : Icon(
+                          _isWebBilling
+                              ? Icons.lock_outline_rounded
+                              : Icons.play_circle_fill_rounded,
+                        ),
                   label: Text(
                     _catalogLoading
-                        ? 'LOADING GOOGLE PLAY…'
-                        : 'SUBSCRIBE VIA GOOGLE PLAY',
+                        ? (_isWebBilling
+                            ? 'OPENING PAYFAST…'
+                            : 'LOADING GOOGLE PLAY…')
+                        : (_isWebBilling
+                            ? 'SUBSCRIBE VIA PAYFAST'
+                            : 'SUBSCRIBE VIA GOOGLE PLAY'),
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.1,

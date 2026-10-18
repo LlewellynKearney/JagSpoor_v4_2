@@ -325,6 +325,66 @@ void main() {
   });
 
   group('server-authoritative premium mirror (v1.0.12 hotfix)', () {
+    test('fromMap reads the canonical nested subscription map', () {
+      // The web/PayFast checkout writes a nested `subscription` map via
+      // writeEntitlement; the reader must resolve it when the flat aliases
+      // are absent (the entitlement grant must not be invisible to the app).
+      final ent = UserEntitlement.fromMap({
+        'subscription': {
+          'status': 'active',
+          'isActive': true,
+          'plan': 'hunter_monthly',
+          'expiresAt': Timestamp.fromDate(DateTime(2026, 12, 1)),
+          'platform': 'payfast',
+        },
+      });
+      expect(ent.isPremium, isTrue);
+      expect(ent.subscriptionStatus, 'active');
+      expect(ent.subscriptionProduct, 'hunter_monthly');
+      expect(ent.premiumExpiry, DateTime(2026, 12, 1));
+      expect(ent.billingPlatform, 'payfast');
+      expect(ent.isPayfastBilled, isTrue);
+      expect(ent.isPremiumActive(DateTime(2026, 11, 1)), isTrue);
+      // Expired nested grant is not active.
+      expect(ent.isPremiumActive(DateTime(2027, 1, 1)), isFalse);
+    });
+
+    test('fromMap: the flat fields win over the nested map', () {
+      final ent = UserEntitlement.fromMap({
+        'isPremium': true,
+        'premiumExpiry': Timestamp.fromDate(DateTime(2026, 11, 15)),
+        'subscriptionProduct': 'jagspoor_outfitter_monthly',
+        'subscriptionStatus': 'active',
+        'subscriptionPlatform': 'google_play',
+        'subscription': {
+          'status': 'none',
+          'isActive': false,
+          'plan': 'hunter_monthly',
+          'expiresAt': Timestamp.fromDate(DateTime(2026, 12, 1)),
+          'platform': 'payfast',
+        },
+      });
+      expect(ent.subscriptionStatus, 'active');
+      expect(ent.subscriptionProduct, 'jagspoor_outfitter_monthly');
+      expect(ent.premiumExpiry, DateTime(2026, 11, 15));
+      expect(ent.isPlayBilled, isTrue);
+    });
+
+    test('fromEntitlementMirror reads the nested subscription map too', () {
+      final mirror = UserEntitlement.fromEntitlementMirror({
+        'subscription': {
+          'isActive': true,
+          'plan': 'outfitter_monthly',
+          'expiresAt': Timestamp.fromDate(DateTime(2026, 12, 5)),
+          'platform': 'payfast',
+        },
+      });
+      expect(mirror.isPremium, isTrue);
+      expect(mirror.subscriptionProduct, 'outfitter_monthly');
+      expect(mirror.premiumExpiry, DateTime(2026, 12, 5));
+      expect(mirror.isPayfastBilled, isTrue);
+    });
+
     test('fromEntitlementMirror reads the premium fields only', () {
       final mirror = UserEntitlement.fromEntitlementMirror({
         'isPremium': true,

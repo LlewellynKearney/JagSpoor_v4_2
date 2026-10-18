@@ -139,6 +139,22 @@ export async function writeEntitlement(
     userPayload.subscriptionPlatform = platform;
   }
 
+  // Canonical nested `subscription` map (status / plan / expiresAt /
+  // platform). Mirrors the flat fields above so the web billing UI can read a
+  // single structured object; SERVER-OWNED in firestore.rules (change
+  // detection), so a client can never forge an active subscription.
+  const subscriptionMap: Record<string, unknown> = {
+    status: fields.subscriptionStatus ?? (fields.isPremium ? "active" : "none"),
+    isActive:
+      (fields.subscriptionStatus ?? "").toLowerCase() === "active" &&
+      fields.isPremium === true,
+    plan: fields.subscriptionProduct ?? null,
+    expiresAt: fields.premiumExpiry ?? null,
+    platform: platform,
+    updatedAt: now,
+  };
+  userPayload.subscription = subscriptionMap;
+
   const entitlementPayload: Record<string, unknown> = {
     userId: uid,
     isPremium: fields.isPremium,

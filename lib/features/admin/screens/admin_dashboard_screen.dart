@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/layout/web_layout.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../subscription/services/play_billing_service.dart';
 import '../../subscription/services/subscription_pricing.dart';
@@ -236,7 +237,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ? _buildError()
                   : RefreshIndicator(
                       onRefresh: _bootstrap,
-                      child: ListView(
+                      child: WebLayout.responsive(
+                        // Centred, max-width container on desktop so the admin
+                        // analytics sections don't stretch edge-to-edge on a
+                        // wide browser window. Unchanged on mobile.
+                        child: ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(
                             16, 8, 16, SafeBottomInset.of(context)),
@@ -275,6 +280,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           _buildSectionHeader('Account Management'),
                           _buildManagementCards(),
                         ],
+                      ),
                       ),
                     ),
         );

@@ -8,6 +8,8 @@ import '../../core/widgets/copyright_footer.dart';
 import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
+import '../billing/billing_plans.dart';
+import '../billing/billing_service.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
@@ -139,9 +141,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void initState() {
     super.initState();
     _initBilling();
-    _listenForPurchases();
-    // Persist any purchase (new or restored) onto users/{uid} + `purchases`.
-    PlayPurchaseRecorder.instance.startListening();
+    // The Play purchase stream + recorder are Android/iOS only — the web build
+    // charges through PayFast (whose ITN webhook writes the entitlement).
+    if (!_isWebBilling) {
+      _listenForPurchases();
+      // Persist any purchase (new or restored) onto users/{uid} + `purchases`.
+      PlayPurchaseRecorder.instance.startListening();
+    }
   }
 
   @override
@@ -154,6 +160,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// real Play Console price and surface a graceful "billing unavailable"
   /// state.
   Future<void> _initBilling() async {
+    // On the WEB build billing runs through PayFast, so the Google Play
+    // catalog query is skipped entirely (the plugin has no web implementation
+    // and the browser has no Play products). Only the admin control-plane
+    // price is resolved, for display consistency.
+    if (_isWebBilling) {
+      double? adminFallback;
+      try {
+        adminFallback = await SubscriptionConfigService.instance
+            .getFallbackPrice(_tier.key);
+      } catch (e) {
+        debugPrint('SubscriptionScreen: admin pricing load failed: $e');
+      }
+      if (!mounted) return;
+      setState(() {
+        _billingSupported = true;
+        _catalogLoading = false;
+        _adminFallbackPrice = adminFallback;
+      });
+      return;
+    }
     // Only touch the Play Billing plugin when the host actually supports it.
     // On a non-store host (emulator, test host) `isAvailable` is false — or
     // the plugin call never returns — so the catalog is left unresolved and
@@ -240,12 +266,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     });
   }
 
-  /// Launches the native Google Play Billing subscription flow for the
-  /// current tier.
+  /// Whether the current build charges through PayFast (web) instead of the
+  /// native Google Play Billing flow.
+  bool get _isWebBilling => BillingService.instance.usesPayFast;
+
+  /// Launches the platform-appropriate subscription checkout.
   ///
-  /// The purchase result arrives asynchronously through
-  /// [PlayBillingService.purchaseStream]; the screen listens there and
-  /// records the entitlement (see [_listenForPurchases]).
+  /// * **Web** -> the PayFast hosted checkout. The signed form is built by the
+  ///   `createPayFastPayment` Cloud Function (the merchant key never reaches
+  ///   the browser) and posted in the current tab; the `payfastNotify` ITN
+  ///   webhook then writes the authoritative entitlement.
+  /// * **Android / iOS** -> the native Google Play Billing flow (Play policy
+  ///   requires Play Billing for in-app digital goods).
   Future<void> _subscribe() async {
     if (_isLaunching) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -257,6 +289,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           backgroundColor: Colors.orange,
         ),
       );
+      return;
+    }
+    if (_isWebBilling) {
+      await _subscribeViaPayFast(messenger);
       return;
     }
     if (!_billingSupported) {
@@ -313,6 +349,47 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         SnackBar(
           content: Text('Subscription purchase failed: $e'),
           backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLaunching = false);
+    }
+  }
+
+  /// Web checkout: request the server-signed PayFast form and post it.
+  ///
+  /// The entitlement is written by the `payfastNotify` ITN webhook (server
+  /// side) — the client only starts the checkout. The signed form carries the
+  /// public `merchant_id` + the MD5 signature; the merchant KEY and passphrase
+  /// stay in Secret Manager.
+  Future<void> _subscribeViaPayFast(ScaffoldMessengerState? messenger) async {
+    setState(() => _isLaunching = true);
+    try {
+      final plan = BillingPlans.monthlyFor(_tier);
+      final result = await BillingService.instance.pay(
+        role: _tier.key,
+        plan: plan,
+      );
+      if (!mounted) return;
+      if (!result.launched) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ??
+                  'Unable to start the PayFast checkout. Please try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Opening the secure PayFast checkout — complete the payment to '
+            'activate your subscription.',
+          ),
+          backgroundColor: Colors.green,
         ),
       );
     } finally {
@@ -1088,23 +1165,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // The SUBSCRIBE button stays disabled until the Play catalog has resolved
     // AND (once it has) the active product carries the base-plan offer token
     // Google Play Billing v5+ requires. Tapping before that point is what
-    // produced the INVALID_OFFER_TOKEN failure.
-    final busy = _isLaunching || _catalogLoading;
+    // produced the INVALID_OFFER_TOKEN failure. On the WEB build there is no
+    // Play catalog — the button is enabled immediately and charges via
+    // PayFast instead.
+    final busy = _isLaunching || (!_isWebBilling && _catalogLoading);
     final String label;
     if (_paymentPending) {
       label = 'PAYMENT PENDING…';
-    } else if (_catalogLoading) {
-      label = 'LOADING GOOGLE PLAY…';
     } else if (_isLaunching) {
-      label = 'CONTACTING GOOGLE PLAY…';
+      label = _isWebBilling
+          ? 'OPENING PAYFAST…'
+          : 'CONTACTING GOOGLE PLAY…';
+    } else if (!_isWebBilling && _catalogLoading) {
+      label = 'LOADING GOOGLE PLAY…';
+    } else if (_isWebBilling) {
+      label = 'SUBSCRIBE VIA PAYFAST';
     } else {
       label = 'SUBSCRIBE VIA GOOGLE PLAY';
     }
+    final canSubscribe =
+        _isWebBilling ? !_isLaunching : (!_isLaunching && _subscribeEnabled);
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
         key: const ValueKey('subscribeButton'),
-        onPressed: (_isLaunching || _paymentPending || !_subscribeEnabled)
+        onPressed: (_isLaunching || _paymentPending || !canSubscribe)
             ? null
             : _subscribe,
         style: FilledButton.styleFrom(
@@ -1125,7 +1210,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   color: Colors.white,
                 ),
               )
-            : const Icon(Icons.play_circle_fill_rounded),
+            : Icon(
+                _isWebBilling
+                    ? Icons.lock_outline_rounded
+                    : Icons.play_circle_fill_rounded,
+              ),
         label: Text(
           label,
           style: const TextStyle(

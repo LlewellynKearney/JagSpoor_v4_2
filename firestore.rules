@@ -276,7 +276,17 @@ service cloud.firestore {
         // upgrade itself to the outfitter tier.
         && (!('subscriptionTier' in request.resource.data)
           || (resource != null
-            && request.resource.data.subscriptionTier == resource.data.subscriptionTier));
+            && request.resource.data.subscriptionTier == resource.data.subscriptionTier))
+        // Nested `subscription` map (status / plan / expiresAt) — the PayFast
+        // web-billing entitlement mirror. SERVER-OWNED: only Cloud Functions
+        // (payfastNotify via writeEntitlement) may write it. Readable by the
+        // owner (users/{uid} read is isSignedIn() → own doc), but a client
+        // write of this map is denied by change detection so nobody can forge
+        // an active subscription. A merge write that omits the field, or
+        // re-sends the stored value unchanged, still passes.
+        && (!('subscription' in request.resource.data)
+          || (resource != null
+            && request.resource.data.subscription == resource.data.subscription));
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 

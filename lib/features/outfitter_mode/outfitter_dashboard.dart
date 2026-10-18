@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:jagspoor/shared/widgets/app_info_modal.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/layout/web_layout.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
 import '../../core/widgets/version_info.dart';
@@ -166,10 +167,15 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
               OutfitterBushveldBackground.backgroundImage(
                 fallbackColor: widget.theme.backgroundColor,
               ),
+              // Web-only 62% black veil: on a large monitor the bushveld
+              // photo's bright sunrise region washes out the card text, so
+              // restore contrast on the browser. Mobile is untouched.
+              if (WebLayout.isDesktopLayout(context))
+                OutfitterBushveldBackground.webContrastOverlay(),
               OutfitterBushveldBackground.scrim(),
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : Container(
+                  : DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: RadialGradient(
                         center: const Alignment(-0.8, -0.6),
@@ -180,19 +186,17 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                         ],
                       ),
                     ),
-                    child: Center(
-                      // Constrain the feature-card column on wide / tablet
-                      // screens so cards don't stretch edge-to-edge (smooth
-                      // scrolling + readable line lengths across mobile ratios).
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 560,
+                    child: WebLayout.responsive(
+                      // Constrain the feature-card column on wide / desktop
+                      // screens so cards don't stretch edge-to-edge (the same
+                      // centred 1280 max-width container the hunter dashboard
+                      // uses). On a mobile-width viewport the child is returned
+                      // unchanged, so the existing mobile layout is untouched.
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0,
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20.0,
-                          ),
-                          child: ListView(
+                        child: ListView(
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.only(
                                 top: MediaQuery.of(context).padding.top +
@@ -496,8 +500,7 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
                         ],
                       ),
                         ), // Padding
-                      ), // ConstrainedBox
-                    ), // Center
+                    ), // WebLayout.responsive
                   ), // Container
             ],
           ),

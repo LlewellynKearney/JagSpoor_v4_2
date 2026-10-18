@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/layout/web_layout.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Shared immersive bushveld background used across the entire outfitter
@@ -73,7 +74,19 @@ class OutfitterBushveldBackground {
     );
   }
 
-  /// The responsive background stack: photo + scrim + content, layered.
+  /// A flat 62% black veil layered between the photo and the mode scrim on
+  /// web/desktop widths only.
+  ///
+  /// On a large monitor the bushveld photo is stretched across the full
+  /// viewport and its bright sunrise region washes out the card text. This
+  /// veil (matching the hunter portal's `webContrastOverlay`) restores
+  /// contrast on the browser without altering the mobile presentation.
+  static Widget webContrastOverlay() => Container(
+        color: Colors.black.withValues(alpha: 0.62),
+      );
+
+  /// The responsive background stack: photo + contrast veil (web) + scrim +
+  /// content, layered.
   ///
   /// Use inside a Scaffold body to make a non-Scaffold screen (or a body that
   /// already manages its own Scaffold/AppBar) immersive.
@@ -90,10 +103,12 @@ class OutfitterBushveldBackground {
       builder: (context) {
         final dark = isDarkMode ??
             Theme.of(context).brightness == Brightness.dark;
+        final desktop = WebLayout.isDesktopLayout(context);
         return Stack(
           fit: StackFit.expand,
           children: [
             backgroundImage(fallbackColor: fallbackColor),
+            if (desktop) webContrastOverlay(),
             scrim(isDarkMode: dark),
             child,
           ],

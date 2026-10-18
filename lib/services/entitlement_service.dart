@@ -299,18 +299,31 @@ class UserEntitlement {
   static UserEntitlement fromMap(Map<String, dynamic>? data) {
     if (data == null) return const UserEntitlement();
     final status = (data['subscriptionStatus'] ?? '').toString().trim().toLowerCase();
+    // The canonical nested `subscription` map (written by writeEntitlement for
+    // the web/PayFast checkout) is a fallback source for the premium fields
+    // when the flat aliases are absent. It is server-owned (change-detection
+    // frozen in firestore.rules), so reading it never trusts a client value.
+    final nested = data['subscription'];
+    final nestedMap =
+        nested is Map ? Map<String, dynamic>.from(nested) : const <String, dynamic>{};
     return UserEntitlement(
-      isPremium: data['isPremium'] == true,
-      premiumExpiry: _toDate(data['premiumExpiry']),
+      isPremium: data['isPremium'] == true || nestedMap['isActive'] == true,
+      premiumExpiry:
+          _toDate(data['premiumExpiry']) ?? _toDate(nestedMap['expiresAt']),
       subscriptionSource: data['subscriptionSource'] as String?,
-      subscriptionProduct: data['subscriptionProduct'] as String?,
+      subscriptionProduct:
+          (data['subscriptionProduct'] as String?) ??
+          (nestedMap['plan'] as String?),
       trialStart: _resolveTrialStart(data),
       trialEnd: _resolveTrialEnd(data),
-      subscriptionStatus: status,
+      subscriptionStatus: status.isNotEmpty
+          ? status
+          : (nestedMap['status'] ?? '').toString().trim().toLowerCase(),
       requiresPayment: data['requiresPayment'] == true,
       hasActivePurchase: data['hasActivePurchase'] == true,
       createdAt: _toDate(data['createdAt']) ?? _toDate(data['created_at']),
-      subscriptionPlatform: _resolvePlatform(data),
+      subscriptionPlatform:
+          _resolvePlatform(data) ?? _resolvePlatform(nestedMap),
     );
   }
 
@@ -323,13 +336,20 @@ class UserEntitlement {
   /// absent from the mirror and are merged in from `users/{uid}`.
   static UserEntitlement fromEntitlementMirror(Map<String, dynamic>? data) {
     if (data == null) return const UserEntitlement();
+    final nested = data['subscription'];
+    final nestedMap =
+        nested is Map ? Map<String, dynamic>.from(nested) : const <String, dynamic>{};
     return UserEntitlement(
-      isPremium: data['isPremium'] == true,
-      premiumExpiry: _toDate(data['premiumExpiry']),
+      isPremium: data['isPremium'] == true || nestedMap['isActive'] == true,
+      premiumExpiry:
+          _toDate(data['premiumExpiry']) ?? _toDate(nestedMap['expiresAt']),
       subscriptionSource: data['subscriptionSource'] as String?,
-      subscriptionProduct: data['subscriptionProduct'] as String?,
+      subscriptionProduct:
+          (data['subscriptionProduct'] as String?) ??
+          (nestedMap['plan'] as String?),
       hasActivePurchase: data['hasActivePurchase'] == true,
-      subscriptionPlatform: _resolvePlatform(data),
+      subscriptionPlatform:
+          _resolvePlatform(data) ?? _resolvePlatform(nestedMap),
     );
   }
 

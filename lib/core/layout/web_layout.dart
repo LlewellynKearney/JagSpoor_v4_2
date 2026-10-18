@@ -55,6 +55,42 @@ class WebLayout {
   static bool isDesktopLayout(BuildContext context) =>
       isDesktopWidth(MediaQuery.sizeOf(context).width);
 
+  /// Convenience alias matching the web design spec — `true` on a wide
+  /// viewport. Identical to [isDesktopLayout]; provided so screens can read
+  /// `WebLayout.isDesktop(context)`.
+  static bool isDesktop(BuildContext context) => isDesktopLayout(context);
+
+  /// Wraps [child] in the standard responsive container for the desktop
+  /// presentation:
+  ///   * desktop (`> 800`) -> `Center > ConstrainedBox(maxWidth: 1280) >
+  ///     Padding(24) > child`;
+  ///   * mobile (`<= 800`) -> [child] unchanged.
+  ///
+  /// This is the single helper every dashboard / screen should use so the
+  /// desktop treatment is consistent across ALL roles (hunter, outfitter,
+  /// admin) instead of each screen re-implementing the container.
+  static Widget responsive({
+    required Widget child,
+    BuildContext? context,
+    double maxWidth = maxContentWidth,
+    double horizontalPadding = 24,
+  }) {
+    // `context` is optional so callers inside a `LayoutBuilder` (which
+    // already knows the width) can pass it explicitly; when omitted the
+    // child is wrapped unconditionally, letting a LayoutBuilder decide the
+    // breakpoint itself.
+    if (context != null && !isDesktopLayout(context)) return child;
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   /// Header height for the ambient platform: [webHeaderHeight] on the web
   /// build so the branded header reads as a proper app bar in the browser;
   /// the standard `kToolbarHeight` on the native platforms so the Android /

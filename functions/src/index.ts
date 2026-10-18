@@ -88,6 +88,39 @@ export {
   onReferralConversionCreated,
 } from "./referral";
 
+// PayFast web billing (web / non-Play checkout). The Flutter WEB build calls
+// createPayFastPayment; the Android build keeps Google Play Billing. Merchant
+// key + passphrase are Cloud Functions secrets (see params.ts). See
+// payfast/payfast.ts + payfast/payfast.service.ts + payfast/plans.ts.
+export {
+  createPayFastPayment,
+  payfastNotify,
+  payfastReturn,
+  payfastCancel,
+  getBillingPlans,
+  WEB_APP_BASE_URL,
+  PAYFAST_NOTIFY_URL,
+  PAYFAST_SUCCESS_URL,
+  PAYFAST_CANCEL_URL,
+} from "./payfast/payfast";
+
+export {
+  PAYFAST_PLAN_CATALOG,
+  resolvePlan,
+  plansForRole,
+} from "./payfast/plans";
+
+export {
+  PAYFAST_PROCESS_URL,
+  PAYFAST_SANDBOX_PROCESS_URL,
+  PAYFAST_MERCHANT_ID,
+  generateSignature as payfastGenerateSignature,
+  verifySignature as payfastVerifySignature,
+  buildPaymentForm,
+  parseItnBody,
+  validateItn,
+} from "./payfast/payfast.service";
+
 // ────────────────────────────────────────────────────────────────────────────
 // 1. Admin: create outfitter account + document + custom claims
 // ────────────────────────────────────────────────────────────────────────────
