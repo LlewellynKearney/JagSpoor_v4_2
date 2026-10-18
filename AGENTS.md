@@ -1,5 +1,86 @@
 # JagSpoor -- Agent Memory
 
+## Subscription: Monthly+Yearly plan cards + Google Sign-In removed on ALL platforms (added 2026-10-18)
+
+Branch `fix/subscription-yearly-toggle-disable-google` (base 518b9e6).
+
+### 1. Google Sign-In removed globally
+- `lib/features/auth/auth_screen.dart` fully de-Googled: the "Continue with
+  Google" button, `_handleGoogleSignIn`, the SMS-2FA helpers
+  (`_requires2FA` / `_stampDeviceFingerprint` / `_show2FAVerificationSheet`),
+  the `_TwoFAVerificationSheet` class, the `flutter_svg` import, and the
+  `auth_gate_service.dart` import are gone. Email/password is the only
+  sign-in path on web + Android + iOS.
+- `lib/features/authentication/services/auth_gate_service.dart`:
+  `googleSignInEnabled = false`; `signInWithGoogle()` returns
+  `GoogleSignInResult.cancelled()` (no-op); `reauthenticateWithGoogle()`
+  returns false; `signOut()` drops the `GoogleSignIn().signOut()` call
+  entirely (no web null crash, no clientId meta check).
+- **Removed the `google_sign_in` dependency** from `pubspec.yaml` /
+  `pubspec.lock` + the macOS `GeneratedPluginRegistrant.swift` entry. This is
+  what makes the web build emit ZERO `google-signin-client_id` /
+  `google_sign_in` / `clientId` strings in `build/web/main.dart.js` — keeping
+  the dep (as the brief allowed) still shipped `google_sign_in_web`'s
+  `document.querySelector("meta[name=google-signin-client_id]")` lookup in
+  the compiled JS. `web/index.html` never carried the meta.
+- `test/google_sign_in_flow_test.dart` rewritten to assert the DISABLED
+  contract; `test/device_trial_abuse_contract_test.dart`'s "Google sign-in
+  stamps the fingerprint" test replaced with a "Google sign-in is removed
+  from the auth screen" contract (the auth screen no longer contains
+  `_stampDeviceFingerprint` / `Continue with Google`).
+
+### 2. Subscription screen — Monthly + Yearly plan cards
+- `lib/features/subscription/subscription_screen.dart`: `_buildTierCards`
+  renders TWO selectable plan cards for the active role (Option A, stacked):
+  - Hunter Monthly **R34.99/month** ("Billed every month · incl. VAT") +
+    Hunter Yearly **R349.99/year** ("Billed once a year · incl. VAT",
+    "SAVE ~17% (R349.99 vs R419.88)");
+  - Outfitter Monthly **R299.99/month** + Outfitter Yearly **R2999.99/year**.
+  Both cards carry the same feature checklist (`_hunterPerks` /
+  `_outfitterPerks`). Tapping a card calls `_selectCycle`; the order summary
+  (`_buildTotalCard`) then reads "Then monthly (hunter) · incl. VAT R34.99"
+  or "Then yearly (hunter) · incl. VAT R349.99". `_selectedPlan` /
+  `_selectedBaseAmount` drive both the summary and the checkout.
+- `lib/features/billing/payfast_buttons.dart` (`PayFastHunterOutfitterButtons`)
+  is role-scoped: it renders only the active tier's TWO buttons
+  (`HUNTER MONTHLY` R34.99 / `HUNTER YEARLY` R349.99, or the outfitter pair),
+  highlights the button matching `selectedCycle`, and calls
+  `BillingService.payWithPlanId(role:, planId:)` with
+  hunter_monthly/hunter_yearly/outfitter_monthly/outfitter_yearly.
+- **Gating fix**: the plan buttons now render whenever there is NO *active
+  PayFast* subscription (`_hasActivePayfastSubscription` = `isPayfastBilled &&
+  isActive`). A live free trial still shows them (so the trial user can
+  convert); only an active PayFast subscriber swaps the checkout for
+  "MANAGE SUBSCRIPTION ON PAYFAST". Previously `!sub.hasSubscription` hid the
+  buttons for the whole trial.
+- `WebLayout.responsive(maxWidth: 800)` + 24px desktop gutters preserved.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing
+  infos, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2220 passed,
+  1 failed** — the DOCUMENTED PRE-EXISTING
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger),
+  untouched here.
+- `flutter build web --release`: **SUCCESS**; `build/web/index.html` +
+  `main.dart.js` carry **0** `google-signin-client_id` / `google_sign_in` /
+  `clientId` strings; the favicon + apple-touch-icon + `flutter_bootstrap.js`
+  links are intact; `34.99` / `349.99` / `2999.99` are present in the bundle.
+
+### Files
+- MODIFIED: `lib/features/auth/auth_screen.dart`,
+  `lib/features/authentication/services/auth_gate_service.dart`,
+  `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/billing/payfast_buttons.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart` (comment),
+  `pubspec.yaml`, `pubspec.lock`,
+  `macos/Flutter/GeneratedPluginRegistrant.swift`,
+  `test/google_sign_in_flow_test.dart`,
+  `test/device_trial_abuse_contract_test.dart`,
+  `test/payfast_buttons_test.dart`, `test/subscription_screen_test.dart`,
+  `test/subscription_web_billing_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage changes.
+
 ## Web: FINAL PayFast pricing + logout null-crash fix + favicon restored (added 2026-10-18)
 
 ### 1. PayFast plan catalog — final recurring pricing
