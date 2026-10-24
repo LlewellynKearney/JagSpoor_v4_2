@@ -94,6 +94,27 @@ void main() {
       expect(fromSource.isPlayBilled, isTrue);
     });
 
+    test('payfast_alternative resolves to the website-managed branch', () {
+      // A PayFast purchase taken through Google Play's User Choice Billing
+      // programme is recorded distinctly, but it is website-managed: the
+      // subscriber must be routed to the PayFast dashboard and NEVER to the
+      // Play subscriptions centre (the Play-policy branch).
+      final alt = UserEntitlement.fromMap({
+        'isPremium': true,
+        'subscriptionPlatform': 'payfast_alternative',
+      });
+      expect(alt.billingPlatform, SubscriptionSource.payfast);
+      expect(alt.isPayfastBilled, isTrue);
+      expect(alt.isPlayBilled, isFalse);
+
+      // Case-insensitive, matching the other platform aliases.
+      final upper = UserEntitlement.fromMap({
+        'subscriptionPlatform': 'PAYFAST_ALTERNATIVE',
+      });
+      expect(upper.isPayfastBilled, isTrue);
+      expect(upper.isPlayBilled, isFalse);
+    });
+
     test('tolerates snake_case + billingPlatform aliases', () {
       expect(
         UserEntitlement.fromMap({'subscription_platform': 'google_play'})

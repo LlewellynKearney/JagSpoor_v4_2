@@ -157,6 +157,17 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-analytics")
+    // Google Play Billing Library — the version the alternative billing
+    // (User Choice Billing) API requires. 8.0.0 is already the version the
+    // resolved `in_app_purchase_android` plugin declares (see
+    // in_app_purchase_android/android/build.gradle), so declaring it here
+    // pins the same artefact for OUR Kotlin code and keeps the
+    // alternative-billing entry points available. The User Choice Billing
+    // API (`BillingClient.Builder.enableUserChoiceBilling`,
+    // `createAlternativeBillingOnlyReportingDetailsAsync`) exists from 6.1.0
+    // onward; 8.0.0 is the current minimum Google Play accepts for new
+    // uploads, so no downgrade is warranted.
+    implementation("com.android.billingclient:billing:8.0.0")
 }
 
 // ---------------------------------------------------------------------------

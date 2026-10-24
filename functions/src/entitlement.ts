@@ -32,6 +32,14 @@ import { firestore } from "./firebase";
 export const ENTITLEMENTS_COLLECTION = "entitlements";
 export const SUBSCRIPTION_SOURCE_GOOGLE_PLAY = "google_play";
 export const SUBSCRIPTION_SOURCE_PAYFAST = "payfast";
+/**
+ * PayFast used through Google Play's **User Choice Billing** (alternative
+ * billing) programme. Behaviourally identical to [SUBSCRIPTION_SOURCE_PAYFAST]
+ * for the Play-policy branch (the subscriber is managed on the website, never
+ * in the Play subscriptions centre), but recorded distinctly so the
+ * alternative-billing service fee can be reconciled against the Play invoice.
+ */
+export const SUBSCRIPTION_SOURCE_PAYFAST_ALTERNATIVE = "payfast_alternative";
 export const SUBSCRIPTION_SOURCE_TRIAL = "trial";
 
 export const PACKAGE_NAME = "za.co.jagspoor.app";
@@ -74,12 +82,25 @@ export interface WriteEntitlementInput {
 
 /**
  * Normalizes a raw source/platform string to the canonical platform
- * (`google_play` / `payfast`), else null (e.g. `trial` / unknown).
+ * (`google_play` / `payfast` / `payfast_alternative`), else null (e.g.
+ * `trial` / unknown).
+ *
+ * `payfast_alternative` is checked BEFORE the generic `payfast` prefix so a
+ * User Choice Billing purchase keeps its distinct value (the fee
+ * reconciliation depends on telling the two apart). Both resolve to the
+ * website-managed branch in the app, so a `payfast_alternative` subscriber is
+ * never routed to the Play subscriptions centre.
  */
 export function platformFromSource(source: string | undefined | null): string | null {
   const value = (source ?? "").toString().trim().toLowerCase();
   if (value === SUBSCRIPTION_SOURCE_GOOGLE_PLAY || value.startsWith("google_play")) {
     return SUBSCRIPTION_SOURCE_GOOGLE_PLAY;
+  }
+  if (
+    value === SUBSCRIPTION_SOURCE_PAYFAST_ALTERNATIVE ||
+    value.startsWith("payfast_alternative")
+  ) {
+    return SUBSCRIPTION_SOURCE_PAYFAST_ALTERNATIVE;
   }
   if (value === SUBSCRIPTION_SOURCE_PAYFAST || value.startsWith("payfast")) {
     return SUBSCRIPTION_SOURCE_PAYFAST;

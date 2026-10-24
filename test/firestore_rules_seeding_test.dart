@@ -29,6 +29,8 @@ void main() {
 
   _purchaseRecordingContracts(rules);
 
+  _alternativeBillingReportContracts(rules);
+
   group('firestore.rules structural integrity', () {
     test('helpers intact', () {
       for (final h in [
@@ -683,6 +685,77 @@ void main() {
       expect(
         block.contains('resource.data.hunterId == request.auth.uid'),
         isTrue,
+      );
+    });
+  });
+}
+
+/// Structural contract for the Google Play **User Choice Billing**
+/// (alternative billing) transaction log.
+///
+/// The Android app writes one row per PayFast-through-Play transaction,
+/// carrying the Play-issued external transaction token, so the server can
+/// report it to the Play Developer API and Google's reduced service fee can be
+/// invoiced. These assertions lock the access shape:
+///   * the owner field is `userId` (mirroring the entitlement documents),
+///   * a user can only read / create / update their OWN rows, and
+///   * deletion is admin-only — the rows back a Google invoice and must not be
+///     erasable by the buyer.
+void _alternativeBillingReportContracts(String rules) {
+  group('alternative_billing_reports collection contract', () {
+    test('the match block exists', () {
+      expect(
+        rules.contains(
+            'match /alternative_billing_reports/{reportId}'),
+        isTrue,
+      );
+    });
+
+    test('reads are owner-scoped on userId', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      expect(block, contains('allow read: if isSignedIn()'));
+      expect(block, contains('resource.data.userId == request.auth.uid'));
+    });
+
+    test('create requires the caller to own the row', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      expect(
+        block,
+        contains('request.resource.data.userId == request.auth.uid'),
+      );
+    });
+
+    test('update is owner-scoped so status can move to reported', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      expect(block, contains('allow update: if isSignedIn()'));
+      expect(
+        block,
+        contains('resource.data.userId == request.auth.uid'),
+      );
+    });
+
+    test('a client may never self-declare a report as reported', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      // `reported` asserts Google Play received the transaction — only the
+      // server-side reporter may write it, otherwise a client could hide an
+      // unreported transaction from the operator.
+      expect(block, contains("request.resource.data.status != 'reported'"));
+      expect(block, contains("resource.data.status == 'reported'"));
+    });
+
+    test('delete is admin-only (the rows back a Google invoice)', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      expect(block, contains('allow delete: if isAdmin();'));
+    });
+
+    test('does not expose another user\'s rows', () {
+      final block = _blockFor(rules, 'alternative_billing_reports');
+      // A blanket signed-in read would leak every subscriber's transaction
+      // log; the owner comparison must always be present.
+      expect(block, isNot(contains('allow read: if isSignedIn();\n')));
+      expect(
+        block,
+        contains('resource.data.userId == request.auth.uid'),
       );
     });
   });

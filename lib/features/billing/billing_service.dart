@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../subscription/services/play_billing_service.dart';
 import '../subscription/services/subscription_pricing.dart';
@@ -110,6 +111,11 @@ class BillingService {
   static bool Function(String url, Map<String, String> fields)?
       formSubmitterForTesting;
 
+  /// Test seam: replaces the native `url_launcher` hand-off used when no DOM
+  /// form can be submitted (Android / iOS).
+  @visibleForTesting
+  static Future<bool> Function(Uri url)? urlLauncherForTesting;
+
   /// Test seam: forces the platform routing (`true` = PayFast web path,
   /// `false` = native Play Billing path). Null uses the real platform.
   @visibleForTesting
@@ -122,6 +128,7 @@ class BillingService {
     currentUserIdResolverForTesting = null;
     idTokenResolverForTesting = null;
     formSubmitterForTesting = null;
+    urlLauncherForTesting = null;
     usesPayFastForTesting = null;
   }
 
@@ -172,12 +179,22 @@ class BillingService {
   /// Web -> PayFast hosted checkout. Native -> Google Play Billing (the Play
   /// purchase stream then drives the entitlement; see
   /// `SubscriptionScreen._listenForPurchases`).
+  ///
+  /// Set [alternativeBilling] when the user has chosen PayFast through Google
+  /// Play's **User Choice Billing** flow on Android. The flag is forwarded to
+  /// the server so the ITN stamps the entitlement `payfast_alternative`, and
+  /// it selects the native browser launch (there is no DOM form off the web).
   Future<BillingResult> pay({
     required String role,
     required BillingPlan plan,
+    bool alternativeBilling = false,
   }) async {
-    if (usesPayFast) {
-      return _payWithPayFast(role: role, plan: plan);
+    if (usesPayFast || alternativeBilling) {
+      return _payWithPayFast(
+        role: role,
+        plan: plan,
+        alternativeBilling: alternativeBilling,
+      );
     }
     return _payWithPlayBilling(plan);
   }
@@ -186,6 +203,7 @@ class BillingService {
   Future<BillingResult> payWithPlanId({
     required String role,
     required String planId,
+    bool alternativeBilling = false,
   }) async {
     final plan = BillingPlans.byId(planId);
     if (plan == null) {
@@ -194,7 +212,11 @@ class BillingService {
         message: 'Unknown plan.',
       );
     }
-    return pay(role: role, plan: plan);
+    return pay(
+      role: role,
+      plan: plan,
+      alternativeBilling: alternativeBilling,
+    );
   }
 
   /// Requests the signed PayFast form from the callable and returns it.
@@ -205,6 +227,7 @@ class BillingService {
     required String role,
     required String planId,
     String? billingCycle,
+    bool alternativeBilling = false,
   }) async {
     final uid = _uid;
     if (uid == null) {
@@ -222,6 +245,10 @@ class BillingService {
           'role': role,
           'planId': planId,
           if (billingCycle != null) 'billingCycle': billingCycle,
+          // Tells the server this checkout came from Google Play's User Choice
+          // Billing flow, so the ITN stamps `payfast_alternative` and the
+          // service fee stays reconcilable against the Play invoice.
+          if (alternativeBilling) 'alternativeBilling': true,
         },
       });
       final res = await (httpPostForTesting ?? _defaultPost)(
@@ -272,18 +299,49 @@ class BillingService {
   }
 
   /// Web checkout: request the signed form, then post it to PayFast.
+  ///
+  /// Two launch paths, because only a browser can submit an HTML form:
+  ///  * **Web** — inject a hidden form and submit it in the current tab.
+  ///  * **Native** (Android User Choice Billing, or an iOS PayFast
+  ///    subscriber) — build a signed GET URL from the same form fields and
+  ///    hand it to `url_launcher` so the hosted checkout opens in the device
+  ///    browser. PayFast accepts a signed query string on `/eng/process`
+  ///    (verified: the endpoint processes GET and validates the signature
+  ///    identically), and the ITN still arrives server-to-server.
   Future<BillingResult> _payWithPayFast({
     required String role,
     required BillingPlan plan,
+    bool alternativeBilling = false,
   }) async {
     final (:payment, :error) = await requestPayFastPayment(
       role: role,
       planId: plan.planId,
       billingCycle: plan.cycle.key,
+      alternativeBilling: alternativeBilling,
     );
     if (payment == null) {
       return BillingResult(launched: false, message: error);
     }
+
+    // Native: no DOM, so open the signed checkout URL in the device browser.
+    //
+    // This branch must NOT run when the web-billing seam is forced: the
+    // existing web tests drive the DOM submitter directly (without setting
+    // `usesPayFastForTesting`), so a raw `kIsWeb` check would misroute them
+    // into the browser-launch path on the test VM.
+    final nativeLaunch = !kIsWeb && usesPayFastForTesting != true;
+    if (nativeLaunch) {
+      final uri = Uri.parse(buildSignedGetUrl(payment));
+      final launched = await (urlLauncherForTesting ?? _defaultUrlLauncher)(uri);
+      if (!launched) {
+        return const BillingResult(
+          launched: false,
+          message: 'Could not open the PayFast checkout in your browser.',
+        );
+      }
+      return BillingResult.ok;
+    }
+
     final submitted = (formSubmitterForTesting ?? submitPayFastForm)(
       payment.processUrl,
       payment.fields,
@@ -295,6 +353,29 @@ class BillingService {
       );
     }
     return BillingResult.ok;
+  }
+
+  /// Builds the signed GET URL for a hosted PayFast checkout.
+  ///
+  /// The `processUrl` + every signed field (including `signature`) are
+  /// appended as a query string, so the device browser can open the checkout
+  /// without an HTML form. Pure, so it is unit-testable.
+  static String buildSignedGetUrl(PayFastPayment payment) {
+    final params = <String, String>{
+      ...payment.fields,
+    };
+    // Uri.replace percent-encodes the values and preserves the signature,
+    // which was computed over the UNENCODED field values.
+    return Uri.parse(payment.processUrl).replace(queryParameters: params).toString();
+  }
+
+  Future<bool> _defaultUrlLauncher(Uri uri) async {
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('BillingService._defaultUrlLauncher error: $e');
+      return false;
+    }
   }
 
   /// Native checkout: hand off to Google Play Billing.

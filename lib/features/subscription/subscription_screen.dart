@@ -11,6 +11,7 @@ import '../../core/widgets/payfast_secure_footer.dart';
 import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
+import '../billing/alternative_billing_service.dart';
 import '../billing/billing_plans.dart';
 import '../billing/billing_service.dart';
 import '../billing/payfast_buttons.dart';
@@ -18,6 +19,50 @@ import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 import 'services/subscription_status_service.dart';
+
+/// Which payment method the subscriber has chosen for a **native (Android)**
+/// purchase.
+///
+/// Google Play's User Choice Billing rules require both options to be offered
+/// and the user to make the choice explicitly, so this starts `undecided`.
+enum PaymentMethodChoice {
+  /// Nothing picked yet — the SUBSCRIBE action stays disabled so the user
+  /// cannot accidentally be routed to either system without choosing.
+  undecided,
+
+  /// Pay through Google Play Billing (the primary option).
+  googlePlay,
+
+  /// Pay through PayFast via Play's alternative billing programme.
+  payfastAlternative,
+}
+
+/// The exact alternative-billing disclosure Google requires on the choice
+/// surface, plus the dispute contact published on the Play Console
+/// alternative-billing form.
+///
+/// Kept as named constants (not inline literals) so the compliance copy is
+/// asserted verbatim by tests and cannot drift silently.
+class AlternativeBillingCopy {
+  AlternativeBillingCopy._();
+
+  /// The required service-fee disclosure.
+  static const String disclosure =
+      'You can choose to pay with Google Play or with an alternative billing '
+      'system (PayFast). Google will charge a service fee for alternative '
+      'billing transactions.';
+
+  /// The dispute route published on the Play Console form.
+  static const String disputeEmail = 'support@jagspoor.co.za';
+
+  /// The dispute link text.
+  static const String dispute =
+      'To dispute unauthorized alternative billing transactions, contact '
+      'support@jagspoor.co.za';
+
+  /// The mailto: target for the dispute link.
+  static const String disputeMailto = 'mailto:support@jagspoor.co.za';
+}
 
 /// Subscription checkout screen.
 ///
@@ -80,6 +125,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// (Monthly by default). Drives the order summary + the highlighted PayFast
   /// plan button.
   BillingCycle _selectedCycle = BillingCycle.monthly;
+
+  /// Which payment method the user has actively chosen on **Android**.
+  ///
+  /// Google Play's User Choice Billing rules require the app to present BOTH
+  /// Google Play and the alternative system (PayFast) and to let the user make
+  /// the choice — it must never be auto-defaulted to the alternative. This
+  /// starts as [PaymentMethodChoice.undecided] so nothing is preselected and
+  /// the SUBSCRIBE action stays disabled until the user picks one.
+  ///
+  /// Ignored on the web build, which is outside Google Play billing entirely
+  /// and charges through PayFast only.
+  PaymentMethodChoice _paymentChoice = PaymentMethodChoice.undecided;
+
+  /// Whether the native host actually offers User Choice Billing.
+  ///
+  /// Resolved asynchronously by [AlternativeBillingService.probeSupport] in
+  /// [initState]. It stays `false` until the native bridge confirms support,
+  /// which is what keeps the choice surface (and its PayFast alternative) off
+  /// every host that cannot obtain a Play external transaction token — the
+  /// test VM, iOS, desktop, and the web build.
+  bool _userChoiceAvailable = false;
+
+  /// True while the User Choice Billing external transaction token is being
+  /// requested from the Play Billing Library, before the PayFast hand-off.
+  bool _isCreatingToken = false;
 
   /// The reactive subscription stream, cached ONCE for the screen's lifetime.
   ///
@@ -215,6 +285,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         SubscriptionStatusService.instance.watchMySubscription();
     _seedSubscription();
     _initBilling();
+    _resolveUserChoiceSupport();
     // The Play purchase stream + recorder are Android/iOS only — the web build
     // charges through PayFast (whose ITN webhook writes the entitlement).
     if (!_isWebBilling) {
@@ -222,6 +293,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       // Persist any purchase (new or restored) onto users/{uid} + `purchases`.
       PlayPurchaseRecorder.instance.startListening();
     }
+  }
+
+  /// Resolves whether this host can offer Google Play User Choice Billing.
+  ///
+  /// Uses a real native round-trip rather than the platform enum: the widget
+  /// test VM reports Android but has no billing bridge, so a platform check
+  /// would wrongly surface the choice UI in tests (and on any Android build
+  /// whose Play Store predates the programme).
+  Future<void> _resolveUserChoiceSupport() async {
+    if (_isWebBilling) return;
+    bool available;
+    try {
+      available = await AlternativeBillingService.instance.probeSupport();
+    } catch (e) {
+      debugPrint('SubscriptionScreen: user choice probe failed: $e');
+      available = false;
+    }
+    if (!mounted || available == _userChoiceAvailable) return;
+    setState(() => _userChoiceAvailable = available);
   }
 
   @override
@@ -398,6 +488,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       await _subscribeViaPayFast(messenger);
       return;
     }
+    // Android User Choice Billing: honour the method the user actually chose.
+    // Google Play is the primary option; PayFast is only used when the user
+    // explicitly selected it (never auto-defaulted). This is resolved BEFORE
+    // the Play-support check below: a device with no working Play Billing
+    // service can still complete a PayFast purchase, so an unavailable Play
+    // service must not block the alternative path the user asked for.
+    if (_showsUserChoice) {
+      if (_paymentChoice == PaymentMethodChoice.undecided) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Please choose how you would like to pay.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if (_paymentChoice == PaymentMethodChoice.payfastAlternative) {
+        await _subscribeViaPayFastAlternative(messenger);
+        return;
+      }
+      // Google Play chosen — falls through to the Play Billing flow below.
+    }
     if (!_billingSupported) {
       messenger?.showSnackBar(
         const SnackBar(
@@ -452,6 +564,317 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         SnackBar(
           content: Text('Subscription purchase failed: $e'),
           backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLaunching = false);
+    }
+  }
+
+  /// Whether the Android **User Choice Billing** surface should render.
+  ///
+  /// Android only. The web build is outside Google Play billing entirely (it
+  /// charges through PayFast and shows no Play affordance), and iOS has no
+  /// Play Billing at all.
+  bool get _showsUserChoice => _userChoiceAvailable && !_isWebBilling;
+
+  /// Whether the user has picked a payment method (Android only).
+  ///
+  /// Off Android there is nothing to choose, so the checkout is always
+  /// allowed. On Android the user must actively select Google Play or PayFast
+  /// — the button stays disabled while [PaymentMethodChoice.undecided].
+  bool get _paymentChoiceSatisfied =>
+      !_showsUserChoice || _paymentChoice != PaymentMethodChoice.undecided;
+
+  /// True when the current view will charge through PayFast: always on the web
+  /// build, or on Android once the user has actively chosen PayFast via the
+  /// User Choice Billing surface. Drives the PayFast trust footer.
+  bool get _payfastChosen =>
+      _isWebBilling ||
+      (_showsUserChoice &&
+          _paymentChoice == PaymentMethodChoice.payfastAlternative);
+
+  /// The Google Play / PayFast choice surface (Android only).
+  ///
+  /// Google Play's User Choice Billing policy requires the app to present BOTH
+  /// payment systems and let the user choose — never auto-defaulting to the
+  /// alternative and never hiding Google Play. This renders two selectable
+  /// cards plus the mandatory service-fee disclosure and the dispute contact.
+  Widget _buildPaymentChoice(ThemeController theme) {
+    return Container(
+      key: const ValueKey('paymentChoiceSection'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.accentColor.withValues(alpha: 0.35),
+          width: 1.4,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'CHOOSE HOW TO PAY',
+            style: TextStyle(
+              color: theme.textColor,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.3,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            AlternativeBillingCopy.disclosure,
+            style: TextStyle(
+              color: theme.subtitleColor,
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildPaymentOptionTile(
+            theme: theme,
+            choice: PaymentMethodChoice.googlePlay,
+            key: const ValueKey('paymentChoiceGooglePlay'),
+            icon: Icons.play_circle_fill_rounded,
+            title: 'Pay with Google Play',
+            subtitle: 'Billed by Google Play · manage or cancel in the Play '
+                'Store',
+          ),
+          const SizedBox(height: 10),
+          _buildPaymentOptionTile(
+            theme: theme,
+            choice: PaymentMethodChoice.payfastAlternative,
+            key: const ValueKey('paymentChoicePayFast'),
+            icon: Icons.lock_outline_rounded,
+            title: 'Pay with PayFast',
+            subtitle: 'Alternative billing · secure checkout by PayFast',
+          ),
+          const SizedBox(height: 12),
+          // Dispute route published on the Play Console alternative-billing
+          // form. Rendered as a tappable mailto: so a subscriber can raise an
+          // unauthorized-transaction dispute in one tap.
+          InkWell(
+            key: const ValueKey('alternativeBillingDisputeLink'),
+            onTap: _openDisputeEmail,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.help_outline_rounded,
+                      size: 16, color: theme.accentColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AlternativeBillingCopy.dispute,
+                      style: TextStyle(
+                        color: theme.accentColor,
+                        fontSize: 12,
+                        height: 1.3,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One selectable payment-method card (a radio-style choice).
+  Widget _buildPaymentOptionTile({
+    required ThemeController theme,
+    required PaymentMethodChoice choice,
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = _paymentChoice == choice;
+    return InkWell(
+      key: key,
+      onTap: () => setState(() => _paymentChoice = choice),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.accentColor.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? theme.accentColor
+                : theme.subtitleColor.withValues(alpha: 0.35),
+            width: selected ? 2 : 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            // An explicit selection indicator makes the "user must choose"
+            // requirement unmistakable (and is what Play's reviewers look
+            // for). Rendered with plain widgets rather than a `Radio` so the
+            // same code compiles on both the CI Flutter pin and newer SDKs —
+            // `Radio`'s `groupValue`/`onChanged` were deprecated in favour of
+            // a `RadioGroup` ancestor that does not exist on older versions.
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: selected
+                  ? theme.accentColor
+                  : theme.subtitleColor.withValues(alpha: 0.6),
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, color: theme.accentColor, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: theme.subtitleColor,
+                      fontSize: 11.5,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the alternative-billing dispute email.
+  Future<void> _openDisputeEmail() async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final ok = await launchUrl(
+        Uri.parse(AlternativeBillingCopy.disputeMailto),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted || ok) return;
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Contact ${AlternativeBillingCopy.disputeEmail} to dispute a '
+            'transaction.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      debugPrint('SubscriptionScreen: dispute email failed: $e');
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Contact ${AlternativeBillingCopy.disputeEmail} to dispute a '
+            'transaction.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  /// Android **User Choice Billing** checkout: the user chose PayFast.
+  ///
+  /// Play requires the external transaction token to be obtained *before* the
+  /// alternative payment is taken, so the resulting transaction can be
+  /// reported. The sequence is:
+  ///
+  ///  1. ask the Play Billing Library for the token
+  ///     (`createAlternativeBillingOnlyReportingDetailsAsync`, or a token Play
+  ///     already delivered via `UserChoiceBillingListener`),
+  ///  2. hand the user to the PayFast hosted checkout (native browser launch),
+  ///  3. record the transaction in `alternative_billing_reports` so the server
+  ///     can report it to the Play Developer API and Google's service fee can
+  ///     be invoiced.
+  ///
+  /// A missing token never blocks the checkout: the transaction is logged as
+  /// `token_unavailable` for manual reporting instead. The subscription itself
+  /// is granted by the `payfastNotify` ITN webhook, which stamps
+  /// `payfast_alternative` because the server marks this checkout as
+  /// alternative billing.
+  Future<void> _subscribeViaPayFastAlternative(
+      ScaffoldMessengerState? messenger) async {
+    setState(() {
+      _isLaunching = true;
+      _isCreatingToken = true;
+    });
+    final plan = _selectedPlan;
+    String? token;
+    try {
+      // Step 1 — obtain the Play-issued external transaction token.
+      token = await AlternativeBillingService.instance
+          .createAlternativeBillingToken();
+    } catch (e) {
+      debugPrint('SubscriptionScreen: alternative billing token failed: $e');
+    } finally {
+      if (mounted) setState(() => _isCreatingToken = false);
+    }
+
+    try {
+      // Step 2 — launch the PayFast checkout, flagged as alternative billing
+      // so the ITN stamps `payfast_alternative`.
+      final result = await BillingService.instance.pay(
+        role: _tier.key,
+        plan: plan,
+        alternativeBilling: true,
+      );
+      if (!mounted) return;
+      if (!result.launched) {
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ??
+                  'Unable to start the PayFast checkout. Please try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Step 3 — record the transaction for reporting to Google. Best-effort:
+      // the user is already in the PayFast checkout by now.
+      await AlternativeBillingService.instance
+          .recordAlternativeBillingTransaction(
+        tier: _tier,
+        cycle: plan.cycle,
+        amountZar: _checkoutAmount,
+        reportingToken: token,
+      );
+
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Opening the secure PayFast checkout — complete the payment to '
+            'activate your subscription.',
+          ),
+          backgroundColor: Colors.green,
         ),
       );
     } finally {
@@ -839,6 +1262,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       ],
                       const SizedBox(height: 20),
                       _buildTierCards(theme, subscription),
+                      // Android User Choice Billing: the user must actively
+                      // choose Google Play or PayFast. Rendered above the
+                      // checkout actions so the choice is made before paying.
+                      // Hidden for an active subscriber (nothing to buy) and on
+                      // the web build (PayFast-only, outside Play billing).
+                      if (_showsUserChoice && !subscription.isActive) ...[
+                        const SizedBox(height: 20),
+                        _buildPaymentChoice(theme),
+                      ],
                       const SizedBox(height: 20),
                       _buildPromoSection(theme),
                       const SizedBox(height: 20),
@@ -877,15 +1309,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       ],
                       // PayFast trust footer — shown wherever PayFast is the
                       // payment path for this view: ALWAYS on the web build
-                      // (the browser charges through PayFast) and on a native
-                      // build for a PayFast (website) subscription. It is
-                      // deliberately NOT rendered on a native Google Play
-                      // checkout — advertising a third-party payment provider
-                      // on a Play-billed screen would steer Play users
-                      // off-store, which the Play compliance contract forbids.
+                      // (the browser charges through PayFast), on a native
+                      // build for a PayFast (website) subscription, and on
+                      // Android once the user has actively chosen PayFast
+                      // through the User Choice Billing surface. It is
+                      // deliberately NOT rendered while Google Play is the
+                      // selected/only native path — advertising a third-party
+                      // payment provider on a Play-billed screen would steer
+                      // Play users off-store, which the Play compliance
+                      // contract forbids.
                       // Sits below the plan cards, so it is visible on the
                       // Hunter AND Outfitter, Monthly AND Yearly views.
-                      if (_isWebBillingFor(subscription))
+                      if (_isWebBillingFor(subscription) || _payfastChosen)
                         const PayFastSecureFooter(),
                       const CopyrightFooter(),
                     ],
@@ -1601,30 +2036,47 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// Play Billing v5+ requires (tapping before that point produced the
   /// INVALID_OFFER_TOKEN failure).
   Widget _buildCheckoutButton(ThemeController theme) {
-    final busy = _isLaunching || (!_isWebBilling && _catalogLoading);
+    // `_payfastChosen` is true on the web build and on Android once the user
+    // has actively selected PayFast through the User Choice Billing surface.
+    final payfast = _payfastChosen;
+    // The user must pick a payment method before the CTA becomes usable on
+    // Android — Play's User Choice Billing rules forbid auto-defaulting.
+    final awaitingChoice = !_paymentChoiceSatisfied;
+    final busy = _isLaunching ||
+        _isCreatingToken ||
+        (!_isWebBilling && !payfast && _catalogLoading);
     final String label;
     if (_paymentPending) {
       label = 'PAYMENT PENDING…';
+    } else if (_isCreatingToken) {
+      label = 'PREPARING PAYFAST…';
     } else if (_isLaunching) {
-      label = _isWebBilling
-          ? 'OPENING PAYFAST…'
-          : 'CONTACTING GOOGLE PLAY…';
-    } else if (!_isWebBilling && _catalogLoading) {
+      label = payfast ? 'OPENING PAYFAST…' : 'CONTACTING GOOGLE PLAY…';
+    } else if (!_isWebBilling && !payfast && _catalogLoading) {
       label = 'LOADING GOOGLE PLAY…';
-    } else if (_isWebBilling) {
+    } else if (awaitingChoice) {
+      label = 'CHOOSE A PAYMENT METHOD';
+    } else if (payfast) {
       label = 'SUBSCRIBE VIA PAYFAST';
     } else {
       label = 'SUBSCRIBE VIA GOOGLE PLAY';
     }
-    final canSubscribe =
-        _isWebBilling ? !_isLaunching : (!_isLaunching && _subscribeEnabled);
+    // The PayFast path needs no Play catalog / product, so it is enabled as
+    // soon as a method is chosen. The Google Play path additionally requires
+    // the product + base-plan offer token to be resolved.
+    final bool canSubscribe;
+    if (_isLaunching || _paymentPending || awaitingChoice) {
+      canSubscribe = false;
+    } else if (payfast) {
+      canSubscribe = true;
+    } else {
+      canSubscribe = _subscribeEnabled;
+    }
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
         key: const ValueKey('subscribeButton'),
-        onPressed: (_isLaunching || _paymentPending || !canSubscribe)
-            ? null
-            : _subscribe,
+        onPressed: canSubscribe ? _subscribe : null,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.green.shade700,
           foregroundColor: Colors.white,
@@ -1644,7 +2096,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 ),
               )
             : Icon(
-                _isWebBilling
+                payfast
                     ? Icons.lock_outline_rounded
                     : Icons.play_circle_fill_rounded,
               ),

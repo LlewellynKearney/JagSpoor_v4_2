@@ -142,6 +142,14 @@ export interface CreatePaymentInput {
   sandbox?: boolean;
   /** Optional user email (prefills the PayFast checkout). */
   email?: string;
+  /**
+   * When true, the payment originated from Google Play's **User Choice
+   * Billing** flow (the user chose PayFast over Play Billing on Android). It
+   * is carried through as `custom_str4` so the ITN can stamp the entitlement
+   * with `payfast_alternative` instead of plain `payfast`, keeping the
+   * alternative-billing service fee reconcilable against the Play invoice.
+   */
+  alternativeBilling?: boolean;
 }
 
 export interface PaymentForm {
@@ -178,6 +186,10 @@ export function buildPaymentForm(input: CreatePaymentInput): PaymentForm {
     custom_str1: input.userId,
     custom_str2: input.planId,
     custom_str3: input.role,
+    // Marks a User Choice Billing (alternative billing) payment so the ITN
+    // stamps `payfast_alternative` on the entitlement. Always present (the
+    // signature covers it) so a tampered client cannot flip the flag.
+    custom_str4: input.alternativeBilling === true ? "alt_billing" : "standard",
   };
   // Recurring subscription fields (PayFast `subscription_type=1`). The
   // recurring amount equals the first charge; `cycles=0` bills until the
@@ -239,6 +251,12 @@ export interface ItnValidation {
   role: string;
   /** Parsed gross amount. */
   amount: number;
+  /**
+   * True when the ITN carries the User Choice Billing marker
+   * (`custom_str4 == "alt_billing"`), i.e. the user chose PayFast through
+   * Google Play's alternative billing flow.
+   */
+  alternativeBilling: boolean;
   /** Reason the ITN was rejected (when `ok` is false). */
   reason?: string;
 }
@@ -258,6 +276,7 @@ export function validateItn(
     planId: "",
     role: "",
     amount: 0,
+    alternativeBilling: false,
     reason: "invalid",
   };
   if (!verifySignature(params, passphrase)) {
@@ -270,13 +289,25 @@ export function validateItn(
   const planId = (params["custom_str2"] ?? "").trim();
   const userId = (params["custom_str1"] ?? "").trim();
   const role = (params["custom_str3"] ?? "").trim();
+  // User Choice Billing marker. Present on every form we build, so its absence
+  // simply means a standard (non-alternative) checkout.
+  const alternativeBilling =
+    (params["custom_str4"] ?? "").trim().toLowerCase() === "alt_billing";
   const amount = parseFloat(params["amount_gross"] ?? "");
   if (Number.isNaN(amount)) {
     return { ...empty, reason: "amount" };
   }
   const plan = plans[planId];
   if (!plan) {
-    return { ...empty, planId, userId, role, amount, reason: "unknown_plan" };
+    return {
+      ...empty,
+      planId,
+      userId,
+      role,
+      amount,
+      alternativeBilling,
+      reason: "unknown_plan",
+    };
   }
   if (Math.abs(amount - plan.amountZar) > 0.01) {
     return {
@@ -285,13 +316,14 @@ export function validateItn(
       userId,
       role,
       amount,
+      alternativeBilling,
       reason: "amount_mismatch",
     };
   }
   if (!userId) {
-    return { ...empty, planId, role, amount, reason: "no_user" };
+    return { ...empty, planId, role, amount, alternativeBilling, reason: "no_user" };
   }
-  return { ok: true, userId, planId, role, amount };
+  return { ok: true, userId, planId, role, amount, alternativeBilling };
 }
 
 /**

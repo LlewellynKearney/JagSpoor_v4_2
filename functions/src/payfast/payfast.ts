@@ -19,6 +19,7 @@ import { logger } from "firebase-functions/v2";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import type { Request, Response } from "express";
 import { writeEntitlement, SUBSCRIPTION_SOURCE_PAYFAST } from "../entitlement";
+import { grantAlternativeBillingEntitlement } from "../alternative_billing";
 import {
   buildPaymentForm,
   parseItnBody,
@@ -59,6 +60,13 @@ interface CreatePaymentRequest {
   role?: string;
   planId?: string;
   billingCycle?: string;
+  /**
+   * True when the checkout was started from Google Play's User Choice Billing
+   * flow on Android (the user actively chose PayFast over Play Billing). It is
+   * carried through to the ITN as `custom_str4` so the entitlement records
+   * `payfast_alternative` and the Play service fee stays reconcilable.
+   */
+  alternativeBilling?: boolean;
 }
 
 interface CreatePaymentResponse {
@@ -132,6 +140,7 @@ export const createPayFastPayment = onCall(
       passphrase,
       sandbox: isSandbox(),
       email,
+      alternativeBilling: data.alternativeBilling === true,
     });
 
     logger.info("createPayFastPayment: form built", {
@@ -140,6 +149,7 @@ export const createPayFastPayment = onCall(
       amount: plan.amountZar,
       frequency: plan.frequency,
       sandbox: isSandbox(),
+      alternativeBilling: data.alternativeBilling === true,
     });
 
     return {
@@ -200,6 +210,26 @@ export const payfastNotify = onRequest(
       Date.now() + plan.months * 30 * 24 * 60 * 60 * 1000
     );
     const paymentId = (params["pf_payment_id"] ?? "").trim();
+
+    // A User Choice Billing (alternative billing) payment is stamped with its
+    // own platform so the Play service fee stays reconcilable. The entitlement
+    // grant is otherwise identical.
+    if (validation.alternativeBilling) {
+      await grantAlternativeBillingEntitlement({
+        userId: validation.userId,
+        planId: validation.planId,
+        role: validation.role,
+        payfastPaymentId: paymentId || undefined,
+      });
+      logger.info("payfastNotify: alternative billing entitlement granted", {
+        uid: validation.userId,
+        planId: validation.planId,
+        amount: validation.amount,
+        months: plan.months,
+      });
+      res.status(200).send("OK");
+      return;
+    }
 
     await writeEntitlement(validation.userId, {
       isPremium: true,

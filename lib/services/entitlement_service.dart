@@ -12,6 +12,15 @@ class SubscriptionSource {
 
   static const String googlePlay = 'google_play';
   static const String payfast = 'payfast';
+
+  /// PayFast used through Google Play's **User Choice Billing** (alternative
+  /// billing) programme. Recorded distinctly from [payfast] so the Play
+  /// service fee can be reconciled, but resolved to the same canonical
+  /// website-managed branch for routing (`billingPlatform` / `isPayfastBilled`)
+  /// — a subscriber on this platform manages billing on the website and must
+  /// never be sent to the Play subscriptions centre.
+  static const String payfastAlternative = 'payfast_alternative';
+
   static const String trial = 'trial';
   static const String none = 'none';
 }
@@ -227,6 +236,13 @@ class UserEntitlement {
   /// back to the canonical `subscriptionSource`. Both use the same
   /// `'google_play'` / `'payfast'` vocabulary. Returns `null` when neither is a
   /// recognized platform (e.g. `'trial'` / `'none'` / absent).
+  ///
+  /// `payfast_alternative` (a PayFast purchase taken through Google Play's
+  /// **User Choice Billing** programme) resolves to the canonical
+  /// [SubscriptionSource.payfast]: it is website-managed, so the subscriber
+  /// must be routed to the PayFast dashboard and NEVER to the Play
+  /// subscriptions centre. The prefix match is what keeps that Play-policy
+  /// branch correct.
   static String? _resolvePlatform(Map<String, dynamic> data) {
     final candidates = <dynamic>[
       data['subscriptionPlatform'],
@@ -238,10 +254,12 @@ class UserEntitlement {
     ];
     for (final raw in candidates) {
       final value = (raw ?? '').toString().trim().toLowerCase();
-      if (value == SubscriptionSource.googlePlay) {
+      if (value == SubscriptionSource.googlePlay ||
+          value.startsWith('google_play')) {
         return SubscriptionSource.googlePlay;
       }
-      if (value == SubscriptionSource.payfast) {
+      if (value == SubscriptionSource.payfast ||
+          value.startsWith('payfast')) {
         return SubscriptionSource.payfast;
       }
     }

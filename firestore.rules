@@ -338,6 +338,43 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Google Play User Choice Billing (alternative billing) transaction log.
+    //
+    // A subscriber who chose to pay through PayFast instead of Google Play
+    // Billing gets one document here, carrying the Play-issued
+    // `reportingToken` (the external transaction token), the amount charged,
+    // the alternative SKU, and the service-fee rate. Google requires the app
+    // to report these transactions so its reduced service fee can be invoiced.
+    //
+    // Owner-scoped: a user may create and read ONLY their own report. Updates
+    // are restricted to the same owner so the `status` can move from
+    // `token_unavailable` / `pending` to `reported` once the server has
+    // reported the transaction to the Play Developer API. Deletion is
+    // admin-only: these rows are the audit trail backing a Google invoice and
+    // must not be erasable by the buyer.
+    //
+    // NOTE: `userId` (not `uid`) is the owner field here — it mirrors the
+    // field name used across the entitlement documents so the server-side
+    // reporting job can join the two without a field-name translation.
+    match /alternative_billing_reports/{reportId} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      // The subscriber may open a report (a PayFast checkout they started) and
+      // may amend their own record, but the `reported` status is reserved for
+      // the server-side reporter — it is the claim that Google Play actually
+      // received the transaction. Without this guard a client could mark its
+      // own row reported and hide an unreported transaction from the operator.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status != 'reported';
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && (request.resource.data.status != 'reported'
+          || resource.data.status == 'reported');
+      allow delete: if isAdmin();
+    }
+
     // Outfitter profiles (created by adminCreateOutfitter Cloud Function).
     match /outfitters/{outfitterId} {
       allow read: if isSignedIn();

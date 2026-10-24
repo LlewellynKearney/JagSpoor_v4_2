@@ -110,6 +110,25 @@ export {
   plansForRole,
 } from "./payfast/plans";
 
+// Google Play User Choice Billing (alternative billing). The Android app
+// obtains an external transaction token from the Play Billing Library and
+// writes a row to `alternative_billing_reports`; the callable below reports
+// that transaction to the Play Developer API so Google's reduced service fee
+// can be invoiced. See alternative_billing.ts.
+export {
+  reportAlternativeBillingTransactionCallable,
+  reportAlternativeBillingTransaction,
+  grantAlternativeBillingEntitlement,
+  validateReportRow,
+  buildExternalTransaction,
+  externalSubscriptionTypeFor,
+  externalSubscriptionIdFor,
+  externalTransactionIdFor,
+  programCodeFromEnv,
+  ALTERNATIVE_BILLING_REPORTS_COLLECTION,
+  ALTERNATIVE_BILLING_FEE_BASIS_POINTS,
+} from "./alternative_billing";
+
 export {
   PAYFAST_PROCESS_URL,
   PAYFAST_SANDBOX_PROCESS_URL,
