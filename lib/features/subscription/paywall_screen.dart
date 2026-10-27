@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/cancel_subscription_info_icon.dart';
 import '../../services/entitlement_service.dart';
 import '../admin/services/subscription_config_service.dart';
 import '../auth/services/user_role_provider.dart';
@@ -141,6 +142,33 @@ class _PaywallScreenState extends State<PaywallScreen> {
       _isPlayBilled ||
       _isPayfastBilled ||
       (_entitlement?.isPremiumActive(DateTime.now()) ?? false);
+
+  /// The cancel-help copy to show, or `null` when there is nothing to cancel.
+  ///
+  /// Shares [CancelSubscriptionInfoIcon.resolveFor] with the subscription
+  /// screen and the settings tile so the gating cannot drift.
+  BillingPlatform? get _cancelHelpPlatform =>
+      CancelSubscriptionInfoIcon.resolveFor(
+        isWebBilling: _isWebBilling,
+        hasActiveSubscription: _hasActiveSubscription,
+        isPayfastBilled: _isPayfastBilled,
+        isPayfastAlternative: false,
+        isActivePlaySub: !_isWebBilling && _hasActiveSubscription,
+      );
+
+  /// Pairs a manage button with its cancel-help icon, keeping the button at
+  /// full remaining width.
+  Widget _withCancelInfo(Widget button) {
+    final platform = _cancelHelpPlatform;
+    if (platform == null) return button;
+    return Row(
+      children: [
+        Expanded(child: button),
+        const SizedBox(width: 8),
+        CancelSubscriptionInfoIcon(platform: platform, theme: theme),
+      ],
+    );
+  }
 
   ThemeController get theme => widget.theme;
 
@@ -728,23 +756,25 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 // single case where an external billing link is compliant.
                 // (A PayFast-billed subscriber on any platform is also routed
                 // here; a Play-billed subscriber is never steered off-store.)
-                OutlinedButton.icon(
-                  key: const ValueKey('paywallManageWebsiteButton'),
-                  onPressed: () => _openPayfastDashboard(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.accentColor,
-                    side: BorderSide(color: theme.accentColor, width: 1.4),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                _withCancelInfo(
+                  OutlinedButton.icon(
+                    key: const ValueKey('paywallManageWebsiteButton'),
+                    onPressed: () => _openPayfastDashboard(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.accentColor,
+                      side: BorderSide(color: theme.accentColor, width: 1.4),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  icon: const Icon(Icons.language_rounded),
-                  label: const Text(
-                    'Manage subscription on PayFast',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
+                    icon: const Icon(Icons.language_rounded),
+                    label: const Text(
+                      'Manage subscription on PayFast',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
                     ),
                   ),
                 ),
@@ -760,23 +790,25 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 // routed to Google Play's own subscriptions manager — there is
                 // deliberately NO external/website checkout affordance here
                 // (Play policy forbids steering Play users off-store).
-                OutlinedButton.icon(
-                  key: const ValueKey('paywallManagePlayButton'),
-                  onPressed: () => _openPlaySubscriptions(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.accentColor,
-                    side: BorderSide(color: theme.accentColor, width: 1.4),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                _withCancelInfo(
+                  OutlinedButton.icon(
+                    key: const ValueKey('paywallManagePlayButton'),
+                    onPressed: () => _openPlaySubscriptions(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.accentColor,
+                      side: BorderSide(color: theme.accentColor, width: 1.4),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  icon: const Icon(Icons.play_circle_outline_rounded),
-                  label: const Text(
-                    'Manage subscription',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: const Text(
+                      'Manage subscription',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
                     ),
                   ),
                 ),
@@ -793,23 +825,25 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ] else if (_isPayfastBilled) ...[
                 // OK for web (PayFast) subscribers only — the single case
                 // where an external billing link is policy-compliant.
-                OutlinedButton.icon(
-                  key: const ValueKey('paywallManageWebsiteButton'),
-                  onPressed: () => _openWebsiteBilling(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.accentColor,
-                    side: BorderSide(color: theme.accentColor, width: 1.4),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                _withCancelInfo(
+                  OutlinedButton.icon(
+                    key: const ValueKey('paywallManageWebsiteButton'),
+                    onPressed: () => _openWebsiteBilling(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.accentColor,
+                      side: BorderSide(color: theme.accentColor, width: 1.4),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  icon: const Icon(Icons.language_rounded),
-                  label: const Text(
-                    'Manage subscription on website',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
+                    icon: const Icon(Icons.language_rounded),
+                    label: const Text(
+                      'Manage subscription on website',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
                     ),
                   ),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/cancel_subscription_info_icon.dart';
 import '../../../services/entitlement_service.dart';
 import '../../billing/billing_service.dart';
 import '../services/play_billing_service.dart';
@@ -106,6 +107,7 @@ class SubscriptionManagementTile extends StatelessWidget {
               context,
               isWeb ? BillingService.payfastDashboardUrl : websiteBillingUrl,
             ),
+            cancelPlatform: BillingPlatform.payfast,
           );
         }
         if (active) {
@@ -117,6 +119,7 @@ class SubscriptionManagementTile extends StatelessWidget {
                 ? 'Subscription billed by Google Play'
                 : 'Manage your subscription in Google Play.',
             onTap: () => _launch(context, playSubscriptionsUrl),
+            cancelPlatform: BillingPlatform.googlePlay,
           );
         }
         return _tile(
@@ -136,6 +139,7 @@ class SubscriptionManagementTile extends StatelessWidget {
     required String title,
     required String subtitle,
     VoidCallback? onTap,
+    BillingPlatform? cancelPlatform,
   }) {
     return ListTile(
       key: key,
@@ -145,9 +149,15 @@ class SubscriptionManagementTile extends StatelessWidget {
         subtitle,
         style: TextStyle(color: theme.subtitleColor, fontSize: 12),
       ),
-      trailing: onTap == null
-          ? null
-          : Icon(Icons.chevron_right, color: theme.subtitleColor),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (cancelPlatform != null)
+            CancelSubscriptionInfoIcon(platform: cancelPlatform, theme: theme),
+          if (onTap != null)
+            Icon(Icons.chevron_right, color: theme.subtitleColor),
+        ],
+      ),
       onTap: onTap,
     );
   }
