@@ -1,5 +1,112 @@
 # JagSpoor -- Agent Memory
 
+## FIX: User Choice Billing showed MANAGE + dead radios to a brand-new user (added 2026-10-24)
+
+Follow-up to `3abaa0c` (User Choice Billing), reported broken on the Play
+Internal Testing track. Branch `main`.
+
+### Symptom
+A brand-new (free-trial) user opened Subscriptions and saw the red
+"MANAGE IN GOOGLE PLAY" button instead of a checkout CTA, and the
+"CHOOSE HOW TO PAY" radios appeared unresponsive.
+
+### Root cause — `hasSubscription` includes a live free trial
+`UserSubscription.hasSubscription => isActive || isInTrial`. The native
+branch of `_buildSubscribeButton` was gated on `hasSubscription`, so a
+brand-new account (provisioned on the 30-day trial by the Auth onCreate
+trigger) fell into the MANAGE branch. Consequences, all one root cause:
+
+- the checkout CTA never rendered (nothing to tap);
+- the "MANAGE IN GOOGLE PLAY" button opened the Play Store subscriptions
+  popup, which reads as "you are already subscribed" — the reported symptom;
+- the radio tiles *did* work, but they sat below the fold with no CTA to
+  enable, so tapping them changed nothing visible.
+
+Fix: gate the manage branch on **`isActive`**, so a live trial falls through
+to the checkout CTA. A trial has never been charged — it is a purchaser, not
+a subscriber.
+
+### Secondary fixes
+- **Choice surface** stays visible for a live trial (`_showsUserChoice &&
+  !subscription.isActive`), so a trial user can actually choose a method.
+- **RESTORE PURCHASES** is now gated on an ACTIVE Play subscription via the
+  new `_isActivePlaySub` (mirrors the MANAGE branch: active + not
+  PayFast-billed). Nothing has been purchased for a new/trial user, and a
+  restore button beside the choice reads as "already subscribed". The
+  paid-but-unsynced safety net is the existing `itemAlreadyOwned` recovery in
+  `PlayPurchaseRecorder` (restores + acknowledges on the purchase attempt).
+- **CTA labels** on the Android choice surface read `CONTINUE WITH GOOGLE
+  PLAY` / `CONTINUE WITH PAYFAST` (they continue an already-made choice);
+  the web build keeps the plain `SUBSCRIBE VIA PAYFAST` (no choice to
+  continue).
+- `alternative_billing_reports` now also records `feeBps` (2600 = 26%)
+  alongside `serviceFeeBasisPoints`, the name the server-side reporter reads.
+  No rules change — the `alternative_billing_reports` rule only gates
+  `status`, so extra fields are permitted.
+
+### NOT a bug (investigated, ruled out)
+- The `Pay with {{IE_30000}}Google Play{{/IE_30000}}` text in the screenshot
+  is **Play Console translation/editor noise**, not source. Verified: zero
+  `{{` tokens and zero `IE_` matches anywhere in the repo.
+- The radio tiles were already correct: `InkWell` + `setState` on each tile,
+  no `IgnorePointer` / `AbsorbPointer` / competing `GestureDetector` in the
+  screen. They now have a live CTA to drive.
+
+### Tests
+- `test/alternative_billing_user_choice_test.dart` +3 regression tests: a
+  live trial gets the choice surface AND a CTA (and no MANAGE / no RESTORE);
+  a trial user who picks a method gets an enabled `CONTINUE WITH PAYFAST`
+  CTA (the "tapping does nothing" guard); an active subscriber keeps MANAGE +
+  RESTORE and gets no choice surface.
+- `test/subscription_screen_test.dart`: the trial case now asserts the
+  checkout CTA and the ABSENCE of MANAGE (was asserting the buggy
+  behaviour).
+- `test/subscription_web_billing_test.dart`: split into "a new native user
+  gets the Play subscribe CTA, no RESTORE" + "an active native Play
+  subscriber gets MANAGE and RESTORE".
+- `test/splash_subscription_web_fixes_test.dart`: the structural contract now
+  pins `if (sub.isActive) {` and asserts `if (sub.hasSubscription) {` is GONE.
+- `test/alternative_billing_service_test.dart`: asserts the `feeBps` stamp.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing
+  info-level issues, unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2318 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger),
+  untouched here.
+- `functions`: `npm test` **144/144 pass**.
+- `flutter build web --release`: **SUCCESS**. The whole Google Play surface is
+  **0 occurrences** in `build/web/main.dart.js` (`MANAGE IN GOOGLE PLAY`,
+  `SUBSCRIBE VIA GOOGLE PLAY`, `CONTINUE WITH GOOGLE PLAY`, `RESTORE
+  PURCHASES`, `CHOOSE HOW TO PAY`, `Pay with Google Play`,
+  `alternative_billing_reports` all 0). `SUBSCRIBE VIA PAYFAST` = 2 and the
+  ZXing web scanner assets (`vendor/zxing.min.js`, `SELECT FROM GALLERY`)
+  are present — so the web PayFast-only rule and the `a058d85` scanner
+  fallback are both intact.
+- Protected invariants re-verified: splash logo caps (`webMaxWidth = 200`,
+  `mobileMaxWidth = 160`, `maxViewportHeightFraction = 0.22` in
+  `splash_logo.dart`) and the web `if (_isWebBilling) {` hard guard (first
+  branch of `_buildSubscribeButton`).
+- The Android APK was NOT rebuilt in this sandbox (no Android SDK / JDK
+  present). The change is Dart + test only — no `.kt` / `.gradle` /
+  manifest file was touched — so the native alternative-billing bridge from
+  `3abaa0c` is unaffected.
+- Env: Flutter 3.44.9 at `$HOME/sdk/flutter`; a Python `unzip` shim at
+  `$HOME/bin/unzip` (apt had no packages); the `~/libs/libsqlite3.so`
+  symlink + `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites.
+
+### Files
+- MODIFIED: `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/billing/alternative_billing_service.dart`,
+  `test/alternative_billing_user_choice_test.dart`,
+  `test/subscription_screen_test.dart`,
+  `test/subscription_web_billing_test.dart`,
+  `test/splash_subscription_web_fixes_test.dart`,
+  `test/alternative_billing_service_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest / functions
+  changes.
+
 ## Web SCAN LICENSE fixed: ML Kit is Android/iOS only, browser now decodes via bundled ZXing (added 2026-10-18)
 
 Branch `fix/web-scanner-pdf417` (base `main` @ `8d5d29e`).

@@ -277,7 +277,11 @@ class AlternativeBillingService {
       'amountZar': amountZar,
       // Play's alternative billing service fee. Recorded alongside the amount
       // so the invoice reconciliation never has to recompute the rate.
+      // Written under BOTH spellings: `feeBps` is the operator-facing name
+      // used in the Play Console reconciliation notes, `serviceFeeBasisPoints`
+      // is what the server-side reporter reads.
       'serviceFeeBasisPoints': feeBps,
+      'feeBps': feeBps,
       'serviceFeeZar': double.parse(fee.toStringAsFixed(2)),
       'payfastTransactionId': payfastTransactionId,
       'reportingToken': reportingToken,

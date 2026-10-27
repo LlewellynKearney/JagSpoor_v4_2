@@ -171,7 +171,7 @@ void main() {
       );
 
       await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
-      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.text('CONTINUE WITH PAYFAST'), findsOneWidget);
       final button = tester.widget<FilledButton>(
         find.byKey(const ValueKey('subscribeButton')),
       );
@@ -186,7 +186,89 @@ void main() {
       );
 
       await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
-      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
+      expect(find.text('CONTINUE WITH GOOGLE PLAY'), findsOneWidget);
+    });
+
+    // ── Regression: the reported "nothing happens / MANAGE shown" bug ──────
+    //
+    // A brand-new account is provisioned on a 30-day free trial, and
+    // `UserSubscription.hasSubscription` is true for a trial. The checkout
+    // branch therefore used to route a new user to the Play MANAGER, so the
+    // choice surface was hidden, no CTA existed, and the screen showed a red
+    // "MANAGE IN GOOGLE PLAY" button that opened the Play Store subscription
+    // popup — which is exactly what the tester saw. These tests pin the fix:
+    // a live trial is a purchaser, not a subscriber.
+    testWidgets('a live free trial still gets the choice surface AND a CTA',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'subscriptionTier': 'hunter',
+        'subscriptionTrialEndsAt':
+            DateTime.now().add(const Duration(days: 25)),
+      });
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+
+      await scrollTo(tester, find.byKey(const ValueKey('paymentChoiceSection')));
+      expect(find.byKey(const ValueKey('paymentChoiceSection')), findsOneWidget,
+          reason: 'a trial has not been charged — it must be able to choose');
+      expect(find.text('Pay with Google Play'), findsOneWidget);
+      expect(find.text('Pay with PayFast'), findsOneWidget);
+
+      await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
+      expect(find.text('CHOOSE A PAYMENT METHOD'), findsOneWidget);
+
+      // The manager affordance must NOT be reachable for a trial: there is no
+      // Play subscription to manage, and it is the reported bug.
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+      // No RESTORE either — nothing has been purchased.
+      expect(find.byKey(const ValueKey('restorePurchasesButton')), findsNothing);
+    });
+
+    testWidgets('a trial user who picks a method gets an enabled CTA',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'trialing',
+        'subscriptionTier': 'outfitter',
+        'subscriptionTrialEndsAt':
+            DateTime.now().add(const Duration(days: 25)),
+      });
+      await pumpScreen(tester, tier: SubscriptionTier.outfitter);
+
+      await scrollToAndTap(
+        tester,
+        find.byKey(const ValueKey('paymentChoicePayFast')),
+      );
+      await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
+
+      // The tap on the tile must actually change state (the reported "tapping
+      // the radios does nothing"): the label reflects the choice and the CTA
+      // is live.
+      expect(find.text('CONTINUE WITH PAYFAST'), findsOneWidget);
+      final button = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('subscribeButton')),
+      );
+      expect(button.onPressed, isNotNull);
+    });
+
+    testWidgets('an active subscriber keeps MANAGE and gets no choice surface',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionTier': 'hunter',
+        'subscriptionPlatform': 'google_play',
+        'subscriptionRenewalDate':
+            DateTime.now().add(const Duration(days: 20)),
+      });
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+      await scrollTo(tester, find.byKey(const ValueKey('cancelSubscriptionButton')));
+
+      expect(find.byKey(const ValueKey('paymentChoiceSection')), findsNothing,
+          reason: 'nothing to buy — no choice to make');
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsOneWidget);
+      expect(find.byKey(const ValueKey('restorePurchasesButton')),
+          findsOneWidget);
     });
   });
 

@@ -576,7 +576,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// Android only. The web build is outside Google Play billing entirely (it
   /// charges through PayFast and shows no Play affordance), and iOS has no
   /// Play Billing at all.
+  ///
+  /// NOTE: this is a *capability* check, not a subscription-state check. The
+  /// caller decides whether there is anything to buy — the choice surface must
+  /// stay visible for a live free trial, which has not been charged yet and
+  /// therefore has a purchase to make. Gating it on `isActive` (as an earlier
+  /// revision did) hid the whole surface — and with it the checkout CTA — from
+  /// exactly the new users who need it.
   bool get _showsUserChoice => _userChoiceAvailable && !_isWebBilling;
+
+  /// Whether [sub] is an ACTIVE subscription that Google Play manages.
+  ///
+  /// This is the only state that may show the "MANAGE IN GOOGLE PLAY" /
+  /// "RESTORE PURCHASES" affordances. A live free trial is deliberately
+  /// excluded: nothing has been charged, there is no Play subscription to
+  /// manage or restore, and showing a manage button is what made the new-user
+  /// screen read as "already subscribed".
+  ///
+  /// Deliberately mirrors the manage branch of [_buildSubscribeButton]: an
+  /// active subscriber that is NOT PayFast-billed is treated as Play-managed
+  /// (the compliance-safe default for a doc with no recorded
+  /// `subscriptionPlatform`). Gating RESTORE more tightly than MANAGE would
+  /// show one without the other, and would strip the Play-required restore
+  /// affordance from a legacy paying subscriber.
+  static bool _isActivePlaySub(UserSubscription sub) =>
+      sub.isActive && !sub.isPayfastBilled;
 
   /// Whether the user has picked a payment method (Android only).
   ///
@@ -1265,8 +1289,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       // Android User Choice Billing: the user must actively
                       // choose Google Play or PayFast. Rendered above the
                       // checkout actions so the choice is made before paying.
-                      // Hidden for an active subscriber (nothing to buy) and on
-                      // the web build (PayFast-only, outside Play billing).
+                      //
+                      // Shown whenever there is a purchase to make — including
+                      // during a live free trial, which has not been charged
+                      // yet. Hidden only for an ACTIVE subscriber (nothing to
+                      // buy) and on the web build (PayFast-only, outside Play
+                      // billing). Gating this on `isActive` alone is what hid
+                      // the choice — and the checkout CTA — from new users.
                       if (_showsUserChoice && !subscription.isActive) ...[
                         const SizedBox(height: 20),
                         _buildPaymentChoice(theme),
@@ -1299,7 +1328,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       // Play Billing requirement — it has no meaning on the
                       // web build (the PayFast entitlement is server-written
                       // by the ITN webhook), so it is hidden there.
-                      if (!_isWebBillingFor(subscription)) ...[
+                      //
+                      // It is also hidden unless the account holds an ACTIVE
+                      // Play subscription: there is nothing to restore for a
+                      // new / trial user, and a restore button next to the
+                      // payment choice reads as "you are already subscribed".
+                      // The safety net for a paid-but-unsynced purchase is the
+                      // `itemAlreadyOwned` recovery in `PlayPurchaseRecorder`,
+                      // which restores + acknowledges on the purchase attempt
+                      // itself.
+                      if (!_isWebBillingFor(subscription) &&
+                          _isActivePlaySub(subscription)) ...[
                         const SizedBox(height: 12),
                         _buildRestoreButton(theme),
                       ],
@@ -1910,13 +1949,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     // ---------------------------------------------------------------------
     // NATIVE (Android / iOS) — Google Play owns the recurring billing.
-    //   * a PayFast (website) subscriber -> the website manage link (the only
-    //     case where an external link is Play-policy-compliant);
-    //   * otherwise a subscriber (Play-billed / unknown platform) -> the Play
-    //     subscriptions manager;
-    //   * no subscription -> the native Play subscribe CTA.
+    //   * an active PayFast (website) subscriber -> the website manage link
+    //     (the only case where an external link is Play-policy-compliant);
+    //   * any other ACTIVE subscriber (Play-billed / unknown platform) -> the
+    //     Play subscriptions manager;
+    //   * a live free trial or no subscription -> the checkout CTA.
+    //
+    // The gate is `isActive`, NOT `hasSubscription`. `hasSubscription` also
+    // covers a live free trial, which has never been charged: routing that to
+    // the manage branch showed a "MANAGE IN GOOGLE PLAY" button — and no way to
+    // actually buy — to exactly the new users who need the checkout.
     // ---------------------------------------------------------------------
-    if (sub.hasSubscription) {
+    if (sub.isActive) {
       if (sub.isPayfastBilled) {
         return _buildManageOnWebsiteButton(theme);
       }
@@ -2057,9 +2101,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     } else if (awaitingChoice) {
       label = 'CHOOSE A PAYMENT METHOD';
     } else if (payfast) {
-      label = 'SUBSCRIBE VIA PAYFAST';
+      // On the User Choice surface the CTA continues an already-made choice,
+      // so it reads as a continuation of that choice. The web build has no
+      // choice to continue, so it keeps the plain "SUBSCRIBE VIA PAYFAST".
+      label = _showsUserChoice ? 'CONTINUE WITH PAYFAST' : 'SUBSCRIBE VIA PAYFAST';
     } else {
-      label = 'SUBSCRIBE VIA GOOGLE PLAY';
+      label = _showsUserChoice
+          ? 'CONTINUE WITH GOOGLE PLAY'
+          : 'SUBSCRIBE VIA GOOGLE PLAY';
     }
     // The PayFast path needs no Play catalog / product, so it is enabled as
     // soon as a method is chosen. The Google Play path additionally requires

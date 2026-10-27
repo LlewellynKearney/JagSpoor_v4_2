@@ -372,10 +372,16 @@ void main() {
       await pumpScreen(tester);
       await scrollTo(
         tester,
-        find.byKey(const ValueKey('cancelSubscriptionButton')),
+        find.byKey(const ValueKey('subscribeButton')),
       );
-      expect(find.text('MANAGE IN GOOGLE PLAY'), findsOneWidget);
-      expect(find.byKey(const ValueKey('subscribeButton')), findsNothing);
+      // A live free trial has never been charged: there is no Play
+      // subscription to manage, so the screen must offer the checkout CTA
+      // (this is the reported new-user bug — a trial user was shown
+      // "MANAGE IN GOOGLE PLAY" and no way to buy).
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('subscribeButton')), findsOneWidget);
     });
 
     testWidgets('dismissing the manage dialog keeps the subscription',

@@ -132,14 +132,34 @@ void main() {
   group('native build keeps the Google Play affordances', () {
     setUp(() => BillingService.usesPayFastForTesting = false);
 
-    testWidgets('RESTORE PURCHASES and the Play subscribe CTA render',
+    testWidgets('a new native user gets the Play subscribe CTA, no RESTORE',
         (tester) async {
+      await pumpScreen(tester);
+      await scrollToBottom(tester);
+
+      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
+      // Nothing has been purchased yet, so there is nothing to restore. A
+      // restore button beside the payment choice reads as "already
+      // subscribed" (the reported new-user confusion).
+      expect(find.byKey(const ValueKey('restorePurchasesButton')),
+          findsNothing);
+      expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsNothing);
+    });
+
+    testWidgets('an active native Play subscriber gets MANAGE and RESTORE',
+        (tester) async {
+      await fake.collection('users').doc('uid-1').set({
+        'subscriptionStatus': 'active',
+        'subscriptionPlatform': 'google_play',
+        'subscriptionTier': 'hunter',
+        'subscriptionRenewalDate': DateTime.now().add(const Duration(days: 20)),
+      });
       await pumpScreen(tester);
       await scrollToBottom(tester);
 
       expect(find.byKey(const ValueKey('restorePurchasesButton')),
           findsOneWidget);
-      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsOneWidget);
       expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsNothing);
     });
 

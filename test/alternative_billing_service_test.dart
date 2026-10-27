@@ -258,6 +258,9 @@ void main() {
       // 26% of 34.99 = 9.0974 -> 9.10
       expect(report['serviceFeeBasisPoints'], 2600);
       expect(report['serviceFeeZar'], 9.10);
+      // Also written under the operator-facing spelling used in the Play
+      // Console reconciliation notes.
+      expect(report['feeBps'], 2600);
     });
 
     test('the fee is 26% across both tiers and cycles', () {

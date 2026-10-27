@@ -335,9 +335,15 @@ void main() {
 
       // The web guard comes FIRST and returns before the native branch.
       final webGuard = body.indexOf('if (_isWebBilling) {');
-      final nativeGuard = body.indexOf('if (sub.hasSubscription) {');
+      // The native branch is gated on `isActive` (NOT `hasSubscription`): a
+      // live free trial has never been charged, so it must fall through to the
+      // checkout CTA rather than the Play manager.
+      final nativeGuard = body.indexOf('if (sub.isActive) {');
       expect(webGuard, greaterThan(-1));
       expect(nativeGuard, greaterThan(webGuard));
+      expect(body.contains('if (sub.hasSubscription) {'), isFalse,
+          reason: 'hasSubscription includes a live free trial, which must '
+              'reach the checkout CTA, not the Play manager');
       // Nothing between the start and the web guard calls the Play builder.
       expect(body.substring(0, webGuard).contains('_buildManageInGooglePlay'),
           isFalse);
