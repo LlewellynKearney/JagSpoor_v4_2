@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/cancel_subscription_info_icon.dart';
 
 /// The cancel-help UI: the platform copy, the gating resolver and the dialog
