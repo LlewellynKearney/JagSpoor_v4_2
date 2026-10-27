@@ -70,20 +70,32 @@ mode, scrollable + 400px-capped content with no overflow).
 `url_launcher` is mocked via its platform channel — no real mail client.
 
 ### Verification
-- `flutter analyze lib test`: **0 errors, 0 warnings**; the four touched files
-  report **no issues**.
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing infos);
+  the four touched files report **no issues**.
+  NOTE: an earlier scoped run (`flutter analyze lib` + the four files) reported
+  clean while the COMBINED `lib test` scope still flagged one
+  `unused_import` (`app_theme.dart` in the new test — the widget defaults to
+  `ThemeController.instance`, so the import was dead). Removed via a
+  follow-up PR. Always analyze the combined `lib test` scope before claiming
+  clean.
 - `flutter test`: **2339 passed, 1 failed** — the DOCUMENTED pre-existing
   `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger),
   untouched here. (+21 vs the 2318 baseline, exactly the new tests.)
+  Re-run on the merged `main` (`dca8679`): identical 2339 / 1.
+- `functions`: `npm test` **150/150 pass** (the `a46b6fb` PayFast fix suite).
 - `flutter build web --release`: SUCCESS; bundle contains
   `support@jag-spoor.co.za` + the cancel instructions; **`MANAGE IN GOOGLE
   PLAY` remains 0 occurrences**, so the `8d5d29e` web guard still holds.
-- `flutter build appbundle --release`: SUCCESS.
+  Also 0: the merchant key, the passphrase and the merchant id.
+- `flutter build appbundle --release`: SUCCESS (126.3 MB); the Play manager
+  string IS present there (`MANAGE IN GOOGLE PLAY` = 1) and
+  `com.jagspoor/alternative_billing` + `feeBps` are in `libapp.so`,
+  confirming the platform split.
 - Protected invariants re-checked: the web Play-manager hard guard
-  (`if (_isWebBilling) {` first branch of `_buildSubscribeButton`), the
-  subscription-stream caching (`late Stream` in `initState`), the
-  `PayFastSecureFooter`, and the alternative-billing reporting (`feeBps`
-  2600) are all untouched.
+  (`if (_isWebBilling) {` first branch of `_buildSubscribeButton`, plus the
+  independent guard inside `_buildManageInGooglePlayButton`), the
+  subscription-stream caching (`6e7bde6`), the `PayFastSecureFooter`, and the
+  alternative-billing reporting (`feeBps` 2600) are all untouched.
 
 ### Files
 - NEW: `lib/core/widgets/cancel_subscription_info_icon.dart`,
