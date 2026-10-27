@@ -1,6 +1,101 @@
 # JagSpoor -- Agent Memory
 
 
+## FEAT: cancel-subscription help icons for Play + PayFast (added 2026-10-27)
+
+Branch `feat/cancel-info-icons` -> `main`. Adds a small `(i)` action beside
+every "manage subscription" affordance explaining how to cancel, with copy
+tailored to the billing platform and the operator's
+**`support@jag-spoor.co.za`** mailbox (hyphenated — deliberately NOT the
+legacy non-hyphenated dispute contact).
+
+### NEW `lib/core/widgets/cancel_subscription_info_icon.dart`
+- `enum BillingPlatform { googlePlay, payfast, payfastAlternative }`.
+- `getCancelInstructions(platform)` — the three instruction blocks (Play
+  Store path / PayFast website path / PayFast-through-Play alternative
+  billing), each ending with the support address. One switch so the copy is
+  unit-testable and English-only localisation has a single seam.
+- `CancelSubscriptionInfoIcon` — `Icons.info_outline`, 20dp, tinted
+  `ThemeController.subtitleColor`, tooltip `How to cancel`, keyed
+  `cancelInfoIcon_<platform.name>`. Tapping opens the dialog.
+- `CancelSubscriptionInfoIcon.resolveFor(...)` — **the single gating rule**
+  shared by all three call sites so they cannot drift:
+  `gate = hasActiveSubscription || isPayfastBilled || isActivePlaySub`;
+  `null` when the gate fails (a live free trial has nothing to cancel);
+  web -> `payfast`; native PayFast-billed / alternative / `payfastChosen`
+  -> `payfastAlternative`; otherwise native Play -> `googlePlay`.
+- `CancelSubscriptionHelpDialog` — title "How to cancel your subscription",
+  scrollable body, CLOSE + EMAIL SUPPORT actions, and the address rendered as
+  an inline underlined `TextSpan` carrying a `TapGestureRecognizer` (created
+  once in a `State` and disposed — building one in `build` would leak it every
+  frame). Both the span and the button launch
+  `mailto:support@jag-spoor.co.za?subject=Cancel%20Subscription%20Help` via
+  `url_launcher`; a failed hand-off surfaces a snackbar naming the address.
+  Width-capped 480 on web / 400 on mobile, centred by `Dialog`.
+- Uses `Dialog` + `ConstrainedBox` rather than `AlertDialog` so the cap is
+  explicit and assertable; deliberately does NOT wrap in `HunterScaffold`
+  (it is a route-level overlay, not a screen — a Scaffold inside a dialog
+  would nest badly and break the existing dialog tests).
+
+### Wiring
+- `subscription_screen.dart`: new `_cancelHelpPlatform(sub)` +
+  `_withCancelInfo(button, platform)` helper. The icon is paired with
+  WHICHEVER manage button renders — `_buildSubscribeButton` wraps the PayFast
+  manager (web), the website manager (native PayFast) and the Play manager
+  (native Play) so the button keeps the full remaining width
+  (`Row[Expanded(button), SizedBox(8), icon]`). The order-summary card
+  (`_buildTotalCard`) gained an `Order summary` header row with the icon in
+  its top-right corner, rendered only for an active subscriber.
+  `_cancelHelpPlatform` returns null for a trial / no-subscription, so the
+  icon never appears on the checkout CTA path.
+- `paywall_screen.dart`: same `_cancelHelpPlatform` /
+  `_withCancelInfo(button)` pair around all three manage branches. Note
+  `isActivePlaySub: !_isWebBilling && _hasActiveSubscription` — the paywall's
+  gate is `_hasActiveSubscription` (it has no per-platform "active Play"
+  notion), and the web branch short-circuits to `payfast` first.
+- `subscription_management_tile.dart`: `_tile` gained `cancelPlatform`, so the
+  `trailing` is now a `Row` of [info icon, chevron]. Only the two ACTIVE
+  branches pass it — the no-subscription tile is unchanged.
+
+### Tests (`test/cancel_subscription_info_icon_test.dart`, 21 new, all pass)
+Copy contracts (Play / PayFast / alternative; every variant contains
+`support@jag-spoor.co.za` and never `support@jagspoor`; the mailto subject);
+the full `resolveFor` matrix (web+active -> payfast, web+trial -> null,
+native PayFast -> alternative, native Play -> googlePlay, PayFast wins over
+Play, trial -> null, `payfastChosen` selects the copy but does NOT open the
+gate); and widget tests (keyed icon + tooltip, per-platform key, dialog opens
+with the right copy, CLOSE dismisses, EMAIL SUPPORT launches the mailto, the
+inline span carries an underlined recognizer that launches the mailto, dark
+mode, scrollable + 400px-capped content with no overflow).
+`url_launcher` is mocked via its platform channel — no real mail client.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**; the four touched files
+  report **no issues**.
+- `flutter test`: **2339 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger),
+  untouched here. (+21 vs the 2318 baseline, exactly the new tests.)
+- `flutter build web --release`: SUCCESS; bundle contains
+  `support@jag-spoor.co.za` + the cancel instructions; **`MANAGE IN GOOGLE
+  PLAY` remains 0 occurrences**, so the `8d5d29e` web guard still holds.
+- `flutter build appbundle --release`: SUCCESS.
+- Protected invariants re-checked: the web Play-manager hard guard
+  (`if (_isWebBilling) {` first branch of `_buildSubscribeButton`), the
+  subscription-stream caching (`late Stream` in `initState`), the
+  `PayFastSecureFooter`, and the alternative-billing reporting (`feeBps`
+  2600) are all untouched.
+
+### Files
+- NEW: `lib/core/widgets/cancel_subscription_info_icon.dart`,
+  `test/cancel_subscription_info_icon_test.dart`.
+- MODIFIED: `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `lib/features/subscription/widgets/subscription_management_tile.dart`,
+  `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest / functions
+  changes.
+
+
 ## FIX: PayFast 500 on /eng/process -- signature order + PHP urlencode (added 2026-10-27)
 
 Branch `main`. Reported for BOTH surfaces: Web (`SUBSCRIBE VIA PAYFAST`) and

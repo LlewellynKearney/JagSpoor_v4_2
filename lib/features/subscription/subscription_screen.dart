@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/cancel_subscription_info_icon.dart';
 import '../../core/widgets/copyright_footer.dart';
 import '../../core/widgets/payfast_secure_footer.dart';
 import '../../services/entitlement_service.dart';
@@ -617,6 +618,39 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       _isWebBilling ||
       (_showsUserChoice &&
           _paymentChoice == PaymentMethodChoice.payfastAlternative);
+
+  /// The cancel-help copy to show for [sub], or `null` when there is nothing to
+  /// cancel (no active subscription / live free trial).
+  ///
+  /// Delegates to [CancelSubscriptionInfoIcon.resolveFor] so this screen, the
+  /// paywall and the settings tile cannot drift apart on the gating rules.
+  BillingPlatform? _cancelHelpPlatform(UserSubscription sub) =>
+      CancelSubscriptionInfoIcon.resolveFor(
+        isWebBilling: _isWebBilling,
+        hasActiveSubscription: sub.isActive,
+        isPayfastBilled: sub.isPayfastBilled,
+        isPayfastAlternative: false,
+        isActivePlaySub: _isActivePlaySub(sub),
+        payfastChosen: _payfastChosen,
+      );
+
+  /// A manage button paired with its cancel-help icon: the button keeps the
+  /// full remaining width, the icon sits beside it so the "how do I cancel?"
+  /// question is answerable without leaving the screen.
+  Widget _withCancelInfo(
+    Widget button,
+    BillingPlatform? platform, {
+    required ThemeController theme,
+  }) {
+    if (platform == null) return button;
+    return Row(
+      children: [
+        Expanded(child: button),
+        const SizedBox(width: 8),
+        CancelSubscriptionInfoIcon(platform: platform, theme: theme),
+      ],
+    );
+  }
 
   /// The Google Play / PayFast choice surface (Android only).
   ///
@@ -1303,7 +1337,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       const SizedBox(height: 20),
                       _buildPromoSection(theme),
                       const SizedBox(height: 20),
-                      _buildTotalCard(theme),
+                      _buildTotalCard(theme, _cancelHelpPlatform(subscription)),
                       const SizedBox(height: 24),
                       _buildSubscribeButton(theme, subscription),
                       // Web (PayFast) checkout: the two explicit plan buttons
@@ -1855,7 +1889,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _buildTotalCard(ThemeController theme) {
+  Widget _buildTotalCard(ThemeController theme, BillingPlatform? cancelPlatform) {
     final discounted =
         _appliedPromo != null && _checkoutAmount < _selectedBaseAmount;
     final isYearly = _selectedCycle == BillingCycle.yearly;
@@ -1870,6 +1904,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
       child: Column(
         children: [
+          // For an ACTIVE subscriber the card is a summary of what they hold,
+          // so it carries the cancel-help action in its top-right corner.
+          if (cancelPlatform != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Order summary',
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                CancelSubscriptionInfoIcon(
+                  platform: cancelPlatform,
+                  theme: theme,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           _totalRow(
             theme,
             'Free trial (first ${SubscriptionTrial.trialDays} days)',
@@ -1942,7 +1999,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // ---------------------------------------------------------------------
     if (_isWebBilling) {
       if (sub.isActive) {
-        return _buildManageOnPayFastButton(theme);
+        return _withCancelInfo(
+          _buildManageOnPayFastButton(theme),
+          _cancelHelpPlatform(sub),
+          theme: theme,
+        );
       }
       return _buildCheckoutButton(theme);
     }
@@ -1962,9 +2023,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     // ---------------------------------------------------------------------
     if (sub.isActive) {
       if (sub.isPayfastBilled) {
-        return _buildManageOnWebsiteButton(theme);
+        return _withCancelInfo(
+          _buildManageOnWebsiteButton(theme),
+          _cancelHelpPlatform(sub),
+          theme: theme,
+        );
       }
-      return _buildManageInGooglePlayButton(theme);
+      return _withCancelInfo(
+        _buildManageInGooglePlayButton(theme),
+        _cancelHelpPlatform(sub),
+        theme: theme,
+      );
     }
     return _buildCheckoutButton(theme);
   }
