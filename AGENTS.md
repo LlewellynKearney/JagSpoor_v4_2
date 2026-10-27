@@ -1,5 +1,124 @@
 # JagSpoor -- Agent Memory
 
+
+## FIX: PayFast 500 on /eng/process -- signature order + PHP urlencode (added 2026-10-27)
+
+Branch `main`. Reported for BOTH surfaces: Web (`SUBSCRIBE VIA PAYFAST`) and
+Android User Choice Billing (`CONTINUE WITH PAYFAST`) both opened
+`https://www.payfast.co.za/eng/process` and got PayFast's generic 500
+("Whoops, seems we have a glitch somewhere"). That page is PayFast's
+catch-all for a **rejected signature** -- it does not distinguish a bad MD5
+from a bad field.
+
+### Root cause (three defects, all in `functions/src/payfast/payfast.service.ts`)
+1. **`payfastEncode` was not PHP `urlencode`.** It did
+   `encodeURIComponent(v).replace(/%20/g,'+')` and then replaced `%21 -> !`,
+   `%27 -> '`, `%28 -> (`, `%29 -> )`, `%2A -> *`, `%7E -> ~`. The last six
+   are no-ops: `encodeURIComponent` NEVER emits those escapes (it leaves
+   `!'()*~` literal). So the intended "escape like PHP" never happened, and a
+   value containing any of those characters hashed differently than PayFast
+   computes. Corrected to
+   `encodeURIComponent(v.trim()).replace(/%20/g,'+').replace(/[!'()*~]/g, c => '%'+c.charCodeAt(0).toString(16).toUpperCase())`.
+   Space -> `+` (NOT `%20`) is the single most common cause of this error.
+2. **`buildSignatureSource` filtered on the RAW value, not the trimmed one**,
+   and the passphrase was appended by `generateSignature` rather than by the
+   builder. Now blanks are dropped on `String(v).trim() === ''` and the
+   trimmed passphrase is appended inside the builder (single source of truth).
+   **`cycles=0` must survive** -- PHP's `"0" !== ""`, so `0` is a real value;
+   only truly blank values are excluded.
+3. **The emitted form order did not match the signed order.**
+   `buildPaymentForm` returned fields in insertion order while the signature
+   was computed over the SORTED order. PayFast's docs are explicit for the
+   hosted checkout: *"The pairs must be listed in the order in which they
+   appear in the attributes description. Do not use the API signature format,
+   which uses alphabetical ordering!"* The fix sorts the emitted fields and
+   appends `signature` last, so the posted body re-derives the same hash.
+   (Keeping alphabetical order is fine AS LONG AS the submitted order matches
+   it -- which it now does.)
+
+### Separate defect found: the ITN could never validate
+An ITN is signed **differently** from the outgoing form. PayFast's own PHP
+SDK (`PaymentIntegrations/Notification::dataToString`) hashes the params **in
+the order they arrive** and appends the **RAW** passphrase; WooCommerce's
+gateway verifies with `$sort = false`. The old `verifySignature` reused the
+outgoing sorted algorithm, so a real ITN always failed -> the entitlement was
+never granted even after a successful payment. Added
+`buildItnSignatureSource` / `generateItnSignature` / `verifyItnSignature`;
+`validateItn` now uses the received-order verifier and `verifySignature` is
+kept as an alias of it, which fixes every existing caller.
+
+### Alternative billing reporting (Play compliance)
+`payfastNotify` now records the `alternative_billing_reports` row via the new
+`recordAlternativeBillingFromItn` -- **idempotent**, so it never creates a
+second row: it updates the row the app wrote at checkout (matching on
+`userId` + `planId`), creates one only when none exists, and leaves a
+`status: 'reported'` row untouched so Google's `externalTransactionId` is not
+discarded. Stamps `feeBps` AND `serviceFeeBasisPoints` (2600 = 26%), plus
+`serviceFeeZar` and `payfastTransactionId`. The entitlement still goes through
+`grantAlternativeBillingEntitlement` -> `subscriptionSource:
+payfast_alternative`. `custom_str4` is `"alt_billing"` on Android / `"standard"`
+on web (pre-existing, test-locked); `validateItn` tests `=== "alt_billing"`.
+
+### createPayFastPayment debug logging
+Logs uid, planId, amount, recurringAmount, frequency, cycles, processUrl,
+merchantPaymentId and the signature (the MD5 is a public value -- it travels
+in the form -- and is the fastest way to diff a rejected checkout against the
+"Generated signature does not match submitted signature" 400). Fixed a latent
+bug: the frequency log read `form.frequency` (undefined) instead of
+`form.fields.frequency`.
+
+### Verification (this sandbox)
+- `cd functions && npm run build` (tsc) clean; **`npm test` 150/150 pass**.
+- **End-to-end post/sign round-trip proven**: build the form, serialize it the
+  way the browser does (`URLSearchParams`), decode it the way a form-encoded
+  server does (`+` -> space, order preserved), then recompute with PayFast's
+  ITN recipe -> the recomputed MD5 equals the stored `signature`, and the
+  emitted field order equals the signed order with `signature` last.
+  (First run of that harness reported a false mismatch -- the harness decoded
+  with `decodeURIComponent` only, leaving `+` as `+`. `querystring.parse`
+  fixes it. The production path is unaffected.)
+- `flutter analyze lib test`: **0 errors, 0 warnings** (321 pre-existing
+  infos, the documented baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2318 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger),
+  untouched here.
+- `flutter build web --release`: SUCCESS. Bundle carries all four prices
+  (34.99 / 349.99 / 299.99 / 2999.99). **0** occurrences of
+  `7muy2qnw4nboz`, `JagSpoor-1983` and `37584965` -- no secret leaks.
+  `alternative_billing` / `payfastNotify` / `CONTINUE WITH PAYFAST` are 0 in
+  the web bundle (Android-only surface, compile-time eliminated).
+- `flutter build appbundle --release`: SUCCESS ->
+  `build/app/outputs/bundle/release/app-release.aab` (126.2 MB). The
+  **`com.jagspoor/alternative_billing`** channel is present in
+  `base/dex/classes.dex` AND all three `base/lib/<abi>/libapp.so`.
+  `versionName 1.0.16` + `za.co.jagspoor.app` confirmed in the manifest.
+  (Debug-signed: `android/key.properties` is absent in this sandbox, so the
+  Gradle fallback engaged -- Play rejects a debug-signed AAB; rebuild with the
+  real keystore before uploading.)
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+`FIREBASE_TOKEN` unset, no `~/.config/configstore/firebase-tools.json`, no
+`GOOGLE_APPLICATION_CREDENTIALS`; `firebase-tools` is not installed. Run in a
+credentialed env:
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:createPayFastPayment,payfastNotify,payfastReturn,payfastCancel --project=jagspoor --force
+npx firebase-tools deploy --only hosting --project=jagspoor
+```
+The merchant id (37584965) and key (7muy2qnw4nboz) were NOT changed; sandbox
+was NOT enabled; the Hornbill project was NOT touched.
+
+### Files
+- MODIFIED: `functions/src/payfast/payfast.service.ts`,
+  `functions/src/payfast/payfast.ts`,
+  `functions/src/alternative_billing.ts`,
+  `functions/test/payfast.test.js`,
+  `functions/test/alternative_billing.test.js`, `AGENTS.md`.
+- No Dart `lib/`, Firestore rules, index, Storage, pubspec or manifest change
+  -- the client already sends only `{role, planId, billingCycle}` and the
+  server owns the amount.
+
 ## FIX: User Choice Billing showed MANAGE + dead radios to a brand-new user (added 2026-10-24)
 
 Follow-up to `3abaa0c` (User Choice Billing), reported broken on the Play

@@ -15,9 +15,9 @@
  *   (`defineSecret`), never from the client and never committed to git.
  * - The client sends only `{role, planId, billingCycle}` — the server resolves
  *   the amount from the plan catalog, so a tampered amount cannot be charged.
- * - The ITN signature is verified (MD5 over the sorted params + passphrase)
- *   before any entitlement is granted, and the amount is re-checked against
- *   the plan.
+ * - The ITN signature is verified (MD5 over the params **in the order PayFast
+ *   sends them**, + passphrase — see `verifyItnSignature`) before any
+ *   entitlement is granted, and the amount is re-checked against the plan.
  */
 
 import { createHash } from "crypto";
@@ -41,65 +41,145 @@ export const PAYFAST_VALIDATE_URL =
 export const PAYFAST_MERCHANT_ID = "37584965";
 
 /**
- * Encodes a value the way PayFast expects for signature generation: PHP's
- * `urlencode` — spaces become `+`, and `~` is escaped to `%7E` (PHP's
- * urlencode does not treat `~` as an unreserved character, unlike JS
- * `encodeURIComponent`, which is why the extra replacements are required).
+ * Encodes a value exactly the way PHP's `urlencode()` does, which is what
+ * PayFast's signature algorithm requires:
+ *
+ *  * a space becomes `+` (NOT `%20` — the single most common cause of a
+ *    "Generated signature does not match submitted signature" 400, which the
+ *    hosted checkout surfaces to the shopper as a generic 500-style error);
+ *  * `~` is escaped to `%7E` (PHP's `urlencode` predates RFC 3986 and does not
+ *    treat `~` as unreserved, unlike JS `encodeURIComponent`);
+ *  * `!` `'` `(` `)` `*` are escaped as well.
+ *
+ * The value is trimmed first, matching PayFast's own reference implementation
+ * (`urlencode( trim( $val ) )`).
  */
 export function payfastEncode(value: string): string {
-  return encodeURIComponent(value)
+  return encodeURIComponent(value.trim())
     .replace(/%20/g, "+")
     .replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 }
 
 /**
- * Builds the canonical signature source string from a param map:
- * sorted by key, `key=urlencoded(value)` pairs joined with `&`, with the
- * `signature` / `passphrase` fields excluded. The passphrase is appended
- * afterwards by the caller when one is configured.
+ * Builds the signature source string for the **hosted-checkout form**.
+ *
+ * PayFast signs the variables in the order they are submitted (see the
+ * "Variable order" warning in Step 2 of the PayFast docs: *"The pairs must be
+ * listed in the order in which they appear in the attributes description. Do
+ * not use the API signature format, which uses alphabetical ordering!"*).
+ *
+ * [buildPaymentForm] therefore emits its fields in the alphabetically sorted
+ * order this function produces, so the submitted order and the signed order are
+ * identical. Empty values are dropped (`if($val !== '')` in PayFast's own
+ * `generateSignature`) — but `cycles=0` is kept, because `"0" !== ""` in PHP.
+ * The `signature` field is excluded; the passphrase (when configured) is
+ * appended last.
  */
-export function buildSignatureSource(data: Record<string, string>): string {
-  return Object.keys(data)
+export function buildSignatureSource(
+  data: Record<string, string>,
+  passphrase?: string
+): string {
+  const source = Object.keys(data)
     .filter((k) => k !== "signature" && k !== "passphrase")
-    .filter((k) => data[k] !== undefined && data[k] !== null && data[k] !== "")
+    .filter((k) => {
+      const v = data[k];
+      return v !== undefined && v !== null && String(v).trim() !== "";
+    })
     .sort()
     .map((k) => `${k}=${payfastEncode(String(data[k]))}`)
     .join("&");
+  const trimmedPass = (passphrase ?? "").trim();
+  return trimmedPass === ""
+    ? source
+    : `${source}&passphrase=${payfastEncode(trimmedPass)}`;
 }
 
 /**
- * Generates the PayFast MD5 signature:
- *   md5( sorted urlencoded query string [&passphrase=<passphrase>] )
+ * Generates the PayFast MD5 signature for a hosted-checkout form:
+ *   md5( urlencoded query string [&passphrase=<passphrase>] )
  *
  * The passphrase is only appended when one is configured (PayFast allows
- * signing without a passphrase).
+ * signing without a passphrase, but subscriptions require one).
  */
 export function generateSignature(
   data: Record<string, string>,
   passphrase?: string
 ): string {
-  const source = buildSignatureSource(data);
-  const withPass =
-    passphrase && passphrase.length > 0
-      ? `${source}&passphrase=${payfastEncode(passphrase)}`
-      : source;
-  return createHash("md5").update(withPass).digest("hex");
+  return createHash("md5")
+    .update(buildSignatureSource(data, passphrase))
+    .digest("hex");
 }
 
 /**
- * Verifies an ITN signature. Returns false when the notification carries no
- * signature or the recomputed hash does not match (constant-time-ish compare
- * by lower-casing both sides; MD5 hashes are public values so a timing attack
- * is not a practical concern, but we normalise case to be safe).
+ * Builds the signature source string for an **ITN** (Instant Transaction
+ * Notification) exactly as PayFast computes it.
+ *
+ * An ITN is different from the outgoing form: PayFast signs the parameters
+ * **in the order they arrive**, appends the raw passphrase (not urlencoded),
+ * and excludes only the `signature` field. This mirrors the reference
+ * implementation in PayFast's own PHP SDK
+ * (`PaymentIntegrations/Notification::dataToString`) and the WooCommerce
+ * gateway, which verifies with `sort = false` — *not* the sorted API format.
+ *
+ * Empty values are preserved here (unlike the outgoing form) because the ITN
+ * contains whatever PayFast sent; dropping one would change the hash.
+ */
+export function buildItnSignatureSource(
+  data: Record<string, string>,
+  passphrase?: string
+): string {
+  let source = Object.keys(data)
+    .filter((k) => k !== "signature")
+    .map((k) => `${k}=${payfastEncode(String(data[k]))}`)
+    .join("&");
+  const rawPass = passphrase ?? "";
+  if (rawPass !== "") {
+    source += `&passphrase=${rawPass}`;
+  }
+  return source;
+}
+
+/**
+ * Generates the MD5 hash PayFast publishes in an ITN's `signature` field.
+ * Use [verifyItnSignature] to check one — never compare against
+ * [generateSignature], which uses the outgoing-form (sorted) shape.
+ */
+export function generateItnSignature(
+  data: Record<string, string>,
+  passphrase?: string
+): string {
+  return createHash("md5")
+    .update(buildItnSignatureSource(data, passphrase))
+    .digest("hex");
+}
+
+/**
+ * Verifies an ITN signature against the parameters in the order they were
+ * received. Returns false when the notification carries no signature or the
+ * recomputed hash does not match (MD5 hashes are public values, so a
+ * lower-cased string compare is sufficient — no timing-attack concern).
+ */
+export function verifyItnSignature(
+  data: Record<string, string>,
+  passphrase?: string
+): boolean {
+  const provided = String(data["signature"] ?? "").toLowerCase();
+  if (!provided) return false;
+  return provided === generateItnSignature(data, passphrase);
+}
+
+/**
+ * Backwards-compatible alias for [verifyItnSignature].
+ *
+ * The original implementation used the outgoing-form (sorted) algorithm, which
+ * never matches a real ITN; keeping the name pointing at the correct ITN
+ * verifier means every existing caller is fixed by this change.
  */
 export function verifySignature(
   data: Record<string, string>,
   passphrase?: string
 ): boolean {
-  const provided = (data["signature"] ?? "").toLowerCase();
-  if (!provided) return false;
-  const expected = generateSignature(data, passphrase);
-  return provided === expected;
+  return verifyItnSignature(data, passphrase);
 }
 
 /** Input accepted by [buildPaymentForm]. */
@@ -201,12 +281,20 @@ export function buildPaymentForm(input: CreatePaymentInput): PaymentForm {
     fields.cycles = String(input.cycles ?? 0);
     fields.recurring_amount = (input.recurringAmount ?? input.amount).toFixed(2);
   }
-  fields.signature = generateSignature(fields, input.passphrase);
+  // Emit the fields in the SAME order the signature is computed over (sorted
+  // by key). PayFast signs the variables in the order they are submitted
+  // ("Variable order" — see buildSignatureSource), so the signed order and the
+  // posted order must match or the checkout rejects the signature.
+  const ordered: Record<string, string> = {};
+  for (const key of Object.keys(fields).sort()) {
+    ordered[key] = fields[key];
+  }
+  ordered.signature = generateSignature(fields, input.passphrase);
   return {
     processUrl: input.sandbox
       ? PAYFAST_SANDBOX_PROCESS_URL
       : PAYFAST_PROCESS_URL,
-    fields,
+    fields: ordered,
     merchantPaymentId,
   };
 }
@@ -264,6 +352,10 @@ export interface ItnValidation {
 /**
  * Validates an ITN: signature, COMPLETE status, and amount against the plan
  * catalog. Pure (no Firestore) so it is unit-testable.
+ *
+ * The signature check uses [verifyItnSignature] — the received-order algorithm
+ * PayFast actually publishes in an ITN — NOT the sorted outgoing-form
+ * signature produced by [generateSignature].
  */
 export function validateItn(
   params: Record<string, string>,
@@ -279,7 +371,7 @@ export function validateItn(
     alternativeBilling: false,
     reason: "invalid",
   };
-  if (!verifySignature(params, passphrase)) {
+  if (!verifyItnSignature(params, passphrase)) {
     return { ...empty, reason: "signature" };
   }
   const status = (params["payment_status"] ?? "").toUpperCase();

@@ -236,7 +236,7 @@ test("validateItn reports alternativeBilling from custom_str4", () => {
     custom_str4: "alt_billing",
     amount_gross: "34.99",
   };
-  fields.signature = svc.generateSignature(fields, passphrase);
+  fields.signature = svc.generateItnSignature(fields, passphrase);
   const result = svc.validateItn(fields, passphrase, {
     hunter_monthly: { amountZar: 34.99 },
   });
@@ -253,12 +253,67 @@ test("validateItn reports alternativeBilling=false without the marker", () => {
     custom_str3: "hunter",
     amount_gross: "34.99",
   };
-  fields.signature = svc.generateSignature(fields, passphrase);
+  fields.signature = svc.generateItnSignature(fields, passphrase);
   const result = svc.validateItn(fields, passphrase, {
     hunter_monthly: { amountZar: 34.99 },
   });
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.alternativeBilling, false);
+});
+
+// ── The ITN records the alternative-billing report row ─────────────────────
+
+test("recordAlternativeBillingFromItn is idempotent (never duplicates a row)", async () => {
+  const src = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "src", "alternative_billing.ts"),
+    "utf8"
+  );
+  // It queries for an existing row before writing, merges in place when one is
+  // found, and only `add`s when the collection has no matching row.
+  assert.match(src, /recordAlternativeBillingFromItn/);
+  assert.match(src, /\.where\("userId", "==", userId\)/);
+  assert.match(src, /\.where\("planId", "==", planId\)/);
+  assert.match(src, /\.set\(payload, \{ merge: true \}\)/);
+  assert.match(src, /=== "reported"/);
+  // It stamps both fee spellings the reporter/operator read.
+  assert.match(src, /serviceFeeBasisPoints: feeBps/);
+  assert.match(src, /feeBps,/);
+});
+
+test("payfastNotify records the report row for an alternative-billing ITN", () => {
+  const src = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "src", "payfast", "payfast.ts"),
+    "utf8"
+  );
+  assert.match(src, /recordAlternativeBillingFromItn\(\{/);
+  // It is called on the alternative-billing branch, after the entitlement grant.
+  const altIdx = src.indexOf("grantAlternativeBillingEntitlement({");
+  const recIdx = src.indexOf("recordAlternativeBillingFromItn({");
+  assert.ok(altIdx > 0 && recIdx > altIdx, "report write follows the grant");
+});
+
+test("no duplicate: the app writes one row and the ITN updates the same row", () => {
+  const clientSrc = require("fs").readFileSync(
+    require("path").join(
+      __dirname,
+      "..",
+      "..",
+      "lib",
+      "features",
+      "billing",
+      "alternative_billing_service.dart"
+    ),
+    "utf8"
+  );
+  // The client writes exactly one row per checkout...
+  assert.match(clientSrc, /reportsCollection\)\.add\(report\)/);
+  // ...and the server resolves that row by (userId, planId) rather than adding
+  // another, so the reporter never sees two rows for one payment.
+  const serverSrc = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "src", "alternative_billing.ts"),
+    "utf8"
+  );
+  assert.match(serverSrc, /existing\.empty/);
 });
 
 // ── structural contracts ───────────────────────────────────────────────────

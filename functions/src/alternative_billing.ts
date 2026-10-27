@@ -392,3 +392,87 @@ export async function grantAlternativeBillingEntitlement(opts: {
     payfastPaymentId: opts.payfastPaymentId || undefined,
   });
 }
+
+/**
+ * Records (or updates) the `alternative_billing_reports` row for a completed
+ * User Choice Billing payment, driven by the PayFast ITN.
+ *
+ * The app already writes a `pending` row when it launches the checkout (carrying
+ * the Play-issued reporting token). This upsert makes the ITN the authority for
+ * the payment half of that row — `payfastTransactionId`, `amountZar`, and the
+ * `feeBps` / `serviceFeeZar` split — WITHOUT creating a duplicate:
+ *
+ *  * when a row already exists for the same user + plan (the normal case) it is
+ *    updated in place, so the server-side reporter sees exactly one row;
+ *  * when no row exists (a checkout started outside the app, or a client write
+ *    that failed) a fresh `pending` row is created so the transaction stays
+ *    visible for reporting;
+ *  * a row the reporter has already accepted (`status: 'reported'`) is left
+ *    untouched — re-writing it would discard the `externalTransactionId`
+ *    Google assigned.
+ *
+ * Returns the document id, or null when the write failed. Never throws: the ITN
+ * must always answer 200 once the entitlement has been granted.
+ */
+export async function recordAlternativeBillingFromItn(opts: {
+  userId: string;
+  planId: string;
+  role: string;
+  amountZar: number;
+  payfastTransactionId?: string;
+}): Promise<string | null> {
+  const { userId, planId, role, amountZar } = opts;
+  if (!userId || !planId) return null;
+  const tier = (role || "hunter").trim().toLowerCase() || "hunter";
+  const cycle = planId.trim().toLowerCase().endsWith("_yearly")
+    ? "yearly"
+    : "monthly";
+  const feeBps = ALTERNATIVE_BILLING_FEE_BASIS_POINTS;
+  const fee = Math.round(((amountZar * feeBps) / 10000) * 100) / 100;
+  const payload: Record<string, unknown> = {
+    userId,
+    tier,
+    billingCycle: cycle,
+    planId,
+    alternativeSku: `jagspoor_${planId}_payfast`,
+    amountZar,
+    // Written under BOTH spellings, matching the client writer: `feeBps` is the
+    // operator-facing name, `serviceFeeBasisPoints` is what the reporter reads.
+    serviceFeeBasisPoints: feeBps,
+    feeBps,
+    serviceFeeZar: fee,
+    program: "user_choice_billing",
+    ...(opts.payfastTransactionId
+      ? { payfastTransactionId: opts.payfastTransactionId }
+      : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  try {
+    const col = firestore().collection(ALTERNATIVE_BILLING_REPORTS_COLLECTION);
+    const existing = await col
+      .where("userId", "==", userId)
+      .where("planId", "==", planId)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      const doc = existing.docs[0];
+      if (String(doc.get("status") ?? "") === "reported") return doc.id;
+      await doc.ref.set(payload, { merge: true });
+      return doc.id;
+    }
+    const ref = await col.add({
+      ...payload,
+      reportingToken: null,
+      status: "pending",
+      reportedAt: FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  } catch (err) {
+    logger.error("alternative billing ITN report write failed", {
+      userId,
+      planId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}

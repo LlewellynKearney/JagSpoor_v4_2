@@ -19,7 +19,10 @@ import { logger } from "firebase-functions/v2";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import type { Request, Response } from "express";
 import { writeEntitlement, SUBSCRIPTION_SOURCE_PAYFAST } from "../entitlement";
-import { grantAlternativeBillingEntitlement } from "../alternative_billing";
+import {
+  grantAlternativeBillingEntitlement,
+  recordAlternativeBillingFromItn,
+} from "../alternative_billing";
 import {
   buildPaymentForm,
   parseItnBody,
@@ -147,9 +150,17 @@ export const createPayFastPayment = onCall(
       uid,
       planId: plan.planId,
       amount: plan.amountZar,
-      frequency: plan.frequency,
+      recurringAmount: form.fields.recurring_amount,
+      frequency: form.fields.frequency,
+      cycles: form.fields.cycles,
+      processUrl: form.processUrl,
+      merchantPaymentId: form.merchantPaymentId,
       sandbox: isSandbox(),
       alternativeBilling: data.alternativeBilling === true,
+      // The MD5 is a public value (it travels in the form), so logging it is
+      // safe and is the quickest way to diff a rejected checkout against the
+      // "Generated signature does not match submitted signature" 400.
+      signature: form.fields.signature,
     });
 
     return {
@@ -221,11 +232,22 @@ export const payfastNotify = onRequest(
         role: validation.role,
         payfastPaymentId: paymentId || undefined,
       });
+      // Record/refresh the `alternative_billing_reports` row from the ITN so a
+      // completed User Choice Billing payment always has a reportable
+      // transaction (idempotent — never duplicates the client-written row).
+      const reportId = await recordAlternativeBillingFromItn({
+        userId: validation.userId,
+        planId: validation.planId,
+        role: validation.role,
+        amountZar: validation.amount,
+        payfastTransactionId: paymentId || undefined,
+      });
       logger.info("payfastNotify: alternative billing entitlement granted", {
         uid: validation.userId,
         planId: validation.planId,
         amount: validation.amount,
         months: plan.months,
+        reportId,
       });
       res.status(200).send("OK");
       return;
