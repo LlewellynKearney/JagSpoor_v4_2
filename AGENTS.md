@@ -1,6 +1,97 @@
 # JagSpoor -- Agent Memory
 
 
+## DEBUG: detailed PayFast signature logging for the persistent 400 (added 2026-10-28)
+
+Branch `main` (base `b1e70a6`, commit `ca6705a`). Follow-up to the
+`b1e70a6` fix (hash fragment removed from the signed return/cancel URLs).
+The 400 "Generated signature does not match submitted signature" **still
+occurs after deploy**, and the previous log line
+(`createPayFastPayment: form built`) carried only the plan + MD5 — not enough
+to diff our signature source against PayFast's.
+
+### Why the previous logging could not diagnose it
+PayFast answers a bad MD5 with a generic message and **never echoes the
+string it hashed**, so the only way to find the divergence is to log the
+exact pre-MD5 source string WE hashed and compare it, character for
+character, with a locally recomputed one. The old log did not include it.
+
+### Change 1 -- `functions/src/payfast/payfast.service.ts`
+- `generateSignature` now caches the exact source string it hashed:
+  ```
+  const source = buildSignatureSource(data, passphrase);
+  lastSignatureSource = redactSignatureSourcePassphrase(source);
+  return createHash("md5").update(source).digest("hex");
+  ```
+  New exports: `getLastSignatureSource()` (the masked source) and
+  `redactSignatureSourcePassphrase(source)` (masks only the trailing
+  `&passphrase=<value>` segment as `&passphrase=<redacted>`).
+- **Security**: the passphrase is a Cloud Functions secret, so it is masked
+  before caching. Everything else (field names, values, order, encoding,
+  segment count) is preserved verbatim, so the logged string remains fully
+  diffable. The MD5 itself is unchanged by the masking (it is computed from
+  the unmasked source) — verified: the emitted signature still round-trips.
+
+### Change 2 -- `functions/src/payfast/payfast.ts`
+`createPayFastPayment`'s log now carries the full diagnostic payload:
+`signature`, `signatureSource` (the exact pre-MD5 string, passphrase
+masked), `m_payment_id`, `item_name`, `email`, `merchant_id`,
+`merchant_key_present` + `merchant_key_len`, `passphrase_configured` +
+`passphrase_len`, `return_url`, `cancel_url`, `notify_url`,
+`recurring_amount`, `frequency`, `cycles`, `custom_str1..4`, `allKeys`
+(the full sorted key list, so a missing/extra field is obvious) and
+`processUrl`. The merchant key VALUE is never logged directly (only its
+presence + length); it does appear inside `signatureSource` as
+`merchant_key=...`, which is safe — the browser already posts that field to
+PayFast. The passphrase never appears in the log.
+
+### Change 3 -- `functions/test/payfast.test.js` (+4 tests, 151 -> 155)
+Locks the diagnostic contract: the captured source hashes back to the emitted
+MD5 (so it is faithful); the passphrase never leaks; the redactor masks only
+the tail segment; and the log call carries every diagnostic field
+(structural source parse, asserting the exact
+`signatureSource: getLastSignatureSource()` expression so a placeholder can
+never satisfy it — mutation-tested: replacing it with `null` fails the test).
+
+### Verification
+- `cd functions && npm ci && npm run build` (tsc): **0 errors**.
+- `npm test`: **155/155 pass** (was 151).
+- **End-to-end round-trip reproduced**: build the form -> serialize as the
+  browser does (`querystring.stringify`) -> decode as PHP `$_POST` does
+  (`querystring.parse`) -> recompute with PayFast's recipe (sorted,
+  `urlencode`, raw passphrase) => the recomputed MD5 equals the stored
+  `signature`; the posted order equals the signed order; `signatureSource`
+  contains no `#`; `PASSPHRASE LEAKED: false`.
+- A simulated production log payload shows every field needed to diff,
+  with `signatureSource` ending `...&passphrase=<redacted>`.
+- **No merchant id (37584965) / key (7muy2qnw4nboz) / passphrase
+  (JagSpoor-1983) / URL value was changed** — verified by grepping the diff.
+  Only the three files above changed.
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+`FIREBASE_TOKEN` is unset and `firebase-tools` is not installed. Run in a
+credentialed environment:
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:createPayFastPayment --project=jagspoor
+```
+Then reproduce the 400 and read the `createPayFastPayment: form built` log:
+the `signatureSource` value is the string to diff against a locally
+recomputed one. Candidates, in order: (1) the deployed function is stale
+(redeploy first); (2) the passphrase / merchant-key secret value does not
+match the PayFast dashboard (compare `passphrase_len` / `merchant_key_len`
+against the dashboard values); (3) a signed field is being rewritten
+between our hash and PayFast's recompute (compare `allKeys` + the emitted
+values against what the browser actually posted).
+
+### Files
+- MODIFIED: `functions/src/payfast/payfast.service.ts`,
+  `functions/src/payfast/payfast.ts`, `functions/test/payfast.test.js`,
+  `AGENTS.md`.
+- UNCHANGED: merchant id / key / passphrase, `plans.ts`, `params.ts`,
+  `index.ts`, all Dart `lib/` code, Firestore / Storage rules, indexes.
+
+
 ## FIX: PayFast 400 -- hash fragment removed from the signed return/cancel URLs (added 2026-10-28)
 
 Branch `main` (base `e16a330`). Follow-up to the 2026-10-27 `payfastEncode`
