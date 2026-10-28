@@ -44,20 +44,25 @@ import {
 } from "../params";
 
 /**
- * The web app's base URL. The PayFast return/cancel redirects land back here
- * (hash-routed so the Flutter web app can pick the route up).
+ * The web app's base URL. The PayFast return/cancel redirects land back here.
+ *
+ * The URL deliberately carries NO `#` fragment. Both values are submitted as
+ * signed form fields, and a fragment makes the signed string fragile: the
+ * browser drops everything after `#` when the checkout is opened as a GET URL,
+ * so PayFast recomputes a different hash and rejects the checkout with
+ * "Generated signature does not match submitted signature".
  */
-export const WEB_APP_BASE_URL = "https://jagspoor.web.app";
+export const WEB_APP_BASE_URL = "https://jag-spoor.co.za";
 
 /** The ITN notify URL PayFast should POST to. */
 export const PAYFAST_NOTIFY_URL =
   "https://us-central1-jagspoor.cloudfunctions.net/payfastNotify";
 
 /** The success route the app navigates to after a completed checkout. */
-export const PAYFAST_SUCCESS_URL = `${WEB_APP_BASE_URL}/#/subscription/success`;
+export const PAYFAST_SUCCESS_URL = `${WEB_APP_BASE_URL}/subscription/success`;
 
 /** The cancel route the app navigates to when the user abandons checkout. */
-export const PAYFAST_CANCEL_URL = `${WEB_APP_BASE_URL}/#/subscription/cancel`;
+export const PAYFAST_CANCEL_URL = `${WEB_APP_BASE_URL}/subscription/cancel`;
 
 interface CreatePaymentRequest {
   role?: string;
@@ -286,7 +291,7 @@ export const payfastNotify = onRequest(
 export const payfastReturn = onRequest(
   { region: "us-central1", maxInstances: 10 },
   (req: Request, res: Response) => {
-    const target = `${WEB_APP_BASE_URL}/#/subscription/success`;
+    const target = PAYFAST_SUCCESS_URL;
     logger.info("payfastReturn: redirecting", { target });
     res.redirect(302, target);
   }
@@ -301,7 +306,7 @@ export const payfastReturn = onRequest(
 export const payfastCancel = onRequest(
   { region: "us-central1", maxInstances: 10 },
   (req: Request, res: Response) => {
-    const target = `${WEB_APP_BASE_URL}/#/subscription/cancel`;
+    const target = PAYFAST_CANCEL_URL;
     logger.info("payfastCancel: redirecting", { target });
     res.redirect(302, target);
   }

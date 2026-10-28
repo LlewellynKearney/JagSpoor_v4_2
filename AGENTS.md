@@ -1,6 +1,98 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: PayFast 400 -- hash fragment removed from the signed return/cancel URLs (added 2026-10-28)
+
+Branch `main` (base `e16a330`). Follow-up to the 2026-10-27 `payfastEncode`
+entry. Reported symptom was again `/eng/process` -> **400 "Generated signature
+does not match submitted signature"**, with the merchant dashboard verified
+(Merchant ID `37584965`, Key `7muy2qnw4nboz`, Passphrase `JagSpoor-1983`,
+Require Signature ON, ITN ON).
+
+### Finding 1 -- `payfastEncode` was ALREADY the full PHP `urlencode`
+The task brief said the encoder "only does + and ~, missing !'()*". That was
+**not** the case at `e16a330`: `functions/src/payfast/payfast.service.ts` was
+byte-identical to `origin/main` and already carried the explicit per-character
+form (`%20 -> +`, then `!` `'` `(` `)` `*` `~` -> `%21` `%27` `%28` `%29`
+`%2A` `%7E`). Verified with `git diff origin/main --
+functions/src/payfast/payfast.service.ts` (**empty diff**) and by reading the
+function. Step 1/2 of the brief were therefore no-ops, and the file was left
+untouched so every existing export is preserved.
+
+### Finding 2 -- THE ACTUAL CAUSE: a `#` fragment inside the signed URLs
+`functions/src/payfast/payfast.ts` built the redirect targets with a hash
+route:
+
+```
+export const WEB_APP_BASE_URL = "https://jagspoor.web.app";
+export const PAYFAST_SUCCESS_URL = `${WEB_APP_BASE_URL}/#/subscription/success`;
+export const PAYFAST_CANCEL_URL  = `${WEB_APP_BASE_URL}/#/subscription/cancel`;
+```
+
+`return_url` and `cancel_url` are **signed form fields**. A `#` starts a URI
+fragment: the browser strips everything after it when the form is opened as a
+GET URL / on the redirect, so the string PayFast hashes is not the string we
+signed. PayFast recomputes a different MD5 and rejects the checkout with the
+400 "Generated signature does not match submitted signature" — exactly the
+reported symptom, and independent of the encoder being correct.
+
+### Fix (only `functions/src/payfast/payfast.ts` changed; 12 insertions / 7 deletions)
+- `WEB_APP_BASE_URL` -> **`https://jag-spoor.co.za`** (the owned Afrihost
+  domain; no hash).
+- `PAYFAST_SUCCESS_URL` -> `${WEB_APP_BASE_URL}/subscription/success`
+- `PAYFAST_CANCEL_URL` -> `${WEB_APP_BASE_URL}/subscription/cancel`
+- `payfastReturn` / `payfastCancel` now redirect to the `PAYFAST_SUCCESS_URL` /
+  `PAYFAST_CANCEL_URL` constants instead of re-interpolating the hash inline,
+  so the redirect target and the signed field can never drift apart again.
+- The doc comment on `WEB_APP_BASE_URL` now records WHY there must be no `#`.
+- `payfastNotify` logic (ITN signature/amount validation, entitlement grant,
+  alternative-billing reporting) was **not touched**.
+
+### Verification (this sandbox)
+- `cd functions && npm ci && npm run build` (tsc): **0 errors**.
+- `npm test`: **151/151 pass** (the `payfastEncode` regression suite from
+  2026-10-27 included; its `buildPaymentForm` cases pass their own literal
+  URLs, so the constant change does not disturb them).
+- **End-to-end post/sign round-trip with the new URLs**: build the form ->
+  serialize as the browser does (`querystring.stringify`) -> decode as PHP
+  `$_POST` does (`querystring.parse`) -> recompute with PayFast's own recipe
+  (received-order `urlencode` + raw passphrase). The recomputed MD5 equals the
+  stored `signature`; `return_url`/`cancel_url` contain **no `#`**. Mutation
+  check: the hash-bearing URLs hash to a *different* MD5, so the harness
+  genuinely detects the defect (the fix is load-bearing, not vacuous).
+- `flutter analyze` (Flutter **3.44.9**, the CI pin): **0 errors, 0 warnings**,
+  321 pre-existing info-level issues (the documented baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2339 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger in
+  `user_trial_onboarding.ts`), reproduced identically with this change stashed.
+  Neither that test nor its source is touched here.
+- `git status` after the change: **only** `functions/src/payfast/payfast.ts`
+  modified (`functions/lib/` is gitignored; no `pubspec.lock` /
+  `analysis_options.yaml` drift).
+
+### Files
+- MODIFIED: `functions/src/payfast/payfast.ts`, `AGENTS.md`.
+- UNCHANGED: `functions/src/payfast/payfast.service.ts` (already the full
+  `urlencode`), `payfastNotify`, `plans.ts`, `params.ts`, `index.ts`, all Dart
+  `lib/` code, Firestore rules / indexes, Storage rules, `pubspec.yaml`,
+  manifests.
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+`FIREBASE_TOKEN` is unset and `firebase-tools` is not installed, so the
+functions could not be pushed. Run in a credentialed environment:
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:createPayFastPayment,payfastNotify,payfastReturn,payfastCancel --project=jagspoor
+npx firebase-tools deploy --only hosting --project=jagspoor
+```
+The merchant id / key / passphrase were NOT changed. If the 400 persists after
+this deploy, the remaining candidates are outside the repo: the deployed
+function still being stale, or a passphrase/merchant-key mismatch between the
+Secret Manager values and the PayFast dashboard.
+
+
+
 ## FIX: PayFast 400 -- payfastEncode made explicit + regression test (added 2026-10-27)
 
 Branch `main` (base `db2e803`). Reported symptom: `/eng/process` returned
