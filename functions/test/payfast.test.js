@@ -162,6 +162,28 @@ test("payfastEncode matches PHP urlencode (spaces as +, ~ escaped to %7E)", () =
   assert.strictEqual(payfastEncode("a&b=c"), "a%26b%3Dc");
 });
 
+test("payfastEncode ENCODES !'()*~ (the 400 signature-mismatch regression)", () => {
+  // PHP's urlencode() escapes these six; encodeURIComponent leaves them
+  // literal. A "%21 -> !" style (decode-direction) replacement is a no-op on
+  // the escaped form and yields a hash PayFast rejects with a 400
+  // "Generated signature does not match submitted signature".
+  assert.strictEqual(payfastEncode("!"), "%21");
+  assert.strictEqual(payfastEncode("'"), "%27");
+  assert.strictEqual(payfastEncode("("), "%28");
+  assert.strictEqual(payfastEncode(")"), "%29");
+  assert.strictEqual(payfastEncode("*"), "%2A");
+  assert.strictEqual(payfastEncode("~"), "%7E");
+  // None of the six may survive into the encoded output unescaped.
+  const encoded = payfastEncode("O'Brien & Sons (Pty)* Ltd~");
+  assert.ok(!/[!'()*~]/.test(encoded), `left raw special chars: ${encoded}`);
+  assert.strictEqual(
+    encoded,
+    "O%27Brien+%26+Sons+%28Pty%29%2A+Ltd%7E"
+  );
+  // Leading/trailing whitespace is trimmed before encoding.
+  assert.strictEqual(payfastEncode("  a!b  "), "a%21b");
+});
+
 test("buildSignatureSource sorts + urlencodes + omits signature/passphrase", () => {
   const source = buildSignatureSource({
     b: "2",

@@ -49,15 +49,26 @@ export const PAYFAST_MERCHANT_ID = "37584965";
  *    hosted checkout surfaces to the shopper as a generic 500-style error);
  *  * `~` is escaped to `%7E` (PHP's `urlencode` predates RFC 3986 and does not
  *    treat `~` as unreserved, unlike JS `encodeURIComponent`);
- *  * `!` `'` `(` `)` `*` are escaped as well.
+ *  * `!` `'` `(` `)` `*` are escaped as `%21` `%27` `%28` `%29` `%2A`.
+ *
+ * `encodeURIComponent` leaves all six of those characters literal, so each one
+ * must be ENCODED here — not decoded. Getting the direction backwards (a
+ * `%21` -> `!` style replacement) is a no-op on the escaped form and produces
+ * a hash that PayFast rejects with "Generated signature does not match
+ * submitted signature" (a 400 on `/eng/process`).
  *
  * The value is trimmed first, matching PayFast's own reference implementation
  * (`urlencode( trim( $val ) )`).
  */
 export function payfastEncode(value: string): string {
-  return encodeURIComponent(value.trim())
+  return encodeURIComponent(String(value).trim())
     .replace(/%20/g, "+")
-    .replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+    .replace(/!/g, "%21")
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29")
+    .replace(/\*/g, "%2A")
+    .replace(/~/g, "%7E");
 }
 
 /**

@@ -1,6 +1,140 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: PayFast 400 -- payfastEncode made explicit + regression test (added 2026-10-27)
+
+Branch `main` (base `db2e803`). Reported symptom: `/eng/process` returned
+**400 Bad Request — "1. Generated signature does not match submitted
+signature."** for both surfaces (Web `SUBSCRIBE VIA PAYFAST` and Android User
+Choice Billing `CONTINUE WITH PAYFAST`). The report claimed `db2e803` carried a
+**decode-direction** `payfastEncode` (`%21 -> !` etc.) and that this was the
+cause.
+
+### IMPORTANT finding -- the reported defect was NOT present at `db2e803`
+The decode-direction code does **not** exist anywhere in the tree. Verified
+three ways:
+- `git show HEAD:functions/src/payfast/payfast.service.ts` (blob
+  `945d660`) carries `.replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0)
+  .toString(16).toUpperCase())` -- the ENCODE direction.
+- Repo-wide grep for `replace(/%21/g` / `%27/g` / `%2A/g` (excluding
+  `node_modules` / `.git`): **0 hits**.
+- `git hash-object` of the working tree == the `HEAD` blob, so no uncommitted
+  variant was hiding locally.
+
+The char-class form is **behaviourally identical** to PHP `urlencode` and to
+the explicit per-character form now in place. Proof: a 131-sample fuzz (every
+ASCII char + realistic JagSpoor strings) comparing the old char-class
+implementation, the new explicit implementation, and a ground-truth PHP
+`urlencode` gave **0 mismatches** for all three. The old implementation was
+therefore already correct, so the previously-diagnosed cause cannot explain
+the 400.
+
+### What was changed (defensive; the requested shape, exactly)
+`functions/src/payfast/payfast.service.ts` `payfastEncode` rewritten from the
+char-class regex to the **explicit per-character** replacements the task
+specified:
+```
+encodeURIComponent(String(value).trim())
+  .replace(/%20/g, '+')
+  .replace(/!/g, '%21').replace(/'/g, '%27')
+  .replace(/\(/g, '%28').replace(/\)/g, '%29')
+  .replace(/\*/g, '%2A').replace(/~/g, '%7E');
+```
+- Added `String(value)` (tolerates a non-string at a JS call site; a no-op for
+  the TS-typed callers).
+- Doc comment now states the direction explicitly and names the failure mode
+  ("`encodeURIComponent` leaves all six literal, so they must be ENCODED — a
+  `%21 -> !` style replacement is a no-op and produces the 400").
+This makes the intent unambiguous and unfalsifiable by a future "cleanup"
+that flips the direction.
+
+### UNCHANGED (protected invariants -- all re-verified)
+- `generateSignature` / `buildSignatureSource`: sorted, trimmed, blank values
+  dropped, `cycles=0` **kept** (`"0" !== ""` in PHP), `signature` excluded,
+  passphrase appended last.
+- `buildItnSignatureSource` / `generateItnSignature` / `verifyItnSignature`
+  (received-order ITN algorithm, raw passphrase) and the `verifySignature`
+  alias -- the `db2e803` ITN fix is intact.
+- `buildPaymentForm` still emits fields in **sorted order with `signature`
+  last**, so submitted order == signed order.
+- Merchant id `37584965` (public constant), merchant key `7muy2qnw4nboz` +
+  passphrase `JagSpoor-1983` remain **secrets** (`defineSecret`, env-read,
+  never returned to the client). Sandbox flag, plan catalog
+  (34.99 / 349.99 / 299.99 / 2999.99) and Hornbill project untouched.
+- `alternative_billing_reports` `feeBps` 2600 reporting and the
+  cancel-subscription info icons untouched.
+
+### Verification (this sandbox)
+- `cd functions && npm ci && npm run build` (tsc): clean.
+- `npm test`: **151/151 pass** (150 pre-existing + 1 new). The new test
+  asserts `payfastEncode` yields `%21 %27 %28 %29 %2A %7E`, that no raw
+  `!'()*~` survives, the full `O'Brien & Sons (Pty)* Ltd~` ->
+  `O%27Brien+%26+Sons+%28Pty%29%2A+Ltd%7E` mapping, and the trim.
+- **End-to-end post/sign round-trip**: build the form -> serialize as the
+  browser does (`querystring.stringify`) -> decode as PHP `$_POST` does
+  (`querystring.parse`) -> recompute with the PHP recipe -> the recomputed MD5
+  equals the stored `signature`. `signature` is last; the emitted key set is
+  sorted. Also passes with the six special characters inside a field value.
+- **Mutation test**: signing with the *decode-direction* encoder produces
+  `cbe796ae…` vs the PHP-correct `3c2ad742…` for the same fields, i.e. the
+  harness genuinely detects the reported bug (so the new test is load-bearing,
+  not vacuous).
+- **ITN path**: `verifyItnSignature` / `verifySignature` / `validateItn`
+  all still return true/ok for a received-order ITN (no regression).
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 321 infos (the
+  documented baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2339 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
+  contains no PayFast reference and is untouched here.
+- `flutter build web --release`: SUCCESS. `support@jag-spoor.co.za` present
+  (12 hits); **`MANAGE IN GOOGLE PLAY` = 0**; the PayFast CTAs are present
+  (`SUBSCRIBE VIA PAYFAST` / `PAY WITH PAYFAST` / `CONTINUE WITH PAYFAST`);
+  **0** occurrences of the merchant key `7muy2qnw4nboz`, the passphrase
+  `JagSpoor-1983`, the merchant id `37584965`, `merchant_key` or
+  `passphrase` -- no secret reaches the browser bundle.
+- `flutter build appbundle --release`: SUCCESS -> 126.3 MB
+  `build/app/outputs/bundle/release/app-release.aab`; manifest
+  `za.co.jagspoor.app` / `versionName 1.0.16`;
+  `com.jagspoor/alternative_billing` present in `classes.dex` **and** all
+  three `libapp.so`; `feeBps` + `CONTINUE WITH PAYFAST` present. (Debug-signed
+  -- `android/key.properties` is absent in this sandbox, so the documented
+  Gradle fallback engaged; Play rejects a debug-signed AAB.)
+
+### Still unresolved (cannot be done here -- needs the live account)
+Because the reported decode-direction defect was **not** in the source, the
+committed code was already PHP-`urlencode`-correct, and the harness proves the
+signature is reproducible end-to-end, the remaining candidates for a live 400
+are outside this repo:
+1. **The deployed function is stale** -- `createPayFastPayment` was never
+   redeployed after `db2e803`, so the live signature is produced by older code.
+   Redeploying is the first thing to try.
+2. **Passphrase / merchant-key mismatch** -- the value in the Secret Manager
+   `PAYFAST_PASSPHRASE` / `PAYFAST_MERCHANT_KEY` secrets must match the
+   merchant account exactly (a passphrase set in the PayFast dashboard but not
+   in the secret, or vice-versa, yields exactly this 400 with an otherwise
+   correct implementation). `createPayFastPayment` already logs the built
+   signature, so diff it against a locally recomputed one.
+3. **Account still under verification** -- PayFast may reject signed requests
+   from an unverified/live-merchant combination in ways it does not document.
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:createPayFastPayment,payfastNotify,payfastReturn,payfastCancel --project=jagspoor
+npx firebase-tools deploy --only hosting --project=jagspoor
+```
+Verify the two PayFast secrets first:
+`firebase functions:secrets:get PAYFAST_MERCHANT_KEY` / `... PAYFAST_PASSPHRASE`.
+
+### Files
+- MODIFIED: `functions/src/payfast/payfast.service.ts` (`payfastEncode`
+  explicit per-character form + `String(value)` + direction-explicit doc),
+  `functions/test/payfast.test.js` (+1 regression test), `AGENTS.md`.
+- No Dart `lib/` / Firestore rules / index / Storage / pubspec / manifest
+  change. Nothing committed to `main` in this session (working tree only).
+
+
 ## FEAT: cancel-subscription help icons for Play + PayFast (added 2026-10-27)
 
 Branch `feat/cancel-info-icons` -> `main`. Adds a small `(i)` action beside
