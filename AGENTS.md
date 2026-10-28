@@ -1,6 +1,82 @@
 # JagSpoor -- Agent Memory
 
 
+## CHORE: version bump 1.0.16+19 -> 4.2.20+20 (versionCode 20) for the Play Store re-upload (added 2026-10-28)
+
+Branch `main` (base `8dcf9bc`).
+
+### Version-name premise correction
+The brief said the current version "should be like `4.2.19+19`". It is **not**:
+`pubspec.yaml` was `1.0.16+19` / `versionCode = 19` / `versionName = "1.0.16"`.
+The `4.4.x` -> `1.0.9` reset (see the "Version 9 (1.0.9+9)" entry) has been the
+convention ever since, so the product branding in `context.md` ("v4.4.1") and
+the store version name have been out of step for a while. The version name was
+set to **`4.2.20`** exactly as instructed — the bump is a deliberate return to
+the `4.2.x` store line, not an inference from the old value.
+
+### Version sources hand-synced (the Gradle values are HARDCODED — they do NOT track `flutter.versionCode`)
+- `pubspec.yaml`: `1.0.16+19` -> **`4.2.20+20`**.
+- `android/app/build.gradle.kts` (`defaultConfig`): `versionCode = 19` ->
+  **`20`**, `versionName = "1.0.16"` -> **`"4.2.20"`** (comment updated; its
+  "previous accepted AAB v1.0.16 / code 19" reference is intentionally
+  historical).
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode` `'19'` -> `'20'`,
+  `fallbackVersionName` `'1.0.16'` -> `'4.2.20'`, plus both doc-comment
+  examples (`resolve()` + `VersionInfoCaption`). There is **no**
+  `lib/core/constants/app_constants.dart` in this repo — `version_info.dart`
+  is the single UI version surface (profile / settings footer).
+- `test/version_info_and_facebook_test.dart`: fallback expectations ->
+  `'4.2.20'` / `'20'`.
+- `test/force_update_service_test.dart`: the shipped-build test now mirrors
+  versionCode 20 (floor 20 vs 19 blocks; floor 19 vs 19 does not).
+- iOS / macOS need **no** native edit: `ios/Runner/Info.plist` +
+  `macos/Runner/Info.plist` use `$(FLUTTER_BUILD_NAME)` /
+  `$(FLUTTER_BUILD_NUMBER)` and `project.pbxproj`
+  `CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"`, so they follow the
+  pubspec automatically.
+- `android/local.properties` is **absent** and gitignored (it only holds
+  `sdk.dir` / `flutter.sdk`; any stale `flutter.versionCode` there is
+  Gradle-managed and overridden by the hardcoded `build.gradle.kts` values).
+
+### Verification (this sandbox)
+- `flutter analyze` (Flutter **3.44.9**, the CI pin): **0 errors, 0 warnings,
+  321 infos** — an issue-for-issue match against the stashed baseline
+  (0/0/321), so the bump adds **zero** new issues. The 2 `unnecessary_const`
+  infos in `version_info_and_facebook_test.dart` are on unmodified lines and
+  are part of the documented pre-existing baseline.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`):
+  **2339 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape; the trigger is v2 `onUserCreated`). Unrelated to a version string.
+- The two touched suites: `version_info_and_facebook_test` +
+  `force_update_service_test` -> **18/18 pass**.
+- `functions`: `npm test` **158/158 pass**.
+- No `pubspec.lock` / `analysis_options.yaml` drift; only the 5 intended files
+  modified.
+
+### ⚠️ AAB not built here — no Android SDK / JDK in this sandbox
+`java` is absent and no Android SDK is installed, so
+`flutter build appbundle --release` could not run. The Gradle
+`versionCode`/`versionName` were verified at the source level. Build the
+upload artifact in a credentialed environment:
+```
+flutter clean && flutter pub get && flutter build appbundle --release
+```
+The keystore caveat still applies: `android/key.properties` is absent, so the
+release AAB falls back to the debug signing identity and Play will reject it.
+- Do NOT raise the `admin_config/app_version` forced-update floor to 20 until
+  the versionCode-20 AAB is live on the track, otherwise every build below 20
+  is blocked with no in-app way forward.
+
+### Files
+- MODIFIED: `pubspec.yaml`, `android/app/build.gradle.kts`,
+  `lib/core/widgets/version_info.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / `functions/` / Dart app-logic /
+  manifest changes.
+
+
 ## FIX: PayFast 400 -- the hosted checkout signs in the DOCUMENTED attribute order, NOT alphabetically (added 2026-10-28)
 
 Branch `main` (base `f4461a4`). Third pass at the persistent
