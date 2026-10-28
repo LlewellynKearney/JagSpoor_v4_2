@@ -1,6 +1,123 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: PayFast 400 -- the hosted checkout signs in the DOCUMENTED attribute order, NOT alphabetically (added 2026-10-28)
+
+Branch `main` (base `f4461a4`). Third pass at the persistent
+**400 "Generated signature does not match submitted signature"**. The
+`b1e70a6` fix (no `#` fragment in the signed URLs) and the `ca6705a`
+diagnostic logging were both correct and both necessary — but neither was
+the remaining cause.
+
+### THE ROOT CAUSE -- alphabetical signing is the API format, which PayFast forbids
+PayFast's own developer documentation (Step 2, the **"Variable order"**
+warning) is explicit:
+
+> "The pairs must be listed in the **order in which they appear** in the
+> attributes description. eg. `name_first=John&name_last=Doe&email_address=…`
+> * Do **not** use the **API signature** format, which uses **alphabetical
+> ordering**!"
+
+`buildSignatureSource` sorted the keys (`.sort()`). That is the **API**
+signature format — precisely what the hosted checkout rejects. Confirmed
+against two independent, production-proven references:
+- the **official PayFast PHP SDK**, `PayFast\Auth::generateSignature`
+  (used by `custom->createFormFields`, i.e. the hosted checkout): it signs a
+  **fixed 36-field sequence** (`merchant_id, merchant_key, return_url,
+  cancel_url, notify_url, notify_method, name_first, name_last,
+  email_address, cell_number, m_payment_id, amount, item_name,
+  item_description, custom_int1..5, custom_str1..5, email_confirmation,
+  confirmation_address, currency, payment_method, subscription_type,
+  passphrase, billing_date, recurring_amount, frequency, cycles,
+  subscription_notify_*`); and
+- the **WooCommerce PayFast gateway**, whose `$data_to_send` array is that
+  same sequence, signed with `implode('&', $sign_strings)` — no `ksort`.
+
+Why the previous evidence pointed the wrong way: the earlier fix made the
+emitted field order match the *sorted* order, so our hash agreed with our own
+POST — which is why the 400 persisted while every local round-trip "passed".
+PayFast recomputes over **its** order, so matching our own sorted order could
+never satisfy it.
+
+### The fix (`functions/src/payfast/payfast.service.ts`)
+- NEW `PAYFAST_CHECKOUT_FIELD_ORDER` — the documented attribute sequence
+  above (copied from the SDK's `$fields`), plus `orderCheckoutFields(data)`
+  which returns the form's keys in that order and appends any unrecognised
+  key last (so a new field can never be silently dropped from the signature).
+- `buildSignatureSource` now iterates `orderCheckoutFields(data)` instead of
+  `Object.keys(data).sort()`.
+- `buildPaymentForm` emits its fields via `orderCheckoutFields(fields)` (was
+  `Object.keys(fields).sort()`), so the POSTed order and the signed order are
+  the same documented sequence. This is correct under **either**
+  interpretation of PayFast's rule — fixed order or received order — because
+  the two now coincide.
+- Blank values are still dropped and `cycles=0` is still kept (a deliberate,
+  documented divergence from PHP `empty()`, which would treat `"0"` as
+  empty).
+
+### Defensive change -- `verifyItnSignature` now tries two orders
+`verifyItnSignature` accepts the **received** order first (how PayFast
+actually signs an ITN: SDK `Notification::dataToString`, raw passphrase) and
+the outgoing hosted-checkout order second, in case a payload is reordered in
+transit (proxy / runtime normalisation). Both still require the passphrase, so
+this does not weaken forgery resistance. This retires the old
+`verifySignature is an alias` test assertion that asserted the outgoing shape
+must **fail** (it is now a legitimate second candidate).
+
+### Logging (`functions/src/payfast/payfast.ts`)
+The `ca6705a` structured block is kept, with two accuracy fixes:
+- `allKeys` now logs the **actual emitted order** (which is the signed order)
+  rather than a sorted list — a sorted list hid the very thing a mismatch
+  turns on;
+- the stale "(urlencoded, sorted, passphrase appended)" comment corrected.
+- Added a one-line `console.log("PAYFAST_DEBUG sig=… return=… m_payment_id=…")`
+  fallback, which some Cloud Logging views surface more reliably than the
+  structured payload.
+
+### Verification (this sandbox)
+- `cd functions && npm run build` (tsc): **0 errors**.
+- `npm test`: **158/158 pass** (was 155; `payfast.test.js` 26). Four
+  sort-based assertions were rewritten to the documented order, and three
+  tests added: the order contract vs the SDK/WooCommerce sequence, the
+  documented-order source string, and a **load-bearing** test proving the old
+  alphabetical hash differs from the new one.
+- **End-to-end round-trip** (real `buildPaymentForm`, `querystring`
+  serialise/parse, recompute): emitted order == documented order (**not**
+  alphabetical); recomputed MD5 == stored `signature`; `return_url` /
+  `cancel_url` contain **no `#`**; the passphrase never appears in the logged
+  source. Mutation check: the OLD alphabetical source hashes to a
+  **different** MD5 (`d6e39502…` vs `f6040466…`), so the fix is
+  load-bearing.
+- PayFast's sandbox was probed directly and **is not a usable oracle**: a
+  correct signature and a bogus one are both rejected (their published demo
+  credentials appear stale), while a **missing** signature returns 200. The
+  fix therefore rests on the documentation + the two reference
+  implementations above, not on a sandbox round-trip.
+- Merchant id `37584965`, key `7muy2qnw4nboz`, passphrase `JagSpoor-1983` and
+  both URLs were **not** changed. No Dart `lib/` change: the client forwards
+  the server's field map verbatim (JSON → Dart map → DOM insertion order →
+  POST), so the order is preserved end to end.
+
+### Files
+- MODIFIED: `functions/src/payfast/payfast.service.ts` (documented order +
+  `orderCheckoutFields` + two-order ITN verify + comment corrections),
+  `functions/src/payfast/payfast.ts` (`allKeys` in signed order + console
+  fallback), `functions/test/payfast.test.js` (order assertions + 3 new
+  tests), `AGENTS.md`.
+- UNCHANGED: `plans.ts`, `params.ts`, `index.ts`, all Dart `lib/` code,
+  Firestore rules / indexes, Storage rules, `pubspec.yaml`, manifests.
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+`FIREBASE_TOKEN` is unset, `firebase-tools` is not installed and
+`GOOGLE_APPLICATION_CREDENTIALS` is absent, so the functions could not be
+pushed. Run in a credentialed environment:
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:createPayFastPayment,payfastNotify,payfastReturn,payfastCancel --project=jagspoor
+npx firebase-tools deploy --only hosting --project=jagspoor
+```
+
+
 ## DEBUG: detailed PayFast signature logging for the persistent 400 (added 2026-10-28)
 
 Branch `main` (base `b1e70a6`, commit `ca6705a`). Follow-up to the

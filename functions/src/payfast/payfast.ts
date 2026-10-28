@@ -168,7 +168,8 @@ export const createPayFastPayment = onCall(
       planId: plan.planId,
       amount: plan.amountZar,
       signature: form.fields.signature,
-      // The exact pre-MD5 string (urlencoded, sorted, passphrase appended).
+      // The exact pre-MD5 string, in PayFast's documented attribute order with
+      // the passphrase masked (see getLastSignatureSource).
       signatureSource: getLastSignatureSource(),
       m_payment_id: form.fields.m_payment_id,
       item_name: form.fields.item_name,
@@ -188,11 +189,21 @@ export const createPayFastPayment = onCall(
       custom_str2: form.fields.custom_str2,
       custom_str3: form.fields.custom_str3,
       custom_str4: form.fields.custom_str4,
-      allKeys: Object.keys(form.fields).sort().join(","),
+      // The exact emitted order — which IS the signed order. A sorted list would
+      // hide the very thing a signature mismatch usually turns on.
+      allKeys: Object.keys(form.fields).join(","),
       processUrl: form.processUrl,
       sandbox: isSandbox(),
       alternativeBilling: data.alternativeBilling === true,
     });
+
+    // Single-line fallback. A structured payload is the better log, but a plain
+    // console line is occasionally surfaced more reliably by Cloud Logging and
+    // is the quickest way to eyeball the signature + redirect target against a
+    // rejected checkout.
+    console.log(
+      `PAYFAST_DEBUG sig=${form.fields.signature} return=${form.fields.return_url} m_payment_id=${form.fields.m_payment_id}`
+    );
 
     return {
       processUrl: form.processUrl,

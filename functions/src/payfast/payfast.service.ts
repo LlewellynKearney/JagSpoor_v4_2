@@ -72,31 +72,108 @@ export function payfastEncode(value: string): string {
 }
 
 /**
+ * The field order PayFast's **hosted checkout** (`/eng/process`) signs in.
+ *
+ * This is NOT alphabetical. PayFast's own docs are explicit (Step 2, the
+ * "Variable order" warning):
+ *
+ *   "The pairs must be listed in the order in which they appear in the
+ *    attributes description. eg. name_first=John&name_last=Doe&email_address=…
+ *    * Do not use the API signature format, which uses alphabetical ordering!"
+ *
+ * The order below is the attribute table's order, and it matches the official
+ * PayFast PHP SDK (`PayFast\Auth::generateSignature`, used by
+ * `custom->createFormFields`) and the WooCommerce gateway's `data_to_send`
+ * array verbatim. Signing alphabetically (the API format) is the single most
+ * common cause of a hosted checkout answering
+ * "Generated signature does not match submitted signature".
+ *
+ * Only keys present in the form are used; any form key NOT listed here is
+ * appended after the known ones (in its own insertion order) so a new field can
+ * never be silently dropped from the signature.
+ */
+export const PAYFAST_CHECKOUT_FIELD_ORDER: readonly string[] = [
+  "merchant_id",
+  "merchant_key",
+  "return_url",
+  "cancel_url",
+  "notify_url",
+  "notify_method",
+  "name_first",
+  "name_last",
+  "email_address",
+  "cell_number",
+  "m_payment_id",
+  "amount",
+  "item_name",
+  "item_description",
+  "custom_int1",
+  "custom_int2",
+  "custom_int3",
+  "custom_int4",
+  "custom_int5",
+  "custom_str1",
+  "custom_str2",
+  "custom_str3",
+  "custom_str4",
+  "custom_str5",
+  "email_confirmation",
+  "confirmation_address",
+  "currency",
+  "payment_method",
+  "subscription_type",
+  "billing_date",
+  "recurring_amount",
+  "frequency",
+  "cycles",
+  "subscription_notify_email",
+  "subscription_notify_webhook",
+  "subscription_notify_buyer",
+];
+
+/**
+ * Orders a form's keys the way PayFast's hosted checkout signs them.
+ *
+ * Known fields follow [PAYFAST_CHECKOUT_FIELD_ORDER]; anything unrecognised is
+ * appended in the order it appears in `data`, so the signature and the emitted
+ * form always agree.
+ */
+export function orderCheckoutFields(
+  data: Record<string, string>
+): string[] {
+  const known = PAYFAST_CHECKOUT_FIELD_ORDER.filter((k) => k in data);
+  const extra = Object.keys(data).filter(
+    (k) => !PAYFAST_CHECKOUT_FIELD_ORDER.includes(k)
+  );
+  return [...known, ...extra];
+}
+
+/**
  * Builds the signature source string for the **hosted-checkout form**.
  *
- * PayFast signs the variables in the order they are submitted (see the
- * "Variable order" warning in Step 2 of the PayFast docs: *"The pairs must be
- * listed in the order in which they appear in the attributes description. Do
- * not use the API signature format, which uses alphabetical ordering!"*).
+ * The fields are signed in PayFast's documented attribute order — NOT
+ * alphabetically (see [PAYFAST_CHECKOUT_FIELD_ORDER]). [buildPaymentForm]
+ * emits its fields in this same order, so the submitted order and the signed
+ * order are identical: PayFast recomputes the hash over that fixed order and
+ * would reject any divergence with "Generated signature does not match
+ * submitted signature".
  *
- * [buildPaymentForm] therefore emits its fields in the alphabetically sorted
- * order this function produces, so the submitted order and the signed order are
- * identical. Empty values are dropped (`if($val !== '')` in PayFast's own
- * `generateSignature`) — but `cycles=0` is kept, because `"0" !== ""` in PHP.
- * The `signature` field is excluded; the passphrase (when configured) is
- * appended last.
+ * Blank values are dropped (`if (!empty($value))` in the SDK). `cycles=0` is
+ * kept, because a non-empty `"0"` is not blank (this is a deliberate
+ * divergence from PHP's `empty()`, which would treat the string `"0"` as
+ * empty — see [buildPaymentForm]). The `signature` field is excluded; the
+ * passphrase (when configured) is appended last.
  */
 export function buildSignatureSource(
   data: Record<string, string>,
   passphrase?: string
 ): string {
-  const source = Object.keys(data)
+  const source = orderCheckoutFields(data)
     .filter((k) => k !== "signature" && k !== "passphrase")
     .filter((k) => {
       const v = data[k];
       return v !== undefined && v !== null && String(v).trim() !== "";
     })
-    .sort()
     .map((k) => `${k}=${payfastEncode(String(data[k]))}`)
     .join("&");
   const trimmedPass = (passphrase ?? "").trim();
@@ -180,7 +257,8 @@ export function generateSignature(
  * and excludes only the `signature` field. This mirrors the reference
  * implementation in PayFast's own PHP SDK
  * (`PaymentIntegrations/Notification::dataToString`) and the WooCommerce
- * gateway, which verifies with `sort = false` — *not* the sorted API format.
+ * gateway, which verifies with `sort = false` — *not* the API signature
+ * format, which sorts alphabetically.
  *
  * Empty values are preserved here (unlike the outgoing form) because the ITN
  * contains whatever PayFast sent; dropping one would change the hash.
@@ -203,7 +281,7 @@ export function buildItnSignatureSource(
 /**
  * Generates the MD5 hash PayFast publishes in an ITN's `signature` field.
  * Use [verifyItnSignature] to check one — never compare against
- * [generateSignature], which uses the outgoing-form (sorted) shape.
+ * [generateSignature], which uses the outgoing hosted-checkout order.
  */
 export function generateItnSignature(
   data: Record<string, string>,
@@ -215,10 +293,18 @@ export function generateItnSignature(
 }
 
 /**
- * Verifies an ITN signature against the parameters in the order they were
- * received. Returns false when the notification carries no signature or the
- * recomputed hash does not match (MD5 hashes are public values, so a
- * lower-cased string compare is sufficient — no timing-attack concern).
+ * Verifies an ITN signature. Returns false when the notification carries no
+ * signature or the recomputed hash does not match (MD5 hashes are public
+ * values, so a lower-cased string compare is sufficient — no timing-attack
+ * concern).
+ *
+ * Two orders are attempted, both of which require the passphrase:
+ *   1. the order the parameters arrived in — how PayFast actually signs an ITN
+ *      (SDK `Notification::dataToString`); and
+ *   2. the outgoing hosted-checkout order ([buildSignatureSource]), in case the
+ *      payload was reordered in transit (proxy / runtime normalisation).
+ *
+ * Either way the attacker still needs the passphrase to forge a match.
  */
 export function verifyItnSignature(
   data: Record<string, string>,
@@ -226,15 +312,17 @@ export function verifyItnSignature(
 ): boolean {
   const provided = String(data["signature"] ?? "").toLowerCase();
   if (!provided) return false;
-  return provided === generateItnSignature(data, passphrase);
+  if (provided === generateItnSignature(data, passphrase)) return true;
+  return provided === generateSignature(data, passphrase);
 }
 
 /**
  * Backwards-compatible alias for [verifyItnSignature].
  *
- * The original implementation used the outgoing-form (sorted) algorithm, which
- * never matches a real ITN; keeping the name pointing at the correct ITN
- * verifier means every existing caller is fixed by this change.
+ * The original implementation only tried the outgoing-form order, which does
+ * not match a real ITN; pointing the name at [verifyItnSignature] (received
+ * order first, outgoing order second) means every existing caller is fixed by
+ * this change.
  */
 export function verifySignature(
   data: Record<string, string>,
@@ -342,12 +430,13 @@ export function buildPaymentForm(input: CreatePaymentInput): PaymentForm {
     fields.cycles = String(input.cycles ?? 0);
     fields.recurring_amount = (input.recurringAmount ?? input.amount).toFixed(2);
   }
-  // Emit the fields in the SAME order the signature is computed over (sorted
-  // by key). PayFast signs the variables in the order they are submitted
-  // ("Variable order" — see buildSignatureSource), so the signed order and the
-  // posted order must match or the checkout rejects the signature.
+  // Emit the fields in the SAME order the signature is computed over —
+  // PayFast's documented attribute order (NOT alphabetical; see
+  // PAYFAST_CHECKOUT_FIELD_ORDER). PayFast recomputes the hash over that fixed
+  // order, so the submitted order and the signed order must match or the
+  // checkout rejects the signature.
   const ordered: Record<string, string> = {};
-  for (const key of Object.keys(fields).sort()) {
+  for (const key of orderCheckoutFields(fields)) {
     ordered[key] = fields[key];
   }
   ordered.signature = generateSignature(fields, input.passphrase);
@@ -415,8 +504,8 @@ export interface ItnValidation {
  * catalog. Pure (no Firestore) so it is unit-testable.
  *
  * The signature check uses [verifyItnSignature] — the received-order algorithm
- * PayFast actually publishes in an ITN — NOT the sorted outgoing-form
- * signature produced by [generateSignature].
+ * PayFast actually publishes in an ITN, with the outgoing hosted-checkout
+ * order as a fallback — NOT the alphabetical API signature format.
  */
 export function validateItn(
   params: Record<string, string>,
