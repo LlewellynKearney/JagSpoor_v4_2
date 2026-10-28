@@ -484,3 +484,137 @@ test("the merchant id is public and the key/passphrase come from secrets", () =>
   assert.ok(paramsSrc.includes('defineSecret("PAYFAST_MERCHANT_KEY")'));
   assert.ok(paramsSrc.includes('defineSecret("PAYFAST_PASSPHRASE")'));
 });
+
+// ---------------------------------------------------------------------------
+// 400-diagnosis logging contract
+//
+// A rejected checkout ("Generated signature does not match submitted
+// signature") can only be diagnosed by diffing the exact string we hashed
+// against PayFast's. These lock the diagnostic surface `createPayFastPayment`
+// logs, and prove the logged source is faithful (same fields/order/encoding)
+// and secret-free.
+// ---------------------------------------------------------------------------
+
+test("getLastSignatureSource returns the exact string hashed, passphrase masked", () => {
+  const data = {
+    merchant_id: PAYFAST_MERCHANT_ID,
+    amount: "34.99",
+    item_name: "JagSpoor Hunter Monthly",
+    m_payment_id: "sub_uid-1_hunter_monthly",
+  };
+  const signature = generateSignature(data, "JagSpoor-1983");
+  const logged = svc.getLastSignatureSource();
+
+  assert.ok(logged, "the source is captured for logging");
+  // The real source (passphrase included) hashes to the emitted MD5, so the
+  // masked copy is a faithful transformation of exactly what was hashed.
+  assert.strictEqual(
+    signature,
+    crypto
+      .createHash("md5")
+      .update(logged.replace(/&passphrase=<redacted>$/, "&passphrase=JagSpoor-1983"))
+      .digest("hex")
+  );
+  // Same segments, same order, same encoding as a fresh derivation.
+  assert.strictEqual(
+    logged,
+    `${buildSignatureSource(data, "JagSpoor-1983").replace(
+      /&passphrase=.*$/,
+      "&passphrase=<redacted>"
+    )}`
+  );
+});
+
+test("the logged signature source never leaks the passphrase", () => {
+  const form = buildPaymentForm({
+    userId: "uid-1",
+    role: "hunter",
+    planId: "hunter_monthly",
+    amount: 34.99,
+    recurringAmount: 34.99,
+    frequency: 3,
+    cycles: 0,
+    itemName: "JagSpoor Hunter Monthly",
+    returnUrl: "https://jag-spoor.co.za/subscription/success",
+    cancelUrl: "https://jag-spoor.co.za/subscription/cancel",
+    notifyUrl: "https://us-central1-jagspoor.cloudfunctions.net/payfastNotify",
+    merchantKey: "k",
+    passphrase: "JagSpoor-1983",
+  });
+  const logged = svc.getLastSignatureSource();
+
+  assert.ok(!logged.includes("JagSpoor-1983"), "no passphrase in the log");
+  assert.ok(logged.includes("&passphrase=<redacted>"), "passphrase segment kept");
+  // The signature itself is unchanged by the masking.
+  assert.strictEqual(
+    form.fields.signature,
+    generateSignature(
+      Object.fromEntries(
+        Object.entries(form.fields).filter(([k]) => k !== "signature")
+      ),
+      "JagSpoor-1983"
+    )
+  );
+});
+
+test("redactSignatureSourcePassphrase masks only the tail passphrase segment", () => {
+  assert.strictEqual(
+    svc.redactSignatureSourcePassphrase("a=1&b=2&passphrase=secret"),
+    "a=1&b=2&passphrase=<redacted>"
+  );
+  // A source without a passphrase is returned verbatim.
+  assert.strictEqual(
+    svc.redactSignatureSourcePassphrase("a=1&b=2"),
+    "a=1&b=2"
+  );
+  // Only the LAST segment is masked (a value containing the literal text is
+  // left alone; only the appended passphrase is redacted).
+  assert.strictEqual(
+    svc.redactSignatureSourcePassphrase(
+      "custom_str1=x%26passphrase%3Dv&passphrase=real"
+    ),
+    "custom_str1=x%26passphrase%3Dv&passphrase=<redacted>"
+  );
+});
+
+test("createPayFastPayment logs the full diffable diagnostic payload", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "src", "payfast", "payfast.ts"),
+    "utf8"
+  );
+  // The log call must carry every field needed to diff against PayFast.
+  for (const key of [
+    "signature:",
+    "m_payment_id:",
+    "item_name:",
+    "email:",
+    "merchant_id:",
+    "merchant_key_present:",
+    "passphrase_configured:",
+    "return_url:",
+    "cancel_url:",
+    "notify_url:",
+    "recurring_amount:",
+    "frequency:",
+    "cycles:",
+    "allKeys:",
+    "processUrl:",
+  ]) {
+    assert.ok(
+      src.includes(key),
+      `createPayFastPayment log carries ${key}`
+    );
+  }
+  // The exact string hashed must actually be logged — not a re-derivation and
+  // not a placeholder (the whole point of the diagnostic).
+  assert.ok(
+    src.includes("signatureSource: getLastSignatureSource()"),
+    "the log carries the real pre-MD5 signature source"
+  );
+  // The merchant key VALUE is never logged — only its presence + length.
+  assert.ok(!/merchant_key:\s*form\.fields\.merchant_key/.test(src));
+  // The raw secret is never passed to the logger.
+  assert.ok(!/passphrase:\s*(passphrase|form\.fields)/.test(src));
+});

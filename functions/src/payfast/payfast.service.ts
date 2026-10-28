@@ -105,20 +105,70 @@ export function buildSignatureSource(
     : `${source}&passphrase=${payfastEncode(trimmedPass)}`;
 }
 
+/** Placeholder substituted for the passphrase value in a logged source. */
+export const SIGNATURE_SOURCE_PASSPHRASE_MASK = "<redacted>";
+
+/**
+ * Masks the passphrase at the tail of a signature source string.
+ *
+ * [buildSignatureSource] appends the encoded passphrase as the final
+ * `&passphrase=<value>` segment. That segment is the one part of the source
+ * that must never reach a log, because the passphrase is a Cloud Functions
+ * secret. Everything else is a public form value.
+ *
+ * The masked string stays structurally identical — same fields, same order,
+ * same encoding, same segment count — so it is still diffable against a
+ * recomputed source; only the secret value itself is replaced.
+ */
+export function redactSignatureSourcePassphrase(source: string): string {
+  const marker = "&passphrase=";
+  const idx = source.lastIndexOf(marker);
+  if (idx === -1) return source;
+  return `${source.slice(0, idx)}${marker}${SIGNATURE_SOURCE_PASSPHRASE_MASK}`;
+}
+
+/**
+ * The signature source string hashed by the most recent [generateSignature]
+ * call, with the passphrase value masked — see
+ * [redactSignatureSourcePassphrase].
+ *
+ * A rejected checkout can only be diagnosed by diffing the string we hashed
+ * against the one PayFast recomputes, because PayFast answers a bad MD5 with a
+ * generic "Generated signature does not match submitted signature" and never
+ * echoes its own source. This is the string that was actually hashed (not a
+ * re-derivation from the emitted form), so it is the authoritative value to
+ * compare.
+ *
+ * The MD5 is a public value (it travels in the form), so logging the hash is
+ * safe; the passphrase is the only secret in the source and is masked.
+ */
+let lastSignatureSource: string | null = null;
+
+/**
+ * The signature source string hashed by the most recent [generateSignature],
+ * passphrase masked. Returns null before the first call.
+ */
+export function getLastSignatureSource(): string | null {
+  return lastSignatureSource;
+}
+
 /**
  * Generates the PayFast MD5 signature for a hosted-checkout form:
  *   md5( urlencoded query string [&passphrase=<passphrase>] )
  *
  * The passphrase is only appended when one is configured (PayFast allows
  * signing without a passphrase, but subscriptions require one).
+ *
+ * The source string is cached (passphrase masked) so `createPayFastPayment`
+ * can log exactly what was hashed — see [getLastSignatureSource].
  */
 export function generateSignature(
   data: Record<string, string>,
   passphrase?: string
 ): string {
-  return createHash("md5")
-    .update(buildSignatureSource(data, passphrase))
-    .digest("hex");
+  const source = buildSignatureSource(data, passphrase);
+  lastSignatureSource = redactSignatureSourcePassphrase(source);
+  return createHash("md5").update(source).digest("hex");
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   merchantKeyFromEnv,
   passphraseFromEnv,
   isSandbox,
+  getLastSignatureSource,
 } from "./payfast.service";
 import {
   PAYFAST_PLAN_CATALOG,
@@ -151,21 +152,46 @@ export const createPayFastPayment = onCall(
       alternativeBilling: data.alternativeBilling === true,
     });
 
+    // Diagnostic logging for the PayFast "Generated signature does not match
+    // submitted signature" 400. PayFast never echoes the string it hashed, so
+    // the only way to diff a rejected checkout is to log the exact signature
+    // source we hashed (`signatureSource`) alongside the emitted field values
+    // and the MD5.
+    //
+    // Nothing server-only is exposed: every field value here is one the browser
+    // already posts to PayFast (including `merchant_key`, which is a form field
+    // — only its presence + length are called out separately for a quick scan),
+    // and `signatureSource` masks the passphrase, the one value that never
+    // leaves the server.
     logger.info("createPayFastPayment: form built", {
       uid,
       planId: plan.planId,
       amount: plan.amountZar,
-      recurringAmount: form.fields.recurring_amount,
+      signature: form.fields.signature,
+      // The exact pre-MD5 string (urlencoded, sorted, passphrase appended).
+      signatureSource: getLastSignatureSource(),
+      m_payment_id: form.fields.m_payment_id,
+      item_name: form.fields.item_name,
+      email: form.fields.email_address,
+      merchant_id: form.fields.merchant_id,
+      merchant_key_present: !!form.fields.merchant_key,
+      merchant_key_len: form.fields.merchant_key.length,
+      passphrase_configured: (passphrase ?? "").length > 0,
+      passphrase_len: (passphrase ?? "").length,
+      return_url: form.fields.return_url,
+      cancel_url: form.fields.cancel_url,
+      notify_url: form.fields.notify_url,
+      recurring_amount: form.fields.recurring_amount,
       frequency: form.fields.frequency,
       cycles: form.fields.cycles,
+      custom_str1: form.fields.custom_str1,
+      custom_str2: form.fields.custom_str2,
+      custom_str3: form.fields.custom_str3,
+      custom_str4: form.fields.custom_str4,
+      allKeys: Object.keys(form.fields).sort().join(","),
       processUrl: form.processUrl,
-      merchantPaymentId: form.merchantPaymentId,
       sandbox: isSandbox(),
       alternativeBilling: data.alternativeBilling === true,
-      // The MD5 is a public value (it travels in the form), so logging it is
-      // safe and is the quickest way to diff a rejected checkout against the
-      // "Generated signature does not match submitted signature" 400.
-      signature: form.fields.signature,
     });
 
     return {
