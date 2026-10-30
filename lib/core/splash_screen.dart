@@ -6,6 +6,7 @@ import '../features/auth/auth_screen.dart';
 import '../features/auth/screens/email_verification_screen.dart';
 import '../features/auth/services/email_verification_policy.dart';
 import '../features/auth/services/user_role_provider.dart';
+import '../features/auth/services/auth_repository.dart';
 import '../features/hunter_mode/hunter_profile_screen.dart';
 import '../features/hunter_mode/services/hunter_profile_completeness.dart';
 import '../features/subscription/services/subscription_status_service.dart';
@@ -177,6 +178,15 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Resolve the role once here (cached for the route guards / dashboards).
     final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+
+    // Profile-document self-heal: guarantee `users/{uid}` exists (and carries
+    // the account email) before boot routing. An account whose document never
+    // landed would otherwise have nowhere to store a role and would be bounced
+    // through role selection on every launch. Best-effort — never blocks boot.
+    await AuthRepository.instance.ensureUserDocument(
+      uid: user.uid,
+      email: user.email,
+    );
 
     // Schema-migration (TODO #5): backfill the missing trial field aliases for
     // accounts created by the other historical signup path

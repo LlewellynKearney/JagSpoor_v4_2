@@ -1,6 +1,149 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: role selection not persisting + server-side admin KPIs + Shorebird OTA (v21 prep) (added 2026-10-30)
+
+Branch `main` (base `ad94378`). Three coordinated items; version deliberately
+left at `4.2.20+20` (no bump) per the brief.
+
+### P1 -- Role selection now persists (the P0 onboarding break)
+Symptom: 9 of 25 registered accounts had no `role` on `users/{uid}` and were
+sent back to "Select Operational Profile" on every sign-in.
+
+- **NEW `lib/features/auth/services/auth_repository.dart`** -- the single owner
+  of the `users/{uid}` role contract. `roleFromUserDocument(Map)` (pure:
+  admin -> dual via `isDualRole` / a `roles` array holding both / the `dual`
+  shorthand -> hunter/outfitter -> unknown), `storedRole(uid)`,
+  `saveRole(...)`, `hasRole(uid)`, `ensureUserDocument({uid, email})`.
+  `saveRole` writes `role`, `roleSelectedAt`, `onboardingCompleted: true`,
+  `updatedAt` with `SetOptions(merge: true)` and then **reads the role back**;
+  a write that did not land throws `RolePersistenceException` instead of
+  leaving the account silently stuck. Seams: `firestoreForTesting`,
+  `roleReadbackForTesting`, `currentUserForTesting` (+ `resetTestSeams`);
+  `currentUid` / `currentEmail` resolve `FirebaseAuth` inside a try so a call
+  before `Firebase.initializeApp()` returns null instead of throwing.
+- `role_selection_screen.dart`: `_confirmAndSelectRole` now runs
+  `ensureUserDocument` (a missing doc was the other half of the defect) then
+  `saveRole`, logs the `role_selected` analytics event (best-effort), caches
+  `UserRoleProvider.setRole(...)` so the destination route guard admits the
+  user immediately, and navigates. New `_saving` double-tap guard, plus
+  `_skipIfRoleAlreadyAssigned()` -- direct-entry / deep-link defense that
+  bounces a role-bearing account straight to its dashboard and never races an
+  in-flight selection. The screen no longer imports `firebase_auth` directly.
+- `auth_screen.dart` + `splash_screen.dart` already resolved the role once and
+  skipped selection; the repository now backs both.
+
+### P2 -- Admin Portal KPIs are server-side
+- **NEW `functions/src/admin/kpis.ts`** -- `getAdminPortalKpis`, an admin-only
+  callable (us-central1). Authorization mirrors `isAdmin()` in
+  `firestore.rules` (custom claim -> email allow-list -> `users/{uid}.role`).
+  Bounded paged scans (`SCAN_PAGE_SIZE` 500, cap 20000) that return a partial
+  result rather than failing; `auth().listUsers` for the Auth-user count.
+  Pure helpers exported for node:test: `platformOf`, `isActiveSubscription`,
+  `tierOf`, `bookingRevenueOf`, `bookingDateOf`, `aggregateUserKpis`,
+  `aggregateBookingKpis`, `computeMrr`, `pricingFromConfig`, `resolveInstalls`,
+  `isAdminRequest`. Returns installs (a real `installs` collection when
+  populated, else the registered-account proxy, labelled via `installsSource`),
+  subscribers split Play vs PayFast, hunters, outfitters (union of
+  `users.role == 'outfitter'` and the `outfitters` collection, so no double
+  count), packages, listed packages, active/completed bookings, trophies and
+  the daily/weekly/monthly/yearly revenue windows + MRR/ARR. **Money is
+  rounded to cents** (`Math.round(x * 100) / 100`) -- unrounded, 14 x 34.99 +
+  2 x 299.99 is `1089.8400000000001`.
+- Exported from `functions/src/index.ts`.
+- **NEW `lib/features/admin/services/admin_kpi_service.dart`** --
+  `AdminPortalKpis.fromMap` (every field defaulted so a partial/older payload
+  still renders) + `AdminKpiService.fetchKpis({forceRefresh})`, which calls the
+  callable over HTTPS with the caller's ID token (the
+  `EntitlementService.verifyGooglePlayPurchase` pattern -- no extra plugin, so
+  the native builds are untouched) and returns an `AdminKpiResult` carrying
+  `fromServer` + an `error` so the UI can label local fallbacks honestly.
+- `admin_dashboard_screen.dart`: new KPI cards (Total Installs, Total
+  Subscribers, PayFast Subscribers, Google Subscribers, Total Packages) beside
+  the existing ones, a provenance note ("Live KPIs from the server ..." vs
+  "Local estimates -- ..."), a `RefreshIndicator` whose pull calls
+  `_bootstrap(forceRefreshKpis: true)`, and the subscription-revenue card now
+  prefers the server MRR / ARR / subscriber mix (its caption uses the server's
+  amounts too, so the arithmetic matches the MRR row).
+
+### P3 -- Shorebird OTA (ready for v22+, inert in normal builds)
+- `pubspec.yaml`: `shorebird_code_push: ^2.0.7` (resolves 2.0.7; the only
+  lockfile change).
+- **NEW `lib/core/services/shorebird_ota_service.dart`** -- `isAvailable`
+  (false for every `flutter build` / `flutter run` artifact and for web),
+  `currentPatchNumber()`, `checkAndDownload()` and `scheduleStartupCheck()`.
+  Every call is bounded by a timeout and swallows failures, because
+  `checkForUpdate()` is a long network call and awaiting it during startup is
+  the documented way to leave the user stuck on the splash. Seams:
+  `updaterForTesting`, `availableForTesting`, `resetTestSeams`.
+- `main.dart`: `scheduleStartupCheck()` inside the existing
+  `addPostFrameCallback`, so it can never delay the first frame.
+- **NEW `shorebird.yaml`** with an `app_id` placeholder and the
+  `shorebird init` instructions -- nothing in the `flutter build` path reads
+  it, so the placeholder does not affect a build.
+
+### Verification (this sandbox)
+- `cd functions && npm run build` (tsc): clean; `npm test`: **173/173 pass**.
+- `flutter analyze` (Flutter 3.44.9, the CI pin): **0 errors, 0 warnings**;
+  323 info-level issues, all pre-existing (the only one in a touched file is
+  the `withOpacity` at `role_selection_screen.dart:328`, already at HEAD).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2378 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape; the trigger is v2 `onUserCreated`). Proven pre-existing by stashing
+  every change (`git stash -u`) and re-running that file at clean HEAD:
+  identical failure. +18 vs the 2360 baseline (5 role-selection widget + 12
+  Shorebird + 1 net).
+- New tests: `test/role_selection_screen_test.dart` (5 widget -- the
+  persistence contract, the role-bearing bounce, dual-role routing, signed-out
+  no-op), `test/shorebird_ota_service_test.dart` (12),
+  `test/auth_role_persistence_test.dart`, `test/admin_kpi_service_test.dart`
+  (11), `functions/test/admin_kpis.test.js`. The 12 related suites re-run
+  green (**185/185**).
+- Env: Flutter 3.44.9 at `$HOME/sdk/flutter`; the `~/libs/libsqlite3.so ->
+  /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink +
+  `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites.
+
+### Incidental hardening
+- `AdminAuthGuard` eagerly resolved `FirebaseAuth.instance` /
+  `FirebaseFirestore.instance` in field initializers, which throws
+  `[core/no-app]` when the guard is touched before `Firebase.initializeApp()`
+  (cold-launch race, widget test). Converted to lazy getters (the established
+  project pattern) and wrapped the `currentUser` read in a try/catch; added
+  `currentUserForTesting` / `adminOverrideForTesting` / `resetTestSeams`.
+
+### ⚠️ NOT deployed -- no Firebase credentials in this sandbox
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only functions:getAdminPortalKpis --project=jagspoor
+```
+And for Shorebird (needs a Shorebird account):
+```
+shorebird init            # writes the real app_id into shorebird.yaml
+shorebird release android # a build carrying the Shorebird engine
+shorebird patch android   # a Dart-only patch, no Play review
+```
+Until `getAdminPortalKpis` is deployed the portal falls back to the local
+aggregation and labels it "Local estimates". No Firestore rules / index /
+Storage / manifest changes: the callable uses the Admin SDK (bypasses rules)
+and reads only collections the rules already expose to an admin.
+
+### Files
+- NEW: `lib/features/auth/services/auth_repository.dart`,
+  `lib/features/admin/services/admin_kpi_service.dart`,
+  `lib/core/services/shorebird_ota_service.dart`,
+  `functions/src/admin/kpis.ts`, `functions/test/admin_kpis.test.js`,
+  `shorebird.yaml`, `test/auth_role_persistence_test.dart`,
+  `test/admin_kpi_service_test.dart`,
+  `test/role_selection_screen_test.dart`,
+  `test/shorebird_ota_service_test.dart`.
+- MODIFIED: `lib/features/auth/role_selection_screen.dart`,
+  `lib/features/auth/auth_screen.dart`, `lib/core/splash_screen.dart`,
+  `lib/features/admin/screens/admin_dashboard_screen.dart`,
+  `lib/features/admin/services/admin_auth_guard.dart`, `lib/main.dart`,
+  `functions/src/index.ts`, `pubspec.yaml`, `pubspec.lock`, `AGENTS.md`.
+
+
 ## CHORE: version bump 1.0.16+19 -> 4.2.20+20 (versionCode 20) for the Play Store re-upload (added 2026-10-28)
 
 Branch `main` (base `8dcf9bc`).

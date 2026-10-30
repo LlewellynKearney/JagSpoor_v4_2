@@ -33,6 +33,12 @@ dependencies:
   # Image processing for model input preparation
   image: ^4.1.3
 
+  # Over-the-air Dart-code updates (Shorebird Code Push). Lets a Dart-only fix
+  # ship without a Play Store review round-trip — useful for the v22+ patch
+  # cadence. The updater is a no-op in `flutter build` / `flutter run` builds
+  # (it reports `isAvailable == false`), so normal builds are unaffected.
+  shorebird_code_push: ^2.0.7
+
   # Core localization, formatting, and South African document parsing
   intl: ^0.20.2
 

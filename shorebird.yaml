@@ -1,0 +1,15 @@
+# Shorebird Code Push configuration.
+#
+# The `app_id` below is the Shorebird project identifier. It is created by
+# running:
+#
+#     shorebird init
+#
+# in the project root, which also registers the app with the Shorebird
+# backend. Replace REPLACE_WITH_SHOREBIRD_APP_ID with the id it prints, then
+# commit this file — `shorebird release` / `shorebird patch` read it.
+#
+# Nothing in the normal `flutter build` / `flutter run` path consumes this
+# file, so a build works with the placeholder in place; only the Shorebird CLI
+# needs the real value.
+app_id: REPLACE_WITH_SHOREBIRD_APP_ID

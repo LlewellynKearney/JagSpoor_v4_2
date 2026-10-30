@@ -21,6 +21,7 @@ import 'services/password_reset_action_code_settings.dart';
 import 'services/password_reset_cooldown.dart';
 import 'services/autofill_credential_prompter.dart';
 import 'services/device_fingerprint_service.dart';
+import 'services/auth_repository.dart';
 import '../subscription/services/subscription_status_service.dart';
 import '../referral/services/referral_repository.dart';
 
@@ -253,6 +254,19 @@ class _AuthScreenState extends State<AuthScreen> {
     // the user without a re-fetch.
     final role =
         await UserRoleProvider.instance.resolveRole(forceRefresh: true);
+
+    // Profile-document self-heal: guarantee `users/{uid}` exists (and carries
+    // the account email) before routing. An account whose document never
+    // landed would otherwise have nowhere to store a role and would be bounced
+    // through role selection forever. Best-effort — a failure is logged inside
+    // the repository and never blocks the route.
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      await AuthRepository.instance.ensureUserDocument(
+        uid: currentUser.uid,
+        email: currentUser.email,
+      );
+    }
 
     // Schema-migration (TODO #5): the two historical signup paths wrote
     // different trial field layouts (`trialEndsAt` vs

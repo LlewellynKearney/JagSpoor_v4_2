@@ -141,6 +141,36 @@ export {
 } from "./payfast/payfast.service";
 
 // ────────────────────────────────────────────────────────────────────────────
+// Admin Portal KPIs — server-side aggregation for the master admin dashboard.
+// The client calls `getAdminPortalKpis`; the function enforces the same admin
+// check as `isAdmin()` in firestore.rules and returns one aggregate payload
+// (see admin/kpis.ts).
+// ────────────────────────────────────────────────────────────────────────────
+export {
+  getAdminPortalKpis,
+  ADMIN_EMAIL_ALLOW_LIST,
+  USERS_COLLECTION,
+  OUTFITTERS_COLLECTION,
+  PACKAGES_COLLECTION,
+  BOOKINGS_COLLECTION,
+  TROPHY_STOCK_COLLECTION,
+  INSTALLS_COLLECTION,
+  ACTIVE_BOOKING_STATUSES,
+  COMPLETED_BOOKING_STATUSES,
+  EARNED_BOOKING_STATUSES,
+  platformOf as kpiPlatformOf,
+  isActiveSubscription,
+  tierOf as kpiTierOf,
+  bookingRevenueOf,
+  aggregateUserKpis,
+  aggregateBookingKpis,
+  computeMrr,
+  pricingFromConfig,
+  resolveInstalls,
+  isAdminRequest,
+} from "./admin/kpis";
+
+// ────────────────────────────────────────────────────────────────────────────
 // 1. Admin: create outfitter account + document + custom claims
 // ────────────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Admin authorization guard.
 ///
@@ -20,8 +21,24 @@ class AdminAuthGuard {
   AdminAuthGuard._();
   static final AdminAuthGuard instance = AdminAuthGuard._();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  // Lazy getters: resolving `FirebaseAuth.instance` eagerly in a field
+  // initializer throws `[core/no-app]` when the singleton is touched before
+  // `Firebase.initializeApp()` (cold-launch race / widget test).
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+
+  /// Test seams: overrides for the signed-in identity and the admin status
+  /// resolution, so the guard is exercisable without a Firebase app.
+  @visibleForTesting
+  static ({String uid, String? email})? currentUserForTesting;
+  @visibleForTesting
+  static bool? adminOverrideForTesting;
+
+  @visibleForTesting
+  static void resetTestSeams() {
+    currentUserForTesting = null;
+    adminOverrideForTesting = null;
+  }
 
   bool? _cached;
   DateTime? _resolvedAt;
@@ -35,7 +52,20 @@ class AdminAuthGuard {
 
   /// Returns `true` when the current user is a platform admin.
   Future<bool> isCurrentUserAdmin({bool forceRefresh = false}) async {
-    final user = _auth.currentUser;
+    final override = adminOverrideForTesting;
+    if (override != null) {
+      _cached = override;
+      _resolvedAt = DateTime.now();
+      return override;
+    }
+
+    final User? user;
+    try {
+      user = _auth.currentUser;
+    } catch (e) {
+      debugPrint('AdminAuthGuard: FirebaseAuth unavailable: $e');
+      return false;
+    }
     if (user == null) return false;
 
     // Short-circuit on the bootstrap admin allow-list (by email).

@@ -34,6 +34,7 @@ import 'core/utils/measurement_formatter.dart';
 import 'features/review/services/review_service.dart';
 import 'features/subscription/services/play_billing_service.dart';
 import 'features/subscription/services/play_purchase_recorder.dart';
+import 'core/services/shorebird_ota_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -214,6 +215,11 @@ Future<void> main() async {
     // reference data is populated once per schema version. Bump the version
     // constants to re-run a seed after a data change.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Over-the-air Dart-code update check (Shorebird Code Push). Scheduled
+      // after the first frame so the network call can never delay the splash;
+      // it is a no-op in any build without the Shorebird engine.
+      ShorebirdOtaService.instance.scheduleStartupCheck();
+
       final prefs = await SharedPreferences.getInstance();
 
       // --- Ballistics reference-data seed (version-gated) ---

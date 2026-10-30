@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../core/theme/app_theme.dart';
 import '../admin/services/admin_auth_guard.dart';
 import '../hunter_mode/hunter_profile_screen.dart';
 import '../hunter_mode/services/hunter_profile_completeness.dart';
+import 'services/auth_repository.dart';
+import 'services/role_guard.dart';
 import 'services/user_role_provider.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
@@ -18,10 +21,39 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   bool _isAdmin = false;
   bool _resolving = true;
 
+  /// Guards against a double-tap issuing two role writes / two navigations.
+  bool _saving = false;
+
   @override
   void initState() {
     super.initState();
     _resolveAdmin();
+    _skipIfRoleAlreadyAssigned();
+  }
+
+  /// Defense-in-depth for direct route entry / a stale navigation stack: if
+  /// the account already carries a permanent role, bounce straight to the
+  /// matching dashboard instead of asking again. Post-auth routing normally
+  /// prevents this screen from being reached at all for a role-bearing
+  /// account; this covers a deep link or a route pushed before the role
+  /// resolved.
+  Future<void> _skipIfRoleAlreadyAssigned() async {
+    try {
+      // Never race an in-flight selection: once the user has confirmed a role
+      // their own write + navigation owns the outcome.
+      if (_saving) return;
+      final uid = AuthRepository.instance.currentUid;
+      if (uid == null) return;
+      final role = await AuthRepository.instance.storedRole(uid);
+      if (!mounted || _saving) return;
+      if (role == AppRole.unknown || role == AppRole.admin) return;
+      final route = RoleGuard.defaultHomeFor(role);
+      if (route.isEmpty) return;
+      UserRoleProvider.instance.setRole(role);
+      Navigator.pushReplacementNamed(context, route);
+    } catch (e) {
+      debugPrint('RoleSelectionScreen: role skip check failed: $e');
+    }
   }
 
   Future<void> _resolveAdmin() async {
@@ -40,8 +72,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   /// they are routed straight into the requested mode as a multi-profile
   /// preview. Regular accounts see the exclusivity warning and, on confirm,
   /// have their chosen role locked in to Firestore before navigating.
-  Future<void> _confirmAndSelectRole(
-      {required String role, required String routeName}) async {
+  ///
+  /// The write is VERIFIED (see [AuthRepository.saveRole]): a role that does
+  /// not actually land leaves the account role-less and bounces the user back
+  /// here on every sign-in, so a failure surfaces an error snackbar and keeps
+  /// the user on this screen to retry rather than navigating onward.
+  Future<void> _confirmAndSelectRole({
+    required String role,
+    required String routeName,
+  }) async {
+    if (_saving) return;
+
     // Resolve admin status authoritatively before deciding on the bypass —
     // the `_isAdmin` UI flag is still `false` while the initial async
     // resolution is in flight, so a tap during that window must re-check.
@@ -58,26 +99,53 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       return;
     }
 
+    final uid = AuthRepository.instance.currentUid;
+    if (uid == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You must be signed in to select a role.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await _showRoleExclusivityDialog(role) ?? false;
     if (!confirmed || !mounted) return;
 
-    // Persist the role choice so it is locked in (single-role accounts).
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .set({
-          'role': role,
-          'roleSetAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } catch (_) {
-        // Non-fatal: proceed to the dashboard even if the role write fails
-        // (e.g. offline). The selection still navigates the user onward.
-      }
+    setState(() => _saving = true);
+
+    // Make sure the profile document exists before the role is written to it.
+    // A missing document is the other half of the reported defect: 9 of 25
+    // registered users had no role because nothing guaranteed the doc.
+    await AuthRepository.instance.ensureUserDocument(
+      uid: uid,
+      email: AuthRepository.instance.currentEmail,
+    );
+
+    // Persist the role choice and VERIFY it landed. A silent failure here is
+    // exactly what left accounts stuck on this screen on every sign-in.
+    try {
+      await AuthRepository.instance.saveRole(uid: uid, role: role);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save your role: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      return;
     }
+
+    // Analytics: record the completed selection (best-effort — never blocks
+    // onboarding if the plugin / Firebase Analytics is unavailable).
+    unawaited(_logRoleSelected(role));
 
     // Cache the chosen role so the destination dashboard's route guard admits
     // the user without a re-fetch (the Firestore write above may not be
@@ -89,13 +157,14 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     // Mandatory onboarding gate for hunters: a brand-new hunter has no
     // profile yet, so redirect them to the Hunter Profile screen to
     // complete Name / Surname / contact before reaching the dashboard.
-    if (role == 'hunter' && uid != null) {
-      final status =
-          await HunterProfileCompleteness.instance.statusFor(uid);
+    if (role == 'hunter') {
+      final status = await HunterProfileCompleteness.instance.statusFor(uid);
       if (!status.isComplete && mounted) {
+        setState(() => _saving = false);
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
-            builder: (_) => HunterProfileScreen(theme: ThemeController.instance),
+            builder: (_) =>
+                HunterProfileScreen(theme: ThemeController.instance),
           ),
           (_) => false,
         );
@@ -104,7 +173,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
 
     if (!mounted) return;
+    setState(() => _saving = false);
     Navigator.pushReplacementNamed(context, routeName);
+  }
+
+  /// Logs the `role_selected` analytics event. Best-effort: a missing Firebase
+  /// app (`[core/no-app]` in a widget test / cold-launch race) is swallowed.
+  Future<void> _logRoleSelected(String role) async {
+    try {
+      await FirebaseAnalytics.instance.logEvent(
+        name: 'role_selected',
+        parameters: {'role': role},
+      );
+    } catch (e) {
+      debugPrint('RoleSelectionScreen: role_selected log failed: $e');
+    }
   }
 
   Future<bool?> _showRoleExclusivityDialog(String role) {

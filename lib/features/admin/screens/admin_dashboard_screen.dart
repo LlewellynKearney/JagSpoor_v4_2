@@ -8,6 +8,7 @@ import '../../subscription/services/play_billing_service.dart';
 import '../../subscription/services/subscription_pricing.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
+import '../services/admin_kpi_service.dart';
 import '../services/media_storage_analytics.dart';
 import '../services/subscription_config_service.dart';
 import '../services/usage_analytics_service.dart';
@@ -47,6 +48,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   UsageAnalytics _usage = const UsageAnalytics(byRole: {});
   SubscriptionRevenue? _subscriptionRevenue;
   MediaStorageAnalytics? _mediaAnalytics;
+
+  /// Server-computed KPIs from `getAdminPortalKpis` (null when the callable
+  /// was unreachable — the dashboard then renders the locally computed
+  /// figures and shows a "local estimates" note).
+  AdminPortalKpis? _kpis;
+  String? _kpiError;
   final TextEditingController _hunterSubController = TextEditingController();
   final TextEditingController _outfitterSubController = TextEditingController();
   bool _savingConfig = false;
@@ -72,7 +79,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _bootstrap();
   }
 
-  Future<void> _bootstrap() async {
+  Future<void> _bootstrap({bool forceRefreshKpis = false}) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -110,6 +117,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
         _loading = false;
       });
+      // Server-side KPIs — the authoritative figures. Fetched after the local
+      // metrics so the portal paints immediately and the numbers upgrade in
+      // place when the callable answers.
+      unawaited(_loadKpis(forceRefresh: forceRefreshKpis));
       // Compare the live Play Console prices against the admin-configured
       // prices and surface a mismatch banner (the store is the charge truth).
       unawaited(_checkPriceDivergence(config));
@@ -120,6 +131,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       });
     }
   }
+
+  /// Loads the server-computed KPIs from `getAdminPortalKpis`.
+  ///
+  /// Best-effort: a failure records [_kpiError] so the dashboard can label the
+  /// locally computed figures as estimates instead of pretending they are
+  /// authoritative.
+  Future<void> _loadKpis({bool forceRefresh = false}) async {
+    final result =
+        await AdminKpiService.instance.fetchKpis(forceRefresh: forceRefresh);
+    if (!mounted) return;
+    setState(() {
+      _kpis = result.kpis;
+      _kpiError = result.fromServer ? null : result.error;
+    });
+  }
+
+  /// Pull-to-refresh: reloads everything and asks the server to bypass any
+  /// cached KPI payload.
+  Future<void> _refreshAll() => _bootstrap(forceRefreshKpis: true);
 
   /// Fetches the live Play catalog prices and reconciles each against the
   /// admin-configured `admin_config/pricing` amount under the Option A
@@ -218,7 +248,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh_rounded),
                 tooltip: 'Refresh',
-                onPressed: _bootstrap,
+                onPressed: _refreshAll,
               ),
               IconButton(
                 icon: const Icon(Icons.logout_rounded),
@@ -236,7 +266,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               : _error != null
                   ? _buildError()
                   : RefreshIndicator(
-                      onRefresh: _bootstrap,
+                      onRefresh: _refreshAll,
                       child: WebLayout.responsive(
                         // Centred, max-width container on desktop so the admin
                         // analytics sections don't stretch edge-to-edge on a
@@ -252,6 +282,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           ),
                           _buildSectionHeader('Entity Overview'),
                           _buildEntityGrid(),
+                          _buildKpiSourceNote(),
                           const SizedBox(height: 24),
                           _buildSectionHeader('Financial Analytics (ZAR)'),
                           _buildFinancialSection(),
@@ -331,6 +362,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // ── Entity Overview ──────────────────────────────────────────────────────
   Widget _buildEntityGrid() {
     final m = _metrics!;
+    final kpis = _kpis;
+    // Prefer the server-computed figures (authoritative); fall back to the
+    // locally aggregated metrics when the callable was unreachable.
+    final outfitters = kpis?.totalOutfitters ?? m.totalOutfitters;
+    final hunters = kpis?.totalHunters ?? m.activeHunters;
+    final listed = kpis?.listedPackages ?? m.listedPackages;
+    final bookings = kpis?.activeBookings ?? m.activeBookings;
+    final trophies = kpis?.totalTrophies ?? m.totalTrophies;
+    final users = kpis?.registeredUsers ?? m.registeredUsers;
+    final installs = kpis?.totalInstalls;
+    final totalSubs = kpis?.totalSubscribers;
+    final payfastSubs = kpis?.payfastSubscribers;
+    final googleSubs = kpis?.googleSubscribers;
+    final packages = kpis?.totalPackages;
+
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -339,17 +385,60 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       mainAxisSpacing: 12,
       childAspectRatio: 1.4,
       children: [
-        _metricCard(Icons.business, 'Outfitters', m.totalOutfitters),
-        _metricCard(Icons.person_outline, 'Active Hunters', m.activeHunters),
-        _metricCard(Icons.inventory_2_outlined, 'Listed Packages', m.listedPackages),
-        _metricCard(Icons.book_online_rounded, 'Active Bookings', m.activeBookings),
-        _metricCard(Icons.emoji_events_outlined, 'Total Trophies', m.totalTrophies),
-        _metricCard(Icons.groups_outlined, 'Registered Users', m.registeredUsers),
+        _metricCard(Icons.business, 'Outfitters', outfitters),
+        _metricCard(Icons.person_outline, 'Hunters', hunters),
+        _metricCard(Icons.groups_outlined, 'Registered Users', users),
+        _metricCard(
+          Icons.download_for_offline_outlined,
+          'Total Installs',
+          installs,
+        ),
+        _metricCard(Icons.card_membership, 'Total Subscribers', totalSubs),
+        _metricCard(Icons.account_balance_wallet_outlined,
+            'PayFast Subscribers', payfastSubs),
+        _metricCard(Icons.play_circle_outline, 'Google Subscribers', googleSubs),
+        _metricCard(Icons.inventory_2_outlined, 'Total Packages', packages),
+        _metricCard(Icons.visibility_outlined, 'Listed Packages', listed),
+        _metricCard(Icons.book_online_rounded, 'Active Bookings', bookings),
+        _metricCard(Icons.emoji_events_outlined, 'Total Trophies', trophies),
       ],
     );
   }
 
-  Widget _metricCard(IconData icon, String label, int value) {
+  /// The "server / local" provenance note shown under the Entity Overview.
+  Widget _buildKpiSourceNote() {
+    final kpis = _kpis;
+    final fromServer = kpis != null;
+    final color = fromServer ? Colors.green : Colors.orange;
+    final label = fromServer
+        ? (kpis.installsMeasured
+            ? 'Live KPIs from the server (installs measured)'
+            : 'Live KPIs from the server (installs = registered accounts)')
+        : 'Local estimates — ${_kpiError ?? 'server KPIs unavailable'}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(
+            fromServer ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: color, fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A metric card. A `null` value renders a dash (the figure is not
+  /// available) rather than a misleading 0.
+  Widget _metricCard(IconData icon, String label, int? value) {
     return Container(
       decoration: BoxDecoration(
         color: widget.theme.cardColor,
@@ -377,7 +466,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ],
           ),
           Text(
-            _formatCount(value),
+            value == null ? '—' : _formatCount(value),
             style: TextStyle(
               color: widget.theme.textColor,
               fontWeight: FontWeight.bold,
@@ -392,12 +481,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // ── Financial Analytics ─────────────────────────────────────────────────
   Widget _buildFinancialSection() {
     final f = _financials!;
+    // Prefer the server-computed revenue windows; fall back to the locally
+    // summed periods when the KPI callable was unreachable.
+    final kpis = _kpis;
+    final daily = kpis?.dailyRevenue ?? f.daily.grossBookingRevenue;
+    final weekly = kpis?.weeklyRevenue ?? f.weekly.grossBookingRevenue;
+    final monthly = kpis?.monthlyRevenue ?? f.monthly.grossBookingRevenue;
+    final yearly = kpis?.yearlyRevenue ?? f.yearly.grossBookingRevenue;
     return Column(
       children: [
-        _financialRow(f.daily),
-        _financialRow(f.weekly),
-        _financialRow(f.monthly),
-        _financialRow(f.yearly),
+        _financialRow(FinancialPeriod(
+            label: f.daily.label, grossBookingRevenue: daily)),
+        _financialRow(FinancialPeriod(
+            label: f.weekly.label, grossBookingRevenue: weekly)),
+        _financialRow(FinancialPeriod(
+            label: f.monthly.label, grossBookingRevenue: monthly)),
+        _financialRow(FinancialPeriod(
+            label: f.yearly.label, grossBookingRevenue: yearly)),
       ],
     );
   }
@@ -580,6 +680,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildSubscriptionRevenueCard() {
     final revenue = _subscriptionRevenue;
     if (revenue == null) return const SizedBox.shrink();
+    // Prefer the server-computed MRR / subscriber counts (they cover accounts
+    // the client cannot enumerate); fall back to the locally derived figures.
+    final kpis = _kpis;
+    final mrr = kpis?.mrr ?? revenue.monthlyRecurringRevenue;
+    final arr = kpis?.arr ?? revenue.annualProjection;
+    final daily = kpis == null ? revenue.dailyEstimate : kpis.mrr / 30.0;
+    final weekly = kpis == null ? revenue.weeklyEstimate : kpis.mrr / 30.0 * 7.0;
+    final hunterCount = kpis?.hunterSubscribers ?? revenue.hunterCount;
+    final outfitterCount = kpis?.outfitterSubscribers ?? revenue.outfitterCount;
+    // Use the server's amounts when the server supplied the counts, so the
+    // caption's arithmetic matches the MRR row above it.
+    final hunterPrice =
+        kpis?.hunterPrice ?? revenue.config.hunterSubscriptionZAR;
+    final outfitterPrice =
+        kpis?.outfitterPrice ?? revenue.config.outfitterSubscriptionZAR;
     return Card(
       color: widget.theme.cardColor,
       elevation: 0,
@@ -592,18 +707,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _subscriptionRow('MRR', revenue.monthlyRecurringRevenue),
-            _subscriptionRow(
-                'Daily estimate', revenue.dailyEstimate),
-            _subscriptionRow(
-                'Weekly estimate', revenue.weeklyEstimate),
-            _subscriptionRow('ARR', revenue.annualProjection),
+            _subscriptionRow('MRR', mrr),
+            _subscriptionRow('Daily estimate', daily),
+            _subscriptionRow('Weekly estimate', weekly),
+            _subscriptionRow('ARR', arr),
             const SizedBox(height: 4),
             Text(
-              '${revenue.hunterCount} hunters × '
-              'R ${revenue.config.hunterSubscriptionZAR.toStringAsFixed(2)} + '
-              '${revenue.outfitterCount} outfitters × '
-              'R ${revenue.config.outfitterSubscriptionZAR.toStringAsFixed(2)}',
+              '$hunterCount hunters × '
+              'R ${hunterPrice.toStringAsFixed(2)} + '
+              '$outfitterCount outfitters × '
+              'R ${outfitterPrice.toStringAsFixed(2)}',
               style: TextStyle(
                 color: widget.theme.subtitleColor,
                 fontSize: 11,
@@ -847,11 +960,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // ── User Engagement ─────────────────────────────────────────────────────
   Widget _buildEngagementRow() {
     final m = _metrics!;
-    return Row(
+    final kpis = _kpis;
+    final registered = kpis?.registeredUsers ?? m.registeredUsers;
+    final sessions = m.activeSessions;
+    final completed = kpis?.completedBookings;
+    return Column(
       children: [
-        Expanded(child: _metricCard(Icons.how_to_reg, 'Registered Users', m.registeredUsers)),
-        const SizedBox(width: 12),
-        Expanded(child: _metricCard(Icons.sensors, 'Active Sessions', m.activeSessions)),
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(
+                    Icons.how_to_reg, 'Registered Users', registered)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(
+                    Icons.sensors, 'Active Sessions', sessions)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(Icons.task_alt, 'Completed Bookings',
+                    completed ?? m.activeBookings)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(
+                    Icons.card_membership, 'Subscribers', kpis?.totalSubscribers)),
+          ],
+        ),
       ],
     );
   }
