@@ -148,14 +148,31 @@ void main() {
       expect(sources, contains('/.well-known/apple-app-site-association'));
     });
 
-    test('firebase.json has no catch-all rewrite (would break assetlinks)', () {
+    test('firebase.json serves /subscr and SPA routes via a catch-all rewrite',
+        () {
+      // A Flutter web SPA needs the catch-all: a direct hit on a deep link
+      // (e.g. /subscr) has no static file, so without `** -> /index.html`
+      // Hosting answered 404 ("Page Not Found").
+      //
+      // This is SAFE for the association files: Firebase Hosting resolves
+      // static content BEFORE rewrites, so `/.well-known/assetlinks.json`,
+      // `/flutter_bootstrap.js`, `/main.dart.js`, the icons, etc. are all
+      // served as real files and the catch-all only sees unknown paths. The
+      // `/r/**` rule must stay FIRST so the referral landing page still wins
+      // over the catch-all.
       final config = jsonDecode(_read('firebase.json')) as Map;
       final hosting = config['hosting'] as Map;
       final rewrites = (hosting['rewrites'] as List).cast<Map>();
-      for (final rule in rewrites) {
-        expect(rule['source'], isNot('**'));
-        expect(rule['destination'], isNot('/index.html'));
-      }
+
+      final catchAll = rewrites.where((r) => r['source'] == '**').toList();
+      expect(catchAll, hasLength(1),
+          reason: 'the SPA needs a single ** -> /index.html fallback');
+      expect(catchAll.single['destination'], '/index.html');
+
+      expect(rewrites.first['source'], '/r/**',
+          reason: 'the referral landing page must be matched before the SPA');
+      expect(rewrites.last['source'], '**',
+          reason: 'the SPA catch-all must be the LAST rewrite');
     });
   });
 

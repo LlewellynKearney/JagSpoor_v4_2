@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,18 +37,29 @@ class AppVersionCheck {
   ///
   /// Extracted so the gating rule is unit-testable without a widget tree.
   /// [currentBuildNumber] is the installed `versionCode` (`0` when it could
-  /// not be parsed — treated as the oldest possible build). A non-positive
-  /// floor, a missing doc or `force_update == false` never blocks.
+  /// not be parsed — treated as "unknown"). A non-positive floor, a missing
+  /// doc or `force_update == false` never blocks.
+  ///
+  /// Two fail-open guards matter here (they produced the web "Update
+  /// Required" loop):
+  ///   - a web build is NEVER blocked — the browser app is served straight
+  ///     from Hosting so it is always the latest deploy, and `package_info`
+  ///     reports no meaningful build number in a browser;
+  ///   - an unparsed build number (`0`) is skipped so a platform that does
+  ///     not report a versionCode cannot be locked out by a positive floor.
   @visibleForTesting
   static bool shouldForceUpdate({
     required bool docExists,
     required int minRequiredVersion,
     required bool forceUpdate,
     required int currentBuildNumber,
+    bool isWeb = false,
   }) {
+    if (isWeb) return false;
     if (!docExists) return false;
     if (!forceUpdate) return false;
     if (minRequiredVersion <= 0) return false;
+    if (currentBuildNumber <= 0) return false;
     return currentBuildNumber < minRequiredVersion;
   }
 
@@ -56,6 +68,10 @@ class AppVersionCheck {
   /// When true, a blocking dialog has been shown and the caller must abandon
   /// its normal navigation (the dialog cannot be dismissed).
   static Future<bool> isUpdateRequired(BuildContext context) async {
+    // Never gate the web build: it is served straight from Hosting (always
+    // the latest deploy) and has no meaningful `versionCode`, so enforcing a
+    // floor there only produced an "Update Required" loop on the browser.
+    if (kIsWeb) return false;
     try {
       final doc = await FirebaseFirestore.instance
           .doc(configPath)
@@ -72,6 +88,7 @@ class AppVersionCheck {
         minRequiredVersion: minRequired,
         forceUpdate: forceUpdate,
         currentBuildNumber: currentBuildNumber,
+        isWeb: kIsWeb,
       );
       if (!blocked) return false;
 

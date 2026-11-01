@@ -46,15 +46,26 @@ class ForceUpdateService {
   /// Pure comparison behind the kill switch: a build is blocked when its
   /// `versionCode` is strictly below the Remote Config floor.
   ///
-  /// Extracted so the gating rule is unit-testable without Firebase. A
-  /// non-positive [minVersionCode] (the default / an unset key) can never
-  /// block, keeping the gate fail-open.
+  /// Extracted so the gating rule is unit-testable without Firebase. Two
+  /// fail-open guards matter:
+  ///   - a non-positive [minVersionCode] (the default / an unset key) can
+  ///     never block;
+  ///   - a web build is NEVER blocked — the web app is served straight from
+  ///     Hosting so it is always the latest deploy, and `package_info_plus`
+  ///     reports no meaningful build number in a browser. Blocking there
+  ///     produced the "Update Required" loop on the web build.
+  ///   - an unparsed build number (`0`) is treated as "unknown" and skipped,
+  ///     so a platform that does not report a versionCode cannot be locked
+  ///     out by a positive floor.
   @visibleForTesting
   static bool shouldBlock({
     required int minVersionCode,
     required int currentVersionCode,
+    bool isWeb = false,
   }) {
+    if (isWeb) return false;
     if (minVersionCode <= 0) return false;
+    if (currentVersionCode <= 0) return false;
     return currentVersionCode < minVersionCode;
   }
 
@@ -69,6 +80,14 @@ class ForceUpdateService {
   /// version codes) so callers can render the server-authored copy and log
   /// the comparison. Never throws.
   static Future<ForceUpdateDecision> evaluate() async {
+    // The web app is served straight from Hosting (always the latest deploy)
+    // and reports no meaningful build number, so a forced update can never be
+    // appropriate there — and enforcing one produced an "Update Required"
+    // loop on the browser build. Skip the gate entirely on web.
+    if (kIsWeb) {
+      debugPrint('Remote Config force-update: skipped (web build).');
+      return ForceUpdateDecision.allow;
+    }
     try {
       final remoteConfig = FirebaseRemoteConfig.instance;
 
@@ -103,6 +122,7 @@ class ForceUpdateService {
         needsUpdate: shouldBlock(
           minVersionCode: minVersion,
           currentVersionCode: currentCode,
+          isWeb: kIsWeb,
         ),
         message: forceMessage.isEmpty
             ? defaultForceUpdateMessage

@@ -30,15 +30,14 @@ void main() {
   final rules = _loadRules();
   final usersBlock = _blockFor(rules, 'users');
 
-  group('users/{userId} write guard — role freeze (CRITICAL #1)', () {
+  group('users/{userId} write guard — role guard (CRITICAL #1)', () {
     test('role change-detection clause is present', () {
       expect(
         usersBlock,
         contains("!('role' in request.resource.data)"),
         reason: 'the role guard must gate on role presence',
       );
-      // Setting role only on FIRST assignment: `resource == null` (create) or
-      // the stored doc has no role yet.
+      // The owner may (re)assign the role when the stored doc has no role yet.
       expect(usersBlock, contains("!('role' in resource.data)"));
     });
 
@@ -50,18 +49,39 @@ void main() {
       );
     });
 
-    test('role cannot change once set', () {
+    test('the owner MAY reassign a stored non-admin role (v4.2.23 emergency fix)', () {
+      // The role clause allows a change when the STORED role is not 'admin':
+      // `request.resource.data.role == resource.data.role` short-circuits an
+      // unchanged value, and the final disjunct permits a non-admin change
+      // (hunter <-> outfitter, or repairing a stale/partial value). Without
+      // this a paid user with any pre-existing role value was stuck behind
+      // PERMISSION_DENIED on the role-selection screen.
       expect(
         usersBlock,
         contains('request.resource.data.role == resource.data.role'),
-        reason: 'a stored role must be immutable for client writes',
+        reason: 'an unchanged role must always pass',
+      );
+      expect(
+        usersBlock,
+        contains("resource.data.role != 'admin'"),
+        reason: 'a non-admin stored role must be reassignable by the owner',
       );
     });
 
-    test('an admin cannot have their role overwritten by a client', () {
-      // `!isAdmin()` guards the whole role clause so an admin-provisioned
-      // account is never mutated through the client path.
-      expect(usersBlock, contains('!isAdmin()'));
+    test('an admin-stored role cannot be changed by a client', () {
+      // The stored-admin guard replaces the old blanket `!isAdmin()`: a
+      // client write may never change a role while the stored value is
+      // 'admin' (no demoting / re-rolling an admin from the client).
+      expect(
+        usersBlock,
+        contains("resource.data.role != 'admin'"),
+        reason: 'an admin-stored role must be frozen for client writes',
+      );
+      expect(
+        usersBlock,
+        contains('|| isAdmin()'),
+        reason: 'an admin (by claim / allow-list) may still write the role',
+      );
     });
 
     test('dual-role signals (isDualRole / roles) are frozen', () {

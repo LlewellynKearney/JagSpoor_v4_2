@@ -71,31 +71,44 @@ void main() {
       );
     });
 
-    test('a zero versionCode is blocked by a positive floor', () {
-      // The buildNumber failed to parse (int.tryParse -> null -> 0); treat it
-      // as the oldest possible build rather than silently skipping the gate.
+    test('a zero versionCode is never blocked (unknown build, fail-open)', () {
+      // The buildNumber failed to parse (int.tryParse -> null -> 0). Treat it
+      // as "unknown" and skip the gate rather than locking the build out —
+      // the previous "treat 0 as the oldest build" behaviour produced the web
+      // "Update Required" loop.
       expect(
         ForceUpdateService.shouldBlock(
           minVersionCode: 1,
           currentVersionCode: 0,
         ),
-        isTrue,
+        isFalse,
       );
     });
 
-    test('mirrors the current v4.2.22 / versionCode 22 build', () {
-      // Shipped build (versionCode 22) vs a future kill-switch floor.
+    test('a web build is never blocked by a positive floor', () {
       expect(
         ForceUpdateService.shouldBlock(
           minVersionCode: 22,
-          currentVersionCode: 21,
+          currentVersionCode: 1,
+          isWeb: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('mirrors the current v4.2.23 / versionCode 23 build', () {
+      // Shipped build (versionCode 23) vs a future kill-switch floor.
+      expect(
+        ForceUpdateService.shouldBlock(
+          minVersionCode: 23,
+          currentVersionCode: 22,
         ),
         isTrue,
       );
       expect(
         ForceUpdateService.shouldBlock(
-          minVersionCode: 21,
-          currentVersionCode: 21,
+          minVersionCode: 22,
+          currentVersionCode: 22,
         ),
         isFalse,
       );

@@ -116,9 +116,12 @@ void main() {
       );
     });
 
-    test('an unparsed build number (0) is blocked by a positive floor', () {
-      // `int.tryParse(packageInfo.buildNumber)` returned null -> 0; treat the
-      // build as the oldest possible rather than silently skipping the gate.
+    test('an unparsed build number (0) is never blocked (fail-open)', () {
+      // `int.tryParse(packageInfo.buildNumber)` returned null -> 0, i.e. the
+      // platform did not report a versionCode (web, or a plugin gap). Treat
+      // that as "unknown" and skip the gate rather than locking the build
+      // out — the previous "treat 0 as the oldest build" behaviour produced
+      // the web "Update Required" loop.
       expect(
         AppVersionCheck.shouldForceUpdate(
           docExists: true,
@@ -126,7 +129,20 @@ void main() {
           forceUpdate: true,
           currentBuildNumber: 0,
         ),
-        isTrue,
+        isFalse,
+      );
+    });
+
+    test('a web build is never blocked by a positive floor', () {
+      expect(
+        AppVersionCheck.shouldForceUpdate(
+          docExists: true,
+          minRequiredVersion: 22,
+          forceUpdate: true,
+          currentBuildNumber: 1,
+          isWeb: true,
+        ),
+        isFalse,
       );
     });
   });

@@ -245,22 +245,32 @@ service cloud.firestore {
         && (!('referralCodeUsed' in request.resource.data)
           || (resource != null
             && request.resource.data.referralCodeUsed == resource.data.referralCodeUsed))
-        // ── Role freeze (v1.0.12 hotfix — closes the admin-escalation exploit) ──
+        // ── Role guard (v4.2.23 EMERGENCY fix) ────────────────────────────────
         // `role` drives admin detection (AdminAuthGuard + the isAdmin() rule
-        // helper). A client could previously self-assign `role: 'admin'` and
-        // both open the Admin Portal and skip the entitlement gate. Now a
-        // client write may only (a) omit `role`, (b) re-send the STORED role
-        // unchanged, or (c) set it for the FIRST time (no stored role) to a
-        // non-admin value while not already being an admin. Changing a stored
-        // role, or setting it to `'admin'`, is denied. Legitimate admin /
-        // role provisioning goes through the Admin SDK / a Cloud Function
-        // (which bypasses these rules).
+        // helper). Two invariants MUST hold:
+        //   1. a client can never ESCALATE to `admin`, and
+        //   2. a client can never change a role while the STORED role is
+        //      `admin` (no demoting / re-rolling an admin from the client).
+        // Subject to those two limits the OWNER may (re)assign the role on
+        // their own document — including CHANGING an already-stored non-admin
+        // role (hunter <-> outfitter, or repairing a stale/partial value such
+        // as `unassigned` / an empty string).
+        //
+        // The previous "first-assignment-only" freeze denied ANY change to a
+        // stored role. That produced `[cloud_firestore/permission-denied]`
+        // for a legitimate role selection whenever the account already
+        // carried a (stale / partial / wrong) role value — the paid user who
+        // could never get past "Select Operational Profile". A merge write
+        // that re-sends the stored value, or omits `role`, is unaffected
+        // (same change-detection shape as the other server-owned fields).
         && (!('role' in request.resource.data)
           || (resource != null
             && request.resource.data.role == resource.data.role)
+          || isAdmin()
           || (request.resource.data.role != 'admin'
-            && !isAdmin()
-            && (resource == null || !('role' in resource.data))))
+            && (resource == null
+              || !('role' in resource.data)
+              || resource.data.role != 'admin')))
         // Dual-role signals grant BOTH dashboards. Frozen to their first value
         // so they cannot be flipped on or removed after provisioning.
         && (!('isDualRole' in request.resource.data)

@@ -157,17 +157,19 @@ void main() {
         contains('resource.data.deviceFingerprint == '
             'request.resource.data.deviceFingerprint'),
       );
-      // v1.0.12 hotfix: the role/dual-role signals are set-once-then-frozen
-      // (they read the STORED `'X' in resource.data` to detect first
-      // assignment). Every other profile field (medical info, legal
+      // v4.2.23: `role` is reassignable by the owner while the STORED role is
+      // not 'admin'; `isDualRole` / `roles` stay frozen to their first value.
+      // Each reads the STORED `'X' in resource.data` to detect first
+      // assignment. Every other profile field (medical info, legal
       // compliance, battery settings, …) stays freely owner-writable.
       final restrictions = RegExp(r"'([^']+)' in resource\.data")
           .allMatches(block)
           .map((m) => m.group(1))
           .toSet();
       expect(restrictions, {'deviceFingerprint', 'role', 'isDualRole', 'roles'},
-          reason: 'deviceFingerprint stays immutable; role / isDualRole / '
-              'roles are frozen to their first assignment');
+          reason: 'deviceFingerprint stays immutable; isDualRole / roles are '
+              'frozen to their first assignment; role is reassignable while '
+              'the stored value is not admin');
     });
 
     test('users delete = owner-scoped signed-in (GDPR account deletion)', () {

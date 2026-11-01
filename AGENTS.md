@@ -1,6 +1,143 @@
 # JagSpoor -- Agent Memory
 
 
+## EMERGENCY FIX: paid-user role PERMISSION_DENIED + web 404 + v9 forced-update loop (v4.2.23, versionCode 23) (added 2026-11-01)
+
+Branch `main` (base `e3bfdac`). Three live production defects, one commit.
+
+### P1 — `[cloud_firestore/permission-denied]` on role save (the paid user)
+**Symptom**: a paying user reached "SELECT OPERATIONAL PROFILE", tapped
+Hunter/Outfitter, and got `Could not save your role:
+AuthRolePersistenceException: [cloud_firestore/permission-denied]`. They
+could never get past onboarding.
+
+**Root cause** — the `firestore.rules` `users/{userId}` role guard was a
+**first-assignment-only freeze**. It allowed a client to set `role` only when
+the STORED document had NO `role` key:
+
+```
+|| (request.resource.data.role != 'admin'
+  && !isAdmin()
+  && (resource == null || !('role' in resource.data)))
+```
+
+That third clause (`!('role' in resource.data)`) meant that ANY account whose
+document already carried a `role` value — a stale/partial one such as
+`unassigned`, an empty string, or a wrong hunter/outfitter value — was
+DENIED on every subsequent role write. `AuthRepository.saveRole` retries once
+with a minimal `{role, updatedAt}` payload, which trips the same guard, so
+both attempts fail → `AuthRolePersistenceException`.
+
+**Fix** — keep the two invariants that actually matter (no client escalation
+to `admin`; no client change while the STORED role is `admin`) and otherwise
+let the owner (re)assign their own role:
+
+```
+&& (!('role' in request.resource.data)
+  || (resource != null
+    && request.resource.data.role == resource.data.role)
+  || isAdmin()
+  || (request.resource.data.role != 'admin'
+    && (resource == null
+      || !('role' in resource.data)
+      || resource.data.role != 'admin')))
+```
+
+The change-detection shape is preserved (a merge write that re-sends the
+stored value, or omits `role`, still passes). The blanket `!isAdmin()` was
+replaced by the narrower stored-admin check so an admin-provisioned account
+is still frozen against client mutation, and `|| isAdmin()` keeps the
+allow-list / claim path working.
+
+**Deploy is instant** — the paid user is unblocked by
+`firebase deploy --only firestore:rules` alone; no app update is needed.
+
+### P2 — `jag-spoor.co.za/subscr` served Firebase's 404
+**Root cause**: `firebase.json` had only `{"source": "/r/**"}`. A Flutter web
+SPA needs a catch-all so a direct hit on a deep link (no static file) serves
+`index.html`.
+
+**Fix** — added `{"source": "**", "destination": "/index.html"}` AFTER the
+`/r/**` rule (the referral landing page must keep winning). This is safe for
+`/.well-known/assetlinks.json` + the AASA: Firebase Hosting resolves **static
+content before rewrites**, so those files are served as real files and the
+catch-all only sees unknown paths. `scripts/prepare_hosting.js` was verified
+— it allow-lists only `[.well-known, r, privacy, delete-account, 404.html]`
+and refuses to clobber the Flutter `index.html`, so no change was needed.
+The stale `app_links_config_test` "no catch-all" assertion (whose premise was
+wrong) was replaced with the correct ordering contract.
+
+### P3 — "Update Required ... (v9)" loop on the web build
+**Root cause**: BOTH version gates could block the browser build.
+`admin_config/app_version` carries `min_required_version: 9` +
+`force_update: true`; `package_info_plus` reports no meaningful build number
+in a browser, and `int.tryParse(...) ?? 0` produced `0` — which BOTH gates
+treated as "the oldest possible build", so `0 < 9` → blocked forever.
+
+**Fix** — two fail-open guards in each gate
+(`lib/services/app_version_check.dart` + `lib/services/force_update_service.dart`):
+1. `kIsWeb` short-circuits to "no update required" (the web app is served
+   straight from Hosting, so it is always the latest deploy);
+2. an unparsed build number (`<= 0`) is treated as "unknown" and skipped
+   instead of as the oldest build.
+`shouldBlock` / `shouldForceUpdate` gained an `isWeb` param; the tests that
+asserted the old "0 is blocked" behaviour were flipped and a web case added.
+
+### P4 — Version bump 4.2.22+22 -> 4.2.23+23
+Hand-synced: `pubspec.yaml`, `android/app/build.gradle.kts`
+(`versionCode = 23` / `versionName = "4.2.23"`),
+`lib/core/widgets/version_info.dart` (`'23'` / `'4.2.23'` + doc examples),
+`test/version_info_and_facebook_test.dart`, and the force-update mirror test.
+
+### PayFast service
+`functions/src/payfast/payfast.service.ts` is already the FIXED version
+(`PAYFAST_CHECKOUT_FIELD_ORDER` + `orderCheckoutFields` + the documented-order
+signature) — there is no separate `functions/src/services/payfast.service.ts`
+in this repo, so nothing to sync.
+
+### Verification (this sandbox)
+- `flutter analyze` on the changed Dart files: **No issues found**.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`):
+  **2367 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), no new
+  failures.
+- The six touched suites: **139/139 pass**.
+- `cd functions && npm run build` (tsc) clean; `npm test`: **177/177 pass**.
+- `firestore.rules` structural check: braces / parens / brackets balanced,
+  default-deny intact, role-reassign clause present, blanket `!isAdmin()`
+  gone.
+- `grep -rn "demo@jag-spoor.co.za\|DemoReviewer\|seedDemo" lib/ functions/`
+  -> **0** (the demo purge from `e3bfdac` still holds).
+- `pubspec.lock` drift from `pub get` reverted (test-only transitive bumps).
+
+### ⚠️ Operator steps (cannot be done in this sandbox)
+```
+cd functions && npm ci && npm run build
+npx firebase-tools deploy --only firestore:rules --project=jagspoor   # unblocks the paid user INSTANTLY
+npx firebase-tools deploy --only hosting --project=jagspoor           # fixes /subscr
+npx firebase-tools deploy --only functions:getAdminPortalKpis --project=jagspoor
+flutter build appbundle --release
+flutter build web --release && npx firebase-tools deploy --only hosting --project=jagspoor
+```
+Also consider raising `admin_config/app_version.min_required_version` to 23
+once the versionCode-23 AAB is live (and, if the v9 floor is no longer
+wanted, setting `force_update: false` — the web is already immune either
+way).
+- The paid user only needs to force-close and reopen the app after the rules
+  deploy, then re-select Hunter — the write will succeed.
+
+### Files
+- MODIFIED: `firestore.rules` (role guard), `firebase.json` (SPA rewrite),
+  `lib/services/app_version_check.dart` + `lib/services/force_update_service.dart`
+  (web + unparsed-build guards), `pubspec.yaml`,
+  `android/app/build.gradle.kts`, `lib/core/widgets/version_info.dart`,
+  `test/app_links_config_test.dart`, `test/app_version_check_test.dart`,
+  `test/billing_rules_hotfix_test.dart`,
+  `test/firestore_rules_seeding_test.dart`,
+  `test/force_update_service_test.dart`,
+  `test/version_info_and_facebook_test.dart`, `AGENTS.md`.
+
+
 ## FIX: purge the Google Play demo-reviewer account + all demo data seeding (v4.2.22, versionCode 22) (added 2026-11-01)
 
 Branch `main` (base `d6692fc`). The demo-reviewer account
