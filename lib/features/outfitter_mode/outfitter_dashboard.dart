@@ -46,8 +46,7 @@ class OutfitterDashboard extends StatefulWidget {
   final ThemeController theme;
 
   /// Test seam: overrides the account-deletion cascade so widget tests never
-  /// touch real Firebase Auth / Firestore (mirrors the `demoSignInOverride`
-  /// screen seam).
+  /// touch real Firebase Auth / Firestore.
   @visibleForTesting
   final Future<void> Function()? accountDeletionRunner;
 
@@ -125,10 +124,10 @@ class _OutfitterDashboardState extends State<OutfitterDashboard> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         await UserRoleResolver.instance.resolveCurrentUserRole(user.uid);
-        // A dual-role (demo reviewer) account also gets the mode switcher;
-        // admins do as well. AdminAuthGuard covers the admin path; the
-        // dual-role signal is cached on the role provider by the demo
-        // sign-in / splash resolution.
+        // A dual-role (hunter + outfitter) account also gets the mode
+        // switcher; admins do as well. AdminAuthGuard covers the admin path;
+        // the dual-role signal is cached on the role provider by splash
+        // resolution.
         final role = UserRoleProvider.instance.role;
         final isDual = role == AppRole.dual;
         final admin =

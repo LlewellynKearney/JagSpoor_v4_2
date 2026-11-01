@@ -90,15 +90,15 @@ void main() {
   group('UserRoleProvider.resolveRole — Firestore dual-role detection', () {
     test('resolves AppRole.dual from the seeded isDualRole flag', () async {
       final db = FakeFirebaseFirestore();
-      await db.collection('users').doc('demo-uid').set({
+      await db.collection('users').doc('dual-uid').set({
         'role': 'dual',
         'isDualRole': true,
         'roles': ['hunter', 'outfitter'],
       });
       UserRoleProvider.instance.injectForTesting(
         db: db,
-        testUid: 'demo-uid',
-        testEmail: 'demo@jagspoor.co.za',
+        testUid: 'dual-uid',
+        testEmail: 'dual@example.com',
       );
       final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
       expect(role, AppRole.dual);
@@ -109,14 +109,14 @@ void main() {
 
     test('resolves AppRole.dual from a roles-list without the flag', () async {
       final db = FakeFirebaseFirestore();
-      await db.collection('users').doc('demo-uid').set({
+      await db.collection('users').doc('dual-uid').set({
         'role': 'hunter',
         'roles': ['outfitter', 'hunter'],
       });
       UserRoleProvider.instance.injectForTesting(
         db: db,
-        testUid: 'demo-uid',
-        testEmail: 'demo@jagspoor.co.za',
+        testUid: 'dual-uid',
+        testEmail: 'dual@example.com',
       );
       expect(
         await UserRoleProvider.instance.resolveRole(forceRefresh: true),
@@ -126,13 +126,13 @@ void main() {
 
     test('resolves AppRole.dual from the plain role: "dual" shorthand', () async {
       final db = FakeFirebaseFirestore();
-      await db.collection('users').doc('demo-uid').set({
+      await db.collection('users').doc('dual-uid').set({
         'role': 'dual',
       });
       UserRoleProvider.instance.injectForTesting(
         db: db,
-        testUid: 'demo-uid',
-        testEmail: 'demo@jagspoor.co.za',
+        testUid: 'dual-uid',
+        testEmail: 'dual@example.com',
       );
       expect(
         await UserRoleProvider.instance.resolveRole(forceRefresh: true),
@@ -142,13 +142,13 @@ void main() {
 
     test('does NOT emit dual for a single-role users doc', () async {
       final db = FakeFirebaseFirestore();
-      await db.collection('users').doc('demo-uid').set({
+      await db.collection('users').doc('dual-uid').set({
         'role': 'outfitter',
       });
       UserRoleProvider.instance.injectForTesting(
         db: db,
-        testUid: 'demo-uid',
-        testEmail: 'demo@jagspoor.co.za',
+        testUid: 'dual-uid',
+        testEmail: 'dual@example.com',
       );
       final role = await UserRoleProvider.instance.resolveRole(forceRefresh: true);
       expect(role, AppRole.outfitter);

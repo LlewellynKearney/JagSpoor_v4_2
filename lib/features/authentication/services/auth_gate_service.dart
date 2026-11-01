@@ -549,8 +549,8 @@ class AuthGateService {
       
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (e) {
-      // For demo/testing: Log the OTP if SMS fails
-      print('AuthGateService: Custom SMS gateway not configured. '
+      // For local testing only: log when the SMS gateway is not configured.
+      debugPrint('AuthGateService: Custom SMS gateway not configured. '
             'Configure _smsApiEndpoint to enable real SMS delivery.');
       return true; // Return true for local testing
     }

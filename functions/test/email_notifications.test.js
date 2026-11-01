@@ -289,14 +289,14 @@ test("the new-user body carries email, uid, provider and time", () => {
   const body = email.buildUserSignupEmailBody({
     uid: "uid-123",
     email: "hunter@example.com",
-    displayName: "Demo Hunter",
+    displayName: "Test Hunter",
     provider: "google.com",
     createdAt: new Date("2026-10-11T12:00:00.000Z"),
   });
   assert.match(body, /hunter@example\.com/);
   assert.match(body, /uid-123/);
   assert.match(body, /google\.com/);
-  assert.match(body, /Demo Hunter/);
+  assert.match(body, /Test Hunter/);
   assert.match(body, /2026-10-11T12:00:00\.000Z/);
 });
 

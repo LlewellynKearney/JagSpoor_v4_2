@@ -13,8 +13,6 @@ import 'screens/email_verification_screen.dart';
 import '../hunter_mode/hunter_profile_screen.dart';
 import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
-import 'services/demo_reviewer_config.dart';
-import 'services/demo_reviewer_service.dart';
 import 'services/email_verification_service.dart';
 import 'services/email_verification_policy.dart';
 import 'services/password_reset_action_code_settings.dart';
@@ -28,15 +26,9 @@ import '../referral/services/referral_repository.dart';
 class AuthScreen extends StatefulWidget {
   final ThemeController themedata;
 
-  /// Test seam: overrides the demo-reviewer sign-in invocation so widget
-  /// tests can verify the "Demo Reviewer Login" flow without a Firebase app.
-  @visibleForTesting
-  final Future<DemoSignInResult> Function()? demoSignInOverride;
-
   const AuthScreen({
     super.key,
     required this.themedata,
-    this.demoSignInOverride,
   });
 
   @override
@@ -115,61 +107,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _resetCooldownUntil = PasswordResetCooldown.expiry(from: DateTime.now());
   }
 
-  /// Handle the "Demo Reviewer Login" quick-tap — for Google Play reviewers.
-  ///
-  /// Signs into the dedicated review account (see [DemoReviewerConfig]),
-  /// seeds a representative demo dataset (SAPS applications, firearm
-  /// inventory, trophy room, offline harvest logs) so every restricted
-  /// feature is instantly showcaseable, then routes the reviewer onto the
-  /// hunter dashboard via the normal post-auth routing.
-  ///
-  /// Best-effort + failure-tolerant: a sign-in failure surfaces a clear
-  /// snackbar (never a silent no-op); a Firestore seed failure is logged
-  /// inside the service and does not block the reviewer from entering the
-  /// demo (the screens degrade to their handled empty states).
-  Future<void> _handleDemoSignIn() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final override = widget.demoSignInOverride;
-      final result = override != null
-          ? await override()
-          : await DemoReviewerService.instance.signInDemoReviewer();
-
-      if (!mounted) return;
-
-      if (result.isSuccess) {
-        // The demo account is a complete hunter (role + profile stamped by the
-        // seeder), so the normal post-auth routing lands on the dashboard.
-        await _routeAfterAuth();
-        return;
-      }
-
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.errorMessage ?? 'Demo reviewer sign-in failed.',
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Demo reviewer sign-in failed: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   // NOTE: the SMS-2FA helpers (requires-2FA check, fingerprint stamp, and the
   // 2FA bottom sheet) were only reachable from the Google Sign-In flow, which
   // is disabled on all platforms, so they were removed.
@@ -240,8 +177,8 @@ class _AuthScreenState extends State<AuthScreen> {
     // Email-verification gate (TODO #3): a signed-in account whose email is
     // still unverified must verify before reaching ANY dashboard. The check
     // runs FIRST so a hunter/outfitter/admin self-link or profile write never
-    // happens for an unverified account. The Google-Play demo-reviewer and
-    // platform-admin accounts are exempt (see EmailVerificationPolicy).
+    // happens for an unverified account. The platform-admin account is
+    // exempt (see EmailVerificationPolicy).
     if (await _emailVerificationRequired()) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -282,7 +219,7 @@ class _AuthScreenState extends State<AuthScreen> {
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,
     // scanned_pricelists…) don't crash on a missing parameter. Applies to
-    // outfitters AND dual-role accounts (the demo reviewer).
+    // outfitters AND dual-role accounts.
     if (role == AppRole.outfitter || role == AppRole.dual) {
       await _ensureOutfitterSelfLink();
     }
@@ -334,8 +271,8 @@ class _AuthScreenState extends State<AuthScreen> {
         Navigator.pushReplacementNamed(context, '/outfitter_dashboard');
         break;
       case AppRole.dual:
-        // Dual-role (demo reviewer) — land on the Hunter dashboard; the mode
-        // switcher lets the reviewer toggle to Outfitter Mode instantly.
+        // Dual-role (hunter + outfitter) — land on the Hunter dashboard; the
+        // mode switcher lets the account toggle to Outfitter Mode instantly.
         Navigator.pushReplacementNamed(context, '/hunter_dashboard');
         break;
       case AppRole.unknown:
@@ -971,11 +908,6 @@ class _AuthScreenState extends State<AuthScreen> {
                     // Android, iOS) — email/password is the only sign-in path.
                     // See `AuthGateService.signInWithGoogle` (a no-op).
 
-                    if (DemoReviewerConfig.enabled) ...[
-                      const SizedBox(height: 12.0),
-                      _buildDemoReviewerButton(),
-                    ],
-
                     const SizedBox(height: 16.0),
                     TextButton(
                       onPressed:
@@ -1001,38 +933,6 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  /// Subtle, quick-tap "Demo Reviewer Login" affordance for Google Play
-  /// reviewers. One tap signs into the dedicated review account (see
-  /// [DemoReviewerConfig]) and seeds a showcase dataset — reviewers never
-  /// have to set up an account manually. Rendered below the Google button so
-  /// it is discoverable but deliberately understated (text button, not a
-  /// primary CTA).
-  Widget _buildDemoReviewerButton() {
-    final theme = Theme.of(context);
-    return TextButton.icon(
-      key: const ValueKey('demoReviewerLoginButton'),
-      onPressed: _isLoading ? null : _handleDemoSignIn,
-      icon: Icon(
-        Icons.science_rounded,
-        size: 16,
-        color: theme.colorScheme.primary,
-      ),
-      label: Text(
-        'DEMO REVIEWER LOGIN',
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          fontFamily: 'Mono',
-          fontSize: 11.0,
-          letterSpacing: 0.6,
-        ),
-      ),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }

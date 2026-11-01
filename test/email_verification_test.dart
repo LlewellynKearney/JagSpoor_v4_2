@@ -71,14 +71,13 @@ void main() {
       );
     });
 
-    test('the demo-reviewer account is exempt (Play review must not lock out)',
-        () {
+    test('a non-exempt account is still gated', () {
       expect(
         EmailVerificationPolicy.requiresVerification(
-          email: 'demo@jagspoor.co.za',
+          email: 'hunter@example.com',
           emailVerified: false,
         ),
-        isFalse,
+        isTrue,
       );
     });
 
@@ -98,7 +97,7 @@ void main() {
     test('a verified exempt account is still not gated', () {
       expect(
         EmailVerificationPolicy.requiresVerification(
-          email: 'demo@jagspoor.co.za',
+          email: 'admin@jag-spoor.co.za',
           emailVerified: true,
         ),
         isFalse,
@@ -341,9 +340,8 @@ void main() {
       expect(roleIdx, greaterThan(gateIdx));
     });
 
-    test('the policy exempts the admin + demo-reviewer accounts', () {
+    test('the policy exempts the admin account', () {
       expect(policySource, contains("'admin@jag-spoor.co.za'"));
-      expect(policySource, contains('DemoReviewerConfig.email'));
       expect(policySource, contains('requiresVerification'));
     });
 

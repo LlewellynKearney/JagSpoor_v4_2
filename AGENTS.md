@@ -1,6 +1,147 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: purge the Google Play demo-reviewer account + all demo data seeding (v4.2.22, versionCode 22) (added 2026-11-01)
+
+Branch `main` (base `d6692fc`). The demo-reviewer account
+(`demo@jagspoor.co.za`, UID `ieqqYhHRYngRaepIoPfkCJnmAyf1`) was **removed
+entirely** — sign-in entry point, dataset seeding, and every reference —
+and the admin subscriber KPIs were hardened so a disabled account can never
+inflate them. Also a version bump to **4.2.22+22**.
+
+### P1 — Demo sign-in removed from the Auth Screen
+- **DELETED `lib/features/auth/services/demo_reviewer_config.dart`** — the
+  `DemoReviewerConfig` (email/password/displayName/role/enabled) constants.
+- **DELETED `lib/features/auth/services/demo_reviewer_service.dart`** — the
+  `DemoReviewerService` (sign-in + `seedDemoData` writing a full hunter +
+  outfitter showcase: SAPS applications, firearms, trophies, carcass logs,
+  farms, trophy_stock, packages, farm_pricelists, bookings).
+- `lib/features/auth/auth_screen.dart`: removed the two imports, the
+  `demoSignInOverride` test seam, `_handleDemoSignIn()`, the
+  `_buildDemoReviewerButton()` widget, and the
+  `if (DemoReviewerConfig.enabled)` render block. The sign-in card is now
+  email/password only (Google sign-in was already disabled).
+- `lib/features/auth/services/email_verification_policy.dart`: the
+  demo-reviewer email exemption is gone — `exemptEmails` is now just the
+  platform admin allow-list. No other code referenced `DemoReviewerConfig`.
+- **DELETED** `functions/delete_demo.py` + `functions/users.json` (the
+  one-off operator cleanup script + its user dump).
+
+### P2 — Demo filters + references purged from the app
+- `lib/features/ballistics/presentation/ballistic_calc_screen.dart` +
+  `scope_tools_bottom_sheet.dart`: the firearm picker no longer filters out
+  demo `TIKKA-` / `SAKO-` serial prefixes (there is no seeded demo data to
+  exclude); the "Unknown" name guard remains.
+- `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
+  `lib/features/authentication/services/auth_gate_service.dart`: demo
+  comments reworded ("local testing" / "simulated placeholder").
+- Comment-only updates across `user_role_provider.dart`, `role_guard.dart`,
+  `admin_mode_switcher.dart`, `splash_screen.dart`, `hunter_dashboard.dart`,
+  `outfitter_dashboard.dart` — the `AppRole.dual` (hunter + outfitter)
+  cross-dashboard access is **kept as a generic capability**; only the
+  "demo reviewer" wording was dropped.
+- `docs/MARKETING_FUNCTIONALITY_REPORT.md`: the demo-reviewer bullet + the
+  "recently shipped" mention removed.
+
+### P3 — Admin subscriber KPI reconciliation (`functions/src/admin/kpis.ts`)
+- NEW `isDisabledAccount(data)` — true when `disabled == true` or
+  `role` is `disabled` / `deleted`. `aggregateUserKpis` skips those accounts
+  entirely, so a retired login can never inflate the hunter/outfitter or
+  subscriber counts (this is the 42/42/2-vs-0/0 mismatch cause). The
+  outfitter union (`users.role == 'outfitter'` + the `outfitters`
+  collection) also skips disabled accounts.
+- `platformOf` now also reads `subscriptionType` / `billingPlatform` /
+  `subscriptionProvider` / `platform` (was `subscriptionPlatform` +
+  `subscriptionSource` only).
+- NEW `unknownSubscribers` counter + `DISABLED_ROLES` export. The payload
+  now carries `unknownSubscribers` so
+  `google + payfast + unknown == totalSubscribers` always reconciles; the
+  Admin Portal gained an "Other Subscribers" card and the Dart
+  `AdminPortalKpis` model parses the new field.
+
+### P4 — Version bump 4.2.21+21 -> 4.2.22+22
+Hand-synced (the Gradle values are HARDCODED — they do NOT track
+`flutter.versionCode`): `pubspec.yaml` `4.2.22+22`,
+`android/app/build.gradle.kts` `versionCode = 22` / `versionName = "4.2.22"`,
+`lib/core/widgets/version_info.dart` fallbacks `'22'` / `'4.2.22'` (+ both
+doc-comment examples), `test/version_info_and_facebook_test.dart` and
+`test/force_update_service_test.dart` updated to match.
+
+### Tests
+- DELETED `test/demo_reviewer_login_test.dart` (4) +
+  `test/demo_reviewer_service_test.dart` (16).
+- `test/email_verification_test.dart`: the demo-exemption tests replaced
+  with a non-exempt gated case; the policy-source contract now asserts only
+  the admin allow-list.
+- `test/user_role_provider_test.dart`: demo fixtures renamed to
+  `dual-uid` / `dual@example.com` (the dual-role detection itself is
+  unchanged).
+- `functions/test/admin_kpis.test.js`: +3 tests — extended `platformOf`
+  aliases, `isDisabledAccount` matrix, and `aggregateUserKpis` excluding
+  disabled accounts / routing a platform-less subscriber to
+  `unknownSubscribers` with the reconciliation invariant.
+- `functions/test/email_notifications.test.js`: the "Demo Hunter" fixture
+  renamed to "Test Hunter".
+
+### Verification (this sandbox)
+- `cd functions && npm ci && npm run build` (tsc): clean; `npm test`:
+  **177/177 pass**.
+- `flutter analyze`: **0 errors, 0 warnings**, 320 pre-existing info-level
+  issues (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`):
+  **2365 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape; the trigger is v2 `onUserCreated`). Unrelated to demo removal.
+- `grep -rn "demo@jag-spoor.co.za" lib/ functions/` -> **0 results**;
+  `grep -rni "seedDemo\|createDemo\|mockData" lib/ functions/` -> **0**;
+  `grep -rni "demo reviewer\|demo login" lib/ functions/` -> **0**.
+- Env: Flutter **3.44.9** downloaded + extracted to `/workspace/sdk/flutter`
+  (the sandbox had no SDK); the `~/libs/libsqlite3.so` symlink for the
+  sqflite-FFI suites; `pubspec.lock` / `analysis_options.yaml` drift from
+  `pub get` reverted.
+
+### ⚠️ Operator steps (cannot be done in this sandbox)
+1. Deploy the KPI fix:
+   `cd functions && npm ci && npm run build && npx firebase-tools deploy --only functions:getAdminPortalKpis --project=jagspoor`.
+2. Build the upload artifact:
+   `flutter clean && flutter pub get && flutter build appbundle --release`
+   (the release AAB falls back to the debug signing identity here — Play
+   rejects a debug-signed AAB; build with the real keystore).
+3. The disabled demo account `ieqqYhHRYngRaepIoPfkCJnmAyf1` is excluded from
+   the KPIs by the `disabled` flag / `role: 'disabled'`; the account itself
+   can also be deleted from the Firebase Console if desired.
+- Do NOT raise the `admin_config/app_version` forced-update floor to 22
+  until the versionCode-22 AAB is live on the track.
+
+### Files
+- DELETED: `lib/features/auth/services/demo_reviewer_config.dart`,
+  `lib/features/auth/services/demo_reviewer_service.dart`,
+  `test/demo_reviewer_login_test.dart`,
+  `test/demo_reviewer_service_test.dart`, `functions/delete_demo.py`,
+  `functions/users.json`.
+- MODIFIED: `lib/features/auth/auth_screen.dart`,
+  `lib/features/auth/services/email_verification_policy.dart`,
+  `lib/features/auth/services/user_role_provider.dart`,
+  `lib/features/auth/services/role_guard.dart`,
+  `lib/features/admin/widgets/admin_mode_switcher.dart`,
+  `lib/features/admin/screens/admin_dashboard_screen.dart`,
+  `lib/features/admin/services/admin_kpi_service.dart`,
+  `lib/core/splash_screen.dart`, `lib/core/widgets/version_info.dart`,
+  `lib/features/hunter_mode/hunter_dashboard.dart`,
+  `lib/features/hunter_mode/widgets/network_diagnostic_hud.dart`,
+  `lib/features/outfitter_mode/outfitter_dashboard.dart`,
+  `lib/features/authentication/services/auth_gate_service.dart`,
+  `lib/features/ballistics/presentation/ballistic_calc_screen.dart`,
+  `lib/features/ballistics/presentation/scope_tools_bottom_sheet.dart`,
+  `functions/src/admin/kpis.ts`, `functions/test/admin_kpis.test.js`,
+  `functions/test/email_notifications.test.js`, `pubspec.yaml`,
+  `android/app/build.gradle.kts`, `test/email_verification_test.dart`,
+  `test/user_role_provider_test.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`,
+  `docs/MARKETING_FUNCTIONALITY_REPORT.md`, `AGENTS.md`.
+
+
 ## CHORE: version bump 4.2.20+20 -> 4.2.21+21 (versionCode 21) for the v21 release (added 2026-10-30)
 
 Branch `main` (base `ca26449`). A strictly-higher `versionCode` is required for

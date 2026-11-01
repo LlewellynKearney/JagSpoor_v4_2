@@ -20,9 +20,7 @@ enum AppRole {
 
   /// Dual-role (hunter + outfitter) account. Admitted to BOTH the Hunter and
   /// Outfitter dashboards (and the mode switcher that toggles between them)
-  /// but NOT the Admin Portal. Used by the Google Play demo-reviewer account
-  /// so a reviewer can showcase the restricted hunting + outfitter features
-  /// without manual account setup.
+  /// but NOT the Admin Portal.
   dual,
 
   /// Role not yet resolved (pre-login, in-flight resolution, or fetch error).
@@ -155,9 +153,8 @@ class UserRoleProvider {
       final data = doc.data() ?? const <String, dynamic>{};
       final stored = data['role'] as String?;
 
-      // Dual-role detection: the demo-reviewer account (and any future
-      // dual-profile account) is stamped with `isDualRole: true` + a
-      // `roles: ['hunter','outfitter']` array (or the shorthand `role:
+      // Dual-role detection: an account is stamped with `isDualRole: true` +
+      // a `roles: ['hunter','outfitter']` array (or the shorthand `role:
       // 'dual'`). Any of these signals resolves to [AppRole.dual] so the
       // account is admitted to BOTH dashboards.
       final isDualRole =

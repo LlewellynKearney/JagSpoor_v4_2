@@ -20,6 +20,11 @@ class AdminPortalKpis {
   final int totalSubscribers;
   final int payfastSubscribers;
   final int googleSubscribers;
+
+  /// Subscribers whose billing platform could not be resolved. Surfaced so the
+  /// Admin Portal can reconcile `totalSubscribers` with the Play / PayFast
+  /// split instead of showing a silent mismatch.
+  final int unknownSubscribers;
   final int totalHunters;
   final int totalOutfitters;
   final int totalPackages;
@@ -45,6 +50,7 @@ class AdminPortalKpis {
     required this.totalSubscribers,
     required this.payfastSubscribers,
     required this.googleSubscribers,
+    this.unknownSubscribers = 0,
     required this.totalHunters,
     required this.totalOutfitters,
     required this.totalPackages,
@@ -91,6 +97,7 @@ class AdminPortalKpis {
       totalSubscribers: _int(data['totalSubscribers']),
       payfastSubscribers: _int(data['payfastSubscribers']),
       googleSubscribers: _int(data['googleSubscribers']),
+      unknownSubscribers: _int(data['unknownSubscribers']),
       totalHunters: _int(data['totalHunters']),
       totalOutfitters: _int(data['totalOutfitters']),
       totalPackages: _int(data['totalPackages']),

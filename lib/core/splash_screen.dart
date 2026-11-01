@@ -149,7 +149,7 @@ class _SplashScreenState extends State<SplashScreen>
     // still unverified must verify before boot routing continues. Runs BEFORE
     // role resolution / outfitter self-heal / profile onboarding so no
     // partial-access write happens for an unverified account. The
-    // demo-reviewer and platform-admin accounts are exempt.
+    // platform-admin account is exempt.
     try {
       await user.reload();
     } catch (_) {
@@ -201,7 +201,7 @@ class _SplashScreenState extends State<SplashScreen>
     // Self-heal a missing `outfitterId` self-link before entering outfitter
     // mode, so downstream owner-scoped Firestore rules (trophies, permits,
     // scanned_pricelists…) don't crash on a missing parameter. Applies to
-    // outfitters AND dual-role accounts (the demo reviewer).
+    // outfitters AND dual-role accounts.
     if (role == AppRole.outfitter || role == AppRole.dual) {
       await _ensureOutfitterSelfLink();
     }
@@ -236,8 +236,8 @@ class _SplashScreenState extends State<SplashScreen>
         Navigator.pushReplacementNamed(context, '/outfitter_dashboard');
         break;
       case AppRole.dual:
-        // Dual-role (demo reviewer) — land on the Hunter dashboard; the mode
-        // switcher lets the reviewer toggle to Outfitter Mode instantly.
+        // Dual-role (hunter + outfitter) — land on the Hunter dashboard; the
+        // mode switcher lets the account toggle to Outfitter Mode instantly.
         Navigator.pushReplacementNamed(context, '/hunter_dashboard');
         break;
       case AppRole.unknown:

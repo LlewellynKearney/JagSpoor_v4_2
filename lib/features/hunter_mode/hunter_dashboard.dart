@@ -145,7 +145,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
 
   /// Resolves the "can switch modes" flag (admin OR dual-role). This drives
   /// the instant mode switcher on the dashboard AppBar — admins (full access)
-  /// and dual-role demo reviewers (hunter + outfitter) can toggle between the
+  /// and dual-role accounts (hunter + outfitter) can toggle between the
   /// Hunter / Outfitter dashboards without signing out. Wrapped in try/catch
   /// so an unavailable auth/Firestore (offline or test env) never hangs or
   /// crashes the dashboard — it simply renders without the switcher.
@@ -159,7 +159,7 @@ class _HunterDashboardState extends State<HunterDashboard> {
         admin = false;
       }
     } else {
-      // Dual-role demo reviewer: a non-admin with cross-dashboard access.
+      // Dual-role: a non-admin with cross-dashboard access.
       admin = false;
       _isDual = true;
     }

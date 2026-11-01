@@ -362,22 +362,14 @@ class _ScopeToolsBottomSheetState extends State<ScopeToolsBottomSheet>
 
           final docs = snapshot.data!.docs;
 
-          // Filter out demo/seeded rifles - only show the user's real registered
-          // firearms (mirrors the ballistic calculator filter).
+          // Only show the user's own registered firearms (mirrors the
+          // ballistic calculator filter).
           final userDocs =
               docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final serial =
-                        (data['serialNumber']?.toString().toUpperCase() ??
-                            '');
                     final name =
                         (data['name']?.toString().toLowerCase() ?? '');
-                    // Exclude demo rifles with TIKKA-, SAKO- prefixes.
-                    if (serial.startsWith('TIKKA-') ||
-                        serial.startsWith('SAKO-')) {
-                      return false;
-                    }
-                    // Exclude rifles with "Unknown" in the name.
+                    // Exclude firearms with "Unknown" in the name.
                     if (name.contains('unknown')) {
                       return false;
                     }

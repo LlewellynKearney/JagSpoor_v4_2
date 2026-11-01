@@ -29,8 +29,8 @@ class AdminModeSwitcher extends StatelessWidget {
   final AdminMode activeMode;
 
   /// The segments rendered. Admins see all three (Hunter / Outfitter /
-  /// Admin); dual-role demo reviewers see only Hunter + Outfitter (they have
-  /// no Admin portal access) so the switcher never offers a dead segment.
+  /// Admin); dual-role accounts see only Hunter + Outfitter (they have no
+  /// Admin portal access) so the switcher never offers a dead segment.
   final List<AdminMode> allowedModes;
 
   @override
@@ -228,7 +228,7 @@ class AdminModeSwitcherButton extends StatelessWidget {
   }
 
   void _showSheet(BuildContext context) {
-    // Dual-role demo reviewers get a Hunter + Outfitter-only switcher (they
+    // Dual-role accounts get a Hunter + Outfitter-only switcher (they
     // cannot access the Admin portal). Admins see all three segments.
     final isDual = UserRoleProvider.instance.role == AppRole.dual;
     final allowedModes = isDual

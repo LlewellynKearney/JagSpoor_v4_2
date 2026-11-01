@@ -50,7 +50,6 @@ JagSpoor is a multi-sided marketplace and field toolkit that connects South Afri
 - **Choose your path** — a clean role-selection screen sends you straight to Hunter mode or Outfitter mode.
 - **Password reset** delivered as a fast in-app deep link (not a slow web form), with a built-in 60-second cooldown so you never spam yourself with duplicate reset emails.
 - **Password autofill** — the phone's credential manager offers to save your login automatically.
-- **Google Play demo reviewer access** — a dedicated review login lets store reviewers explore every restricted feature instantly.
 - **Benefit:** *Get into the veld faster. One tap to sign in, a verified account, and the right dashboard the moment you arrive.*
 
 ### 2. Hunter Dashboard — Your Field Command Centre
@@ -278,7 +277,7 @@ JagSpoor is a multi-sided marketplace and field toolkit that connects South Afri
 - **Product version:** 1.0.11+13 (build 13).
 - **Channels:** Google Play (Android) and iOS.
 - **Subscription pricing:** Hunter R34.99/month, Outfitter R299.99/month (both VAT-inclusive), 30-day free trial.
-- **Recently shipped highlights:** live SAPS CFR tracker with status timeline and working-day tallies; a cleaned-up hunter dashboard; the dual-role Google Play demo-reviewer experience; the pricing/referral model; and the Firebase project hardening (rules, indexes, storage).
+- **Recently shipped highlights:** live SAPS CFR tracker with status timeline and working-day tallies; a cleaned-up hunter dashboard; the pricing/referral model; and the Firebase project hardening (rules, indexes, storage).
 
 *(Note: the `pubspec.yaml` / Android manifest currently in the tree read `1.0.10+10`; the v1.0.11+13 label is the target release referenced in the product brief and should be reconciled in the version files at the next build.)*
 

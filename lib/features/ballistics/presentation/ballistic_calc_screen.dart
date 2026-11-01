@@ -366,21 +366,13 @@ class _BallisticCalcScreenState extends State<BallisticCalcScreen>
 
                   final docs = snapshot.data!.docs;
 
-                  // Filter out demo/seeded rifles - only show user's real registered firearms
+                  // Only show the user's own registered firearms; a firearm
+                  // whose name is unknown is excluded from the picker.
                   final userDocs =
                       docs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
-                        final serial =
-                            (data['serialNumber']?.toString().toUpperCase() ??
-                                '');
                         final name =
                             (data['name']?.toString().toLowerCase() ?? '');
-                        // Exclude demo rifles with TIKKA-, SAKO- prefixes
-                        if (serial.startsWith('TIKKA-') ||
-                            serial.startsWith('SAKO-')) {
-                          return false;
-                        }
-                        // Exclude rifles with "Unknown" in the name
                         if (name.contains('unknown')) {
                           return false;
                         }

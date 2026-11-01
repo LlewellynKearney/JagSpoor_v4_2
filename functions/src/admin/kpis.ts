@@ -62,6 +62,9 @@ export const PLATFORM_GOOGLE_PLAY = "google_play";
 export const PLATFORM_PAYFAST = "payfast";
 export const PLATFORM_PAYFAST_ALTERNATIVE = "payfast_alternative";
 
+/** Roles that mark an account as retired / non-operational. */
+export const DISABLED_ROLES = ["disabled", "deleted"];
+
 /** Page size for the bounded collection scans. */
 export const SCAN_PAGE_SIZE = 500;
 
@@ -75,6 +78,7 @@ export interface AdminKpis {
   totalSubscribers: number;
   payfastSubscribers: number;
   googleSubscribers: number;
+  unknownSubscribers: number;
   totalHunters: number;
   totalOutfitters: number;
   totalPackages: number;
@@ -99,12 +103,37 @@ export interface AdminKpis {
 
 // ── Pure helpers (unit-tested without Firestore) ─────────────────────────────
 
+/**
+ * Whether a `users/{uid}` document belongs to a retired / disabled account.
+ *
+ * A disabled account (an operator-disabled login, or one marked
+ * `disabled: true`) must never inflate the operational KPIs — role counts or
+ * the subscriber mix. Retired review / demo accounts are stamped with
+ * `role: 'disabled'` + `disabled: true`, so both signals are honoured.
+ */
+export function isDisabledAccount(
+  data: Record<string, unknown> | undefined | null
+): boolean {
+  if (!data) return false;
+  if (data["disabled"] === true) return true;
+  const role = (data["role"] ?? "").toString().trim().toLowerCase();
+  return DISABLED_ROLES.includes(role);
+}
+
 /** Normalizes a raw platform / source string to the canonical platform. */
 export function platformOf(
   data: Record<string, unknown> | undefined | null
 ): string | null {
   if (!data) return null;
-  const raw = (data["subscriptionPlatform"] ?? data["subscriptionSource"] ?? "")
+  const raw = (
+    data["subscriptionPlatform"] ??
+    data["subscriptionSource"] ??
+    data["subscriptionType"] ??
+    data["billingPlatform"] ??
+    data["subscriptionProvider"] ??
+    data["platform"] ??
+    ""
+  )
     .toString()
     .trim()
     .toLowerCase();
@@ -224,6 +253,7 @@ export interface UserKpiAggregate {
   totalSubscribers: number;
   payfastSubscribers: number;
   googleSubscribers: number;
+  unknownSubscribers: number;
   hunterSubscribers: number;
   outfitterSubscribers: number;
   distinctDevices: number;
@@ -235,6 +265,12 @@ export interface UserKpiAggregate {
  * Hunters and outfitters are counted from the stored `role` (the same field
  * role selection writes). Subscribers are counted from the entitlement fields,
  * split by billing platform so the Play-vs-PayFast mix is visible.
+ *
+ * Retired accounts (`disabled: true` / `role: 'disabled'`) are excluded from
+ * the role + subscriber counts so a disabled account can never inflate the
+ * operational metrics. A subscriber whose billing platform cannot be resolved
+ * is counted in `unknownSubscribers` — the platform splits plus that figure
+ * always reconcile with `totalSubscribers`.
  */
 export function aggregateUserKpis(
   users: Array<Record<string, unknown>>,
@@ -245,11 +281,14 @@ export function aggregateUserKpis(
   let totalSubscribers = 0;
   let payfastSubscribers = 0;
   let googleSubscribers = 0;
+  let unknownSubscribers = 0;
   let hunterSubscribers = 0;
   let outfitterSubscribers = 0;
   const devices = new Set<string>();
 
   for (const user of users) {
+    if (isDisabledAccount(user)) continue;
+
     const role = (user["role"] ?? "").toString().trim().toLowerCase();
     if (role === "hunter") totalHunters += 1;
     if (role === "outfitter") totalOutfitters += 1;
@@ -267,6 +306,8 @@ export function aggregateUserKpis(
         platform === PLATFORM_PAYFAST_ALTERNATIVE
       ) {
         payfastSubscribers += 1;
+      } else {
+        unknownSubscribers += 1;
       }
       if (tierOf(user) === "outfitter") {
         outfitterSubscribers += 1;
@@ -283,6 +324,7 @@ export function aggregateUserKpis(
     totalSubscribers,
     payfastSubscribers,
     googleSubscribers,
+    unknownSubscribers,
     hunterSubscribers,
     outfitterSubscribers,
     distinctDevices: devices.size,
@@ -514,6 +556,7 @@ export const getAdminPortalKpis = onCall(
 
     const outfitterIds = new Set<string>();
     for (const user of users) {
+      if (isDisabledAccount(user)) continue;
       if ((user["role"] ?? "").toString().trim().toLowerCase() === "outfitter") {
         const uid = (user["uid"] ?? "").toString();
         if (uid) outfitterIds.add(uid);
@@ -567,6 +610,7 @@ export const getAdminPortalKpis = onCall(
       totalSubscribers: userAgg.totalSubscribers,
       payfastSubscribers: userAgg.payfastSubscribers,
       googleSubscribers: userAgg.googleSubscribers,
+      unknownSubscribers: userAgg.unknownSubscribers,
       totalHunters: userAgg.totalHunters,
       totalOutfitters,
       totalPackages: packages.length,

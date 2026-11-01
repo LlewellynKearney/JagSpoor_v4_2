@@ -375,6 +375,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final totalSubs = kpis?.totalSubscribers;
     final payfastSubs = kpis?.payfastSubscribers;
     final googleSubs = kpis?.googleSubscribers;
+    final otherSubs = kpis?.unknownSubscribers;
     final packages = kpis?.totalPackages;
 
     return GridView.count(
@@ -397,6 +398,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _metricCard(Icons.account_balance_wallet_outlined,
             'PayFast Subscribers', payfastSubs),
         _metricCard(Icons.play_circle_outline, 'Google Subscribers', googleSubs),
+        _metricCard(Icons.help_outline, 'Other Subscribers', otherSubs),
         _metricCard(Icons.inventory_2_outlined, 'Total Packages', packages),
         _metricCard(Icons.visibility_outlined, 'Listed Packages', listed),
         _metricCard(Icons.book_online_rounded, 'Active Bookings', bookings),

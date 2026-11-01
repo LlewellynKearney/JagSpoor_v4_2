@@ -43,7 +43,9 @@ const {
   PLATFORM_GOOGLE_PLAY,
   PLATFORM_PAYFAST,
   PLATFORM_PAYFAST_ALTERNATIVE,
+  DISABLED_ROLES,
   platformOf,
+  isDisabledAccount,
   isActiveSubscription,
   tierOf,
   bookingRevenueOf,
@@ -92,6 +94,26 @@ test("platformOf keeps payfast_alternative distinct", () => {
   assert.equal(platformOf({ subscriptionSource: "trial" }), null);
   assert.equal(platformOf({}), null);
   assert.equal(platformOf(null), null);
+});
+
+test("platformOf also reads subscriptionType / billingPlatform / provider", () => {
+  assert.equal(platformOf({ subscriptionType: "google_play" }), PLATFORM_GOOGLE_PLAY);
+  assert.equal(platformOf({ billingPlatform: "payfast" }), PLATFORM_PAYFAST);
+  assert.equal(
+    platformOf({ subscriptionProvider: "google_play_billing" }),
+    PLATFORM_GOOGLE_PLAY
+  );
+  assert.equal(platformOf({ platform: "payfast_alternative" }), PLATFORM_PAYFAST_ALTERNATIVE);
+});
+
+test("isDisabledAccount flags retired / disabled accounts", () => {
+  assert.deepEqual(DISABLED_ROLES, ["disabled", "deleted"]);
+  assert.equal(isDisabledAccount({ disabled: true }), true);
+  assert.equal(isDisabledAccount({ role: "disabled" }), true);
+  assert.equal(isDisabledAccount({ role: "DELETED" }), true);
+  assert.equal(isDisabledAccount({ role: "hunter" }), false);
+  assert.equal(isDisabledAccount({}), false);
+  assert.equal(isDisabledAccount(null), false);
 });
 
 test("isActiveSubscription — trial and expired premium are NOT subscriptions", () => {
@@ -180,9 +202,67 @@ test("aggregateUserKpis counts roles, subscribers and the platform mix", () => {
   assert.equal(agg.totalSubscribers, 3);
   assert.equal(agg.googleSubscribers, 2);
   assert.equal(agg.payfastSubscribers, 1);
+  assert.equal(agg.unknownSubscribers, 0);
   assert.equal(agg.hunterSubscribers, 2);
   assert.equal(agg.outfitterSubscribers, 1);
   assert.equal(agg.distinctDevices, 2);
+});
+
+test("aggregateUserKpis excludes disabled accounts from every count", () => {
+  const users = [
+    // Live hunter subscriber.
+    {
+      uid: "a",
+      role: "hunter",
+      subscriptionStatus: "active",
+      subscriptionPlatform: "google_play",
+    },
+    // Retired review/demo account: disabled + role 'disabled'. It must NOT
+    // inflate the subscriber mix or the role counts.
+    {
+      uid: "ieqqYhHRYngRaepIoPfkCJnmAyf1",
+      role: "disabled",
+      disabled: true,
+      subscriptionStatus: "active",
+      subscriptionPlatform: "google_play",
+    },
+    // A hunter flagged disabled but still holding role 'hunter'.
+    { uid: "c", role: "hunter", disabled: true, subscriptionStatus: "active" },
+  ];
+
+  const agg = aggregateUserKpis(users, NOW);
+  assert.equal(agg.registeredUsers, 3); // registered users still includes them
+  assert.equal(agg.totalHunters, 1);
+  assert.equal(agg.totalOutfitters, 0);
+  assert.equal(agg.totalSubscribers, 1);
+  assert.equal(agg.googleSubscribers, 1);
+  assert.equal(agg.payfastSubscribers, 0);
+  assert.equal(agg.unknownSubscribers, 0);
+});
+
+test("aggregateUserKpis routes a platform-less subscriber to unknownSubscribers", () => {
+  const agg = aggregateUserKpis(
+    [
+      {
+        uid: "a",
+        role: "hunter",
+        subscriptionStatus: "active",
+        subscriptionPlatform: "google_play",
+      },
+      // Active but no resolvable billing platform.
+      { uid: "b", role: "hunter", subscriptionStatus: "active" },
+    ],
+    NOW
+  );
+  assert.equal(agg.totalSubscribers, 2);
+  assert.equal(agg.googleSubscribers, 1);
+  assert.equal(agg.payfastSubscribers, 0);
+  assert.equal(agg.unknownSubscribers, 1);
+  // The platform split + the unresolved bucket reconcile with the total.
+  assert.equal(
+    agg.googleSubscribers + agg.payfastSubscribers + agg.unknownSubscribers,
+    agg.totalSubscribers
+  );
 });
 
 test("aggregateBookingKpis counts active/completed and sums realized revenue", () => {

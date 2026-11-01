@@ -22,7 +22,7 @@ class _NetworkDiagnosticHudState extends State<NetworkDiagnosticHud>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Barometric pressure sensor data (simulated for demo)
+  // Barometric pressure sensor data (simulated placeholder)
   double _barometricPressureHpa = 1013.25; // Default atmospheric pressure
   double _pressureDeltaLast3Hours = 0.0;
   double _movementProbability = 50.0;
