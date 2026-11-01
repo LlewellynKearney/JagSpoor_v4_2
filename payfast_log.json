@@ -1,0 +1,64 @@
+[
+  {
+    "level": "I",
+    "log": null,
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 18:02:13.289"
+  },
+  {
+    "level": "I",
+    "log": "Default STARTUP TCP probe succeeded after 1 attempt for container \"worker\" on port 8080.",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 18:01:19.317"
+  },
+  {
+    "level": "I",
+    "log": "Starting new instance. Reason: DEPLOYMENT_ROLLOUT - Instance started due to traffic shifting between revisions due to deployment, traffic split adjustment, or deployment health check.",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 18:01:12.089"
+  },
+  {
+    "execution_id": "se82l2rxjcd8",
+    "level": "I",
+    "log": "createPayFastPayment: form built",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:33:26.750"
+  },
+  {
+    "execution_id": "se82l2rxjcd8",
+    "level": "D",
+    "log": "Callable request verification passed",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:33:26.747"
+  },
+  {
+    "level": "I",
+    "log": null,
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:33:26.650"
+  },
+  {
+    "level": "I",
+    "log": null,
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:33:26.350"
+  },
+  {
+    "level": "I",
+    "log": "Default STARTUP TCP probe succeeded after 1 attempt for container \"worker\" on port 8080.",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:29:10.567"
+  },
+  {
+    "level": "I",
+    "log": "Starting new instance. Reason: DEPLOYMENT_ROLLOUT - Instance started due to traffic shifting between revisions due to deployment, traffic split adjustment, or deployment health check.",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 17:29:07.115"
+  },
+  {
+    "level": "I",
+    "log": "Default STARTUP TCP probe succeeded after 1 attempt for container \"worker\" on port 8080.",
+    "name": "createpayfastpayment",
+    "time_utc": "2026-10-28 12:57:59.739"
+  }
+]

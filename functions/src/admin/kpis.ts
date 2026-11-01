@@ -1,5 +1,12 @@
+import * as admin from "firebase-admin";
 import { logger } from "firebase-functions/v2";
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+
+// FIX: Ensure Admin SDK initialized BEFORE importing local firebase wrapper
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
 import { firestore } from "../firebase";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -333,7 +340,6 @@ export function aggregateBookingKpis(
   return {
     activeBookings,
     completedBookings,
-    // Round to cents — money must not carry binary floating-point noise.
     daily: Math.round(daily * 100) / 100,
     weekly: Math.round(weekly * 100) / 100,
     monthly: Math.round(monthly * 100) / 100,
@@ -351,8 +357,6 @@ export function computeMrr(
   const h = Number.isFinite(hunterPrice) ? Math.max(0, hunterPrice) : 0;
   const o = Number.isFinite(outfitterPrice) ? Math.max(0, outfitterPrice) : 0;
   const total = hunterSubscribers * h + outfitterSubscribers * o;
-  // Round to cents — money must not carry binary floating-point noise
-  // (14 × 34.99 + 2 × 299.99 is 1089.8400000000001 unrounded).
   return Math.round(total * 100) / 100;
 }
 
@@ -384,12 +388,6 @@ export function pricingFromConfig(
 
 /**
  * Resolves the "total installs" figure.
- *
- * A dedicated `installs` collection is the authoritative source when it has
- * rows (a future client-side install beacon writes there). Until then the
- * count of registered accounts is the honest proxy — an account is created by
- * an install — and the payload records which source was used so the UI can
- * label it.
  */
 export function resolveInstalls(
   installCount: number,
@@ -417,11 +415,6 @@ export function isAdminRequest(
 
 // ── Firestore reads ─────────────────────────────────────────────────────────
 
-/**
- * Reads every document of a collection in bounded pages. Never throws for a
- * single page failure — it returns whatever was collected so far, so one
- * unreadable page degrades the metric rather than failing the whole call.
- */
 async function scanCollection(
   path: string
 ): Promise<Array<Record<string, unknown>>> {
@@ -459,7 +452,6 @@ async function scanCollection(
   return docs;
 }
 
-/** Total number of Firebase Auth users, bounded to avoid a runaway listing. */
 export async function countAuthUsers(maxPages = 40): Promise<number> {
   try {
     const { auth } = await import("../firebase");
@@ -482,13 +474,6 @@ export async function countAuthUsers(maxPages = 40): Promise<number> {
 
 // ── Callable ────────────────────────────────────────────────────────────────
 
-/**
- * getAdminPortalKpis
- *
- * Callable Cloud Function (us-central1). Admin-only. Returns the Admin Portal
- * headline KPIs (installs, subscribers by platform, hunters, outfitters,
- * packages, bookings, trophies, revenue windows + MRR) as one payload.
- */
 export const getAdminPortalKpis = onCall(
   { region: "us-central1", maxInstances: 10 },
   async (req: CallableRequest): Promise<AdminKpis> => {
@@ -497,8 +482,6 @@ export const getAdminPortalKpis = onCall(
       throw new HttpsError("unauthenticated", "Login required.");
     }
 
-    // Admin check — the claim / allow-list paths first, then the users doc
-    // fallback (mirrors `isAdmin()` in firestore.rules).
     let usersDocRole: string | null = null;
     try {
       const callerDoc = await firestore()
@@ -506,9 +489,8 @@ export const getAdminPortalKpis = onCall(
         .doc(auth.uid)
         .get();
       usersDocRole = ((callerDoc.data() ?? {})["role"] ?? "").toString();
-    } catch {
-      // The users doc may be unreadable; the token paths still decide.
-    }
+    } catch {}
+
     if (!isAdminRequest(auth, usersDocRole)) {
       throw new HttpsError(
         "permission-denied",
@@ -530,9 +512,6 @@ export const getAdminPortalKpis = onCall(
 
     const userAgg = aggregateUserKpis(users, now);
 
-    // Outfitters are the union of `users.role == 'outfitter'` (self-registered)
-    // and the `outfitters` collection (admin-provisioned). Both are keyed by
-    // uid so the two sets union without double-counting.
     const outfitterIds = new Set<string>();
     for (const user of users) {
       if ((user["role"] ?? "").toString().trim().toLowerCase() === "outfitter") {
