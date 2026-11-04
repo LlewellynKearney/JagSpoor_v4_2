@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -148,6 +150,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// test VM, iOS, desktop, and the web build.
   bool _userChoiceAvailable = false;
 
+  /// Whether Google Play's OWN User Choice dialog is available on this host.
+  ///
+  /// When true, the native `BillingClient` has been reconfigured with
+  /// `enableUserChoiceBilling(...)`, so Play presents its own choice dialog
+  /// during the purchase flow — the app must NOT also render a second,
+  /// custom choice surface (that would double-ask and is not the API Play
+  /// documents). The custom [PaymentMethodChoice] surface is kept as the
+  /// fallback for hosts where the Play dialog cannot be enabled.
+  bool _playChoiceDialogAvailable = false;
+
+  /// Subscription to the plugin's User Choice Billing event stream.
+  ///
+  /// Fires when the user picks PayFast in Play's own dialog; the event
+  /// carries the external transaction token, which the PayFast hand-off
+  /// records for reporting to Google.
+  StreamSubscription<PlayUserChoiceDetails>? _userChoiceSub;
+
+  /// The token Play delivered through its own dialog for the in-flight
+  /// alternative purchase, if any. Consumed by the PayFast hand-off so the
+  /// transaction can be reported; cleared once used.
+  String? _playUserChoiceToken;
+
   /// True while the User Choice Billing external transaction token is being
   /// requested from the Play Billing Library, before the PayFast hand-off.
   bool _isCreatingToken = false;
@@ -293,7 +317,30 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       _listenForPurchases();
       // Persist any purchase (new or restored) onto users/{uid} + `purchases`.
       PlayPurchaseRecorder.instance.startListening();
+      // Listen for Google Play's OWN User Choice dialog events (fired when the
+      // user picks PayFast in Play's choice sheet). The token is needed to
+      // report the alternative-billing transaction back to Google.
+      _userChoiceSub = PlayBillingService.instance.userChoiceDetailsStream
+          .listen(_onPlayUserChoice);
     }
+  }
+
+  /// Handles a User Choice Billing event from **Play's own dialog**.
+  ///
+  /// Play invokes its `UserChoiceBillingListener` when the user picks the
+  /// alternative system (PayFast). The token Play supplies must accompany the
+  /// resulting PayFast transaction so Google's service fee can be invoiced;
+  /// stash it and immediately hand the user to the PayFast checkout.
+  void _onPlayUserChoice(PlayUserChoiceDetails details) {
+    if (!mounted) return;
+    final token = details.hasToken ? details.externalTransactionToken : null;
+    setState(() {
+      _playUserChoiceToken = token;
+      _paymentChoice = PaymentMethodChoice.payfastAlternative;
+    });
+    // Launch the PayFast checkout straight away — the user has already made
+    // the choice inside Play's dialog.
+    _subscribeViaPayFastAlternative(ScaffoldMessenger.maybeOf(context));
   }
 
   /// Resolves whether this host can offer Google Play User Choice Billing.
@@ -302,8 +349,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// test VM reports Android but has no billing bridge, so a platform check
   /// would wrongly surface the choice UI in tests (and on any Android build
   /// whose Play Store predates the programme).
+  ///
+  /// When the plugin CAN enable User Choice Billing, it reconfigures the
+  /// native `BillingClient` (`enableUserChoiceBilling`) so **Play renders its
+  /// own choice dialog** during the purchase — the API Play documents. The
+  /// in-app [PaymentMethodChoice] surface is then suppressed (the user is
+  /// asked exactly once) and kept only as the fallback for hosts where the
+  /// Play dialog cannot be enabled.
   Future<void> _resolveUserChoiceSupport() async {
     if (_isWebBilling) return;
+    // Resolve the capability FIRST and publish it, so the UI is never left
+    // waiting on a BillingClient reconnect (which can be slow, and never
+    // completes on a host without the plugin). This is the legacy native
+    // bridge probe.
     bool available;
     try {
       available = await AlternativeBillingService.instance.probeSupport();
@@ -311,12 +369,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       debugPrint('SubscriptionScreen: user choice probe failed: $e');
       available = false;
     }
-    if (!mounted || available == _userChoiceAvailable) return;
-    setState(() => _userChoiceAvailable = available);
+    if (!mounted) return;
+    if (available != _userChoiceAvailable) {
+      setState(() => _userChoiceAvailable = available);
+    }
+    // No alternative to offer: skip the BillingClient reconnect entirely.
+    if (!available) return;
+
+    // Then arm Google Play's OWN User Choice dialog by reconfiguring the
+    // plugin's BillingClient (the API the integration guide documents). When
+    // this succeeds Play asks the question during the purchase flow, so the
+    // in-app choice surface is suppressed to avoid asking twice.
+    bool playDialog;
+    try {
+      playDialog = await PlayBillingService.instance.enableUserChoiceBilling();
+    } catch (e) {
+      debugPrint('SubscriptionScreen: enableUserChoiceBilling failed: $e');
+      playDialog = false;
+    }
+    if (!mounted || playDialog == _playChoiceDialogAvailable) return;
+    setState(() => _playChoiceDialogAvailable = playDialog);
   }
 
   @override
   void dispose() {
+    _userChoiceSub?.cancel();
     _promoController.dispose();
     super.dispose();
   }
@@ -584,7 +661,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   /// therefore has a purchase to make. Gating it on `isActive` (as an earlier
   /// revision did) hid the whole surface — and with it the checkout CTA — from
   /// exactly the new users who need it.
-  bool get _showsUserChoice => _userChoiceAvailable && !_isWebBilling;
+  ///
+  /// Suppressed when Google Play's OWN User Choice dialog is armed
+  /// ([_playChoiceDialogAvailable]): Play then asks the question during the
+  /// purchase flow, and rendering a second in-app choice would ask twice.
+  bool get _showsUserChoice =>
+      _userChoiceAvailable && !_isWebBilling && !_playChoiceDialogAvailable;
 
   /// Whether [sub] is an ACTIVE subscription that Google Play manages.
   ///
@@ -882,16 +964,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       _isCreatingToken = true;
     });
     final plan = _selectedPlan;
-    String? token;
-    try {
-      // Step 1 — obtain the Play-issued external transaction token.
-      token = await AlternativeBillingService.instance
-          .createAlternativeBillingToken();
-    } catch (e) {
-      debugPrint('SubscriptionScreen: alternative billing token failed: $e');
-    } finally {
-      if (mounted) setState(() => _isCreatingToken = false);
+    // Step 1 — obtain the Play-issued external transaction token. When the
+    // user picked PayFast in **Play's own User Choice dialog**, the token has
+    // already arrived on `userChoiceDetailsStream` and is preferred; otherwise
+    // it is requested from the Play Billing Library (the alternative-billing
+    // reporting-details API).
+    final playToken = _playUserChoiceToken;
+    _playUserChoiceToken = null;
+    String? token = playToken;
+    if (token == null) {
+      try {
+        token = await AlternativeBillingService.instance
+            .createAlternativeBillingToken();
+      } catch (e) {
+        debugPrint('SubscriptionScreen: alternative billing token failed: $e');
+      }
     }
+    if (mounted) setState(() => _isCreatingToken = false);
 
     try {
       // Step 2 — launch the PayFast checkout, flagged as alternative billing

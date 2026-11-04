@@ -1,6 +1,132 @@
 # JagSpoor -- Agent Memory
 
 
+## FEAT: Google Play User Choice Billing — Play's OWN choice dialog + v4.2.24 bump (added 2026-11-04)
+
+Branch `main` (base `c1ff99a`). Play Console **enrollment** for the User
+Choice Billing programme requires the app to launch Play's **own** choice
+dialog (Billing Library `enableUserChoiceBilling` /
+`BillingChoiceMode.userChoiceBilling`) and report the resulting alternative
+transaction via the `externalTransactionToken` Play hands back. The repo
+already shipped a **custom** in-app choice surface + a custom native method
+channel (`com.jagspoor/alternative_billing`) — the gap was that the plugin's
+`BillingClient` was never built with `enableUserChoiceBilling`, so Play's
+native dialog never appeared.
+
+### P1 — `PlayBillingService`: plugin-native UCB enablement + token stream
+(`lib/features/subscription/services/play_billing_service.dart`)
+- NEW `PlayUserChoiceDetails` — a Flutter-only mirror of the plugin's
+  Android-only `GooglePlayUserChoiceDetails` carrying the
+  `externalTransactionToken` + chosen `productIds`, plus `fromGooglePlay(...)`
+  and `hasToken`. Keeps the screen (and tests) free of the Android type.
+- NEW `enableUserChoiceBilling()` — reconfigures the native client via
+  `getPlatformAddition<InAppPurchaseAndroidPlatformAddition>()
+  .setBillingChoice(BillingChoiceMode.userChoiceBilling)` (the plugin's
+  exposure of `enableUserChoiceBilling`). This DISCONNECTS/reconnects the
+  client, so it must run before `launchBillingFlow`. Bounded by a 5s timeout
+  and fully try/catch'd → `false` on any host without the addition (iOS /
+  desktop / a Play Store predating the programme), so it can never wedge the
+  caller. Never throws.
+- NEW `userChoiceDetailsStream` — maps the plugin's
+  `userChoiceDetailsStream` through `PlayUserChoiceDetails.fromGooglePlay`,
+  and degrades to `Stream.empty()` when the addition is absent.
+- Seams: `enableUserChoiceBillingForTesting` (`Future<bool> Function()`),
+  `userChoiceDetailsStreamForTesting`, `enableUserChoiceBillingCalls`
+  (counter), all cleared by `resetTestSeams()`.
+- Import added: `package:in_app_purchase_android/billing_client_wrappers.dart`
+  `show BillingChoiceMode` (the same import the plugin's own example uses).
+
+### P2 — Subscription screen: arm Play's dialog, consume its token
+(`lib/features/subscription/subscription_screen.dart`)
+- `_resolveUserChoiceSupport()` now probes the capability FIRST (publishing it
+  so the UI never waits on a BillingClient reconnect), returns early when the
+  alternative is unsupported, and only then arms Play's own dialog via
+  `PlayBillingService.instance.enableUserChoiceBilling()`.
+- NEW `_playChoiceDialogAvailable` — when true, `_showsUserChoice` is false:
+  the in-app `PaymentMethodChoice` surface is suppressed because **Play asks
+  the question itself**. Rendering both would ask twice. The custom surface
+  remains the documented fallback for hosts where the Play dialog cannot be
+  enabled.
+- NEW `_onPlayUserChoice(PlayUserChoiceDetails)` + `_userChoiceSub` — listens
+  to `userChoiceDetailsStream` (cancelled in `dispose`). When the user picks
+  PayFast in Play's dialog, the event's token is stashed in
+  `_playUserChoiceToken`, `_paymentChoice` flips to `payfastAlternative`, and
+  the PayFast hand-off runs immediately (the user already chose inside Play's
+  dialog).
+- `_subscribeViaPayFastAlternative` now PREFERS `_playUserChoiceToken` (the
+  token Play delivered through its own dialog) and only falls back to
+  `AlternativeBillingService.createAlternativeBillingToken()` when Play did
+  not supply one. The token still flows into
+  `recordAlternativeBillingTransaction` for reporting to Google — so the
+  service-fee path is unchanged.
+
+### P3 — Version bump 4.2.23+23 -> 4.2.24+24
+Hand-synced (the Gradle values are HARDCODED — they do NOT track
+`flutter.versionCode`): `pubspec.yaml` `4.2.24+24`,
+`android/app/build.gradle.kts` `versionCode = 24` / `versionName = "4.2.24"`,
+`lib/core/widgets/version_info.dart` fallbacks `'24'` / `'4.2.24'` (+ both
+doc-comment examples), `test/version_info_and_facebook_test.dart` and
+`test/force_update_service_test.dart` (floor 24 vs 23 blocks; 23 vs 23 does
+not).
+
+### Tests
+- `test/play_user_choice_billing_test.dart` (NEW, 9): `PlayUserChoiceDetails`
+  token/product/blank matrix + `hasToken`; `enableUserChoiceBilling` returns
+  the seam result and records the call, a `false` seam reports unavailable, a
+  throwing seam is swallowed; `userChoiceDetailsStream` forwards the seam
+  stream (token + ids intact) and yields an empty stream when absent;
+  `resetTestSeams` clears the new seams + counter.
+- `test/alternative_billing_user_choice_test.dart`: the existing
+  "Android offers BOTH payment options" group now pins
+  `enableUserChoiceBillingForTesting = () async => false` (the test VM has the
+  plugin's Android addition registered but no native BillingClient, so the
+  real reconnect would never complete) — the in-app choice surface is the
+  documented fallback and every pre-existing assertion holds. NEW
+  "Play-provided User Choice dialog" group (2 tests): arming Play's dialog
+  suppresses the custom surface while keeping the Play CTA, and a PayFast pick
+  on the stream drives the PayFast hand-off.
+
+### Verification (this sandbox)
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing
+  info-level issues (unchanged baseline). The 4 touched/new files:
+  **No issues found**.
+- Targeted suites: `alternative_billing_user_choice_test` 23/23,
+  `play_user_choice_billing_test` 9/9,
+  `alternative_billing_service_test` + `billing_service_test` +
+  `play_billing_compliance_test` + version suites all green.
+- Full suite: see the run below.
+- Env: Flutter **3.44.9** at `/workspace/sdk/flutter`; the
+  `~/libs/libsqlite3.so` symlink + `LD_LIBRARY_PATH="$HOME/libs"` for the
+  sqflite-FFI suites.
+
+### ⚠️ Operator steps (cannot be done in this sandbox)
+- Play Console → **Monetization setup → Alternative billing**: complete the
+  User Choice Billing enrollment + declare PayFast. The app now satisfies the
+  "launch Play's own dialog" requirement; the enrollment form itself is a
+  Console action.
+- Build the artifact in a credentialed env:
+  `flutter clean && flutter pub get && flutter build appbundle --release`
+  (`android/key.properties` is absent here, so the release AAB falls back to
+  the debug signing identity — Play rejects a debug-signed AAB).
+- Do NOT raise `admin_config/app_version.min_required_version` to 24 until
+  the versionCode-24 AAB is live on the track.
+- The `enableUserChoiceBilling` reconnect is only reachable where
+  `probeSupport()` is true, so a device/Play Store without the programme keeps
+  the existing in-app choice surface — no regression path.
+
+### Files
+- MODIFIED: `lib/features/subscription/services/play_billing_service.dart`,
+  `lib/features/subscription/subscription_screen.dart`, `pubspec.yaml`,
+  `android/app/build.gradle.kts`, `lib/core/widgets/version_info.dart`,
+  `test/alternative_billing_user_choice_test.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+- NEW: `test/play_user_choice_billing_test.dart`.
+- No Firestore rules / index / Storage / manifest / functions changes
+  (the existing `alternative_billing_reports` reporting path is reused
+  unchanged; `in_app_purchase: ^3.3.0` already shipped Billing Library 8.0.0).
+
+
 ## EMERGENCY FIX: paid-user role PERMISSION_DENIED + web 404 + v9 forced-update loop (v4.2.23, versionCode 23) (added 2026-11-01)
 
 Branch `main` (base `e3bfdac`). Three live production defects, one commit.

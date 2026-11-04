@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -98,6 +100,12 @@ void main() {
       // Android: Play Billing available, and this is not the web build.
       BillingService.usesPayFastForTesting = false;
       AlternativeBillingService.isSupportedForTesting = true;
+      // The test VM has the plugin's Android addition registered but no
+      // native BillingClient, so the real `setBillingChoice` reconnect would
+      // never complete. Pin the Play-dialog enablement to `false` here so the
+      // screen takes the in-app choice surface (the documented fallback) —
+      // the Play-dialog path has its own coverage below.
+      PlayBillingService.enableUserChoiceBillingForTesting = () async => false;
     });
 
     testWidgets('renders the Google Play AND PayFast options for Hunter',
@@ -323,6 +331,56 @@ void main() {
       expect(find.byKey(const ValueKey('paymentChoiceSection')), findsNothing);
       // The native Play checkout remains available.
       expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
+    });
+  });
+
+  group('Play-provided User Choice dialog (enableUserChoiceBilling)', () {
+    setUp(() {
+      BillingService.usesPayFastForTesting = false;
+      AlternativeBillingService.isSupportedForTesting = true;
+      // Arm Play's own dialog: the screen must then suppress the custom
+      // in-app choice surface (Play asks the question itself).
+      PlayBillingService.enableUserChoiceBillingForTesting = () async => true;
+    });
+
+    testWidgets('suppresses the custom choice surface when Play asks itself',
+        (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+      await scrollTo(tester, find.byKey(const ValueKey('subscribeButton')));
+
+      // Play renders its own dialog, so the app must not ask a second time.
+      expect(find.byKey(const ValueKey('paymentChoiceSection')), findsNothing);
+      // The Play checkout CTA remains available.
+      expect(find.text('SUBSCRIBE VIA GOOGLE PLAY'), findsOneWidget);
+      expect(PlayBillingService.enableUserChoiceBillingCalls, greaterThan(0));
+    });
+
+    testWidgets('a PayFast pick in Play\'s dialog routes to the PayFast flow',
+        (tester) async {
+      final controller = StreamController<PlayUserChoiceDetails>();
+      PlayBillingService.userChoiceDetailsStreamForTesting = controller.stream;
+
+      // Stub the checkout hand-off so the PayFast leg is exercised offline.
+      BillingService.httpPostForTesting = (uri, headers, body) async =>
+          _signedFormResponse();
+      BillingService.currentUserIdResolverForTesting = () => 'uid-1';
+      BillingService.idTokenResolverForTesting = () async => 'id-token';
+      BillingService.urlLauncherForTesting = (uri) async => true;
+
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+
+      // Simulate Play's own dialog delivering the alternative-choice token.
+      controller.add(const PlayUserChoiceDetails(
+        externalTransactionToken: 'play-uct-token',
+        productIds: ['jagspoor_hunter_monthly'],
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // The token Play supplied is consumed by the PayFast hand-off.
+      expect(PlayBillingService.enableUserChoiceBillingCalls, greaterThan(0));
+
+      await controller.close();
     });
   });
 

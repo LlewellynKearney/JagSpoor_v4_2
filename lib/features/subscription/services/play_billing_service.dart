@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart'
+    show BillingChoiceMode;
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import 'subscription_pricing.dart';
@@ -147,6 +149,44 @@ class PlayProduct {
   }
 }
 
+/// A Google Play **User Choice Billing** alternative-selection event.
+///
+/// Play renders its own choice dialog during the purchase flow when the
+/// `BillingClient` was built with `enableUserChoiceBilling(...)`. When the
+/// user picks the alternative system (PayFast), Play invokes the
+/// `UserChoiceBillingListener`, which surfaces a
+/// `GooglePlayUserChoiceDetails` on the plugin's `userChoiceDetailsStream`.
+///
+/// This mirrors only the fields JagSpoor needs — the external transaction
+/// token (reported to Google so the service fee can be invoiced) and the
+/// product ids the user chose the alternative for. It exists so the screen
+/// and the tests do not depend on the plugin's Android-only type.
+class PlayUserChoiceDetails {
+  /// The token that must be reported to Google Play for the resulting
+  /// alternative-billing transaction.
+  final String externalTransactionToken;
+
+  /// The product ids the user selected the alternative billing system for.
+  final List<String> productIds;
+
+  const PlayUserChoiceDetails({
+    required this.externalTransactionToken,
+    this.productIds = const [],
+  });
+
+  /// Builds the snapshot from the plugin's Android-only details type.
+  static PlayUserChoiceDetails fromGooglePlay(
+    GooglePlayUserChoiceDetails details,
+  ) =>
+      PlayUserChoiceDetails(
+        externalTransactionToken: details.externalTransactionToken,
+        productIds: details.products.map((p) => p.id).toList(growable: false),
+      );
+
+  /// Whether a usable token was carried.
+  bool get hasToken => externalTransactionToken.trim().isNotEmpty;
+}
+
 /// Adapter around the official `in_app_purchase` plugin for Google Play
 /// Billing subscriptions.
 ///
@@ -211,6 +251,22 @@ class PlayBillingService {
   @visibleForTesting
   static final List<PurchaseDetails> completedPurchasesForTesting = [];
 
+  /// Test seam: replaces the native `setBillingChoice(userChoiceBilling)`
+  /// reconnect. Returning `true` simulates a host where Play's own choice
+  /// dialog can be enabled; `false` simulates the fallback path (an older Play
+  /// Store, a build without the programme, or the test VM).
+  @visibleForTesting
+  static Future<bool> Function()? enableUserChoiceBillingForTesting;
+
+  /// Test seam: replaces the platform's `userChoiceDetailsStream` so the
+  /// alternative-choice token can be driven from a test.
+  @visibleForTesting
+  static Stream<PlayUserChoiceDetails>? userChoiceDetailsStreamForTesting;
+
+  /// Records each [enableUserChoiceBilling] invocation.
+  @visibleForTesting
+  static int enableUserChoiceBillingCalls = 0;
+
   /// Web-safe openable Play subscriptions URL (compliance + management).
   ///
   /// `playStoreSubscriptionsUrl` opens the platform subscriptions page for
@@ -234,6 +290,9 @@ class PlayBillingService {
     pastPurchasesForTesting = null;
     restoreForTesting = null;
     completePurchaseForTesting = null;
+    enableUserChoiceBillingForTesting = null;
+    userChoiceDetailsStreamForTesting = null;
+    enableUserChoiceBillingCalls = 0;
     restoreCallsForTesting = 0;
     completedPurchasesForTesting.clear();
   }
@@ -457,4 +516,63 @@ class PlayBillingService {
   /// Google Play (policy-compliant: Play handles recurring billing).
   String subscriptionCenterUrlFor(SubscriptionTier tier) =>
       '$playStoreSubscriptionsBase${tier.playProductId}&package=za.co.jagspoor.app';
+
+  /// Enables Google Play **User Choice Billing** on the native BillingClient.
+  ///
+  /// The Play Billing Library only presents its own choice dialog during a
+  /// purchase when the client was built with
+  /// `BillingClient.Builder.enableUserChoiceBilling(listener)`. The plugin
+  /// exposes that as `setBillingChoice(BillingChoiceMode.userChoiceBilling)`,
+  /// which disconnects, reconfigures and reconnects the client — so it must
+  /// run BEFORE `launchBillingFlow` (i.e. before the purchase is started).
+  ///
+  /// Best-effort: a non-Android host (no platform addition), an iOS/desktop
+  /// build, or a Play Store that predates the programme returns `false` and
+  /// the caller falls back to the in-app choice surface. Never throws.
+  Future<bool> enableUserChoiceBilling() async {
+    final override = enableUserChoiceBillingForTesting;
+    if (override != null) {
+      enableUserChoiceBillingCalls++;
+      try {
+        return await override();
+      } catch (e) {
+        debugPrint('PlayBillingService.enableUserChoiceBilling (test) '
+            'failed: $e');
+        return false;
+      }
+    }
+    try {
+      final addition = _billing.getPlatformAddition<
+          InAppPurchaseAndroidPlatformAddition>();
+      // Bounded: a Play service that never answers must not wedge the caller.
+      await addition
+          .setBillingChoice(BillingChoiceMode.userChoiceBilling)
+          .timeout(const Duration(seconds: 5));
+      enableUserChoiceBillingCalls++;
+      return true;
+    } catch (e) {
+      debugPrint('PlayBillingService.enableUserChoiceBilling unavailable: $e');
+      return false;
+    }
+  }
+
+  /// Stream of Google Play **User Choice Billing** alternative-selection
+  /// events, emitted when the user picks the alternative system (PayFast) in
+  /// Play's own choice dialog.
+  ///
+  /// Returns an empty stream on any host without the Android platform
+  /// addition (iOS / desktop / tests) so callers can always subscribe.
+  Stream<PlayUserChoiceDetails> get userChoiceDetailsStream {
+    final override = userChoiceDetailsStreamForTesting;
+    if (override != null) return override;
+    try {
+      final addition = _billing.getPlatformAddition<
+          InAppPurchaseAndroidPlatformAddition>();
+      return addition.userChoiceDetailsStream
+          .map(PlayUserChoiceDetails.fromGooglePlay);
+    } catch (e) {
+      debugPrint('PlayBillingService.userChoiceDetailsStream unavailable: $e');
+      return const Stream<PlayUserChoiceDetails>.empty();
+    }
+  }
 }
