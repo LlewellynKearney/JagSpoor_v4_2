@@ -23,6 +23,7 @@ import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 import 'services/subscription_status_service.dart';
+import 'widgets/merchant_of_record_disclosure.dart';
 
 export 'alternative_billing_copy.dart' show AlternativeBillingCopy;
 
@@ -813,19 +814,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   ///
   /// Rendered wherever PayFast is the (or an) available payment path: inside
   /// the Android User Choice Billing choice surface, and above the PayFast
-  /// checkout CTA. Kept as a widget so the wording comes from the single
-  /// [AlternativeBillingCopy.merchantOfRecordDisclosure] constant.
-  Widget _buildMerchantOfRecordDisclosure(ThemeController theme) {
-    return Text(
-      AlternativeBillingCopy.merchantOfRecordDisclosure,
-      key: const ValueKey('merchantOfRecordDisclosure'),
-      style: TextStyle(
-        color: theme.subtitleColor,
-        fontSize: 10,
-        height: 1.35,
-      ),
-    );
-  }
+  /// checkout CTA. Delegates to [MerchantOfRecordDisclosure] so the wording
+  /// (single-sourced on [AlternativeBillingCopy.merchantOfRecordDisclosure])
+  /// and the styling are identical on every checkout surface.
+  Widget _buildMerchantOfRecordDisclosure(ThemeController theme) =>
+      MerchantOfRecordDisclosure(theme: theme);
 
   /// One selectable payment-method card (a radio-style choice).
   Widget _buildPaymentOptionTile({
