@@ -490,10 +490,11 @@ void main() {
   });
 
   group('native alternative-billing checkout opens the signed URL', () {
-    test('launches the browser with the signed GET URL, not a DOM form',
+    test('launches the in-app WebView with the signed GET URL, not a DOM form',
         () async {
-      // Not the web build: the native path must hand the signed URL to the
-      // device browser (there is no DOM to submit a form into).
+      // Not the web build: the native path must load the signed URL in an
+      // in-app WebView (there is no DOM to submit a form into), keeping the
+      // checkout INSIDE the app (Play User Choice Billing compliance).
       BillingService.usesPayFastForTesting = false;
       BillingService.httpPostForTesting = (uri, headers, body) async =>
           _signedFormResponse();
@@ -525,7 +526,7 @@ void main() {
           reason: 'a native host has no DOM to submit a form into');
     });
 
-    test('a refused browser hand-off reports a failure', () async {
+    test('a refused WebView hand-off reports a failure', () async {
       BillingService.usesPayFastForTesting = false;
       BillingService.httpPostForTesting = (uri, headers, body) async =>
           _signedFormResponse();

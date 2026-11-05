@@ -74,8 +74,11 @@ class PayFastPayment {
 ///   the signed form to PayFast's hosted checkout (auto-submit via an injected
 ///   `<form>`; falls back to `url_launcher` if the DOM submit is unavailable).
 /// * **Android / iOS** -> the existing Google Play Billing flow
-///   ([PlayBillingService]) — Play policy requires Play Billing for in-app
-///   digital goods, so PayFast is deliberately NOT used on native.
+///   ([PlayBillingService]) for a Play purchase. A PayFast checkout (web, or
+///   the Android **User Choice Billing** alternative) loads the signed hosted
+///   checkout in an **in-app WebView**, never an external browser, so choosing
+///   PayFast does not lead the user outside the app (Play policy
+///   IN_APP_EXPERIENCE-4551).
 ///
 /// The merchant key is NEVER present in this client: it is used server-side to
 /// sign the form. The client only ever sees the public `merchant_id` + the MD5
@@ -115,6 +118,16 @@ class BillingService {
   /// form can be submitted (Android / iOS).
   @visibleForTesting
   static Future<bool> Function(Uri url)? urlLauncherForTesting;
+
+  /// The `LaunchMode` used for the native PayFast hand-off.
+  ///
+  /// **Google Play User Choice Billing compliance (IN_APP_EXPERIENCE-4551).**
+  /// The alternative-billing programme requires that choosing PayFast does NOT
+  /// lead the user outside the app. `inAppWebView` loads the hosted checkout
+  /// in an in-app WebView (Android `WebView` / iOS `WKWebView`) instead of
+  /// handing the URL to an external browser (`externalApplication`), which
+  /// would bounce the user to Chrome / Safari and violate the policy.
+  static const LaunchMode nativeLaunchMode = LaunchMode.inAppWebView;
 
   /// Test seam: forces the platform routing (`true` = PayFast web path,
   /// `false` = native Play Billing path). Null uses the real platform.
@@ -183,7 +196,10 @@ class BillingService {
   /// Set [alternativeBilling] when the user has chosen PayFast through Google
   /// Play's **User Choice Billing** flow on Android. The flag is forwarded to
   /// the server so the ITN stamps the entitlement `payfast_alternative`, and
-  /// it selects the native browser launch (there is no DOM form off the web).
+  /// it selects the native **in-app WebView** launch (there is no DOM form off
+  /// the web). The checkout is deliberately kept inside the app — Google Play
+  /// forbids an alternative-billing choice from leading the user outside the
+  /// app (IN_APP_EXPERIENCE-4551).
   Future<BillingResult> pay({
     required String role,
     required BillingPlan plan,
@@ -298,14 +314,19 @@ class BillingService {
     return null;
   }
 
-  /// Web checkout: request the signed form, then post it to PayFast.
+  /// Native checkout: request the signed form, then open the hosted checkout
+  /// **inside the app**.
   ///
   /// Two launch paths, because only a browser can submit an HTML form:
   ///  * **Web** — inject a hidden form and submit it in the current tab.
   ///  * **Native** (Android User Choice Billing, or an iOS PayFast
   ///    subscriber) — build a signed GET URL from the same form fields and
-  ///    hand it to `url_launcher` so the hosted checkout opens in the device
-  ///    browser. PayFast accepts a signed query string on `/eng/process`
+  ///    load it in an **in-app WebView** via
+  ///    `url_launcher`'s `LaunchMode.inAppWebView`. Google Play's User Choice
+  ///    Billing policy (IN_APP_EXPERIENCE-4551) requires that choosing the
+  ///    alternative system does NOT lead the user outside the app, so this
+  ///    branch must never use `externalApplication` (which opens Chrome /
+  ///    Safari). PayFast accepts a signed query string on `/eng/process`
   ///    (verified: the endpoint processes GET and validates the signature
   ///    identically), and the ITN still arrives server-to-server.
   Future<BillingResult> _payWithPayFast({
@@ -323,12 +344,12 @@ class BillingService {
       return BillingResult(launched: false, message: error);
     }
 
-    // Native: no DOM, so open the signed checkout URL in the device browser.
+    // Native: no DOM, so load the signed checkout URL in an in-app WebView.
     //
     // This branch must NOT run when the web-billing seam is forced: the
     // existing web tests drive the DOM submitter directly (without setting
     // `usesPayFastForTesting`), so a raw `kIsWeb` check would misroute them
-    // into the browser-launch path on the test VM.
+    // into the WebView-launch path on the test VM.
     final nativeLaunch = !kIsWeb && usesPayFastForTesting != true;
     if (nativeLaunch) {
       final uri = Uri.parse(buildSignedGetUrl(payment));
@@ -336,7 +357,7 @@ class BillingService {
       if (!launched) {
         return const BillingResult(
           launched: false,
-          message: 'Could not open the PayFast checkout in your browser.',
+          message: 'Could not open the PayFast checkout in the app.',
         );
       }
       return BillingResult.ok;
@@ -371,7 +392,18 @@ class BillingService {
 
   Future<bool> _defaultUrlLauncher(Uri uri) async {
     try {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      // `inAppWebView` keeps the checkout INSIDE the app — required by Google
+      // Play's User Choice Billing policy (IN_APP_EXPERIENCE-4551). Never use
+      // `externalApplication` here: it hands the URL to Chrome / Safari and
+      // leads the user outside the app.
+      return await launchUrl(
+        uri,
+        mode: nativeLaunchMode,
+        webViewConfiguration: const WebViewConfiguration(
+          enableJavaScript: true,
+          enableDomStorage: true,
+        ),
+      );
     } catch (e) {
       debugPrint('BillingService._defaultUrlLauncher error: $e');
       return false;

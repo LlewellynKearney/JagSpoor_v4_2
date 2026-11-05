@@ -947,7 +947,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   ///  1. ask the Play Billing Library for the token
   ///     (`createAlternativeBillingOnlyReportingDetailsAsync`, or a token Play
   ///     already delivered via `UserChoiceBillingListener`),
-  ///  2. hand the user to the PayFast hosted checkout (native browser launch),
+  ///  2. hand the user to the PayFast hosted checkout **inside the app** — an
+  ///     in-app WebView, never an external browser (Play policy
+  ///     IN_APP_EXPERIENCE-4551: an alternative-billing choice must not lead
+  ///     the user outside the app),
   ///  3. record the transaction in `alternative_billing_reports` so the server
   ///     can report it to the Play Developer API and Google's service fee can
   ///     be invoiced.
