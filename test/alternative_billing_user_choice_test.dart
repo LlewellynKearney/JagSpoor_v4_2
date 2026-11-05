@@ -156,6 +156,24 @@ void main() {
       expect(AlternativeBillingCopy.disputeEmail, 'support@jagspoor.co.za');
     });
 
+    testWidgets('shows the merchant-of-record disclosure (Section 2.2)',
+        (tester) async {
+      await pumpScreen(tester, tier: SubscriptionTier.hunter);
+      await scrollTo(
+        tester,
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+      );
+
+      expect(
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(AlternativeBillingCopy.merchantOfRecordDisclosure),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('does NOT preselect a method (no auto-default to PayFast)',
         (tester) async {
       await pumpScreen(tester, tier: SubscriptionTier.hunter);
@@ -402,6 +420,22 @@ void main() {
       expect(
         AlternativeBillingCopy.disputeMailto,
         'mailto:support@jagspoor.co.za',
+      );
+    });
+
+    test('merchant-of-record disclosure names the entity + the three duties',
+        () {
+      final text = AlternativeBillingCopy.merchantOfRecordDisclosure;
+      expect(text, contains('JAGSPOOR VELD AND VENTURES (PTY) LTD'));
+      expect(text, contains('merchant of record'));
+      expect(text, contains('not Google'));
+      expect(text, contains('guarantees'));
+      expect(text, contains('payment processing'));
+      expect(text, contains('VAT'));
+      // The caption renders the same verbatim wording.
+      expect(
+        AlternativeBillingCopy.merchantOfRecordCaption,
+        AlternativeBillingCopy.merchantOfRecordDisclosure,
       );
     });
   });

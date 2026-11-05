@@ -170,6 +170,16 @@ void main() {
       }
     }
 
+    /// Drags in small steps until [finder] mounts, then stops — used for
+    /// mid-content assertions so the lazily-built list is not over-scrolled
+    /// past the widgets under test.
+    Future<void> scrollUntilFound(WidgetTester tester, Finder finder) async {
+      for (var i = 0; i < 12 && finder.evaluate().isEmpty; i++) {
+        await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+        await tester.pump();
+      }
+    }
+
     testWidgets(
         'an ACTIVE subscriber whose platform is google_play gets NO Play '
         'button on web (PayFast manage + footer instead)', (tester) async {
@@ -281,18 +291,23 @@ void main() {
       ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      await scrollToBottom(tester);
 
-      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
-      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
-          findsNothing);
-      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
-      expect(find.byType(PayFastSecureFooter), findsOneWidget);
+      // Mid-content: scroll only until the tier prices mount, so the
+      // lazily-built list is not over-scrolled past them.
+      await scrollUntilFound(tester, find.text('R 299.99/month'));
       // Both Outfitter plan cards (Monthly + Yearly) render on the web.
       expect(find.text('Outfitter Monthly'), findsOneWidget);
       expect(find.text('Outfitter Yearly'), findsOneWidget);
       expect(find.text('R 299.99/month'), findsOneWidget);
       expect(find.text('R 2999.99/year'), findsOneWidget);
+
+      // Below-the-fold: the CTA + trust footer.
+      await scrollToBottom(tester);
+      expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
+      expect(find.byKey(const ValueKey('cancelSubscriptionButton')),
+          findsNothing);
+      expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+      expect(find.byType(PayFastSecureFooter), findsOneWidget);
     });
 
     testWidgets('a WEB subscriber with a legacy PayFast platform also gets no '

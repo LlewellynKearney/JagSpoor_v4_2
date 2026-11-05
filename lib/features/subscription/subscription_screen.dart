@@ -18,10 +18,13 @@ import '../billing/alternative_billing_service.dart';
 import '../billing/billing_plans.dart';
 import '../billing/billing_service.dart';
 import '../billing/payfast_buttons.dart';
+import 'alternative_billing_copy.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
 import 'services/subscription_status_service.dart';
+
+export 'alternative_billing_copy.dart' show AlternativeBillingCopy;
 
 /// Which payment method the subscriber has chosen for a **native (Android)**
 /// purchase.
@@ -38,33 +41,6 @@ enum PaymentMethodChoice {
 
   /// Pay through PayFast via Play's alternative billing programme.
   payfastAlternative,
-}
-
-/// The exact alternative-billing disclosure Google requires on the choice
-/// surface, plus the dispute contact published on the Play Console
-/// alternative-billing form.
-///
-/// Kept as named constants (not inline literals) so the compliance copy is
-/// asserted verbatim by tests and cannot drift silently.
-class AlternativeBillingCopy {
-  AlternativeBillingCopy._();
-
-  /// The required service-fee disclosure.
-  static const String disclosure =
-      'You can choose to pay with Google Play or with an alternative billing '
-      'system (PayFast). Google will charge a service fee for alternative '
-      'billing transactions.';
-
-  /// The dispute route published on the Play Console form.
-  static const String disputeEmail = 'support@jagspoor.co.za';
-
-  /// The dispute link text.
-  static const String dispute =
-      'To dispute unauthorized alternative billing transactions, contact '
-      'support@jagspoor.co.za';
-
-  /// The mailto: target for the dispute link.
-  static const String disputeMailto = 'mailto:support@jagspoor.co.za';
 }
 
 /// Subscription checkout screen.
@@ -822,7 +798,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          // Merchant-of-record disclosure (programme Section 2.2): names the
+          // legal entity behind the alternative payment and makes clear
+          // JagSpoor — not Google — owns the product, its guarantees, the
+          // payment processing and the VAT on these transactions.
+          _buildMerchantOfRecordDisclosure(theme),
         ],
+      ),
+    );
+  }
+
+  /// The alternative-billing merchant-of-record disclosure.
+  ///
+  /// Rendered wherever PayFast is the (or an) available payment path: inside
+  /// the Android User Choice Billing choice surface, and above the PayFast
+  /// checkout CTA. Kept as a widget so the wording comes from the single
+  /// [AlternativeBillingCopy.merchantOfRecordDisclosure] constant.
+  Widget _buildMerchantOfRecordDisclosure(ThemeController theme) {
+    return Text(
+      AlternativeBillingCopy.merchantOfRecordDisclosure,
+      key: const ValueKey('merchantOfRecordDisclosure'),
+      style: TextStyle(
+        color: theme.subtitleColor,
+        fontSize: 10,
+        height: 1.35,
       ),
     );
   }
@@ -1431,6 +1431,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       const SizedBox(height: 20),
                       _buildTotalCard(theme, _cancelHelpPlatform(subscription)),
                       const SizedBox(height: 24),
+                      // Merchant-of-record disclosure (programme Section 2.2):
+                      // required above the PayFast checkout button, naming the
+                      // legal entity and confirming JagSpoor — not Google —
+                      // owns the product, its guarantees, the payment
+                      // processing and the VAT. Shown only when PayFast is the
+                      // charging path for a purchase to make (web build, or
+                      // Android once PayFast is chosen); never on a Play-billed
+                      // checkout, and never on the manage-only (active) view.
+                      if ((_isWebBillingFor(subscription) || _payfastChosen) &&
+                          !subscription.isActive) ...[
+                        _buildMerchantOfRecordDisclosure(theme),
+                        const SizedBox(height: 12),
+                      ],
                       _buildSubscribeButton(theme, subscription),
                       // Web (PayFast) checkout: the two explicit plan buttons
                       // for the active role (Monthly + Yearly). Shown whenever

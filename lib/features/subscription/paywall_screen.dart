@@ -15,6 +15,7 @@ import '../billing/billing_service.dart';
 import 'services/play_billing_service.dart';
 import 'services/play_purchase_recorder.dart';
 import 'services/subscription_pricing.dart';
+import 'widgets/merchant_of_record_disclosure.dart';
 
 /// Paywall shown when a user's free trial has expired and they are not a
 /// premium subscriber.
@@ -851,50 +852,63 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 // No active subscription — the platform-appropriate subscribe
                 // call-to-action: PayFast hosted checkout on the web, Google
                 // Play Billing on Android/iOS.
-                FilledButton.icon(
-                  key: const ValueKey('paywallPlaySubscribeButton'),
-                  onPressed: (_paymentPending || !_subscribeEnabled)
-                      ? null
-                      : () => _isWebBilling
-                          ? _subscribeViaPayFast(context)
-                          : _subscribeViaGooglePlay(context),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor:
-                        theme.subtitleColor.withValues(alpha: 0.3),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: _catalogLoading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Icon(
-                          _isWebBilling
-                              ? Icons.lock_outline_rounded
-                              : Icons.play_circle_fill_rounded,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Merchant-of-record disclosure (programme Section 2.2) —
+                    // required above the PayFast checkout CTA on the web build.
+                    // Rendered only when PayFast is the charging path so a
+                    // Play-billed checkout never carries it.
+                    if (_isWebBilling) ...[
+                      MerchantOfRecordDisclosure(theme: theme),
+                      const SizedBox(height: 8),
+                    ],
+                    FilledButton.icon(
+                      key: const ValueKey('paywallPlaySubscribeButton'),
+                      onPressed: (_paymentPending || !_subscribeEnabled)
+                          ? null
+                          : () => _isWebBilling
+                              ? _subscribeViaPayFast(context)
+                              : _subscribeViaGooglePlay(context),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            theme.subtitleColor.withValues(alpha: 0.3),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                  label: Text(
-                    _catalogLoading
-                        ? (_isWebBilling
-                            ? 'OPENING PAYFAST…'
-                            : 'LOADING GOOGLE PLAY…')
-                        : (_isWebBilling
-                            ? 'SUBSCRIBE VIA PAYFAST'
-                            : 'SUBSCRIBE VIA GOOGLE PLAY'),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
+                      ),
+                      icon: _catalogLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              _isWebBilling
+                                  ? Icons.lock_outline_rounded
+                                  : Icons.play_circle_fill_rounded,
+                            ),
+                      label: Text(
+                        _catalogLoading
+                            ? (_isWebBilling
+                                ? 'OPENING PAYFAST…'
+                                : 'LOADING GOOGLE PLAY…')
+                            : (_isWebBilling
+                                ? 'SUBSCRIBE VIA PAYFAST'
+                                : 'SUBSCRIBE VIA GOOGLE PLAY'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
             ],
           ),

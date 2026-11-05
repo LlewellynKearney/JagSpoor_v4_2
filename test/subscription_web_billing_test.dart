@@ -73,6 +73,16 @@ void main() {
     }
   }
 
+  /// Drags in small steps until [finder] mounts, then stops. Used for
+  /// mid-content assertions (e.g. the tier prices) so the list is not
+  /// over-scrolled past the widgets under test.
+  Future<void> scrollUntilFound(WidgetTester tester, Finder finder) async {
+    for (var i = 0; i < 12 && finder.evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+      await tester.pump();
+    }
+  }
+
   group('web build (PayFast) hides the Google Play affordances', () {
     setUp(() => BillingService.usesPayFastForTesting = true);
 
@@ -88,6 +98,21 @@ void main() {
       expect(find.text('MANAGE IN GOOGLE PLAY'), findsNothing);
       // The PayFast checkout CTA is what renders instead.
       expect(find.text('SUBSCRIBE VIA PAYFAST'), findsOneWidget);
+    });
+
+    testWidgets('renders the merchant-of-record disclosure above the CTA',
+        (tester) async {
+      await pumpScreen(tester);
+      await scrollToBottom(tester);
+
+      expect(
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(AlternativeBillingCopy.merchantOfRecordDisclosure),
+        findsOneWidget,
+      );
     });
 
     testWidgets('an active web subscriber is managed on PayFast',
@@ -119,7 +144,7 @@ void main() {
         'subscriptionTrialEndsAt': DateTime.now().add(const Duration(days: 20)),
       });
       await pumpScreen(tester);
-      await scrollToBottom(tester);
+      await scrollUntilFound(tester, find.text('R 34.99/month'));
 
       // Manage action is NOT shown for a mere trial.
       expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsNothing);
@@ -144,6 +169,12 @@ void main() {
       expect(find.byKey(const ValueKey('restorePurchasesButton')),
           findsNothing);
       expect(find.text('MANAGE SUBSCRIPTION ON PAYFAST'), findsNothing);
+      // The merchant-of-record disclosure is a PayFast-programme requirement
+      // and must NOT appear on a Play-billed checkout.
+      expect(
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+        findsNothing,
+      );
     });
 
     testWidgets('an active native Play subscriber gets MANAGE and RESTORE',

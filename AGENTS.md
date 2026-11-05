@@ -1,6 +1,100 @@
 # JagSpoor -- Agent Memory
 
 
+
+## FEAT: merchant-of-record disclosure (programme Section 2.2) on the PayFast checkout (added 2026-11-05)
+
+Branch `main` (base `f8252e2`). Follow-on to the IN_APP_EXPERIENCE-4551 fix.
+The alternative-billing programme's Section 2.2 requires the checkout surface
+that offers PayFast to disclose **who is the merchant of record** and that
+Google is not responsible for the product, its guarantees, the payment
+processing or the VAT on those transactions.
+
+### P1 — the compliance copy moved to its own module
+- NEW `lib/features/subscription/alternative_billing_copy.dart` — the
+  `AlternativeBillingCopy` constants (`disclosure`, `disputeEmail`,
+  `dispute`, `disputeMailto`) moved out of `subscription_screen.dart`, plus
+  the NEW `merchantOfRecordDisclosure` (and its `merchantOfRecordCaption`
+  alias):
+  > "JAGSPOOR VELD AND VENTURES (PTY) LTD is the merchant of record.
+  > JAGSPOOR, not Google, is responsible for this product, including
+  > guarantees and payment processing. VAT/taxes on PayFast transactions are
+  > handled by JAGSPOOR."
+- `subscription_screen.dart` now `import`s the module AND
+  `export 'alternative_billing_copy.dart' show AlternativeBillingCopy;` so
+  every existing importer of the screen (notably
+  `test/alternative_billing_user_choice_test.dart`) keeps resolving
+  `AlternativeBillingCopy` unchanged. NOTE: an `export` alone does NOT bring
+  the names into the declaring library — the screen also needs the `import`,
+  which is why both are present.
+- Why the move: the paywall (a sibling library) cannot import
+  `subscription_screen.dart` without a circular dependency, so the shared
+  copy had to live below both.
+
+### P2 — one rendering widget for the disclosure
+- NEW `lib/features/subscription/widgets/merchant_of_record_disclosure.dart`
+  (`MerchantOfRecordDisclosure`) — a tiny `StatelessWidget` that renders
+  `AlternativeBillingCopy.merchantOfRecordDisclosure` in the muted subtitle
+  colour at 10px, keyed `merchantOfRecordDisclosure`. It reads the copy
+  directly from the module (no `text:` argument) so the wording cannot drift.
+
+### P3 — wired above BOTH PayFast CTAs
+- `subscription_screen.dart`: the checkout body renders
+  `_buildMerchantOfRecordDisclosure(theme)` immediately above
+  `_buildSubscribeButton` when `(_isWebBillingFor(subscription) ||
+  _payfastChosen) && !subscription.isActive`. So it shows on the web build
+  (PayFast always) and on Android **after** the user picks PayFast in Play's
+  own choice dialog — never on a Play-billed checkout, never on the
+  manage-only (active) view, never while a trial is merely being managed.
+- `paywall_screen.dart`: the subscribe branch is now a `Column` that renders
+  `MerchantOfRecordDisclosure(theme: theme)` above the
+  `paywallPlaySubscribeButton` when `_isWebBilling` (the paywall's own
+  platform check). The Play path is untouched.
+
+### Tests
+- `test/alternative_billing_user_choice_test.dart`: the payment-choice group
+  gained "shows the merchant-of-record disclosure (Section 2.2)" (keyed +
+  verbatim copy on the choice surface); the copy-constants group gained
+  "merchant-of-record disclosure names the entity + the three duties"
+  (entity + merchant of record + "not Google" + guarantees + payment
+  processing + VAT, and caption == disclosure).
+- `test/subscription_web_billing_test.dart`: web group gained "renders the
+  merchant-of-record disclosure above the CTA"; the native group's new-user
+  test now also asserts the disclosure is ABSENT. A new bounded
+  `scrollUntilFound` helper replaced the fixed `scrollToBottom` for the
+  mid-content trial test — the extra disclosure height pushed the old
+  8×600px drag past the lazily-built tier cards, which disposed them (a
+  test-only scroll artefact, not a product regression).
+- `test/play_billing_compliance_test.dart`: two new paywall tests — web
+  (`usesPayFastForTesting = true`) shows the disclosure; native does not.
+  `BillingService.resetTestSeams()` added to `tearDown` so the flag cannot
+  leak.
+
+### Verification (this sandbox)
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing
+  info-level issues (unchanged baseline). All changed/new files: **No issues
+  found**.
+- Targeted suites: the 4 compliance suites (60/60) + the broader
+  subscription/UI set (110/110) all green.
+- Full suite: **2386 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), no new
+  failures (+5 vs the 2381 baseline = the new disclosure tests).
+- `pubspec.lock` drift from `pub get` reverted (test-only transitive churn).
+- Env: Flutter **3.44.9** at `/tmp/flutter_sdk_dl/flutter`; run the
+  sqflite-FFI suites with `LD_LIBRARY_PATH="$HOME/libs"` (the
+  `~/libs/libsqlite3.so` symlink).
+
+### Files
+- NEW: `lib/features/subscription/alternative_billing_copy.dart`,
+  `lib/features/subscription/widgets/merchant_of_record_disclosure.dart`.
+- MODIFIED: `lib/features/subscription/subscription_screen.dart`,
+  `lib/features/subscription/paywall_screen.dart`,
+  `test/alternative_billing_user_choice_test.dart`,
+  `test/subscription_web_billing_test.dart`,
+  `test/play_billing_compliance_test.dart`,
+  `test/splash_subscription_web_fixes_test.dart`, `AGENTS.md`.
+- No Firestore rules / index / Storage / pubspec / manifest changes.
+
 ## FIX: PayFast kept IN-APP (WebView) for SA User Choice Billing + v4.2.25 bump (added 2026-11-05)
 
 Branch `main` (base `7844ab0`), commit `1585f5c`. Play Console rejected the

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/admin/services/subscription_config_service.dart';
+import 'package:jagspoor/features/billing/billing_service.dart';
 import 'package:jagspoor/features/subscription/paywall_screen.dart';
 import 'package:jagspoor/features/subscription/services/play_billing_service.dart';
 import 'package:jagspoor/features/subscription/services/play_purchase_recorder.dart';
@@ -62,6 +63,7 @@ void main() {
   tearDown(() {
     PlayPurchaseRecorder.resetTestSeams();
     PlayBillingService.resetTestSeams();
+    BillingService.resetTestSeams();
     SubscriptionStatusService.resetTestSeams();
     SubscriptionConfigService.resetTestSeams();
     PaywallScreen.entitlementForTesting = null;
@@ -264,6 +266,40 @@ void main() {
       expect(PaywallScreen.playSubscriptionsUrl,
           contains('package=za.co.jagspoor.app'));
       expect(PaywallScreen.websiteBillingUrl, contains('jagspoor.co.za'));
+    });
+
+    testWidgets(
+        'web build (PayFast CTA) shows the merchant-of-record disclosure',
+        (tester) async {
+      BillingService.usesPayFastForTesting = true;
+      PaywallScreen.entitlementForTesting = const UserEntitlement();
+      await tester.pumpWidget(paywall());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(AlternativeBillingCopy.merchantOfRecordDisclosure),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'native build (Play CTA) never shows the merchant-of-record disclosure',
+        (tester) async {
+      BillingService.usesPayFastForTesting = false;
+      PaywallScreen.entitlementForTesting = const UserEntitlement();
+      await tester.pumpWidget(paywall());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(
+        find.byKey(const ValueKey('merchantOfRecordDisclosure')),
+        findsNothing,
+      );
     });
   });
 
