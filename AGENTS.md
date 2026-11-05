@@ -1,6 +1,101 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: PayFast kept IN-APP (WebView) for SA User Choice Billing + v4.2.25 bump (added 2026-11-05)
+
+Branch `main` (base `7844ab0`), commit `1585f5c`. Play Console rejected the
+v4.2.24 build with **IN_APP_EXPERIENCE-4551**: for the South African **User
+Choice Billing** programme, choosing the alternative system (PayFast) must
+**NOT lead the user outside the app**. The v4.2.24 build handed the signed
+PayFast checkout URL to `url_launcher` with `LaunchMode.externalApplication`,
+which bounces the user to Chrome / Safari — a policy violation.
+
+### The fix — one line of behaviour, one new public constant
+`lib/features/billing/billing_service.dart`:
+- NEW `static const LaunchMode nativeLaunchMode = LaunchMode.inAppWebView;`
+  — the single, directly-assertable source of truth for the native hand-off.
+- `_defaultUrlLauncher` now launches with `mode: nativeLaunchMode` +
+  `WebViewConfiguration(enableJavaScript: true, enableDomStorage: true)`
+  instead of `LaunchMode.externalApplication`. The hosted checkout (a signed
+  GET URL on `/eng/process`) loads in an **in-app WebView** (Android
+  `WebView` / iOS `WKWebView`) — the checkout never leaves JagSpoor.
+- The failure message changed to
+  `'Could not open the PayFast checkout in the app.'` (was "...in your
+  browser.").
+- Docs updated (class docstring, `pay()` docstring, `_payWithPayFast`
+  docstring) to state the IN_APP_EXPERIENCE-4551 requirement.
+
+NOTE: only the **native** PayFast path changed. The **web** build still
+submits the hidden auto-submitted `<form>` in the current browser tab (the
+browser IS the app there — no external hand-off), and the Play Billing flow
+(`enableUserChoiceBilling` + `userChoiceDetailsStream` listener) is
+**unchanged** per the brief.
+
+### Version bump 4.2.24+24 -> 4.2.25+25
+Hand-synced (the Gradle values are HARDCODED — they do NOT track
+`flutter.versionCode`): `pubspec.yaml` `4.2.25+25`,
+`android/app/build.gradle.kts` `versionCode = 25` / `versionName = "4.2.25"`,
+`lib/core/widgets/version_info.dart` fallbacks `'25'` / `'4.2.25'` (+ both
+doc-comment examples), `test/version_info_and_facebook_test.dart` and
+`test/force_update_service_test.dart` (floor 25 vs 24 blocks; 24 vs 24 does
+not).
+
+### Tests
+- NEW `test/payfast_in_app_webview_test.dart` (3):
+  - `BillingService.nativeLaunchMode == LaunchMode.inAppWebView` and is NOT
+    `externalApplication` (the policy contract);
+  - the **real** default hand-off (no `urlLauncherForTesting` seam) is
+    exercised through the `plugins.flutter.io/url_launcher` method channel
+    with a captured `MethodCall` — asserts `useWebView: true` +
+    `useSafariVC: true` + `enableJavaScript: true` and the signed
+    `https://sandbox.payfast.co.za/eng/process?...` URL. A future regression
+    back to an external browser fails loudly.
+  - a refused WebView hand-off reports a failure whose message does not
+    mention "browser".
+- `test/alternative_billing_user_choice_test.dart`: reworded the two native
+  launcher tests ("launches the in-app WebView …", "a refused WebView
+  hand-off …"). Every assertion holds unchanged.
+
+### Verification (this sandbox)
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing
+  info-level issues (unchanged baseline).
+- Targeted suites (4 files): **45/45 pass**.
+- Full suite: **2381 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape; the trigger is v2 `onUserCreated`), PROVEN pre-existing by stashing
+  every change (`git stash -u`) and re-running at clean `7844ab0` (identical
+  failure).
+- Env: Flutter **3.44.9** downloaded + extracted to `/tmp/flutter_sdk_dl/flutter`
+  (the sandbox had no SDK and no `unzip`); the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink
+  + `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites. `pubspec.lock`
+  drift from `pub get` (test-only transitive bumps) reverted.
+
+### ⚠️ Operator steps (cannot be done in this sandbox)
+- Build the upload artifact in a credentialed env:
+  `flutter clean && flutter pub get && flutter build appbundle --release`
+  (`android/key.properties` is absent here, so the release AAB falls back to
+  the debug signing identity — Play rejects a debug-signed AAB).
+- Do NOT raise `admin_config/app_version.min_required_version` to 25 until
+  the versionCode-25 AAB is live on the track.
+- The `inAppWebView` launch requires the Android `WebView` / iOS `WKWebView`
+  engine — present in every stock Android/iOS build; no extra manifest entry
+  or dependency is needed (`url_launcher` 6.3.2 already supports
+  `LaunchMode.inAppWebView`).
+
+### Files
+- MODIFIED: `lib/features/billing/billing_service.dart`,
+  `lib/features/subscription/subscription_screen.dart` (docstring),
+  `pubspec.yaml`, `android/app/build.gradle.kts`,
+  `lib/core/widgets/version_info.dart`,
+  `test/alternative_billing_user_choice_test.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
+- NEW: `test/payfast_in_app_webview_test.dart`.
+- No Firestore rules / index / Storage / functions / manifest changes (the
+  ITN reporting path and the Play Billing listener are untouched).
+
+
 ## FEAT: Google Play User Choice Billing — Play's OWN choice dialog + v4.2.24 bump (added 2026-11-04)
 
 Branch `main` (base `c1ff99a`). Play Console **enrollment** for the User
