@@ -44,6 +44,7 @@ class RoleGuardedRoute extends StatefulWidget {
     required this.route,
     required this.builder,
     this.requiresPremium = true,
+    this.roleSelectionGate = false,
   });
 
   /// The named route being guarded (e.g. '/hunter_dashboard').
@@ -56,6 +57,21 @@ class RoleGuardedRoute extends StatefulWidget {
   /// Set to false for routes that must stay reachable without a subscription
   /// (e.g. the subscription / paywall screens themselves).
   final bool requiresPremium;
+
+  /// When true the route is the **role-selection** screen: instead of the
+  /// dashboard access check it requires a signed-in, email-verified account
+  /// with NO permanent role yet. A caller that already carries a role is
+  /// bounced to that role's default home (e.g. `/hunter_dashboard`), and an
+  /// unverified account is sent to the email-verification gate — so a direct
+  /// `#/role_selection` hit on web can neither bypass verification nor
+  /// re-select a role.
+  final bool roleSelectionGate;
+
+  /// Test seam: overrides the email-verification probe so the gate can be
+  /// driven deterministically without a live FirebaseAuth instance (mirrors
+  /// the `AuthRepository` / `AdminAuthGuard` seam pattern). Null in production.
+  @visibleForTesting
+  static Future<bool> Function()? emailVerificationRequiredForTesting;
 
   @override
   State<RoleGuardedRoute> createState() => _RoleGuardedRouteState();
@@ -97,6 +113,26 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
     }
 
     final role = provider.role;
+
+    // Role-selection gate: this route only admits an account that has NOT yet
+    // chosen a permanent role. Anyone who already has one is bounced to that
+    // role's home (an admin to /admin_dashboard, a hunter to
+    // /hunter_dashboard, …), so role selection can never be re-entered after
+    // it is set.
+    if (widget.roleSelectionGate) {
+      if (!mounted) return;
+      if (role != AppRole.unknown) {
+        final home = RoleGuard.defaultHomeFor(role);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed(home);
+        });
+        return;
+      }
+      setState(() => _checking = false);
+      return;
+    }
+
     final allowed = RoleGuard.canAccess(role, widget.route);
 
     if (!mounted) return;
@@ -149,6 +185,8 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
   /// tests / cold-launch races) so the guard is never blocked by a missing
   /// Firebase app.
   Future<bool> _emailVerificationRequired() async {
+    final override = RoleGuardedRoute.emailVerificationRequiredForTesting;
+    if (override != null) return override();
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;

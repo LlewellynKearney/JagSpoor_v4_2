@@ -191,11 +191,27 @@ void main() {
       // A read-back that never sees a role simulates a write that silently
       // does not persist — the exact defect being fixed. The write itself
       // succeeds against the fake, so this isolates the verification step.
+      // Both the first read and the server retry fail to see a role.
       AuthRepository.roleReadbackForTesting = (_) async => AppRole.unknown;
       await expectLater(
         AuthRepository.instance.saveRole(uid: 'u10', role: 'hunter'),
         throwsA(isA<AuthRolePersistenceException>()),
       );
+    });
+
+    test(
+        'recovers when the first read-back is stale but the server retry '
+        'sees the role', () async {
+      // The stale-offline-cache case (Bug 5): the local read-back lags the
+      // write, but the one-shot SERVER retry observes the stored role — the
+      // save must succeed instead of surfacing a red error.
+      var reads = 0;
+      AuthRepository.roleReadbackForTesting = (_) async {
+        reads++;
+        return reads == 1 ? AppRole.unknown : AppRole.hunter;
+      };
+      await AuthRepository.instance.saveRole(uid: 'u11', role: 'hunter');
+      expect(reads, 2, reason: 'the server retry must run once');
     });
   });
 

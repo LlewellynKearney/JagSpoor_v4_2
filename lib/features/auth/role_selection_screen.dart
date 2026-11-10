@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../core/theme/app_theme.dart';
-import '../admin/services/admin_auth_guard.dart';
+import '../../core/widgets/safe_bottom_inset.dart';
 import '../hunter_mode/hunter_profile_screen.dart';
 import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/auth_repository.dart';
@@ -18,16 +18,15 @@ class RoleSelectionScreen extends StatefulWidget {
 }
 
 class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
-  bool _isAdmin = false;
-  bool _resolving = true;
-
   /// Guards against a double-tap issuing two role writes / two navigations.
+  ///
+  /// Set BEFORE the confirmation dialog opens (not after it resolves) so a
+  /// fast double-tap cannot open two dialogs or issue two Firestore writes.
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _resolveAdmin();
     _skipIfRoleAlreadyAssigned();
   }
 
@@ -37,6 +36,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   /// prevents this screen from being reached at all for a role-bearing
   /// account; this covers a deep link or a route pushed before the role
   /// resolved.
+  ///
+  /// This is the ONLY path an admin takes here: the Admin Portal is never
+  /// selectable from the UI (the card was removed). A stored `role: 'admin'`
+  /// resolves to [AppRole.admin] and is bounced to `/admin_dashboard` by
+  /// [RoleGuard.defaultHomeFor] — admin is granted solely out-of-band via the
+  /// Firebase Console / custom claims, never through this screen.
   Future<void> _skipIfRoleAlreadyAssigned() async {
     try {
       // Never race an in-flight selection: once the user has confirmed a role
@@ -46,7 +51,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       if (uid == null) return;
       final role = await AuthRepository.instance.storedRole(uid);
       if (!mounted || _saving) return;
-      if (role == AppRole.unknown || role == AppRole.admin) return;
+      if (role == AppRole.unknown) return;
       final route = RoleGuard.defaultHomeFor(role);
       if (route.isEmpty) return;
       UserRoleProvider.instance.setRole(role);
@@ -56,22 +61,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
   }
 
-  Future<void> _resolveAdmin() async {
-    final admin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-    if (!mounted) return;
-    setState(() {
-      _isAdmin = admin;
-      _resolving = false;
-    });
-  }
-
   /// Handles a Hunter/Outfitter card tap.
   ///
-  /// Admins/Superusers bypass the single-role confirmation modal entirely and
-  /// never have a permanent role written to their `users/{uid}` document —
-  /// they are routed straight into the requested mode as a multi-profile
-  /// preview. Regular accounts see the exclusivity warning and, on confirm,
-  /// have their chosen role locked in to Firestore before navigating.
+  /// Only the two self-selectable roles are offered — there is deliberately NO
+  /// admin path. The account sees the single-role exclusivity warning and, on
+  /// confirm, has the chosen role locked in to Firestore before navigating.
   ///
   /// The write is VERIFIED (see [AuthRepository.saveRole]): a role that does
   /// not actually land leaves the account role-less and bounces the user back
@@ -81,23 +75,9 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     required String role,
     required String routeName,
   }) async {
+    // Re-entrancy guard. `_saving` is also set BEFORE the dialog opens (below)
+    // so a fast double-tap cannot open two dialogs / issue two writes.
     if (_saving) return;
-
-    // Resolve admin status authoritatively before deciding on the bypass —
-    // the `_isAdmin` UI flag is still `false` while the initial async
-    // resolution is in flight, so a tap during that window must re-check.
-    final isAdmin = _resolving
-        ? await AdminAuthGuard.instance.isCurrentUserAdmin()
-        : _isAdmin;
-
-    // Admins get seamless multi-profile access — no dialog, no role write.
-    if (isAdmin) {
-      // Cache the admin role so the dashboard route guards admit them.
-      UserRoleProvider.instance.setRole(AppRole.admin);
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, routeName);
-      return;
-    }
 
     final uid = AuthRepository.instance.currentUid;
     if (uid == null) {
@@ -112,10 +92,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       return;
     }
 
-    final confirmed = await _showRoleExclusivityDialog(role) ?? false;
-    if (!confirmed || !mounted) return;
-
+    // Mark the selection in-flight BEFORE the modal so a second tap is ignored
+    // for the whole dialog + write window.
     setState(() => _saving = true);
+
+    final confirmed = await _showRoleExclusivityDialog(role) ?? false;
+    if (!mounted) return;
+    if (!confirmed) {
+      // Cancelled — release the guard so the user can pick again.
+      setState(() => _saving = false);
+      return;
+    }
 
     // Make sure the profile document exists before the role is written to it.
     // A missing document is the other half of the reported defect: 9 of 25
@@ -224,8 +211,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
+        // Scrollable so the title + both role cards never overflow on a small
+        // phone / at 1.3x+ text scale, and the last card clears the Android
+        // 3-button / iOS gesture bar (SafeBottomInset pattern).
+        child: SingleChildScrollView(
+          padding: SafeBottomInset.paddingFor(context, horizontal: 24, top: 24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -261,35 +251,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 onTap: () => _confirmAndSelectRole(
                     role: 'outfitter', routeName: '/outfitter_dashboard'),
               ),
-              // Admin portal entry point — only rendered for admins
-              // (custom claim admin == true, users/{uid}.role == 'admin',
-              // outfitters/{uid}.role == 'admin', or the admin@jag-spoor.co.za
-              // allow-list). Admins skip the role-exclusivity dialog since they
-              // have system-wide access across all profiles.
-              if (_isAdmin) ...[
-                const SizedBox(height: 20.0),
-                RoleCard(
-                  title: 'ADMIN PORTAL',
-                  description:
-                      'Master analytics dashboard, account management, and bulk imports.',
-                  icon: Icons.admin_panel_settings_sharp,
-                  themeData: theme,
-                  onTap:
-                      () => Navigator.pushReplacementNamed(
-                        context,
-                        '/admin_dashboard',
-                      ),
-                ),
-              ] else if (_resolving) ...[
-                const SizedBox(height: 20.0),
-                const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ],
+              // There is deliberately NO Admin Portal card. The admin role is
+              // granted out-of-band (Firebase Console / custom claims) to the
+              // platform owner + superuser only, and is never self-selectable
+              // from the UI. An admin never reaches this screen: a stored
+              // `role: 'admin'` is bounced to /admin_dashboard by
+              // [_skipIfRoleAlreadyAssigned].
             ],
           ),
         ),

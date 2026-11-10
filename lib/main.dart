@@ -346,7 +346,16 @@ class JagspoorApp extends StatelessWidget {
           routes: {
             '/splash': (context) => SplashScreen(theme: themeController),
             '/': (context) => AuthScreen(themedata: themeController),
-            '/role_selection': (context) => const RoleSelectionScreen(),
+            // Role selection is gated: signed-in + email-verified only, and
+            // only for an account that has NOT yet chosen a permanent role. A
+            // direct `#/role_selection` hit on web can neither bypass
+            // verification nor re-select a role (a role-bearing account is
+            // bounced to its default home).
+            '/role_selection': (context) => RoleGuardedRoute(
+                route: '/role_selection',
+                roleSelectionGate: true,
+                builder: (_) => const RoleSelectionScreen(),
+              ),
             '/hunter_dashboard': (context) => RoleGuardedRoute(
                 route: '/hunter_dashboard',
                 builder: (_) => HunterDashboard(theme: themeController),

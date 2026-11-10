@@ -269,14 +269,42 @@ class AuthRepository {
     }
 
     // Verify — a write that "succeeds" but does not persist is the failure
-    // mode that left accounts role-less.
-    final stored = await storedRole(uid);
+    // mode that left accounts role-less. Read the role back; when it is not
+    // yet visible (a stale offline cache lagging the write is the common
+    // case), retry ONCE against the SERVER after a short delay before
+    // declaring failure — otherwise a valid selection could surface a red
+    // error and strand the user on the role screen.
+    var stored = await storedRole(uid);
+    if (stored == AppRole.unknown) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      stored = await _readRoleFromServer(uid);
+    }
     if (stored == AppRole.unknown) {
       throw AuthRolePersistenceException(
         'Your role could not be confirmed after saving'
         '${firstError == null ? '' : ' ($firstError)'}. '
         'Please check your connection and try again.',
       );
+    }
+  }
+
+  /// Reads the stored role forcing a SERVER read (bypassing any local cache),
+  /// used as the one-shot retry in [saveRole]'s verification step. Honors the
+  /// [roleReadbackForTesting] seam so the failure path stays testable; never
+  /// throws (an unreadable doc / offline error resolves to [AppRole.unknown]).
+  Future<AppRole> _readRoleFromServer(String uid) async {
+    final override = roleReadbackForTesting;
+    if (override != null) return override(uid);
+    if (uid.isEmpty) return AppRole.unknown;
+    try {
+      final snap = await _db
+          .collection(usersCollection)
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+      return roleFromUserDocument(snap.data());
+    } catch (e) {
+      debugPrint('AuthRepository._readRoleFromServer($uid) failed: $e');
+      return AppRole.unknown;
     }
   }
 
