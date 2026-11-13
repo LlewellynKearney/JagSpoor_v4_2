@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../hunter_mode/models/booking_status.dart';
 import '../models/admin_operational_metrics.dart';
+import '../models/admin_revenue_metrics.dart';
 import '../models/admin_user_metrics.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
@@ -48,6 +49,11 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   AdminOperationalData _operational = const AdminOperationalData();
   AdminPackageMetrics _packageMetrics = const AdminPackageMetrics();
   AdminBookingMetrics _bookingMetrics = const AdminBookingMetrics();
+
+  /// Task 5: the subscription-revenue snapshot, aggregated from the SAME user
+  /// records (no extra Firestore read). A point-in-time snapshot that ignores
+  /// the date filter.
+  AdminRevenueMetrics _revenueMetrics = const AdminRevenueMetrics();
 
   bool _loading = true;
   bool _authorized = false;
@@ -96,6 +102,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         _operational = operational;
         _packageMetrics = operational.packageMetrics();
         _bookingMetrics = operational.bookingMetrics();
+        _revenueMetrics = AdminRevenueMetrics.aggregate(records);
         _loading = false;
       });
     } catch (e) {
@@ -184,6 +191,14 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
                             _buildStuckPendingTable(),
                             _buildTopOutfittersTable(),
                             _buildOperationalNote(),
+                            const SizedBox(height: 24),
+                            _buildSectionHeader('Revenue'),
+                            _buildRevenueGrid(),
+                            _buildPlanSplit(),
+                            _buildProviderSplit(),
+                            _buildPipelineCard(),
+                            _buildChurnedTable(),
+                            _buildRevenueNote(),
                           ],
                         ),
                       ),
@@ -655,6 +670,279 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
               'package${_operational.packages.length == 1 ? '' : 's'} + '
               '${_operational.bookings.length} booking'
               '${_operational.bookings.length == 1 ? '' : 's'}.',
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // TASK 5 — REVENUE (subscription only)
+  // ==========================================================================
+
+  /// The revenue KPI grid: Total MRR / Hunter MRR / Outfitter MRR / ARR.
+  Widget _buildRevenueGrid() {
+    final m = _revenueMetrics;
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.4,
+      children: [
+        _metricCard(
+          Icons.payments_outlined,
+          'Total MRR',
+          null,
+          valueLabel: m.totalMrrLabel,
+          key: const ValueKey('adminV2CardTotalMrr'),
+        ),
+        _metricCard(
+          Icons.calendar_month_outlined,
+          'ARR',
+          null,
+          valueLabel: m.arrLabel,
+          key: const ValueKey('adminV2CardArr'),
+        ),
+        _metricCard(
+          Icons.person_outline,
+          'Hunter MRR',
+          null,
+          valueLabel: m.hunterMrrLabel,
+          key: const ValueKey('adminV2CardHunterMrr'),
+        ),
+        _metricCard(
+          Icons.business_outlined,
+          'Outfitter MRR',
+          null,
+          valueLabel: m.outfitterMrrLabel,
+          key: const ValueKey('adminV2CardOutfitterMrr'),
+        ),
+      ],
+    );
+  }
+
+  /// The MRR plan split: the four plan buckets with count + MRR contribution.
+  Widget _buildPlanSplit() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: const ValueKey('adminV2PlanSplit'),
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'MRR By Plan',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final row in _revenueMetrics.planSplit)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${row.label} × ${row.count}',
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      row.mrrLabel,
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_revenueMetrics.unknownPlanActiveSubscribers > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Unknown plan (unpriced): '
+                  '${_revenueMetrics.unknownPlanActiveSubscribers} active '
+                  'subscriber'
+                  '${_revenueMetrics.unknownPlanActiveSubscribers == 1 ? '' : 's'}',
+                  style:
+                      TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The PayFast vs Play (vs User Choice / Unknown) provider split.
+  Widget _buildProviderSplit() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: const ValueKey('adminV2ProviderSplit'),
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PayFast vs Play Split',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final row in _revenueMetrics.providerSplit)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        row.label,
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${row.count}  ·  ${row.percentLabel}',
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The pipeline (trial value) card — clearly labelled as NOT realized
+  /// revenue.
+  Widget _buildPipelineCard() {
+    final m = _revenueMetrics;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: const ValueKey('adminV2PipelineCard'),
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.accentColor.withAlpha(60)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.trending_up_rounded,
+                    color: widget.theme.accentColor, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'PIPELINE — If all trials convert',
+                    style: TextStyle(
+                      color: widget.theme.subtitleColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              m.pipelineLabel,
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 26,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '(Trial Active Hunters × ${formatAdminZar(kHunterMonthlyZar)}) + '
+              '(Trial Active Outfitters × '
+              '${formatAdminZar(kOutfitterMonthlyZar)})  ·  '
+              '${m.trialActiveHunters} hunter'
+              '${m.trialActiveHunters == 1 ? '' : 's'} + '
+              '${m.trialActiveOutfitters} outfitter'
+              '${m.trialActiveOutfitters == 1 ? '' : 's'}',
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The churned (cancelled) accounts list: email + plan + cancellation date.
+  Widget _buildChurnedTable() {
+    final rows = _revenueMetrics.churned;
+    return _tableCard(
+      key: const ValueKey('adminV2ChurnedTable'),
+      title: 'Churned (Cancelled) — ${_revenueMetrics.churnedCount}',
+      emptyLabel: 'No cancelled subscriptions.',
+      headers: const ['Email', 'Plan', 'Cancelled'],
+      rows: [
+        for (final r in rows)
+          [
+            r.email.isEmpty ? '—' : r.email,
+            r.planLabel,
+            r.cancelledAtLabel,
+          ],
+      ],
+    );
+  }
+
+  /// Clarifies that only SUBSCRIPTION revenue is reported and that no booking
+  /// amount is counted (booking payment is off-platform).
+  Widget _buildRevenueNote() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 14, color: widget.theme.subtitleColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Subscription revenue only (snapshot "as of now", ignores the '
+              'date filter). Booking payment is handled off-platform '
+              '(EFT / cash), so no booking amount is reported as revenue. '
+              'Prices: hunter R34.99/mo · R349.99/yr (MRR R29.17) · outfitter '
+              'R299.99/mo · R2999.99/yr (MRR R250.00).',
               style: TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
             ),
           ),

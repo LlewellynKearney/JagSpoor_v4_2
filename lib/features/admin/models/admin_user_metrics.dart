@@ -77,6 +77,13 @@ class AdminUserRecord {
   final DateTime? trialEnd;
   final DateTime? premiumExpiry;
 
+  /// When the subscription was cancelled, if the document records it. Used by
+  /// the Task 5 churned list, with [updatedAt] as the documented fallback.
+  final DateTime? cancelledAt;
+
+  /// The document's `updatedAt` — the fallback cancellation timestamp.
+  final DateTime? updatedAt;
+
   const AdminUserRecord({
     required this.uid,
     this.email = '',
@@ -92,6 +99,8 @@ class AdminUserRecord {
     this.trialStart,
     this.trialEnd,
     this.premiumExpiry,
+    this.cancelledAt,
+    this.updatedAt,
   });
 
   /// Status strings that indicate an in-progress free trial (mirrors
@@ -218,6 +227,11 @@ class AdminUserRecord {
       trialStart: _resolveTrialStart(d),
       trialEnd: _resolveTrialEnd(d),
       premiumExpiry: _toDate(d['premiumExpiry']) ?? _toDate(nestedMap['expiresAt']),
+      cancelledAt: _toDate(d['subscriptionCancelledAt']) ??
+          _toDate(d['subscription_cancelled_at']) ??
+          _toDate(d['cancelledAt']) ??
+          _toDate(d['cancelled_at']),
+      updatedAt: _toDate(d['updatedAt']) ?? _toDate(d['updated_at']),
     );
   }
 
