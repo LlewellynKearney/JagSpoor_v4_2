@@ -13,6 +13,7 @@ class RoleGuard {
   /// is redirected to their default home with an access-denied notice.
   static const Set<String> adminOnlyRoutes = {
     '/admin_dashboard',
+    '/admin_portal_v2',
   };
 
   /// Role-scoped dashboard routes — a user may only open the dashboard that

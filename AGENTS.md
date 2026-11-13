@@ -1,6 +1,93 @@
 # JagSpoor -- Agent Memory
 
+## FEAT: Admin Portal V2 -- Trial + Subscription KPIs (added 2026-11-13)
 
+Branch `feature/admin-portal-v2` (base `main` @ `d16bb03`). **NOT merged, NOT
+deployed.** Full write-up in `docs/admin-portal-v2/TASK3_DONE.md`.
+
+### ⚠️ The Task 1 + Task 2 foundation did NOT exist
+The brief said to build on Task 2 (`admin_portal_v2_screen.dart`, route
+`/admin_portal_v2`, `admin_user_metrics.dart`, Today/7d/30d/All Time filter).
+**None of it was in the tree, and `feature/admin-portal-v2` did not exist**
+locally or on GitHub (`git ls-remote --heads origin` has no such ref; no
+`admin_portal*` files; `grep` for `admin_portal_v2`/`admin_user_metrics`/`New
+Users` = 0 hits; GitHub PRs #1-#9 unrelated; `git fsck --lost-found` clean; the
+only conversation is this one). Task 1/2 were never committed. This task
+RECONSTRUCTED the Task 2 foundation to the brief's exact names/contract, then
+implemented Task 3 on top. Same paths, same names, same fetch-once /
+aggregate-locally pattern -- reconcile diffs if the real Task 2 ever surfaces.
+
+### What was built
+- NEW `lib/features/admin/models/admin_user_metrics.dart`:
+  `AdminDateFilter {today,last7Days,last30Days,allTime}` (pure `startFor` /
+  `includes`); `AdminUserRecord` (one `users/{uid}` doc, parsed once via
+  `fromMap`); `AdminUserMetrics` + pure `aggregate(records, filter:, now:)`.
+  Trial/premium activity is COMPUTED (never a stored flag):
+  `isTrialActive` / `isPremiumActive` mirror `entitlement_service.dart`
+  (`UserEntitlement`) EXACTLY. `everStartedTrial` = trial-start timestamp
+  present.
+- NEW `lib/features/admin/services/admin_user_metrics_service.dart`:
+  `fetchRecords()` reads `users` ONCE (bounded `scanLimit` 5000), skips
+  disabled accounts, returns parsed records; a fetch failure -> empty list
+  (never throws). `@visibleForTesting firestoreForTesting` seam.
+- NEW `lib/features/admin/screens/admin_portal_v2_screen.dart`:
+  `AdminAuthGuard` gate; fetches records ONCE; **the date filter only re-runs
+  `AdminUserMetrics.aggregate` locally** (no refetch); filter chip bar + KPI
+  grid (New Users + the 5 Task 3 cards); Unknown-plan note; snapshot note.
+- MODIFIED `lib/main.dart` (`/admin_portal_v2` ->
+  `RoleGuardedRoute(requiresPremium: false)`),
+  `lib/features/auth/services/role_guard.dart` (`/admin_portal_v2` added to
+  `adminOnlyRoutes`), `lib/features/admin/screens/admin_dashboard_screen.dart`
+  ("Admin Portal V2" entry card in Account Management). **No Admin added to
+  the role selector.**
+
+### The 5 KPIs
+- Trial Active = `isTrialActive && !isPremiumActive` (mutually exclusive with
+  the subscriber buckets -- the entitlement 30-day creation-window fallback
+  would otherwise misclassify a brand-new PAID subscriber as trial-active and
+  double-count them; the sibling bucket is literally "Trial Expired -- No
+  Sub").
+- Trial Expired No Sub = `trialEnd < now && !isPremiumActive`.
+- Subscribed Hunters / Outfitters = `role == hunter|outfitter && isPremiumActive`.
+- Trial -> Paid Conversion = `(subHunters + subOutfitters) / everStartedTrial *
+  100`, 1 decimal, `0.0%` when the denominator is 0.
+- Unknown bucket = active subscribers with no `subscriptionProduct`/`plan`.
+- Only New Users responds to the filter; trial/subs are snapshots.
+
+### Field corrections honoured
+NOT queried: `trialStartDate` / `trialEndDate` / `isTrialActive` /
+`isPremiumActive` / `plan` / `paymentProvider` (none stored). Trial dates via
+`entitlement_service.dart` alias lists (`trialStartedAt` / `trialEndsAt` /
+`trialStart` / `trialEnd` / `subscriptionTrial*` + snake_case). Plan via
+`subscriptionProduct` (+ `plan`). Provider via `subscriptionProvider` /
+`subscriptionPlatform` / `subscriptionSource`. The demo account is NOT filtered
+(purged in v4.2.22, 0 references).
+
+### Client-side because the server lacks trial buckets
+`functions/src/admin/kpis.ts` `aggregateUserKpis` reports subscriber totals +
+the Play/PayFast split only (`isActiveSubscription` treats a trial as NOT a
+subscription), so there is no trial bucket to reuse -> computed client-side
+per the brief.
+
+### Verification (this sandbox)
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing
+  infos (the 6 `main.dart` infos are pre-existing -- proven by stashing the
+  edits). All new files: No issues found.
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2435 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), proven
+  pre-existing by stashing every change at clean `main`.
+- New suites: `test/admin_portal_v2_metrics_test.dart` (31) +
+  `test/admin_portal_v2_screen_test.dart` (6) = 37, all green.
+- `pubspec.lock` drift from `pub get` reverted (test-only transitive churn).
+- Env: Flutter **3.44.9** (CI pin) at `/tmp/flutter_sdk_dl/flutter`; the
+  `~/libs/libsqlite3.so -> /usr/lib/x86_64-linux-gnu/libsqlite3.so.0` symlink
+  for the sqflite-FFI suites.
+
+### Constraints
+No merge to main, no deploy, no `admin_config` / `min_required_version`
+change, no Admin in the role selector. No Firestore rules / index / Storage /
+functions / manifest changes.
 
 ## FEAT: merchant-of-record disclosure (programme Section 2.2) on the PayFast checkout (added 2026-11-05)
 
