@@ -1000,6 +1000,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       children: [
         _managementCard(
+          icon: Icons.insights_rounded,
+          title: 'Admin Portal V2',
+          description:
+              'Trial + subscription KPIs (Trial Active, Expired No Sub, '
+              'Subscribed Hunters / Outfitters, Trial → Paid conversion).',
+          onTap: () => Navigator.pushNamed(context, '/admin_portal_v2'),
+        ),
+        _managementCard(
           icon: Icons.person_add_alt_1,
           title: 'Create User',
           description: 'Manually provision a single hunter or outfitter account.',

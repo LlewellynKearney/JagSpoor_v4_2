@@ -27,6 +27,7 @@ import 'features/hunter_mode/add_trophy_screen.dart';
 import 'features/hunter_mode/edit_trophy_screen.dart';
 import 'features/outfitter_mode/outfitter_dashboard.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
+import 'features/admin/screens/admin_portal_v2_screen.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'utils/animal_seeder.dart';
 import 'features/hunter_mode/services/offline_sync_queue.dart';
@@ -367,6 +368,15 @@ class JagspoorApp extends StatelessWidget {
             '/admin_dashboard': (context) => RoleGuardedRoute(
                 route: '/admin_dashboard',
                 builder: (_) => AdminDashboardScreen(theme: themeController),
+              ),
+            // Admin Portal V2 — the trial/subscription KPI surface. Gated on
+            // the same admin-only route policy as `/admin_dashboard`, and
+            // `requiresPremium: false` so an admin whose own subscription has
+            // lapsed can still reach the operator portal.
+            '/admin_portal_v2': (context) => RoleGuardedRoute(
+                route: '/admin_portal_v2',
+                requiresPremium: false,
+                builder: (_) => AdminPortalV2Screen(theme: themeController),
               ),
             '/scan_license':
                 (context) => LicenseScannerScreen(theme: themeController),
