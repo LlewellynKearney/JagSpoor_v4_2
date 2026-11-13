@@ -7,8 +7,6 @@ import '../features/auth/screens/email_verification_screen.dart';
 import '../features/auth/services/email_verification_policy.dart';
 import '../features/auth/services/user_role_provider.dart';
 import '../features/auth/services/auth_repository.dart';
-import '../features/hunter_mode/hunter_profile_screen.dart';
-import '../features/hunter_mode/services/hunter_profile_completeness.dart';
 import '../features/subscription/services/subscription_status_service.dart';
 import '../services/app_version_check.dart';
 import '../services/force_update_service.dart';
@@ -206,23 +204,12 @@ class _SplashScreenState extends State<SplashScreen>
       await _ensureOutfitterSelfLink();
     }
 
-    // Mandatory onboarding gate for hunters: a hunter whose Name / Surname /
-    // contact detail are not yet saved to Firestore is redirected to the
-    // Hunter Profile screen to complete onboarding before reaching the
-    // dashboard. Admins and outfitters are not gated by this check.
-    if (role == AppRole.hunter || role == AppRole.dual) {
-      final status =
-          await HunterProfileCompleteness.instance.statusFor(user.uid);
-      if (!status.isComplete && mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => HunterProfileScreen(theme: widget.theme),
-          ),
-          (_) => false,
-        );
-        return;
-      }
-    }
+    // NOTE (Task 1B, 2026-11-13): the hunter mandatory-profile onboarding gate
+    // was removed — First Name / Surname / phone-or-email are now OPTIONAL, so
+    // a cold launch never bounces a hunter to the profile screen. The
+    // `HunterProfileCompleteness` gate remains available (its `isComplete`
+    // returns `true`) as the single place to re-enable mandatory onboarding.
+    // See `docs/fix-profile-optional-fields/AUDIT.md`.
 
     if (!mounted) return;
     switch (role) {

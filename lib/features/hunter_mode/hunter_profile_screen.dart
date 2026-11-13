@@ -472,7 +472,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Compose the full name from the mandatory first + last name fields.
+      // Compose the full name from the (optional) first + last name fields.
       final first = _firstNameController.text.trim();
       final last = _lastNameController.text.trim();
       final composedFullName =
@@ -740,12 +740,11 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   const SizedBox(height: 24),
 
                   // Contact Info Section
-                  _buildSectionHeader('CONTACT INFORMATION *'),
+                  _buildSectionHeader('CONTACT INFORMATION'),
                   const SizedBox(height: 4),
                   Text(
-                    'Name, Surname, and a contact detail (phone or email) '
-                    'are mandatory. You cannot use the app until these are '
-                    'completed.',
+                    'Optional — helps the outfitter and JagSpoor reach you. '
+                    'You can add or change these at any time.',
                     style: TextStyle(
                       color: HunterUi.subtitleColor(widget.theme),
                       fontSize: 11,
@@ -758,22 +757,16 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                       Expanded(
                         child: _buildTextField(
                           _firstNameController,
-                          'First Name *',
-                          'Enter your first name',
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'First name is required'
-                              : null,
+                          'First Name',
+                          'Optional — enter your first name',
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildTextField(
                           _lastNameController,
-                          'Surname *',
-                          'Enter your surname',
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Surname is required'
-                              : null,
+                          'Surname',
+                          'Optional — enter your surname',
                         ),
                       ),
                     ],
@@ -781,17 +774,9 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   const SizedBox(height: 12),
                   _buildTextField(
                     _phoneController,
-                    'Phone Number *',
-                    'Enter your phone number',
+                    'Phone Number (optional)',
+                    'Optional — helps outfitters contact you',
                     keyboardType: TextInputType.phone,
-                    validator: (v) {
-                      final phone = v?.trim() ?? '';
-                      final email = _emailController.text.trim();
-                      if (phone.isEmpty && email.isEmpty) {
-                        return 'Enter a phone number or an email';
-                      }
-                      return null;
-                    },
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
@@ -803,15 +788,11 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
                   const SizedBox(height: 12),
                   _buildTextField(
                     _emailController,
-                    'Email Address *',
-                    'Enter your email',
+                    'Email Address (optional)',
+                    'Optional — helps outfitters contact you',
                     keyboardType: TextInputType.emailAddress,
                     validator: (v) {
                       final email = v?.trim() ?? '';
-                      final phone = _phoneController.text.trim();
-                      if (email.isEmpty && phone.isEmpty) {
-                        return 'Enter an email or a phone number';
-                      }
                       if (email.isNotEmpty &&
                           !RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$')
                               .hasMatch(email)) {

@@ -10,8 +10,6 @@ import '../../core/widgets/copyright_footer.dart';
 import 'role_selection_screen.dart';
 import 'screens/privacy_policy_screen.dart';
 import 'screens/email_verification_screen.dart';
-import '../hunter_mode/hunter_profile_screen.dart';
-import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/user_role_provider.dart';
 import 'services/email_verification_service.dart';
 import 'services/email_verification_policy.dart';
@@ -224,38 +222,12 @@ class _AuthScreenState extends State<AuthScreen> {
       await _ensureOutfitterSelfLink();
     }
 
-    // Mandatory onboarding gate for hunters: a hunter whose Name / Surname /
-    // contact detail are not yet saved to Firestore is redirected to the
-    // Hunter Profile screen to complete onboarding before reaching the
-    // dashboard. Admins and outfitters are not gated by this check.
-    if (role == AppRole.hunter || role == AppRole.dual) {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final status =
-            await HunterProfileCompleteness.instance.statusFor(user.uid);
-        if (!status.isComplete && mounted) {
-          setState(() => _isLoading = false);
-          final missing = status.missingSummary;
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => HunterProfileScreen(theme: widget.themedata),
-            ),
-            (_) => false,
-          );
-          if (missing.isNotEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Please complete your profile before continuing. $missing',
-                ),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          return;
-        }
-      }
-    }
+    // NOTE (Task 1B, 2026-11-13): the hunter mandatory-profile onboarding gate
+    // was removed — First Name / Surname / phone-or-email are now OPTIONAL, so
+    // a hunter is never bounced back to the profile screen on sign-in. The
+    // `HunterProfileCompleteness` gate remains available (its `isComplete`
+    // returns `true`) as the single place to re-enable mandatory onboarding.
+    // See `docs/fix-profile-optional-fields/AUDIT.md`.
 
     if (!mounted) return;
     setState(() => _isLoading = false);

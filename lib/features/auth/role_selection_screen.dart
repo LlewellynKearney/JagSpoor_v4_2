@@ -2,10 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/widgets/safe_bottom_inset.dart';
-import '../hunter_mode/hunter_profile_screen.dart';
-import '../hunter_mode/services/hunter_profile_completeness.dart';
 import 'services/auth_repository.dart';
 import 'services/role_guard.dart';
 import 'services/user_role_provider.dart';
@@ -141,23 +138,12 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       role == 'outfitter' ? AppRole.outfitter : AppRole.hunter,
     );
 
-    // Mandatory onboarding gate for hunters: a brand-new hunter has no
-    // profile yet, so redirect them to the Hunter Profile screen to
-    // complete Name / Surname / contact before reaching the dashboard.
-    if (role == 'hunter') {
-      final status = await HunterProfileCompleteness.instance.statusFor(uid);
-      if (!status.isComplete && mounted) {
-        setState(() => _saving = false);
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) =>
-                HunterProfileScreen(theme: ThemeController.instance),
-          ),
-          (_) => false,
-        );
-        return;
-      }
-    }
+    // NOTE (Task 1B, 2026-11-13): the brand-new-hunter mandatory-profile
+    // onboarding redirect was removed — First Name / Surname / phone-or-email
+    // are now OPTIONAL, so a new hunter lands on the dashboard immediately and
+    // can fill in the profile later. The `HunterProfileCompleteness` gate
+    // remains available as the single place to re-enable mandatory onboarding.
+    // See `docs/fix-profile-optional-fields/AUDIT.md`.
 
     if (!mounted) return;
     setState(() => _saving = false);

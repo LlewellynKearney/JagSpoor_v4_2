@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/layout/web_layout.dart';
 import '../../core/theme/app_theme.dart';
@@ -54,11 +53,6 @@ class HunterDashboard extends StatefulWidget {
 class _HunterDashboardState extends State<HunterDashboard> {
   static const _favoritePrefKey = 'favorited_dashboard_features';
 
-  /// One-shot guard: the onboarding gate redirects at most once per app
-  /// session, so a hunter who deliberately backs out of the profile screen
-  /// (onboarding gate) is not immediately bounced back into it in a loop.
-  static bool _onboardingRedirected = false;
-
   /// One-shot guard for the Google Play purchase re-sync: the dashboard can
   /// be rebuilt / re-entered many times per session, but the store only needs
   /// to be queried once (the purchase stream keeps delivering afterwards).
@@ -111,37 +105,17 @@ class _HunterDashboardState extends State<HunterDashboard> {
     }
   }
 
-  /// Defense-in-depth onboarding gate: if a hunter somehow reaches the
-  /// dashboard with an incomplete mandatory profile (e.g. a stale route
-  /// stack, a deep link, or a profile edit that cleared a mandatory field),
-  /// redirect them to the Hunter Profile screen to complete onboarding
-  /// before they can use any main app features. Admins are not gated.
+  /// Defense-in-depth onboarding gate — REMOVED (Task 1B, 2026-11-13).
   ///
-  /// Best-effort: a Firestore/auth failure (offline, or an uninitialized
-  /// Firebase app in a cold-launch/test environment) is swallowed so the
-  /// dashboard always renders instead of crashing.
-  Future<void> _enforceProfileOnboarding() async {
-    if (_onboardingRedirected) return;
-    try {
-      final isAdmin = await AdminAuthGuard.instance.isCurrentUserAdmin();
-      if (isAdmin) return;
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-      final status =
-          await HunterProfileCompleteness.instance.statusFor(uid);
-      if (!status.isComplete && mounted) {
-        _onboardingRedirected = true;
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => HunterProfileScreen(theme: widget.theme),
-          ),
-          (_) => false,
-        );
-      }
-    } catch (_) {
-      // Auth/Firestore unavailable (offline or test env) — do not gate.
-    }
-  }
+  /// First Name / Surname / phone-or-email are now OPTIONAL on the Hunter
+  /// Profile, so a hunter is never redirected to the profile screen for
+  /// missing profile fields. The [HunterProfileCompleteness] gate remains
+  /// available (its `isComplete` returns `true`) as the single place to
+  /// re-enable mandatory onboarding. See
+  /// `docs/fix-profile-optional-fields/AUDIT.md`.
+  ///
+  /// Kept as a no-op so the `initState` call site is unchanged.
+  Future<void> _enforceProfileOnboarding() async {}
 
   /// Resolves the "can switch modes" flag (admin OR dual-role). This drives
   /// the instant mode switcher on the dashboard AppBar — admins (full access)
