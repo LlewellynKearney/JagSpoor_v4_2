@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../core/layout/web_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../hunter_mode/models/booking_status.dart';
+import '../models/admin_operational_metrics.dart';
 import '../models/admin_user_metrics.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
+import '../services/admin_operational_metrics_service.dart';
 import '../services/admin_user_metrics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
 
@@ -41,6 +44,11 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
 
   AdminUserMetrics _metrics = const AdminUserMetrics();
 
+  /// Task 4: the package / booking snapshot, fetched ONCE alongside the users.
+  AdminOperationalData _operational = const AdminOperationalData();
+  AdminPackageMetrics _packageMetrics = const AdminPackageMetrics();
+  AdminBookingMetrics _bookingMetrics = const AdminBookingMetrics();
+
   bool _loading = true;
   bool _authorized = false;
   String? _error;
@@ -71,11 +79,23 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         return;
       }
       final records = await AdminUserMetricsService.instance.fetchRecords();
+      // Task 4: the operational snapshot (packages / bookings / farms /
+      // outfitters). The user emails parsed above are reused so `users` is
+      // never read a second time.
+      final userEmailByUid = <String, String>{
+        for (final r in records)
+          if (r.email.isNotEmpty) r.uid: r.email,
+      };
+      final operational = await AdminOperationalMetricsService.instance
+          .fetchData(userEmailByUid: userEmailByUid);
       if (!mounted) return;
       setState(() {
         _records = records;
         _recordsLoaded = true;
         _metrics = AdminUserMetrics.aggregate(records, filter: _filter);
+        _operational = operational;
+        _packageMetrics = operational.packageMetrics();
+        _bookingMetrics = operational.bookingMetrics();
         _loading = false;
       });
     } catch (e) {
@@ -152,6 +172,18 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
                             _buildUserGrid(),
                             _buildUnknownPlanNote(),
                             _buildSnapshotNote(),
+                            const SizedBox(height: 24),
+                            _buildSectionHeader('Packages'),
+                            _buildPackageGrid(),
+                            _buildProvinceBreakdown(),
+                            _buildZeroBookingTable(),
+                            const SizedBox(height: 24),
+                            _buildSectionHeader('Bookings'),
+                            _buildBookingGrid(),
+                            _buildBookingStatusBreakdown(),
+                            _buildStuckPendingTable(),
+                            _buildTopOutfittersTable(),
+                            _buildOperationalNote(),
                           ],
                         ),
                       ),
@@ -324,6 +356,401 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // TASK 4 — PACKAGES
+  // ==========================================================================
+
+  /// The package-level KPI grid: Total / Active / Sold Out / Draft-Archived.
+  Widget _buildPackageGrid() {
+    final m = _packageMetrics;
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.4,
+      children: [
+        _metricCard(
+          Icons.inventory_2_outlined,
+          'Total Packages',
+          m.totalPackages,
+          key: const ValueKey('adminV2CardTotalPackages'),
+        ),
+        _metricCard(
+          Icons.check_circle_outline,
+          'Active',
+          m.activePackages,
+          key: const ValueKey('adminV2CardActivePackages'),
+        ),
+        _metricCard(
+          Icons.remove_shopping_cart_outlined,
+          'Sold Out',
+          m.soldOutPackages,
+          key: const ValueKey('adminV2CardSoldOutPackages'),
+        ),
+        _metricCard(
+          Icons.inventory_outlined,
+          'Draft / Archived',
+          m.draftArchivedPackages,
+          key: const ValueKey('adminV2CardDraftArchivedPackages'),
+        ),
+        _metricCard(
+          Icons.storefront_outlined,
+          'Outfitters With 0 Packages',
+          m.outfittersWithZeroPackages,
+          key: const ValueKey('adminV2CardOutfittersZeroPackages'),
+        ),
+      ],
+    );
+  }
+
+  /// Active packages per province (the nine SA provinces + Unknown). Rendered
+  /// as a compact key/value list so every bucket is visible and reconciles.
+  Widget _buildProvinceBreakdown() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: const ValueKey('adminV2ProvinceBreakdown'),
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Active Packages Per Province',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final entry in _packageMetrics.provinceBreakdown)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      entry.value.toString(),
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Active packages with zero bookings (title + outfitter email + days live).
+  Widget _buildZeroBookingTable() {
+    final rows = _packageMetrics.zeroBookingPackages;
+    return _tableCard(
+      key: const ValueKey('adminV2ZeroBookingTable'),
+      title: 'Packages With 0 Bookings',
+      emptyLabel: 'Every active package has at least one booking.',
+      headers: const ['Title', 'Outfitter', 'Days Live'],
+      rows: [
+        for (final r in rows)
+          [
+            r.title,
+            r.outfitterEmail.isEmpty ? '—' : r.outfitterEmail,
+            r.daysLive.toString(),
+          ],
+      ],
+    );
+  }
+
+  // ==========================================================================
+  // TASK 4 — BOOKINGS
+  // ==========================================================================
+
+  /// The booking-level KPI grid: Total / Conversion / Stuck Pending / Avg Days.
+  Widget _buildBookingGrid() {
+    final m = _bookingMetrics;
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.4,
+      children: [
+        _metricCard(
+          Icons.event_note_outlined,
+          'Total Booking Requests',
+          m.totalBookings,
+          key: const ValueKey('adminV2CardTotalBookings'),
+        ),
+        _metricCard(
+          Icons.percent_rounded,
+          'Requests → Confirmed',
+          null,
+          valueLabel: m.conversionLabel,
+          key: const ValueKey('adminV2CardBookingConversion'),
+        ),
+        _metricCard(
+          Icons.hourglass_disabled_outlined,
+          'Stuck Pending >7d',
+          m.stuckPending.length,
+          key: const ValueKey('adminV2CardStuckPending'),
+        ),
+        _metricCard(
+          Icons.timelapse_rounded,
+          'Avg Days To Confirm',
+          null,
+          valueLabel: m.avgDaysLabel,
+          key: const ValueKey('adminV2CardAvgDaysToConfirm'),
+        ),
+      ],
+    );
+  }
+
+  /// The six booking-status counts.
+  Widget _buildBookingStatusBreakdown() {
+    final byStatus = _bookingMetrics.byStatus;
+    const statuses = [
+      BookingStatus.pendingApproval,
+      BookingStatus.approvedAwaitingPayment,
+      BookingStatus.confirmed,
+      BookingStatus.completed,
+      BookingStatus.declined,
+      BookingStatus.cancelled,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: const ValueKey('adminV2BookingStatusBreakdown'),
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Bookings By Status',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final s in statuses)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s,
+                        style: TextStyle(
+                          color: widget.theme.subtitleColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      (byStatus[s] ?? 0).toString(),
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Bookings stuck in Pending Approval > 7 days.
+  Widget _buildStuckPendingTable() {
+    final rows = _bookingMetrics.stuckPending;
+    return _tableCard(
+      key: const ValueKey('adminV2StuckPendingTable'),
+      title: 'Stuck Pending > 7 Days',
+      emptyLabel: 'No booking has been pending for more than 7 days.',
+      headers: const ['Booking', 'Hunter', 'Outfitter', 'Package', 'Days'],
+      rows: [
+        for (final r in rows)
+          [
+            r.id,
+            r.hunterEmail.isEmpty ? '—' : r.hunterEmail,
+            r.outfitterEmail.isEmpty ? '—' : r.outfitterEmail,
+            r.packageTitle.isEmpty ? '—' : r.packageTitle,
+            r.daysStuck.toString(),
+          ],
+      ],
+    );
+  }
+
+  /// The top five outfitters by booking count.
+  Widget _buildTopOutfittersTable() {
+    final rows = _bookingMetrics.topOutfitters;
+    return _tableCard(
+      key: const ValueKey('adminV2TopOutfittersTable'),
+      title: 'Top 5 Outfitters By Bookings',
+      emptyLabel: 'No bookings yet.',
+      headers: const ['Outfitter', 'Total', 'Confirmed', 'Conv.'],
+      rows: [
+        for (final r in rows)
+          [
+            r.name.isNotEmpty
+                ? r.name
+                : (r.email.isNotEmpty ? r.email : r.outfitterId),
+            r.total.toString(),
+            r.confirmed.toString(),
+            r.conversionLabel,
+          ],
+      ],
+    );
+  }
+
+  /// Clarifies that the package / booking figures are snapshots and that no
+  /// booking AMOUNT is shown (JagSpoor does not take booking payment in-app).
+  Widget _buildOperationalNote() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 14, color: widget.theme.subtitleColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Package & booking figures are snapshots "as of now" and ignore '
+              'the date filter. Booking payment is handled off-platform '
+              '(EFT / cash), so no booking amount is reported as revenue. '
+              'Computed client-side from ${_operational.packages.length} '
+              'package${_operational.packages.length == 1 ? '' : 's'} + '
+              '${_operational.bookings.length} booking'
+              '${_operational.bookings.length == 1 ? '' : 's'}.',
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A titled table card. Renders the [emptyLabel] when [rows] is empty so a
+  /// zero state is explicit (never a blank card).
+  Widget _tableCard({
+    required Key key,
+    required String title,
+    required String emptyLabel,
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: key,
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (rows.isEmpty)
+              Text(
+                emptyLabel,
+                style: TextStyle(
+                  color: widget.theme.subtitleColor,
+                  fontSize: 12,
+                ),
+              )
+            else
+              Table(
+                columnWidths: {
+                  for (var i = 0; i < headers.length; i++)
+                    i: i == 0 ? const FlexColumnWidth(2) : const FlexColumnWidth(),
+                },
+                border: TableBorder(
+                  horizontalInside: BorderSide(
+                    color: widget.theme.textColor.withAlpha(12),
+                  ),
+                ),
+                children: [
+                  TableRow(
+                    children: [
+                      for (final h in headers)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            h,
+                            style: TextStyle(
+                              color: widget.theme.accentColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  for (final row in rows)
+                    TableRow(
+                      children: [
+                        for (final cell in row)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Text(
+                              cell,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: widget.theme.textColor,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }

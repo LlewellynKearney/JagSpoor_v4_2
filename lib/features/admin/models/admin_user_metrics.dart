@@ -63,6 +63,7 @@ enum AdminDateFilter {
 /// see [AdminUserRecord.fromMap] for the field aliases that DO exist.
 class AdminUserRecord {
   final String uid;
+  final String email;
   final String role;
   final String subscriptionStatus;
   final String plan;
@@ -78,6 +79,7 @@ class AdminUserRecord {
 
   const AdminUserRecord({
     required this.uid,
+    this.email = '',
     this.role = '',
     this.subscriptionStatus = '',
     this.plan = '',
@@ -188,6 +190,7 @@ class AdminUserRecord {
 
     return AdminUserRecord(
       uid: uid,
+      email: (d['email'] ?? '').toString().trim().toLowerCase(),
       role: (d['role'] ?? '').toString(),
       subscriptionStatus: status.isNotEmpty
           ? status

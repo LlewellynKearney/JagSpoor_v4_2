@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/admin/screens/admin_portal_v2_screen.dart';
 import 'package:jagspoor/features/admin/services/admin_auth_guard.dart';
+import 'package:jagspoor/features/admin/services/admin_operational_metrics_service.dart';
 import 'package:jagspoor/features/admin/services/admin_user_metrics_service.dart';
 import 'package:jagspoor/features/auth/services/user_role_provider.dart';
 
@@ -22,6 +23,7 @@ void main() {
   setUp(() {
     firestore = FakeFirebaseFirestore();
     AdminUserMetricsService.firestoreForTesting = firestore;
+    AdminOperationalMetricsService.firestoreForTesting = firestore;
     // Grant admin access deterministically (no Firebase Auth app).
     AdminAuthGuard.adminOverrideForTesting = true;
     UserRoleProvider.instance.setRole(AppRole.admin);
@@ -29,13 +31,16 @@ void main() {
 
   tearDown(() {
     AdminUserMetricsService.firestoreForTesting = null;
+    AdminOperationalMetricsService.firestoreForTesting = null;
     AdminAuthGuard.resetTestSeams();
   });
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester, {double height = 2400}) async {
     // A tall surface so the lazy ListView builds the note rows below the KPI
-    // grid (they are off-screen on the default 800x600 test surface).
-    tester.view.physicalSize = const Size(1200, 2400);
+    // grid (they are off-screen on the default 800x600 test surface). Task 4
+    // tests pass a taller height because the Packages + Bookings sections sit
+    // further down.
+    tester.view.physicalSize = Size(1200, height);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -166,5 +171,131 @@ void main() {
     AdminAuthGuard.adminOverrideForTesting = false;
     await pumpScreen(tester);
     expect(find.textContaining('Access denied'), findsOneWidget);
+  });
+
+  // ==========================================================================
+  // TASK 4 — Packages + Bookings
+  // ==========================================================================
+
+  testWidgets('renders all Task 4 package + booking KPI cards', (tester) async {
+    await pumpScreen(tester, height: 6000);
+
+    expect(find.byKey(const ValueKey('adminV2CardTotalPackages')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardActivePackages')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardSoldOutPackages')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('adminV2CardDraftArchivedPackages')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardOutfittersZeroPackages')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardTotalBookings')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardBookingConversion')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardStuckPending')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2CardAvgDaysToConfirm')),
+        findsOneWidget);
+  });
+
+  testWidgets('renders the province breakdown, both tables + status breakdown',
+      (tester) async {
+    await pumpScreen(tester, height: 6000);
+    expect(find.byKey(const ValueKey('adminV2ProvinceBreakdown')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2BookingStatusBreakdown')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2ZeroBookingTable')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2StuckPendingTable')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2TopOutfittersTable')),
+        findsOneWidget);
+  });
+
+  testWidgets('package counts derive from the packages collection',
+      (tester) async {
+    await firestore.collection('packages').doc('p1').set({
+      'outfitterId': 'o1',
+      'title': 'Active Hunt',
+      'status': 'active',
+      'quantityAvailable': 2,
+    });
+    await firestore.collection('packages').doc('p2').set({
+      'outfitterId': 'o1',
+      'title': 'Sold Out Hunt',
+      'status': 'sold_out',
+      'quantityAvailable': 0,
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    final totalCard = find.byKey(const ValueKey('adminV2CardTotalPackages'));
+    final activeCard = find.byKey(const ValueKey('adminV2CardActivePackages'));
+    final soldOutCard = find.byKey(const ValueKey('adminV2CardSoldOutPackages'));
+    expect(find.descendant(of: totalCard, matching: find.text('2')),
+        findsOneWidget);
+    expect(find.descendant(of: activeCard, matching: find.text('1')),
+        findsOneWidget);
+    expect(find.descendant(of: soldOutCard, matching: find.text('1')),
+        findsOneWidget);
+  });
+
+  testWidgets('booking conversion derives from booking statuses',
+      (tester) async {
+    await firestore.collection('bookings').doc('b1').set({
+      'status': 'Confirmed',
+      'hunterId': 'h1',
+      'outfitterId': 'o1',
+    });
+    await firestore.collection('bookings').doc('b2').set({
+      'status': 'Pending Approval',
+      'hunterId': 'h1',
+      'outfitterId': 'o1',
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    final totalCard = find.byKey(const ValueKey('adminV2CardTotalBookings'));
+    final convCard = find.byKey(const ValueKey('adminV2CardBookingConversion'));
+    expect(find.descendant(of: totalCard, matching: find.text('2')),
+        findsOneWidget);
+    // 1 confirmed / 2 total = 50.0%
+    expect(find.descendant(of: convCard, matching: find.text('50.0%')),
+        findsOneWidget);
+  });
+
+  testWidgets('zero-booking table shows an active package with no booking',
+      (tester) async {
+    await firestore.collection('packages').doc('lonely').set({
+      'outfitterId': 'o1',
+      'title': 'Lonely Package',
+      'status': 'active',
+      'quantityAvailable': 5,
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    expect(find.text('Lonely Package'), findsOneWidget);
+  });
+
+  testWidgets('a missing farm / missing paymentVerifiedAt never crashes',
+      (tester) async {
+    // Package with no farmId (Unknown Province) + a booking with no
+    // paymentVerifiedAt (Avg Days renders "—").
+    await firestore.collection('packages').doc('p1').set({
+      'outfitterId': 'o1',
+      'title': 'No Farm Package',
+      'status': 'active',
+      'quantityAvailable': 1,
+    });
+    await firestore.collection('bookings').doc('b1').set({
+      'status': 'Confirmed',
+      'hunterId': 'h1',
+      'outfitterId': 'o1',
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Unknown Province'), findsOneWidget);
+    final avgCard = find.byKey(const ValueKey('adminV2CardAvgDaysToConfirm'));
+    expect(find.descendant(of: avgCard, matching: find.text('—')),
+        findsOneWidget);
   });
 }
