@@ -52,6 +52,58 @@ enum AdminDateFilter {
   }
 }
 
+/// The role buckets the Task 6 Users page filters by.
+enum AdminUserRoleCategory {
+  hunter('Hunter'),
+  outfitter('Outfitter'),
+  dual('Dual'),
+  noRole('No Role');
+
+  const AdminUserRoleCategory(this.label);
+
+  /// The chip label rendered in the role filter bar.
+  final String label;
+}
+
+/// Formats a date as `yyyy-MM-dd` (locale-independent), or `—` when unknown.
+/// Used by the Task 6 pages for the `createdAt` columns.
+String formatAdminDate(DateTime? date) {
+  if (date == null) return '—';
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
+
+/// Builds a per-day new-user count series for the trailing [days] window
+/// (oldest → newest), used by the dashboard "New Users (7d bar)" chart.
+///
+/// Every day in the window appears in the series (zero when no account was
+/// created that day) so the bar chart always has a stable x-axis. Dates are
+/// bucketed at local midnight.
+List<MapEntry<DateTime, int>> adminNewUsersByDay(
+  Iterable<AdminUserRecord> records, {
+  int days = 7,
+  DateTime? now,
+}) {
+  final ref = now ?? DateTime.now();
+  final startOfToday = DateTime(ref.year, ref.month, ref.day);
+  final counts = <DateTime, int>{};
+  for (var i = days - 1; i >= 0; i--) {
+    counts[startOfToday.subtract(Duration(days: i))] = 0;
+  }
+  for (final r in records) {
+    final created = r.createdAt;
+    if (created == null) continue;
+    final bucket = DateTime(created.year, created.month, created.day);
+    if (counts.containsKey(bucket)) {
+      counts[bucket] = counts[bucket]! + 1;
+    }
+  }
+  final entries = counts.entries.toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  return entries;
+}
+
 /// A single `users/{uid}` document reduced to the fields the Admin Portal V2
 /// metrics need.
 ///
@@ -72,6 +124,15 @@ class AdminUserRecord {
   final bool isPremium;
   final bool requiresPayment;
   final bool hasActivePurchase;
+
+  /// Whether the account is a dual-role (hunter + outfitter) account. Mirrors
+  /// the detection in `UserRoleProvider.resolveRole` (`isDualRole: true`, a
+  /// `roles` array holding BOTH `hunter` + `outfitter`, or the shorthand
+  /// `role: 'dual'`). Used by the Task 6 Users page role filter.
+  final bool isDualRole;
+
+  /// The raw `roles` array when the document carries one (dual-role accounts).
+  final List<String> roles;
   final DateTime? createdAt;
   final DateTime? trialStart;
   final DateTime? trialEnd;
@@ -95,6 +156,8 @@ class AdminUserRecord {
     this.isPremium = false,
     this.requiresPayment = false,
     this.hasActivePurchase = false,
+    this.isDualRole = false,
+    this.roles = const [],
     this.createdAt,
     this.trialStart,
     this.trialEnd,
@@ -163,9 +226,46 @@ class AdminUserRecord {
   bool get isHunterRole => role.trim().toLowerCase() == 'hunter';
   bool get isOutfitterRole => role.trim().toLowerCase() == 'outfitter';
 
+  /// Whether this is a dual-role (hunter + outfitter) account. Derives from the
+  /// stored [isDualRole] flag OR a `roles` array holding BOTH roles OR the
+  /// `role: 'dual'` shorthand, so any construction path agrees with
+  /// `fromMap`'s detection.
+  bool get isDual =>
+      isDualRole ||
+      (roles.contains('hunter') && roles.contains('outfitter')) ||
+      role.trim().toLowerCase() == 'dual';
+
+  /// Whether the account has NO operational role assigned — i.e. it is not a
+  /// hunter, not an outfitter, and not a dual-role account. Admins are treated
+  /// as "No Role" here too (they are platform superusers, not a hunter /
+  /// outfitter audience); this is the bucket the Task 6 "No Role" list and the
+  /// dashboard's "No Role" tile surface.
+  bool get hasNoOperationalRole =>
+      !isDual && !isHunterRole && !isOutfitterRole;
+
+  /// The role category used by the Task 6 Users page role filter.
+  AdminUserRoleCategory get roleCategory {
+    if (isDual) return AdminUserRoleCategory.dual;
+    if (isHunterRole) return AdminUserRoleCategory.hunter;
+    if (isOutfitterRole) return AdminUserRoleCategory.outfitter;
+    return AdminUserRoleCategory.noRole;
+  }
+
   /// Whether this account was created inside [filter]'s window.
   bool isNewUser(AdminDateFilter filter, DateTime now) =>
       filter.includes(createdAt, now);
+
+  /// A short human label describing the account's trial state as of [now]:
+  /// `Active` (trial running), `Expired` (trial ended, no subscription),
+  /// `Converted` (active subscriber), or `None` (never had a trial). Used by
+  /// the Task 6 Users page.
+  String trialLabel(DateTime now) {
+    if (isPremiumActive(now)) return 'Converted';
+    if (isTrialActive(now)) return 'Active';
+    final end = trialEnd;
+    if (end != null && !end.isAfter(now)) return 'Expired';
+    return 'None';
+  }
 
   /// Parses a `users/{uid}` document into the typed snapshot.
   ///
@@ -189,6 +289,13 @@ class AdminUserRecord {
     final nestedMap =
         nested is Map ? Map<String, dynamic>.from(nested) : const <String, dynamic>{};
 
+    final roles = d['roles'] is List
+        ? (d['roles'] as List)
+            .map((r) => r.toString().trim().toLowerCase())
+            .where((r) => r.isNotEmpty)
+            .toList(growable: false)
+        : const <String>[];
+
     String firstString(List<dynamic> candidates) {
       for (final raw in candidates) {
         final value = (raw ?? '').toString().trim();
@@ -197,10 +304,19 @@ class AdminUserRecord {
       return '';
     }
 
+    final rawRole = (d['role'] ?? '').toString().trim();
+    // Dual-role detection mirrors `UserRoleProvider.resolveRole` so the Users
+    // page role filter agrees with the in-app routing decision.
+    final isDualRole = d['isDualRole'] == true ||
+        (roles.contains('hunter') && roles.contains('outfitter')) ||
+        rawRole.toLowerCase() == 'dual';
+
     return AdminUserRecord(
       uid: uid,
       email: (d['email'] ?? '').toString().trim().toLowerCase(),
-      role: (d['role'] ?? '').toString(),
+      role: rawRole,
+      isDualRole: isDualRole,
+      roles: roles,
       subscriptionStatus: status.isNotEmpty
           ? status
           : (nestedMap['status'] ?? '').toString().trim().toLowerCase(),
@@ -288,6 +404,21 @@ class AdminUserMetrics {
   /// the denominator of the trial-to-paid conversion rate.
   final int usersEverStartedTrial;
 
+  /// Accounts with no operational role (not hunter / outfitter / dual). The
+  /// Task 6 dashboard "No Role" tile + the Users page "No Role" list.
+  final int noRoleCount;
+
+  /// Total accounts in the fetched set (the dashboard "Total Users" tile).
+  /// Counted directly so a dual-role account (counted in BOTH [hunterCount]
+  /// and [outfitterCount]) is still counted ONCE here.
+  final int totalUsers;
+
+  /// Accounts whose role is `hunter` (regardless of subscription).
+  final int hunterCount;
+
+  /// Accounts whose role is `outfitter` (regardless of subscription).
+  final int outfitterCount;
+
   /// Active subscribers whose plan (`subscriptionProduct` / `plan`) is missing.
   /// Surfaced as the "Unknown" bucket so the plan split reconciles.
   final int unknownPlanSubscribers;
@@ -299,6 +430,10 @@ class AdminUserMetrics {
     this.subscribedHunters = 0,
     this.subscribedOutfitters = 0,
     this.usersEverStartedTrial = 0,
+    this.noRoleCount = 0,
+    this.totalUsers = 0,
+    this.hunterCount = 0,
+    this.outfitterCount = 0,
     this.unknownPlanSubscribers = 0,
   });
 
@@ -336,10 +471,22 @@ class AdminUserMetrics {
     var subscribedOutfitters = 0;
     var everStarted = 0;
     var unknownPlan = 0;
+    var noRoleCount = 0;
+    var hunterCount = 0;
+    var outfitterCount = 0;
+    var totalUsers = 0;
 
     for (final r in records) {
+      totalUsers++;
       if (r.isNewUser(filter, ref)) newUsers++;
       if (r.everStartedTrial) everStarted++;
+
+      // Role audience counts (the dashboard Total / Hunters / Outfitters /
+      // No Role tiles + the Users page role filter). Dual-role accounts count
+      // as BOTH a hunter and an outfitter; "No Role" excludes them.
+      if (r.isHunterRole || r.isDual) hunterCount++;
+      if (r.isOutfitterRole || r.isDual) outfitterCount++;
+      if (r.hasNoOperationalRole) noRoleCount++;
 
       final trialActiveNow = r.isTrialActive(ref);
       final premiumNow = r.isPremiumActive(ref);
@@ -374,6 +521,10 @@ class AdminUserMetrics {
       subscribedHunters: subscribedHunters,
       subscribedOutfitters: subscribedOutfitters,
       usersEverStartedTrial: everStarted,
+      noRoleCount: noRoleCount,
+      totalUsers: totalUsers,
+      hunterCount: hunterCount,
+      outfitterCount: outfitterCount,
       unknownPlanSubscribers: unknownPlan,
     );
   }

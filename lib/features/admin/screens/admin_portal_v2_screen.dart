@@ -7,11 +7,30 @@ import '../../hunter_mode/models/booking_status.dart';
 import '../models/admin_operational_metrics.dart';
 import '../models/admin_revenue_metrics.dart';
 import '../models/admin_user_metrics.dart';
+import '../pages/admin_bookings_page.dart';
+import '../pages/admin_packages_page.dart';
+import '../pages/admin_revenue_page.dart';
+import '../pages/admin_users_page.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
 import '../services/admin_operational_metrics_service.dart';
 import '../services/admin_user_metrics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
+import '../widgets/admin_v2_charts.dart';
+import '../widgets/admin_v2_common.dart';
+
+/// The Admin Portal V2 tab pages (Task 6).
+enum AdminV2Tab {
+  dashboard('Dashboard'),
+  users('Users'),
+  packages('Packages'),
+  bookings('Bookings'),
+  revenue('Revenue');
+
+  const AdminV2Tab(this.label);
+
+  final String label;
+}
 
 /// Admin Portal V2 — the next-generation admin surface.
 ///
@@ -58,6 +77,9 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   bool _loading = true;
   bool _authorized = false;
   String? _error;
+
+  /// The active tab (Task 6). Dashboard is the default landing.
+  AdminV2Tab _tab = AdminV2Tab.dashboard;
 
   /// True once the user documents have been fetched (so a filter change can
   /// re-aggregate locally instead of refetching).
@@ -173,38 +195,280 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
                               theme: widget.theme,
                               activeMode: AdminMode.admin,
                             ),
-                            _buildSectionHeader('Audience'),
-                            _buildFilterBar(),
+                            _buildTabBar(),
                             const SizedBox(height: 12),
-                            _buildUserGrid(),
-                            _buildUnknownPlanNote(),
-                            _buildSnapshotNote(),
-                            const SizedBox(height: 24),
-                            _buildSectionHeader('Packages'),
-                            _buildPackageGrid(),
-                            _buildProvinceBreakdown(),
-                            _buildZeroBookingTable(),
-                            const SizedBox(height: 24),
-                            _buildSectionHeader('Bookings'),
-                            _buildBookingGrid(),
-                            _buildBookingStatusBreakdown(),
-                            _buildStuckPendingTable(),
-                            _buildTopOutfittersTable(),
-                            _buildOperationalNote(),
-                            const SizedBox(height: 24),
-                            _buildSectionHeader('Revenue'),
-                            _buildRevenueGrid(),
-                            _buildPlanSplit(),
-                            _buildProviderSplit(),
-                            _buildPipelineCard(),
-                            _buildChurnedTable(),
-                            _buildRevenueNote(),
+                            _buildTabContent(),
                           ],
                         ),
                       ),
                     ),
         );
       },
+    );
+  }
+
+  /// The tab bar that switches between the Dashboard and the four read-only
+  /// pages (Task 6).
+  Widget _buildTabBar() {
+    return Wrap(
+      key: const ValueKey('adminV2TabBar'),
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final tab in AdminV2Tab.values)
+          ChoiceChip(
+            key: ValueKey('adminV2Tab_${tab.name}'),
+            label: Text(tab.label),
+            selected: _tab == tab,
+            onSelected: (_) => setState(() => _tab = tab),
+            selectedColor: widget.theme.accentColor.withAlpha(60),
+            labelStyle: TextStyle(
+              color: _tab == tab
+                  ? widget.theme.textColor
+                  : widget.theme.subtitleColor,
+              fontWeight: FontWeight.w600,
+            ),
+            backgroundColor: widget.theme.cardColor,
+            side: BorderSide(color: widget.theme.textColor.withAlpha(20)),
+          ),
+      ],
+    );
+  }
+
+  /// The body for the active tab.
+  Widget _buildTabContent() {
+    switch (_tab) {
+      case AdminV2Tab.dashboard:
+        return _buildDashboard();
+      case AdminV2Tab.users:
+        return AdminUsersPage(theme: widget.theme, records: _records);
+      case AdminV2Tab.packages:
+        return AdminPackagesPage(theme: widget.theme, data: _operational);
+      case AdminV2Tab.bookings:
+        return AdminBookingsPage(theme: widget.theme, data: _operational);
+      case AdminV2Tab.revenue:
+        return AdminRevenuePage(
+          theme: widget.theme,
+          metrics: _revenueMetrics,
+        );
+    }
+  }
+
+  /// The Dashboard tab: the four-row KPI layout + charts (Task 6).
+  ///
+  /// Row 1 — Total Users | Hunters | Outfitters | No Role
+  /// Row 2 — MRR | Trial Active | Trial→Paid % | Requests→Confirmed %
+  /// Row 3 — Total Packages | Active | Sold Out | Packages 0 Bookings
+  /// Row 4 — Charts: New Users (7d bar), Bookings By Status (donut),
+  ///         Packages Per Province (bar)
+  Widget _buildDashboard() {
+    final u = _metrics;
+    final p = _packageMetrics;
+    final b = _bookingMetrics;
+    final r = _revenueMetrics;
+
+    return Column(
+      key: const ValueKey('adminV2DashboardTab'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildFilterBar(),
+        const SizedBox(height: 12),
+
+        // Row 1 — audience.
+        AdminV2MetricGrid(
+          children: [
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTotalUsers'),
+              theme: widget.theme,
+              icon: Icons.people_alt_outlined,
+              label: 'Total Users',
+              value: u.totalUsers,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashHunters'),
+              theme: widget.theme,
+              icon: Icons.person_outline,
+              label: 'Hunters',
+              value: u.hunterCount,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashOutfitters'),
+              theme: widget.theme,
+              icon: Icons.business_outlined,
+              label: 'Outfitters',
+              value: u.outfitterCount,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashNoRole'),
+              theme: widget.theme,
+              icon: Icons.person_search_outlined,
+              label: 'No Role',
+              value: u.noRoleCount,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Row 2 — subscription + funnel.
+        AdminV2MetricGrid(
+          children: [
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashMrr'),
+              theme: widget.theme,
+              icon: Icons.payments_outlined,
+              label: 'MRR',
+              valueLabel: r.totalMrrLabel,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTrialActive'),
+              theme: widget.theme,
+              icon: Icons.hourglass_top_rounded,
+              label: 'Trial Active',
+              value: u.trialActive,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTrialToPaid'),
+              theme: widget.theme,
+              icon: Icons.trending_up_rounded,
+              label: 'Trial→Paid %',
+              valueLabel: u.trialToPaidConversionLabel,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashRequestsToConfirmed'),
+              theme: widget.theme,
+              icon: Icons.percent_rounded,
+              label: 'Requests→Confirmed %',
+              valueLabel: b.conversionLabel,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Row 3 — packages.
+        AdminV2MetricGrid(
+          children: [
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTotalPackages'),
+              theme: widget.theme,
+              icon: Icons.inventory_2_outlined,
+              label: 'Total Packages',
+              value: p.totalPackages,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashActivePackages'),
+              theme: widget.theme,
+              icon: Icons.check_circle_outline,
+              label: 'Active',
+              value: p.activePackages,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashSoldOutPackages'),
+              theme: widget.theme,
+              icon: Icons.remove_shopping_cart_outlined,
+              label: 'Sold Out',
+              value: p.soldOutPackages,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashPackagesZeroBookings'),
+              theme: widget.theme,
+              icon: Icons.event_busy_outlined,
+              label: 'Packages 0 Bookings',
+              value: p.zeroBookingPackages.length,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Row 4 — charts.
+        AdminV2SectionHeader(theme: widget.theme, title: 'Charts'),
+        _chartCard(
+          key: const ValueKey('adminV2ChartNewUsers'),
+          title: 'New Users (7d)',
+          child: AdminNewUsersBarChart(
+            theme: widget.theme,
+            series: adminNewUsersByDay(_records, days: 7),
+          ),
+        ),
+        _chartCard(
+          key: const ValueKey('adminV2ChartBookingsByStatus'),
+          title: 'Bookings By Status',
+          child: AdminBookingsByStatusDonut(
+            theme: widget.theme,
+            byStatus: b.byStatus,
+          ),
+        ),
+        _chartCard(
+          key: const ValueKey('adminV2ChartPackagesPerProvince'),
+          title: 'Packages Per Province (active)',
+          child: AdminPackagesPerProvinceBarChart(
+            theme: widget.theme,
+            byProvince: p.provinceBreakdown,
+          ),
+        ),
+
+        // Detail sections retained from Tasks 3-5 so the operator keeps the
+        // full breakdown below the four dashboard rows.
+        const SizedBox(height: 20),
+        AdminV2SectionHeader(theme: widget.theme, title: 'Audience'),
+        _buildUserGrid(),
+        _buildUnknownPlanNote(),
+        _buildSnapshotNote(),
+        const SizedBox(height: 20),
+        AdminV2SectionHeader(theme: widget.theme, title: 'Packages'),
+        _buildPackageGrid(),
+        _buildProvinceBreakdown(),
+        _buildZeroBookingTable(),
+        const SizedBox(height: 20),
+        AdminV2SectionHeader(theme: widget.theme, title: 'Bookings'),
+        _buildBookingGrid(),
+        _buildBookingStatusBreakdown(),
+        _buildStuckPendingTable(),
+        _buildTopOutfittersTable(),
+        _buildOperationalNote(),
+        const SizedBox(height: 20),
+        AdminV2SectionHeader(theme: widget.theme, title: 'Revenue'),
+        _buildRevenueGrid(),
+        _buildPlanSplit(),
+        _buildProviderSplit(),
+        _buildPipelineCard(),
+        _buildChurnedTable(),
+        _buildRevenueNote(),
+      ],
+    );
+  }
+
+  /// A titled card wrapping a chart widget.
+  Widget _chartCard({
+    required Key key,
+    required String title,
+    required Widget child,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        key: key,
+        decoration: BoxDecoration(
+          color: widget.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
     );
   }
 
@@ -228,21 +492,6 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
               child: const Text('Back to login'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: widget.theme.accentColor,
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
-          letterSpacing: 0.5,
         ),
       ),
     );

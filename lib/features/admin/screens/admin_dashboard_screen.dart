@@ -1003,8 +1003,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           icon: Icons.insights_rounded,
           title: 'Admin Portal V2',
           description:
-              'Trial + subscription KPIs (Trial Active, Expired No Sub, '
-              'Subscribed Hunters / Outfitters, Trial → Paid conversion).',
+              'Dashboard + read-only Users, Packages, Bookings and Revenue '
+              'pages (filters, MRR/ARR, trial KPIs, charts).',
           onTap: () => Navigator.pushNamed(context, '/admin_portal_v2'),
         ),
         _managementCard(
