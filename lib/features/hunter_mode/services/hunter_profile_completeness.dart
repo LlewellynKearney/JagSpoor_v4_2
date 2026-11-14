@@ -1,15 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
-/// The mandatory hunter profile fields: a Name (first name), a Surname
-/// (last name), and at least one contact detail (phone number OR email).
+/// Hunter profile completeness snapshot for the (formerly mandatory)
+/// First Name / Surname / contact-detail fields.
 ///
-/// A hunter cannot access the main app features until these fields are
-/// validly filled and saved to Firestore. The [HunterProfileCompleteness]
-/// check runs on registration + login (see the auth routing in
-/// `auth_screen.dart` + `splash_screen.dart`) and, when the profile is
-/// incomplete, redirects the hunter to the Hunter Profile screen to
-/// complete onboarding before any dashboard is shown.
+/// **Task 1B (2026-11-13):** these fields are now OPTIONAL — a hunter can save
+/// the profile and use the app with all of them empty. [isComplete] therefore
+/// always returns `true`; the class is retained (not deleted) so the auth /
+/// splash / role-selection / dashboard call sites keep compiling and so the
+/// gate can be re-enabled from one place later.
+/// See `docs/fix-profile-optional-fields/AUDIT.md`.
 class HunterProfileCompleteness {
   HunterProfileCompleteness._();
   static final HunterProfileCompleteness instance =
@@ -102,10 +102,15 @@ class HunterProfileStatus {
 
   bool get hasAnyContactDetail => hasPhone || hasEmail;
 
-  /// Whether ALL mandatory profile fields are present. This is the gate the
-  /// auth routing checks before admitting a hunter to the main app.
-  bool get isComplete =>
-      hasFirstName && hasLastName && hasAnyContactDetail;
+  /// Whether the mandatory profile fields are present.
+  ///
+  /// **Neutralised (Task 1B, 2026-11-13):** First Name, Surname, Phone and
+  /// Email are now OPTIONAL on the Hunter Profile, so this getter always
+  /// returns `true`. The gate is deliberately kept (rather than deleted) as
+  /// the single place to re-enable mandatory onboarding later — see
+  /// `docs/fix-profile-optional-fields/AUDIT.md`. The per-field flags above
+  /// remain accurate for analytics / diagnostics.
+  bool get isComplete => true;
 
   /// A short human-readable summary of the missing fields, used by the auth
   /// gate's "redirecting to complete your profile" snackbar.
