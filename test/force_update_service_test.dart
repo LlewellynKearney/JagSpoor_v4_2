@@ -96,19 +96,19 @@ void main() {
       );
     });
 
-    test('mirrors the current v4.2.26 / versionCode 26 build', () {
-      // Shipped build (versionCode 26) vs a future kill-switch floor.
+    test('mirrors the current v4.2.27 / versionCode 27 build', () {
+      // Shipped build (versionCode 27) vs a future kill-switch floor.
       expect(
         ForceUpdateService.shouldBlock(
-          minVersionCode: 26,
-          currentVersionCode: 25,
+          minVersionCode: 27,
+          currentVersionCode: 26,
         ),
         isTrue,
       );
       expect(
         ForceUpdateService.shouldBlock(
-          minVersionCode: 25,
-          currentVersionCode: 25,
+          minVersionCode: 26,
+          currentVersionCode: 26,
         ),
         isFalse,
       );

@@ -72,14 +72,14 @@ android {
         // Current Google Play requirement (as of Aug 31 2026) for new apps
         // and updates: target Android 16 (API level 36). Already satisfied.
         targetSdk = 36
-        // Version code 26 + version name 4.2.26: each Play Console re-upload
+        // Version code 27 + version name 4.2.27: each Play Console re-upload
         // requires a strictly higher version code integer than the previous
-        // accepted AAB (v4.2.25 / code 25) for acceptance — and the forced
+        // accepted AAB (v4.2.26 / code 26) for acceptance — and the forced
         // update gate only fires when the published build carries a higher
         // versionCode than the installed one. Kept in sync with the pubspec
-        // `version: 4.2.26+26` line.
-        versionCode = 26
-        versionName = "4.2.26"
+        // `version: 4.2.27+27` line.
+        versionCode = 27
+        versionName = "4.2.27"
     }
 
     // ---------- Signing configuration ----------
