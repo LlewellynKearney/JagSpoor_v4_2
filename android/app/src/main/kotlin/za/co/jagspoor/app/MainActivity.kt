@@ -8,6 +8,8 @@ import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.UserChoiceDetails
+import com.android.installreferrer.api.InstallReferrerClient
+import com.android.installreferrer.api.InstallReferrerStateListener
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -59,10 +61,20 @@ class MainActivity : FlutterFragmentActivity() {
         private const val METHOD_CREATE_TOKEN = "createAlternativeBillingToken"
         private const val METHOD_REPORT_TOKEN = "reportAlternativeBillingToken"
         private const val METHOD_IS_SUPPORTED = "isAlternativeBillingSupported"
+
+        // Referral — Google Play Install Referrer bridge (separate channel so
+        // the billing bridge above stays untouched). The Dart
+        // `InstallReferrerService` calls this on first launch to recover the
+        // `referrer=referral_<CODE>` value the share link put on the Play URL.
+        private const val REFERRAL_CHANNEL_NAME = "com.jagspoor/install_referrer"
+        private const val METHOD_GET_INSTALL_REFERRER = "getInstallReferrer"
     }
 
     private var channel: MethodChannel? = null
     private var billingClient: BillingClient? = null
+
+    /** The Install Referrer method channel (referral flow only). */
+    private var referralChannel: MethodChannel? = null
 
     /**
      * The most recent token Play handed us via the User Choice Billing
@@ -105,13 +117,104 @@ class MainActivity : FlutterFragmentActivity() {
         ).apply {
             setMethodCallHandler { call, result -> handleMethodCall(call, result) }
         }
+
+        // Referral — Play Install Referrer bridge on its own channel.
+        referralChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            REFERRAL_CHANNEL_NAME,
+        ).apply {
+            setMethodCallHandler { call, result ->
+                if (call.method == METHOD_GET_INSTALL_REFERRER) {
+                    readInstallReferrer(result)
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         channel?.setMethodCallHandler(null)
         channel = null
+        referralChannel?.setMethodCallHandler(null)
+        referralChannel = null
         endBillingConnection()
         super.onDestroy()
+    }
+
+    /**
+     * Reads the Google Play Install Referrer per the official Play Install
+     * Referrer Library 2.2 contract:
+     *
+     *   1. `InstallReferrerClient.newBuilder(context).build()`
+     *   2. `startConnection()` -> `onInstallReferrerSetupFinished()`
+     *   3. on OK, `getInstallReferrer()` -> `installReferrer` + timestamps
+     *   4. **`endConnection()`** — always called once the value is read (or on
+     *      any failure), so the Play Store binding is released.
+     *
+     * The Dart side (`InstallReferrerService`) parses `referral_<CODE>` out of
+     * the returned string. On iOS / non-Play installs the connection fails and
+     * the Dart service falls back to manual code entry.
+     */
+    private fun readInstallReferrer(result: MethodChannel.Result) {
+        var client: InstallReferrerClient? = null
+        try {
+            client = InstallReferrerClient.newBuilder(this).build()
+        } catch (t: Throwable) {
+            result.success(null)
+            return
+        }
+
+        // Guard against a double-resolve (setup-finished + service-disconnected).
+        var responded = false
+        val respond: (Map<String, Any?>?) -> Unit = { payload ->
+            if (!responded) {
+                responded = true
+                // Always release the Play Store binding.
+                try {
+                    client.endConnection()
+                } catch (_: Throwable) {
+                    // Nothing actionable.
+                }
+                result.success(payload)
+            }
+        }
+
+        try {
+            client.startConnection(object : InstallReferrerStateListener {
+                override fun onInstallReferrerSetupFinished(responseCode: Int) {
+                    if (responseCode != InstallReferrerClient.InstallReferrerResponse.OK) {
+                        respond(null)
+                        return
+                    }
+                    try {
+                        val details = client.installReferrer
+                        respond(
+                            mapOf(
+                                "installReferrer" to details.installReferrer,
+                                "referrerClickTimestampSeconds" to
+                                    details.referrerClickTimestampSeconds,
+                                "installBeginTimestampSeconds" to
+                                    details.installBeginTimestampSeconds,
+                                "referrerClickTimestampServerSeconds" to
+                                    details.referrerClickTimestampServerSeconds,
+                                "installBeginTimestampServerSeconds" to
+                                    details.installBeginTimestampServerSeconds,
+                                "installVersion" to details.installVersion,
+                            )
+                        )
+                    } catch (t: Throwable) {
+                        respond(null)
+                    }
+                }
+
+                override fun onInstallReferrerServiceDisconnected() {
+                    respond(null)
+                }
+            })
+        } catch (t: Throwable) {
+            respond(null)
+        }
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {

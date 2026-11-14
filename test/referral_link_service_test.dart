@@ -56,7 +56,7 @@ void main() {
     test('includes the marketing line + the App Link', () {
       final message =
           ReferralLinkService.buildShareMessage('JAGSPOOR7Q3X', userId: 'u1');
-      expect(message, contains('1 month free'));
+      expect(message, contains('earn 30 days of premium'));
       expect(message, contains('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'));
       expect(message.contains('page.link'), isFalse);
     });

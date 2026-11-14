@@ -32,7 +32,7 @@ void main() {
         ReferralLinkService.buildShareMessage('JAGSPOOR7Q3X', userId: 'u1');
     expect(message, contains('https://jag-spoor.co.za/r/JAGSPOOR7Q3X'));
     expect(message.contains('page.link'), isFalse);
-    expect(message, contains('1 month free'));
+    expect(message, contains('earn 30 days of premium'));
 
     // And the share call itself does not throw when invoked.
     await ReferralLinkService.shareReferralLink('JAGSPOOR7Q3X');

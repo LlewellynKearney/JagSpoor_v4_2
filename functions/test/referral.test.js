@@ -145,3 +145,209 @@ test("finaliseConversionReward only accepts a pending conversion", async () => {
   assert.match(compiled, /REFERRAL_STATUS_PENDING/);
   assert.match(compiled, /Only a pending conversion may be finalised/);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Task 2B — Play-compliance guard rails (cap, engagement gate, live guard)
+// ────────────────────────────────────────────────────────────────────────────
+
+test("the per-code conversion cap is 10", () => {
+  assert.equal(referral.MAX_CONVERSIONS_PER_CODE, 10);
+  assert.equal(referral.REFERRAL_CAP_PER_CODE, 10);
+});
+
+test("exceedsReferralCap: the 11th conversion is over the cap", () => {
+  assert.equal(referral.exceedsReferralCap(0), false);
+  assert.equal(referral.exceedsReferralCap(9), false);
+  assert.equal(referral.exceedsReferralCap(10), true);
+  assert.equal(referral.exceedsReferralCap(11), true);
+  // A custom max is honoured.
+  assert.equal(referral.exceedsReferralCap(2, 2), true);
+});
+
+test("hasCompletedProfile requires first + last name + a contact detail", () => {
+  assert.equal(
+    referral.hasCompletedProfile({
+      firstName: "Jane",
+      lastName: "Doe",
+      phone: "0821234567",
+    }),
+    true
+  );
+  // A legacy single fullName counts as both names.
+  assert.equal(
+    referral.hasCompletedProfile({ fullName: "Jane Doe", email: "j@x.com" }),
+    true
+  );
+  // Missing a contact detail.
+  assert.equal(
+    referral.hasCompletedProfile({ firstName: "Jane", lastName: "Doe" }),
+    false
+  );
+  // Missing a last name.
+  assert.equal(
+    referral.hasCompletedProfile({
+      firstName: "Jane",
+      phone: "0821234567",
+    }),
+    false
+  );
+  assert.equal(referral.hasCompletedProfile(null), false);
+  assert.equal(referral.hasCompletedProfile({}), false);
+});
+
+test("hasConsumedReferralCode is the live referralCodeUsed guard", () => {
+  assert.equal(referral.hasConsumedReferralCode({}), false);
+  assert.equal(referral.hasConsumedReferralCode(null), false);
+  assert.equal(
+    referral.hasConsumedReferralCode({ referralCodeUsed: "ABC23456" }),
+    true
+  );
+  // Match a specific code (case-insensitive).
+  assert.equal(
+    referral.hasConsumedReferralCode(
+      { referralCodeUsed: "ABC23456" },
+      "abc23456"
+    ),
+    true
+  );
+  assert.equal(
+    referral.hasConsumedReferralCode(
+      { referralCodeUsed: "ABC23456" },
+      "ZZZ99999"
+    ),
+    false
+  );
+});
+
+test("engagementMissingReasons / isEngagementSatisfied", () => {
+  assert.deepEqual(
+    referral.engagementMissingReasons({
+      emailVerified: false,
+      profileComplete: false,
+      actionCompleted: false,
+    }),
+    ["email_not_verified", "profile_incomplete", "no_qualifying_action"]
+  );
+  assert.deepEqual(
+    referral.engagementMissingReasons({
+      emailVerified: true,
+      profileComplete: true,
+      actionCompleted: true,
+    }),
+    []
+  );
+  assert.equal(
+    referral.isEngagementSatisfied({
+      emailVerified: true,
+      profileComplete: true,
+      actionCompleted: true,
+    }),
+    true
+  );
+  assert.equal(
+    referral.isEngagementSatisfied({
+      emailVerified: true,
+      profileComplete: true,
+      actionCompleted: false,
+    }),
+    false
+  );
+});
+
+test("decideReferralGrant: signup alone does NOT grant (pending engagement)", () => {
+  const decision = referral.decideReferralGrant({
+    alreadyGranted: false,
+    codeAlreadyUsed: false,
+    grantedCountForCode: 0,
+    rewardDays: 30,
+    emailVerified: false,
+    profileComplete: false,
+    actionCompleted: false,
+  });
+  assert.equal(decision.action, "pending");
+  assert.ok(decision.missing.includes("email_not_verified"));
+  assert.ok(decision.missing.includes("no_qualifying_action"));
+});
+
+test("decideReferralGrant: full engagement DOES grant", () => {
+  const decision = referral.decideReferralGrant({
+    alreadyGranted: false,
+    codeAlreadyUsed: false,
+    grantedCountForCode: 3,
+    rewardDays: 30,
+    emailVerified: true,
+    profileComplete: true,
+    actionCompleted: true,
+  });
+  assert.equal(decision.action, "grant");
+});
+
+test("decideReferralGrant: the 11th conversion is rejected (cap)", () => {
+  const decision = referral.decideReferralGrant({
+    alreadyGranted: false,
+    codeAlreadyUsed: false,
+    grantedCountForCode: 10,
+    rewardDays: 30,
+    emailVerified: true,
+    profileComplete: true,
+    actionCompleted: true,
+  });
+  assert.equal(decision.action, "reject");
+  assert.equal(decision.reason, referral.REJECT_REASON_CAP_REACHED);
+});
+
+test("decideReferralGrant: a duplicate (already granted) is rejected", () => {
+  const decision = referral.decideReferralGrant({
+    alreadyGranted: true,
+    codeAlreadyUsed: false,
+    grantedCountForCode: 0,
+    rewardDays: 30,
+    emailVerified: true,
+    profileComplete: true,
+    actionCompleted: true,
+  });
+  assert.equal(decision.action, "reject");
+  assert.equal(decision.reason, referral.REJECT_REASON_ALREADY_REWARDED);
+});
+
+test("decideReferralGrant: an already-consumed code is rejected", () => {
+  const decision = referral.decideReferralGrant({
+    alreadyGranted: false,
+    codeAlreadyUsed: true,
+    grantedCountForCode: 0,
+    rewardDays: 30,
+    emailVerified: true,
+    profileComplete: true,
+    actionCompleted: true,
+  });
+  assert.equal(decision.action, "reject");
+  assert.equal(decision.reason, referral.REJECT_REASON_CODE_ALREADY_USED);
+});
+
+test("the qualifying engagement action is a real in-app action (not install)", () => {
+  assert.equal(referral.QUALIFYING_ENGAGEMENT_ACTION, "first_trophy_created");
+  assert.notEqual(referral.QUALIFYING_ENGAGEMENT_ACTION, "install");
+  assert.notEqual(referral.QUALIFYING_ENGAGEMENT_ACTION, "signup");
+  assert.notEqual(referral.QUALIFYING_ENGAGEMENT_ACTION, "review");
+});
+
+test("the grant pipeline + new triggers are exported from index.js", () => {
+  const index = require("../lib/index.js");
+  assert.equal(typeof index.attemptReferralGrant, "function");
+  assert.equal(typeof index.decideReferralGrant, "function");
+  assert.ok(index.onReferredUserTrophyCreated);
+  assert.ok(index.onReferredUserProfileUpdated);
+  assert.equal(index.MAX_CONVERSIONS_PER_CODE, 10);
+  assert.equal(index.REFERRAL_CODE_USED_FIELD, "referralCodeUsed");
+});
+
+test("the compiled module wires the live guard + cap + engagement gate", () => {
+  const compiled = fs.readFileSync(__dirname + "/../lib/referral.js", "utf8");
+  // The live referralCodeUsed stamp on grant.
+  assert.match(compiled, /REFERRAL_CODE_USED_FIELD/);
+  // The per-code cap count query.
+  assert.match(compiled, /grantedCountForCode/);
+  // The engagement gate signals.
+  assert.match(compiled, /isReferredUserEmailVerified/);
+  assert.match(compiled, /hasQualifyingAction/);
+});

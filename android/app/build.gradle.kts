@@ -168,6 +168,13 @@ dependencies {
     // onward; 8.0.0 is the current minimum Google Play accepts for new
     // uploads, so no downgrade is warranted.
     implementation("com.android.billingclient:billing:8.0.0")
+    // Google Play Install Referrer Library 2.2 — reads the `referrer`
+    // parameter the referral share links put on the Play Store URL
+    // (`...&referrer=referral_<CODE>`), so a referral code survives a fresh
+    // install from the store (the deferred-deep-link path). This is the ONLY
+    // Play dependency added for the referral flow — it is NOT the Play
+    // Billing library (billing is untouched).
+    implementation("com.android.installreferrer:installreferrer:2.2")
 }
 
 // ---------------------------------------------------------------------------

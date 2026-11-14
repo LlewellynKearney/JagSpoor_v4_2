@@ -16,6 +16,7 @@ import 'core/splash_screen.dart';
 import 'core/services/firestore_bootstrap.dart';
 import 'core/services/push_notification_service.dart';
 import 'services/incoming_referral_handler.dart';
+import 'services/install_referrer_service.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/auth/widgets/role_guarded_route.dart';
@@ -149,6 +150,17 @@ Future<void> main() async {
       await ReferralLinkHandler.instance.initialize();
     } catch (e) {
       debugPrint('Referral link handler initialization failed: $e');
+    }
+
+    // --- Play Install Referrer (Android deferred deep link). Reads the
+    // `referrer=referral_<CODE>` value the share link put on the Play Store
+    // URL, on the FIRST launch after install, and caches it via the same
+    // ReferralLinkHandler. Android-only (iOS uses manual code entry — the iOS
+    // deferred link is deliberately NOT implemented). Best-effort.
+    try {
+      await InstallReferrerService.instance.initialize();
+    } catch (e) {
+      debugPrint('Install referrer initialization failed: $e');
     }
 
     // --- FCM push notifications: device-token registration + foreground

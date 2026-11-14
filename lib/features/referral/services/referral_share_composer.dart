@@ -51,12 +51,18 @@ class ReferralShareComposer {
 
   /// Builds the human-readable share message for [code] (WhatsApp / native
   /// share text). Multi-line, brand-consistent, with the App Link.
+  ///
+  /// TRUTHFUL copy only (Play "misleading claims" compliance): the REFERRER
+  /// earns a 30-day premium extension once the friend genuinely engages
+  /// (verified email + completed profile + a qualifying in-app action). The
+  /// message does NOT promise the friend a reward, because the programme
+  /// grants none.
   static String buildShareMessage(String? code) {
     final cleaned = _cleanCode(code);
     if (cleaned.isEmpty) return '';
     final link = buildReferralLink(cleaned);
     return 'Join me on JagSpoor — my referral code is $cleaned! '
-        'Refer a friend and we both unlock rewards.\n\n'
+        'I earn 30 days of premium when you join and become active.\n\n'
         'Use my link: $link\n\n'
         'Get started: install the JagSpoor app and enter my code when '
         'you sign up.\n\n'

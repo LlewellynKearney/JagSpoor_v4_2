@@ -10,6 +10,15 @@
 /// The HTTPS link resolves on Android via App Links (`android:autoVerify` +
 /// `/.well-known/assetlinks.json`) and on iOS via Universal Links
 /// (`apple-app-site-association` + the `Associated Domains` entitlement).
+///
+/// **iOS IS OUT OF SCOPE (Task 2B, 2026-11-14).** The iOS deferred link is
+/// deliberately NOT implemented: the AASA still carries the
+/// `REPLACE_WITH_TEAM_ID` placeholder and the owner is not an iOS developer
+/// yet. An iOS user who taps a referral link therefore uses MANUAL CODE ENTRY
+/// on signup (validated against `referralCodes/{code}`) — no Apple Team ID /
+/// AASA / AppleProvider work is done here. See
+/// `docs/fix-referral-audit/TASK2B_DONE.md`.
+///
 /// When the app is not installed the same URL is served by the website, which
 /// shows a "Download Jagspoor" page with the code pre-filled. The custom
 /// scheme is the last-resort fallback for an installed app on a device that
@@ -54,7 +63,14 @@ class ReferralLinkService {
       '/.well-known/apple-app-site-association';
 
   /// Human-readable share copy prefix (brand-consistent marketing line).
-  static const String sharePrefix = 'Join JagSpoor and get 1 month free!';
+  ///
+  /// Truthful claim only: the REFERRER earns a 30-day premium extension once
+  /// the friend genuinely engages (verified email + completed profile + a
+  /// qualifying in-app action). The friend is NOT promised a reward, because
+  /// the programme does not grant one — promising otherwise is a Play
+  /// "misleading claims" violation.
+  static const String sharePrefix =
+      'Join JagSpoor — you earn 30 days of premium when a friend joins and becomes active!';
 
   /// Native-share subject.
   static const String shareSubject = 'Join me on JagSpoor!';
@@ -77,6 +93,73 @@ class ReferralLinkService {
   /// signature available for analytics / logging use.
   static String generateReferralLinkForCode(String referralCode) =>
       generateReferralLink('', referralCode);
+
+  /// The Play Store application id (matches `android/app/build.gradle.kts`
+  /// `applicationId`).
+  static const String playPackageId = 'za.co.jagspoor.app';
+
+  /// The Play Store listing URL.
+  static const String playStoreUrl =
+      'https://play.google.com/store/apps/details?id=$playPackageId';
+
+  /// Builds the Google Play install URL carrying the referral code as the
+  /// Install Referrer `referrer` parameter, e.g.
+  /// `https://play.google.com/store/apps/details?id=za.co.jagspoor.app&referrer=referral_<CODE>`.
+  ///
+  /// When the app is NOT installed, the share link opens the website landing
+  /// page which sends the user here; the `referrer` value is read back on the
+  /// first launch via the Play Install Referrer API (see
+  /// `InstallReferrerService`) so the code survives the store install.
+  /// [referralCode] is trimmed + upper-cased; the `referrer` value is
+  /// URL-encoded per the Install Referrer contract. A blank code yields the
+  /// plain listing URL.
+  static String buildPlayStoreReferrerUrl(String referralCode) {
+    final cleaned = _cleanCode(referralCode);
+    if (cleaned.isEmpty) return playStoreUrl;
+    final referrer = Uri.encodeComponent('$installReferrerPrefix$cleaned');
+    return '$playStoreUrl&referrer=$referrer';
+  }
+
+  /// The Install Referrer value prefix (`referral_<CODE>`), matching the
+  /// contract parsed by `InstallReferrerService`.
+  static const String installReferrerPrefix = 'referral_';
+
+  /// Parses a raw Play Install Referrer string into a referral code.
+  ///
+  /// Accepts `referral_<CODE>` (the canonical value the share links emit) and
+  /// tolerates a leading `?`/`&`, additional `&`-joined params, and a bare
+  /// `<CODE>`. Returns the upper-cased code, or null when no code is present.
+  static String? parseInstallReferrer(String? referrer) {
+    if (referrer == null) return null;
+    final raw = referrer.trim();
+    if (raw.isEmpty) return null;
+    // Split off any additional `&`-joined params and a leading `?`.
+    final firstSegment = raw
+        .replaceFirst(RegExp(r'^[?&]'), '')
+        .split('&')
+        .firstWhere((s) => s.trim().isNotEmpty, orElse: () => '');
+    if (firstSegment.isEmpty) return null;
+    var value = firstSegment;
+    final prefixIndex = value.toLowerCase().indexOf(installReferrerPrefix);
+    if (prefixIndex >= 0) {
+      value = value.substring(prefixIndex + installReferrerPrefix.length);
+    } else {
+      // A `code=CODE` query form is also accepted.
+      final eq = value.indexOf('=');
+      if (eq >= 0) value = value.substring(eq + 1);
+    }
+    final cleaned = _cleanCode(_safeDecode(value));
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  /// `Uri.decodeComponent` that never throws on a malformed percent escape.
+  static String _safeDecode(String value) {
+    try {
+      return Uri.decodeComponent(value);
+    } catch (_) {
+      return value;
+    }
+  }
 
   /// Builds the custom-scheme fallback deep link, e.g.
   /// `jagspoor://referral?code=JAGSPOOR7Q3X`. Empty for a blank code.
