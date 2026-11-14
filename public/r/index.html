@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join Jagspoor — Referral Invite</title>
-  <meta name="description" content="You have been invited to Jagspoor. Download the app and enter the referral code to unlock rewards.">
+  <meta name="description" content="You have been invited to Jagspoor. Download the app and enter the referral code to get started.">
   <style>
     :root { color-scheme: dark; }
     body {
@@ -60,7 +60,7 @@
 <body>
   <div class="card">
     <h1>JAGSPOOR</h1>
-    <p>You have been invited to join Jagspoor. Download the app and enter your referral code to unlock rewards.</p>
+    <p>You have been invited to join Jagspoor. Download the app and enter your referral code to get started.</p>
     <div class="code-label">YOUR REFERRAL CODE</div>
     <div class="code" id="code">—</div>
     <a class="btn btn-primary" id="play" href="https://play.google.com/store/apps/details?id=za.co.jagspoor.app">Download on Google Play</a>
@@ -82,21 +82,32 @@
     }
     var code = resolveCode();
     var codeEl = document.getElementById('code');
+    var playEl = document.getElementById('play');
     if (code) {
       codeEl.textContent = code;
+      // Play Store URL carrying the referral code as the Install Referrer
+      // `referrer` parameter (referral_<CODE>). The app reads this back on
+      // the first launch via the Play Install Referrer API, so the code
+      // survives a fresh install from the store (deferred deep link).
+      var playUrl = 'https://play.google.com/store/apps/details?id=za.co.jagspoor.app' +
+        '&referrer=' + encodeURIComponent('referral_' + code);
+      playEl.setAttribute('href', playUrl);
       // Deep-link straight into the app if it is installed; otherwise the
       // Play button below handles the download. The custom scheme is the
       // fallback for an installed app whose App Link association has not
       // been verified yet.
       var scheme = 'jagspoor://referral?code=' + encodeURIComponent(code);
-      var playUrl = 'https://play.google.com/store/apps/details?id=za.co.jagspoor.app';
-      // Android intent:// resolves the app or falls back to Play.
+      // Android intent:// resolves the app or falls back to Play (with the
+      // referrer param preserved in the fallback URL).
       var ua = navigator.userAgent || '';
       if (/Android/i.test(ua)) {
         window.location.href = 'intent://referral?code=' + encodeURIComponent(code) +
           '#Intent;scheme=jagspoor;package=za.co.jagspoor.app;S.browser_fallback_url=' +
           encodeURIComponent(playUrl) + ';end';
       } else if (/iPhone|iPad|iPod/i.test(ua)) {
+        // iOS deferred linking is NOT implemented (see TASK2B_DONE.md): the
+        // custom scheme only works when the app is already installed; a
+        // not-installed iOS user copies the code manually.
         window.location.href = scheme;
       }
     } else {

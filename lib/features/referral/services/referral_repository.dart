@@ -32,6 +32,17 @@ class ReferralRedemptionResult {
   bool get isRecorded => recorded;
 }
 
+/// Outcome of validating a MANUALLY ENTERED referral code (P1 manual-entry
+/// fallback). [valid] is true when the code resolves to a redeemable
+/// `referralCodes/{code}` entry (or a legacy profile code); [reason] explains
+/// an invalid code so the signup field can show inline feedback.
+class ReferralCodeCheck {
+  final bool valid;
+  final String? reason;
+
+  const ReferralCodeCheck({required this.valid, this.reason});
+}
+
 /// Firestore repository for the JagSpoor referral system.
 ///
 /// Owns every read/write against the three Phase-1 collections:
@@ -191,6 +202,39 @@ class ReferralRepository {
       debugPrint('ReferralRepository.findReferrerByCode: $e');
       return null;
     }
+  }
+
+  /// Validates a MANUALLY ENTERED referral code against the
+  /// `referralCodes/{code}` reverse index (P1 manual-entry fallback).
+  ///
+  /// Used by the signup field to validate the code "before acceptance" for
+  /// users who could not be deep-linked (sideload, already-installed,
+  /// referrer unavailable, iOS). Returns a [ReferralCodeCheck] carrying the
+  /// validity + a human-readable reason; never throws.
+  Future<ReferralCodeCheck> checkReferralCode(String code) async {
+    final cleaned = code.trim().toUpperCase();
+    if (cleaned.isEmpty) {
+      return const ReferralCodeCheck(valid: false, reason: 'Enter a code.');
+    }
+    final index = await getReferralCode(cleaned);
+    if (index != null) {
+      if (!index.isRedeemable) {
+        return const ReferralCodeCheck(
+          valid: false,
+          reason: 'That referral code is no longer active.',
+        );
+      }
+      return const ReferralCodeCheck(valid: true);
+    }
+    // Fall back to the legacy profile-code lookup (pre-index profiles).
+    final referrer = await findReferrerByCode(cleaned);
+    if (referrer != null && referrer.userId.isNotEmpty) {
+      return const ReferralCodeCheck(valid: true);
+    }
+    return const ReferralCodeCheck(
+      valid: false,
+      reason: 'We could not find that referral code.',
+    );
   }
 
   /// Creates the current user's referral profile.

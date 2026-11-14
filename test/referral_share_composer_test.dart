@@ -48,7 +48,7 @@ void main() {
         message,
         contains('jag-spoor.co.za/r/JAGSPOOR7Q3X'),
       );
-      expect(message, contains('Refer a friend and we both unlock rewards.'));
+      expect(message, contains('I earn 30 days of premium'));
       expect(message, contains('support@jag-spoor.co.za'));
     });
 

@@ -39,6 +39,12 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _referralCodeController = TextEditingController();
 
+  /// Inline validation feedback for the MANUAL referral-code field (P1
+  /// manual-entry fallback). Set by [_validateReferralCode]; `true` shows a
+  /// green "code applied" hint, `false` shows the [ReferralCodeCheck.reason].
+  bool? _referralCodeValid;
+  String? _referralCodeError;
+
   // NOTE: `AuthGateService` is no longer used by this screen — its only
   // callers were the Google Sign-In flow and the SMS-2FA cancel path, both of
   // which were removed with Google Sign-In.
@@ -88,6 +94,29 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       debugPrint('AuthScreen: referral prefill failed: $e');
     }
+  }
+
+  /// Validates a MANUALLY ENTERED referral code against the
+  /// `referralCodes/{code}` reverse index "before acceptance" (P1 manual
+  /// fallback — covers sideload / already-installed / referrer-unavailable /
+  /// iOS). Never blocks registration; it only surfaces inline feedback.
+  Future<void> _validateReferralCode() async {
+    final code = _referralCodeController.text.trim();
+    if (code.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _referralCodeValid = null;
+          _referralCodeError = null;
+        });
+      }
+      return;
+    }
+    final check = await ReferralRepository.instance.checkReferralCode(code);
+    if (!mounted) return;
+    setState(() {
+      _referralCodeValid = check.valid;
+      _referralCodeError = check.valid ? null : check.reason;
+    });
   }
 
   @override
@@ -664,22 +693,62 @@ class _AuthScreenState extends State<AuthScreen> {
                     // a clean, uncompressed input so a newer user can attribute
                     // their signup to a referrer; blank submissions are the
                     // common case and take the fast path (no conversion).
+                    // The code is VALIDATED against `referralCodes/{code}`
+                    // before acceptance (P1 manual fallback — covers sideload /
+                    // already-installed / referrer-unavailable / iOS users who
+                    // could not be deep-linked). Validation is advisory: an
+                    // invalid code shows inline feedback but never blocks
+                    // registration (it is simply not redeemed).
                     if (!_isLoginMode) ...[
                       const SizedBox(height: 16.0),
                       TextFormField(
                         key: const ValueKey('registrationReferralCodeField'),
                         controller: _referralCodeController,
                         autocorrect: false,
-                        decoration: const InputDecoration(
+                        textCapitalization: TextCapitalization.characters,
+                        onChanged: (_) => _validateReferralCode(),
+                        decoration: InputDecoration(
                           labelText: 'Referral Code (optional)',
                           hintText: 'Have a referral code? Enter it here',
-                          border: OutlineInputBorder(),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _referralCodeValid == null
+                              ? null
+                              : Icon(
+                                  _referralCodeValid!
+                                      ? Icons.check_circle
+                                      : Icons.error_outline,
+                                  color: _referralCodeValid!
+                                      ? Colors.green
+                                      : Colors.redAccent,
+                                ),
                         ),
-                        // Invalid but non-empty codes simply fail
-                        // redemption (logged) — the field never blocks
-                        // registration.
                         validator: null,
                       ),
+                      if (_referralCodeError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6.0),
+                          child: Text(
+                            _referralCodeError!,
+                            key: const ValueKey('referralCodeErrorText'),
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      if (_referralCodeValid == true)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6.0),
+                          child: Text(
+                            'Referral code applied — you will be linked to '
+                            'your referrer when you sign up.',
+                            key: ValueKey('referralCodeValidText'),
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                     ],
                     const SizedBox(height: 12.0),
                     // The tile is wrapped in its own `Material` so its

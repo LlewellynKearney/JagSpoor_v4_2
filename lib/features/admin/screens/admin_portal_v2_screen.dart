@@ -85,6 +85,11 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   /// re-aggregate locally instead of refetching).
   bool _recordsLoaded = false;
 
+  /// Task 2B — read-only referral metric: the total number of
+  /// `referral_conversions` documents (aggregate only, no PII). Loaded once
+  /// alongside the user records.
+  int _referredUsersCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -116,6 +121,9 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
       };
       final operational = await AdminOperationalMetricsService.instance
           .fetchData(userEmailByUid: userEmailByUid);
+      // Task 2B — read-only referral metric (aggregate count only, no PII).
+      final referredUsers =
+          await AdminUserMetricsService.instance.fetchReferredUsersCount();
       if (!mounted) return;
       setState(() {
         _records = records;
@@ -125,6 +133,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         _packageMetrics = operational.packageMetrics();
         _bookingMetrics = operational.bookingMetrics();
         _revenueMetrics = AdminRevenueMetrics.aggregate(records);
+        _referredUsersCount = referredUsers;
         _loading = false;
       });
     } catch (e) {
@@ -572,6 +581,14 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
           null,
           valueLabel: m.trialToPaidConversionLabel,
           key: const ValueKey('adminV2CardTrialToPaidConversion'),
+        ),
+        // Task 2B — read-only referral metric. Aggregate count ONLY (no PII:
+        // no referrer/referred uid, email or name is ever surfaced).
+        _metricCard(
+          Icons.group_add_outlined,
+          'Referred Users',
+          _referredUsersCount,
+          key: const ValueKey('adminV2CardReferredUsers'),
         ),
       ],
     );

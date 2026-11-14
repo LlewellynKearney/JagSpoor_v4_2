@@ -90,7 +90,8 @@ class _ReferralShareWidgetState extends State<ReferralShareWidget> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Share your code — friends get a reward, and so do you.',
+              'Share your code — you earn 30 days of premium when a friend '
+              'joins and becomes active.',
               style: TextStyle(
                   color: widget.theme.subtitleColor, fontSize: 11),
             ),

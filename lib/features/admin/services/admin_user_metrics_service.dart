@@ -68,4 +68,26 @@ class AdminUserMetricsService {
       return const <AdminUserRecord>[];
     }
   }
+
+  /// Task 2B — counts the referral conversions for the read-only Admin V2
+  /// "Referred Users" card. Reads `referral_conversions` (bounded by
+  /// [scanLimit]) and counts the total number of conversion documents —
+  /// aggregated ONLY (no PII: the card never surfaces a referrer / referred
+  /// uid, email or name). Never throws — a read failure yields 0 so one
+  /// broken collection never crashes the portal.
+  ///
+  /// This is a read-only metric on the referral collection; it does NOT touch
+  /// any billing / entitlement file.
+  Future<int> fetchReferredUsersCount() async {
+    try {
+      final snap = await _db
+          .collection('referral_conversions')
+          .limit(scanLimit)
+          .get();
+      return snap.docs.length;
+    } catch (e) {
+      debugPrint('AdminUserMetricsService.fetchReferredUsersCount failed: $e');
+      return 0;
+    }
+  }
 }
