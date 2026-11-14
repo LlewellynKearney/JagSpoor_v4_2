@@ -58,16 +58,22 @@ Future<void> main() async {
     );
 
     // --- Firebase Crashlytics: real-time error logging ---
-    // Route all uncaught Flutter framework (fatal) errors to Crashlytics so
-    // they are reported instead of swallowed by the framework dump routine.
-    FlutterError.onError =
-        FirebaseCrashlytics.instance.recordFlutterFatalError;
-    // Route all uncaught asynchronous errors (outside the Flutter framework,
-    // e.g. thrown in isolated zones / Future error callbacks) to Crashlytics.
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
+    // Crashlytics is NOT supported on Web (there is no `firebase_crashlytics`
+    // web implementation), so `FirebaseCrashlytics.instance` throws there and
+    // would abort startup with the "Initialization error" page. Guard the whole
+    // block on `!kIsWeb`; Web keeps Flutter's default error reporting.
+    if (!kIsWeb) {
+      // Route all uncaught Flutter framework (fatal) errors to Crashlytics so
+      // they are reported instead of swallowed by the framework dump routine.
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
+      // Route all uncaught asynchronous errors (outside the Flutter framework,
+      // e.g. thrown in isolated zones / Future error callbacks) to Crashlytics.
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
 
     // --- Firebase Analytics: user session & screen event tracking ---
     // A single instance is created here; the navigator observer below feeds
@@ -93,11 +99,17 @@ Future<void> main() async {
       } catch (e) {
         debugPrint('App Check (prod) activation failed: $e');
       }
+    } else if (kIsWeb) {
+      debugPrint('App Check skipped on Web (no Android/Apple provider)');
     } else {
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.debug,
-        appleProvider: AppleProvider.debug,
-      );
+      try {
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: AndroidProvider.debug,
+          appleProvider: AppleProvider.debug,
+        );
+      } catch (e) {
+        debugPrint('App Check (debug) activation failed: $e');
+      }
     }
     debugPrint('App Check activated: release=$runner debug=${kDebugMode}');
 
@@ -115,7 +127,14 @@ Future<void> main() async {
     // Roster, Guided Hunt Logs) keeps serving cached data when the network
     // drops, and queued writes flush on reconnect. On web, a second tab
     // claiming IndexedDB triggers a graceful in-memory fallback (no crash).
-    await FirestoreBootstrap.initialize();
+    // Best-effort: `FirestoreBootstrap` already handles the web multi-tab
+    // exception internally, and this outer guard ensures a Web-only
+    // Firestore init failure can never abort startup on Web.
+    try {
+      await FirestoreBootstrap.initialize();
+    } catch (e) {
+      debugPrint('FirestoreBootstrap initialization failed: $e');
+    }
 
     // --- Referral App Links listener (post-Dynamic-Links) ---
     // Firebase Dynamic Links was shut down on 2025-08-25, so referral sharing
