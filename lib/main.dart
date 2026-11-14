@@ -12,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart'; // ADDED
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
+import 'core/router/app_router.dart';
+import 'core/router/browser_path.dart';
 import 'core/splash_screen.dart';
 import 'core/services/firestore_bootstrap.dart';
 import 'core/services/push_notification_service.dart';
@@ -296,6 +298,7 @@ Future<void> main() async {
       JagspoorApp(
         themeController: themeController,
         analytics: analytics,
+        initialRoute: _resolveBootRoute(),
       ),
     );
   } catch (e) {
@@ -343,13 +346,47 @@ Future<void> main() async {
   }
 }
 
+/// The route the app boots into.
+///
+/// Flutter's web engine derives its default route from the URL **hash**, so a
+/// *path*-based deep link (`https://jag-spoor.co.za/admin_portal_v2`, no `#`)
+/// left the hash empty and the app fell back to the splash — which routed an
+/// admin to the OLD `/admin_dashboard`. This resolves the boot route from the
+/// browser path too, so `/admin_portal_v2` loads [AdminPortalV2Screen]
+/// directly.
+///
+/// The engine still overrides the boot route with the hash route when the hash
+/// names a route, so the existing `#/route` deep-link behaviour is unchanged.
+/// The browser path is only read on the web build (the native stub returns an
+/// empty string).
+String _resolveBootRoute() {
+  return AppRouter.resolveInitialRoute(
+    // The engine's `defaultRouteName` (`#/route`). Empty when the app is
+    // launched at the site root.
+    hashRoute: WidgetsBinding.instance.platformDispatcher.defaultRouteName,
+    browserPath: currentBrowserPath(),
+    isKnownRoute: AppRoutes.all.contains,
+  );
+}
+
 class JagspoorApp extends StatelessWidget {
   final ThemeController themeController;
   final FirebaseAnalytics? analytics;
+
+  /// The route the app boots into.
+  ///
+  /// Resolved once in [main] from the URL hash **and** the browser path, so a
+  /// path deep link (`https://jag-spoor.co.za/admin_portal_v2`) is honoured
+  /// instead of falling back to the splash (which used to bounce an admin to
+  /// the OLD `/admin_dashboard`). Defaults to the splash so an ordinary launch
+  /// — and every test that constructs this widget directly — is unchanged.
+  final String initialRoute;
+
   const JagspoorApp({
     super.key,
     required this.themeController,
     this.analytics,
+    this.initialRoute = AppRoutes.splash,
   });
 
   @override
@@ -374,7 +411,11 @@ class JagspoorApp extends StatelessWidget {
           navigatorObservers: [
             if (analytics != null) FirebaseAnalyticsObserver(analytics: analytics!),
           ],
-          initialRoute: '/splash',
+          // Boot route: a hash deep link (`#/admin_portal_v2`) or a path deep
+          // link (`/admin_portal_v2`) is honoured; otherwise the splash. The
+          // engine still overrides this with the hash route when the hash names
+          // a route, so the existing hash behaviour is unchanged.
+          initialRoute: initialRoute,
           routes: {
             '/splash': (context) => SplashScreen(theme: themeController),
             '/': (context) => AuthScreen(themedata: themeController),
@@ -397,6 +438,13 @@ class JagspoorApp extends StatelessWidget {
                 builder: (_) => OutfitterDashboard(theme: themeController),
               ),
             '/admin_dashboard': (context) => RoleGuardedRoute(
+                route: '/admin_dashboard',
+                builder: (_) => AdminDashboardScreen(theme: themeController),
+              ),
+            // Friendly alias so `/admin` (and `#/admin`) still reaches the
+            // ORIGINAL Admin Portal. Kept as a distinct route so the old
+            // portal stays reachable after the V2 split.
+            '/admin': (context) => RoleGuardedRoute(
                 route: '/admin_dashboard',
                 builder: (_) => AdminDashboardScreen(theme: themeController),
               ),

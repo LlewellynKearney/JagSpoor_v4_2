@@ -1,5 +1,89 @@
 # JagSpoor -- Agent Memory
 
+## FIX: /admin_portal_v2 path deep link redirected to the OLD Admin Portal (added 2026-11-14)
+
+Branch `main` (base `ef1f9a5`).
+
+### Symptom
+Opening `https://jag-spoor.co.za/admin_portal_v2` (a **path** URL, no `#`)
+landed on the OLD Admin Portal (`#/admin_dashboard`: Instant Mode Switcher +
+Entity Overview 5 outfitters / 57 hunters) instead of Admin Portal V2.
+
+### Root cause — hash routing + a hard-coded `initialRoute`
+The app uses **hash-based** routing. Flutter's web engine derives its default
+route from the URL hash: `HashUrlStrategy.getPath()` reads ONLY
+`location.hash` and returns `/` when the hash is empty
+(`bin/cache/flutter_web_sdk/lib/ui_web/ui_web/navigation/url_strategy.dart`).
+`WidgetsApp._initialRouteName` then falls back to the widget's `initialRoute`
+whenever `defaultRouteName == '/'`. So:
+
+- `#/admin_portal_v2` -> hash route -> boots straight into the V2 route (worked)
+- `/admin_portal_v2` (no `#`) -> hash is empty -> `defaultRouteName == '/'`
+  -> fallback `initialRoute: '/splash'` -> the splash routes a signed-in
+  **admin to `/admin_dashboard`** (the OLD portal).
+
+The `/admin_portal_v2` route itself was ALWAYS correctly registered in
+`main.dart` (`RoleGuardedRoute(route: '/admin_portal_v2', requiresPremium:
+false, builder: AdminPortalV2Screen)`) and `/admin_portal_v2` was already in
+`RoleGuard.adminOnlyRoutes`. Nothing was ever redirected to the old dashboard
+— the path deep link simply never selected the route.
+
+### Fix
+- NEW `lib/core/router/app_router.dart` — pure, dependency-free
+  `AppRoutes` (named-route constants + `AppRoutes.all`, the exact set
+  registered in `main.dart`) and `AppRouter.resolveInitialRoute({hashRoute,
+  browserPath, isKnownRoute, fallback})`: prefer the **hash** route, then the
+  **browser path** (resolved through friendly aliases: `/admin` and
+  `/admin-portal` -> the OLD portal; `/admin-portal-v2` / `/admin_v2` -> V2),
+  then the splash fallback. `normalizePath` strips a `#/` fragment / query
+  string / duplicate+trailing slashes and rejects blank input.
+- NEW `lib/core/router/browser_path.dart` (+ `_stub` / `_web`) — a
+  conditional-import façade (the repo's established `package:web` pattern,
+  mirroring `web_barcode_service.dart` / `payfast_form.dart`) exposing
+  `currentBrowserPath()` = `location.pathname` on web, `''` on native.
+- `lib/main.dart`: `_resolveBootRoute()` feeds the resolved route into a new
+  `JagspoorApp.initialRoute` field (default `AppRoutes.splash`, so every
+  direct construction is unchanged). Added the `/admin` alias route ->
+  `AdminDashboardScreen` so `/admin` (and `#/admin`) keeps the OLD portal
+  reachable. The engine still overrides the boot route with the hash when the
+  hash names a route, so `#/...` deep links are unchanged.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing
+  infos (unchanged baseline).
+- NEW `test/admin_portal_v2_route_test.dart` (24 tests): the pure resolver
+  (path deep link -> V2; hash deep link -> V2; hash wins; `/admin` -> OLD;
+  root/unknown -> splash; alias + normalisation cases) and a `main.dart`
+  route-table contract (the registered route set == `AppRoutes.all`;
+  `/admin_portal_v2` loads `AdminPortalV2Screen` and contains NO redirect /
+  `pushReplacementNamed`; `/admin_dashboard` + `/admin` still load the OLD
+  `AdminDashboardScreen`; the boot route is resolved from hash + browser
+  path).
+- Admin/role suites (`role_guard_test`, `role_selection_route_guard_test`,
+  `role_selection_screen_test`, `admin_portal_v2_*`, `admin_outfitters_count`,
+  `admin_kpi_service`): **100/100 pass**.
+- Full suite: **2601 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), proven
+  pre-existing by `git stash -u` at clean `ef1f9a5` (identical failure).
+- `flutter build web --release`: SUCCESS.
+- Env: Flutter **3.44.9** at `/workspace/sdk/flutter`; run the sqflite-FFI
+  suites with `LD_LIBRARY_PATH="$HOME/libs"` (the `~/libs/libsqlite3.so`
+  symlink). `pubspec.lock` drift from `pub get` reverted.
+
+### Constraints honoured
+No deploy; no `admin_config` / `min_required_version` change; no
+payment / billing / referral / profile code touched; the OLD Admin Portal is
+retained (not deleted). No Firestore rules / index / Storage / functions
+changes.
+
+### Files
+- NEW: `lib/core/router/app_router.dart`,
+  `lib/core/router/browser_path.dart`,
+  `lib/core/router/browser_path_stub.dart`,
+  `lib/core/router/browser_path_web.dart`,
+  `test/admin_portal_v2_route_test.dart`.
+- MODIFIED: `lib/main.dart`, `AGENTS.md`.
+
 ## FEAT: Admin Portal V2 -- Trial + Subscription KPIs (added 2026-11-13)
 
 Branch `feature/admin-portal-v2` (base `main` @ `d16bb03`). **NOT merged, NOT
