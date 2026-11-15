@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../models/admin_user_metrics.dart';
+import '../widgets/admin_users_export_card.dart';
 import '../widgets/admin_v2_common.dart';
 
 /// The Admin Portal V2 **Users** page (Task 6, Phase 1 — READ ONLY).
@@ -17,10 +18,16 @@ class AdminUsersPage extends StatefulWidget {
   final ThemeController theme;
   final List<AdminUserRecord> records;
 
+  /// Whether the current user is a platform admin. The CSV export buttons are
+  /// gated on this — a non-admin sees the card disabled with an "Admin only"
+  /// note and the emails are never exposed.
+  final bool isAdmin;
+
   const AdminUsersPage({
     super.key,
     required this.theme,
     required this.records,
+    this.isAdmin = false,
   });
 
   @override
@@ -71,6 +78,12 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       key: const ValueKey('adminV2UsersPage'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        AdminUsersExportCard(
+          theme: widget.theme,
+          records: widget.records,
+          isAdmin: widget.isAdmin,
+        ),
+        const SizedBox(height: 12),
         AdminV2SearchField(
           theme: widget.theme,
           controller: _search,

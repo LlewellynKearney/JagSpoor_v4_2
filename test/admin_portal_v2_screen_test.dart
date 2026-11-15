@@ -174,6 +174,114 @@ void main() {
   });
 
   // ==========================================================================
+  // TASK 6 — Subscription KPIs + Subscribers List
+  // ==========================================================================
+
+  testWidgets('renders the four subscription KPI cards on the dashboard',
+      (tester) async {
+    await pumpScreen(tester, height: 6000);
+
+    expect(find.byKey(const ValueKey('adminV2DashTotalSubscribers')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2DashSubscribedGoogle')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2DashSubscribedPayfast')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('adminV2DashTrialUsers')),
+        findsOneWidget);
+  });
+
+  testWidgets('subscription KPI counts reconcile Google + PayFast + unknown',
+      (tester) async {
+    final now = DateTime.now();
+    final future = Timestamp.fromDate(now.add(const Duration(days: 30)));
+    // 2 Google, 1 PayFast, 1 unknown-provider active subscriber.
+    await firestore.collection('users').doc('g1').set({
+      'role': 'hunter',
+      'subscriptionStatus': 'active',
+      'subscriptionPlatform': 'google_play',
+      'premiumExpiry': future,
+    });
+    await firestore.collection('users').doc('g2').set({
+      'role': 'outfitter',
+      'subscriptionStatus': 'active',
+      'subscriptionPlatform': 'google_play',
+      'premiumExpiry': future,
+    });
+    await firestore.collection('users').doc('p1').set({
+      'role': 'hunter',
+      'subscriptionStatus': 'active',
+      'subscriptionSource': 'payfast',
+      'premiumExpiry': future,
+    });
+    await firestore.collection('users').doc('x1').set({
+      'role': 'hunter',
+      'subscriptionStatus': 'active',
+      'premiumExpiry': future,
+    });
+    // A trial user — counted separately, not as a subscriber.
+    await firestore.collection('users').doc('t1').set({
+      'role': 'hunter',
+      'subscriptionStatus': 'trialing',
+      'trialEndsAt': future,
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    final total = find.byKey(const ValueKey('adminV2DashTotalSubscribers'));
+    final google = find.byKey(const ValueKey('adminV2DashSubscribedGoogle'));
+    final payfast = find.byKey(const ValueKey('adminV2DashSubscribedPayfast'));
+    final trial = find.byKey(const ValueKey('adminV2DashTrialUsers'));
+
+    expect(find.descendant(of: total, matching: find.text('4')), findsOneWidget);
+    expect(find.descendant(of: google, matching: find.text('2')), findsOneWidget);
+    expect(find.descendant(of: payfast, matching: find.text('1')), findsOneWidget);
+    expect(find.descendant(of: trial, matching: find.text('1')), findsOneWidget);
+  });
+
+  testWidgets('renders the Subscribers List section with the count',
+      (tester) async {
+    final now = DateTime.now();
+    await firestore.collection('users').doc('g1').set({
+      'role': 'hunter',
+      'firstName': 'Google',
+      'lastName': 'Guy',
+      'subscriptionStatus': 'active',
+      'subscriptionPlatform': 'google_play',
+      'premiumExpiry': Timestamp.fromDate(now.add(const Duration(days: 30))),
+    });
+
+    await pumpScreen(tester, height: 6000);
+
+    expect(find.byKey(const ValueKey('adminV2SubscribersSection')),
+        findsOneWidget);
+    expect(find.text('Showing 1 subscriber'), findsOneWidget);
+    expect(find.text('Google Guy'), findsOneWidget);
+  });
+
+  testWidgets('the Users tab renders the CSV export card', (tester) async {
+    await firestore.collection('users').doc('u1').set({
+      'email': 'u1@x.com',
+      'role': 'hunter',
+    });
+    await pumpScreen(tester, height: 6000);
+
+    await tester.tap(find.byKey(const ValueKey('adminV2Tab_users')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('adminV2UsersExportCard')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('adminV2ExportAllUsersButton')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('adminV2ExportNoRoleUsersButton')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Export All Users ('), findsOneWidget);
+  });
+
+  // ==========================================================================
   // TASK 4 — Packages + Bookings
   // ==========================================================================
 

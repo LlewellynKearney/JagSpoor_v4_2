@@ -1,5 +1,115 @@
 # JagSpoor -- Agent Memory
 
+## FEAT: Admin Portal V2 -- Users CSV Export + Subscription KPIs (added 2026-11-15)
+
+Branch `feature/admin-v2-export-subs` (base `main` @ `b15373d`). **NOT merged,
+NOT deployed.**
+
+### Task 1 -- Users CSV export (all + no-role)
+- NEW `lib/features/admin/models/admin_users_csv.dart` -- pure, synchronous CSV
+  builder (`AdminUsersCsv`): the exact header row `Email, First Name, Surname,
+  Role, Created Date, Last Active, Subscription Status, Subscription Provider`;
+  `rowFor` (dates as `YYYY-MM-DD`, empty cell when unknown — never a
+  placeholder); `noRoleUsers` (blank / `none` / `unassigned` / missing);
+  `rowCount` (the count the button renders == the CSV data rows); the two file
+  names `jagspoor-users-YYYY-MM-DD.csv` /
+  `jagspoor-users-no-role-YYYY-MM-DD.csv`; `csvEscape` (RFC 4180 quoting).
+- NEW `lib/features/admin/services/csv_export.dart` (+ `_stub` / `_web`) -- the
+  conditional-import delivery façade (the repo's established `package:web`
+  pattern): web = a `Blob` + `<a download>` click + `revokeObjectURL`; native =
+  write to the temp dir + `Share.shareXFiles` so an Android operator can
+  save/forward. Never throws (returns false).
+- NEW `lib/features/admin/widgets/admin_users_export_card.dart` -- the two
+  buttons ("Export All Users (N)" / "Export No Role (M)") with the live counts,
+  a spinner while in flight, success/failure snackbars, and an **admin-only
+  gate**: a non-admin sees the card disabled with an "Admin only" note and no
+  file is ever handed off (emails never exposed). `deliverOverride` test seam.
+- `lib/features/admin/pages/admin_users_page.dart` -- gained `isAdmin` (default
+  false) and renders the export card at the top of the Users tab.
+- `lib/features/admin/screens/admin_portal_v2_screen.dart` -- passes
+  `isAdmin: _authorized` to the Users page.
+
+### Task 2 -- Subscription KPIs + Subscribers List
+- NEW `lib/features/admin/models/admin_subscription_metrics.dart` --
+  `AdminSubscriptionProvider` (`google` / `payfast` / `none`) resolved from the
+  SAME stored fields the app writes (`subscriptionPlatform` /
+  `subscriptionSource` / `subscriptionProvider`; `payfast_alternative` /
+  `user_choice` -> PayFast — **read, never inferred**);
+  `AdminSubscriberStatus` / `AdminSubscriberFilter`; `AdminSubscriberRow`;
+  `AdminSubscriptionMetrics.aggregate(records, now:)` (pure + synchronous, no
+  extra Firestore read) producing Total / Google / PayFast / unknownProvider /
+  Trial + the rows (newest Start Date first). The reconciliation invariant
+  `google + payfast + unknown == total` always holds.
+- `lib/features/admin/models/admin_user_metrics.dart` -- `AdminUserRecord`
+  gained read-only `firstName` / `lastName` / `fullName` / `lastActive` /
+  `subscriptionStart` (explicit `subscriptionStartedAt` / `…Date`, else
+  `entitlementUpdatedAt`), parsed in `fromMap` under camelCase + snake_case
+  aliases; `displayName` + `hasNoRoleForExport` getters. **No field was
+  backfilled and no billing code changed.**
+- NEW `lib/features/admin/widgets/admin_subscribers_list_section.dart` -- the
+  read-only table (Name / Email / Provider badge / Plan / Start Date / Status
+  badge), a search field, the filter chip bar (All / Google / PayFast / Trial /
+  Active), and the "Showing X subscribers" count. NO cancel / refund /
+  change-plan affordance.
+- `lib/features/admin/screens/admin_portal_v2_screen.dart` -- a 4th KPI row
+  (Total Subscribers / Subscribed via Google / Subscribed via PayFast / Trial
+  Users) + the Subscribers List section below the charts, both fed from the
+  already-fetched records (`AdminSubscriptionMetrics.aggregate(records)`), so
+  the date filter still never refetches.
+
+### Tests
+- NEW `test/admin_portal_v2_users_csv_test.dart` (20): header + column order,
+  no-role filter, empty-field / escaping safety, the count == data-row
+  contract, file names, subscription-cell mapping, `fromMap` name parsing.
+- NEW `test/admin_portal_v2_subscription_metrics_test.dart` (11): provider
+  resolution, the Google + PayFast + unknown == Total reconciliation, trial
+  separation, row inclusion + statuses, newest-first sort, plan labels, the
+  filter + search.
+- NEW `test/admin_portal_v2_export_widgets_test.dart` (10 widget): button
+  labels + counts, the all / no-role hand-off payloads, the admin gate, the
+  failure path, the table + count, filter + search + empty state.
+- `test/admin_portal_v2_screen_test.dart` (+4): the 4 KPI cards render; the
+  counts reconcile against seeded Firestore; the Subscribers List renders; the
+  Users tab renders the export card.
+- `test/admin_portal_v2_revenue_test.dart`: the churned-table email assertion
+  scoped to `adminV2ChurnedTable` (the cancelled account now also legitimately
+  appears in the Subscribers List).
+
+### Verification
+- `flutter analyze`: **0 errors**, 320 pre-existing infos (unchanged baseline);
+  all touched files "No issues found".
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2646 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), identical
+  to the pre-change baseline. +45 net new tests.
+- `flutter build web --release`: **SUCCESS** (the web-only CSV download branch
+  compiles).
+- `admin_portal_v2_route_test` **24/24**; the Admin/role suites green.
+- Env: Flutter **3.44.9** at `/tmp/fl/flutter`; run the sqflite-FFI suites with
+  `LD_LIBRARY_PATH="$HOME/libs"`.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code touched; no iOS change;
+the OLD Admin Portal (`/admin`) untouched; read-only Subscribers List.
+
+### Files
+- NEW: `lib/features/admin/models/admin_users_csv.dart`,
+  `lib/features/admin/models/admin_subscription_metrics.dart`,
+  `lib/features/admin/services/csv_export.dart`,
+  `lib/features/admin/services/csv_export_stub.dart`,
+  `lib/features/admin/services/csv_export_web.dart`,
+  `lib/features/admin/widgets/admin_users_export_card.dart`,
+  `lib/features/admin/widgets/admin_subscribers_list_section.dart`,
+  `test/admin_portal_v2_users_csv_test.dart`,
+  `test/admin_portal_v2_subscription_metrics_test.dart`,
+  `test/admin_portal_v2_export_widgets_test.dart`.
+- MODIFIED: `lib/features/admin/models/admin_user_metrics.dart`,
+  `lib/features/admin/pages/admin_users_page.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `test/admin_portal_v2_screen_test.dart`,
+  `test/admin_portal_v2_revenue_test.dart`, `AGENTS.md`.
+
 ## FIX: /admin_portal_v2 path deep link redirected to the OLD Admin Portal (added 2026-11-14)
 
 Branch `main` (base `ef1f9a5`).

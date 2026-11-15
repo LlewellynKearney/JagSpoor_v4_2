@@ -446,7 +446,13 @@ void main() {
 
       await pumpScreen(tester);
 
-      expect(find.text('churned@example.com'), findsOneWidget);
+      // Scope to the churned table: the cancelled account also appears in the
+      // Subscribers List, so a global find would match twice.
+      final churnedTable = find.byKey(const ValueKey('adminV2ChurnedTable'));
+      expect(
+        find.descendant(of: churnedTable, matching: find.text('churned@example.com')),
+        findsOneWidget,
+      );
       expect(find.text('hunter_monthly'), findsOneWidget);
       expect(find.text('2026-10-01'), findsOneWidget);
     });

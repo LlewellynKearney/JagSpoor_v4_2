@@ -116,6 +116,33 @@ List<MapEntry<DateTime, int>> adminNewUsersByDay(
 class AdminUserRecord {
   final String uid;
   final String email;
+
+  /// The account holder's first name (`users/{uid}.firstName`). Blank for
+  /// accounts that never completed a profile — the CSV export leaves the cell
+  /// empty rather than inventing a value.
+  final String firstName;
+
+  /// The account holder's surname (`users/{uid}.lastName`, with `surname` as a
+  /// read alias). Blank when unknown.
+  final String lastName;
+
+  /// The legacy composed name (`users/{uid}.fullName`) — used as the display /
+  /// CSV fallback when [firstName] / [lastName] are absent.
+  final String fullName;
+
+  /// The most recent activity timestamp the document records
+  /// (`lastActiveAt` / `lastActive` / `lastSeenAt`, with snake_case variants).
+  /// `null` when the document carries none — the CSV export leaves the cell
+  /// blank instead of guessing.
+  final DateTime? lastActive;
+
+  /// The subscription start timestamp, used by the Admin V2 "Subscribers List"
+  /// Start Date column. Resolved (read-only) from an explicit
+  /// `subscriptionStartedAt` / `subscriptionStartDate` when the document has
+  /// one, else from `entitlementUpdatedAt` (the moment the entitlement was
+  /// granted). `null` when neither exists — the list renders an em dash.
+  final DateTime? subscriptionStart;
+
   final String role;
   final String subscriptionStatus;
   final String plan;
@@ -148,6 +175,11 @@ class AdminUserRecord {
   const AdminUserRecord({
     required this.uid,
     this.email = '',
+    this.firstName = '',
+    this.lastName = '',
+    this.fullName = '',
+    this.lastActive,
+    this.subscriptionStart,
     this.role = '',
     this.subscriptionStatus = '',
     this.plan = '',
@@ -222,6 +254,30 @@ class AdminUserRecord {
   /// Whether the account ever started a trial — the denominator of the
   /// trial-to-paid conversion rate.
   bool get everStartedTrial => trialStart != null;
+
+  /// The account holder's display name — the composed first + surname, falling
+  /// back to the legacy `fullName`. Empty when the document carries no name at
+  /// all (never a placeholder).
+  String get displayName {
+    final composed = [firstName, lastName]
+        .where((p) => p.isNotEmpty)
+        .join(' ')
+        .trim();
+    if (composed.isNotEmpty) return composed;
+    return fullName.trim();
+  }
+
+  /// Whether this account has no operational role at all — the predicate the
+  /// "Export Users With No Role (CSV)" button filters on. A role of `none`
+  /// (the brief's explicit spelling) counts as no role alongside blank /
+  /// missing / unassigned values.
+  bool get hasNoRoleForExport {
+    final normalized = role.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'none' ||
+        normalized == 'unassigned' ||
+        normalized == 'null';
+  }
 
   bool get isHunterRole => role.trim().toLowerCase() == 'hunter';
   bool get isOutfitterRole => role.trim().toLowerCase() == 'outfitter';
@@ -314,6 +370,20 @@ class AdminUserRecord {
     return AdminUserRecord(
       uid: uid,
       email: (d['email'] ?? '').toString().trim().toLowerCase(),
+      firstName: firstString([d['firstName'], d['first_name']]),
+      lastName: firstString([d['lastName'], d['last_name'], d['surname']]),
+      fullName: firstString([d['fullName'], d['full_name'], d['name']]),
+      lastActive: _toDate(d['lastActiveAt']) ??
+          _toDate(d['lastActive']) ??
+          _toDate(d['last_active_at']) ??
+          _toDate(d['last_active']) ??
+          _toDate(d['lastSeenAt']) ??
+          _toDate(d['last_seen_at']),
+      subscriptionStart: _toDate(d['subscriptionStartedAt']) ??
+          _toDate(d['subscriptionStartDate']) ??
+          _toDate(d['subscription_started_at']) ??
+          _toDate(d['subscription_start']) ??
+          _toDate(d['entitlementUpdatedAt']),
       role: rawRole,
       isDualRole: isDualRole,
       roles: roles,
