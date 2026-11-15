@@ -17,6 +17,12 @@ String formatAdminCount(int value) {
 ///
 /// A `null` [value] with a [valueLabel] renders the label (e.g. a percentage
 /// or a ZAR amount); a `null` [value] with no label renders an em dash.
+///
+/// LAYOUT CONTRACT (mobile fix): the [label] is ALWAYS a single line and the
+/// [value] is ALWAYS a single line. Neither may letter-wrap — on a narrow
+/// phone a 4-across grid used to break "Total Users" into "Tot al Use rs" and
+/// "R69.98" into "R69. 98". The label ellipsises and the value scales down
+/// inside a [FittedBox] so a short card can never wrap a glyph column.
 class AdminV2MetricCard extends StatelessWidget {
   final ThemeController theme;
   final IconData icon;
@@ -37,66 +43,105 @@ class AdminV2MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.textColor.withAlpha(15)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Tighter gutters on a narrow card so the single-line label has the
+        // most room available (2-column phone grid).
+        final compact = constraints.maxWidth < 200;
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.textColor.withAlpha(15)),
+          ),
+          padding: EdgeInsets.all(compact ? 12 : 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(icon, color: theme.accentColor, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
+              Row(
+                children: [
+                  Icon(icon, color: theme.accentColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
                 child: Text(
-                  label,
-                  style: TextStyle(color: theme.subtitleColor, fontSize: 12),
+                  valueLabel ?? (value == null ? '—' : formatAdminCount(value!)),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 24,
+                  ),
                 ),
               ),
+              if (caption != null)
+                Text(
+                  caption!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: theme.subtitleColor, fontSize: 10),
+                ),
             ],
           ),
-          Text(
-            valueLabel ?? (value == null ? '—' : formatAdminCount(value!)),
-            style: TextStyle(
-              color: theme.textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-            ),
-          ),
-          if (caption != null)
-            Text(
-              caption!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: theme.subtitleColor, fontSize: 10),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
-/// A fixed 4-column KPI grid (the dashboard rows + each page's summary grid).
+/// A responsive KPI grid (the dashboard rows + each page's summary grid).
+///
+/// On a phone (< [mobileBreakpoint] logical px) it lays out [mobileColumns]
+/// per row (2 by default) so each card is wide enough for a single-line
+/// label; on tablet / desktop it keeps the 4-across layout.
 class AdminV2MetricGrid extends StatelessWidget {
   final List<Widget> children;
 
-  const AdminV2MetricGrid({super.key, required this.children});
+  /// Columns per row on a narrow (phone) viewport.
+  final int mobileColumns;
+
+  const AdminV2MetricGrid({
+    super.key,
+    required this.children,
+    this.mobileColumns = 2,
+  });
+
+  /// Width below which the mobile column count applies.
+  static const double mobileBreakpoint = 600;
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.55,
-      children: children,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < mobileBreakpoint;
+        final columns = isMobile ? mobileColumns : 4;
+        // A 2-column phone card is taller relative to its width so the icon +
+        // label + value stack never overflows.
+        final ratio = isMobile ? 1.8 : 1.55;
+        return GridView.count(
+          crossAxisCount: columns,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: ratio,
+          children: children,
+        );
+      },
     );
   }
 }

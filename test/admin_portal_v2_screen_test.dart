@@ -500,7 +500,13 @@ void main() {
           findsOneWidget);
 
       // …and unchanged after switching to each of the other tabs.
-      for (final tab in const ['users', 'packages', 'bookings', 'revenue']) {
+      for (final tab in const [
+        'users',
+        'packages',
+        'bookings',
+        'revenue',
+        'accountManagement',
+      ]) {
         await tester.tap(find.byKey(ValueKey('adminV2Tab_$tab')));
         await tester.pumpAndSettle();
         expect(
@@ -509,6 +515,23 @@ void main() {
           reason: 'version label must render on the $tab tab',
         );
       }
+    });
+
+    // JOB 1 — V2 owns the old portal's unique account actions.
+    testWidgets('Account Management tab offers Create User + Bulk CSV Import',
+        (tester) async {
+      await pumpScreen(tester, height: 6000);
+      await tester.tap(
+          find.byKey(const ValueKey('adminV2Tab_accountManagement')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('adminV2AccountManagementTab')),
+          findsOneWidget);
+      expect(find.text('Create User'), findsWidgets);
+      expect(find.text('Bulk CSV Import'), findsWidgets);
+      // The old portal's "Admin Portal V2" entry card is gone — V2 IS the
+      // portal, there is nothing to navigate to.
+      expect(find.text('Admin Portal V2 card'), findsNothing);
     });
 
     testWidgets('version label never renders "Unknown" when unresolved',

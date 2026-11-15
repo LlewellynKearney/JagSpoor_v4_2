@@ -141,8 +141,8 @@ void main() {
   });
 
   group('RoleGuard.defaultHomeFor', () {
-    test('admin → admin dashboard', () {
-      expect(RoleGuard.defaultHomeFor(AppRole.admin), '/admin_dashboard');
+    test('admin → Admin Portal V2', () {
+      expect(RoleGuard.defaultHomeFor(AppRole.admin), '/admin_portal_v2');
     });
 
     test('outfitter → outfitter dashboard', () {
@@ -221,7 +221,7 @@ void main() {
   // ==========================================================================
   group('Post-auth direct role routing contract', () {
     const roleRoutes = <AppRole, String>{
-      AppRole.admin: '/admin_dashboard',
+      AppRole.admin: '/admin_portal_v2',
       AppRole.hunter: '/hunter_dashboard',
       AppRole.outfitter: '/outfitter_dashboard',
       AppRole.dual: '/hunter_dashboard',
@@ -230,7 +230,7 @@ void main() {
     test('each permanent role routes to exactly one dashboard', () {
       // The mapping is exhaustive over the permanent roles (incl. dual).
       expect(roleRoutes.length, 4);
-      expect(roleRoutes[AppRole.admin], '/admin_dashboard');
+      expect(roleRoutes[AppRole.admin], '/admin_portal_v2');
       expect(roleRoutes[AppRole.hunter], '/hunter_dashboard');
       expect(roleRoutes[AppRole.outfitter], '/outfitter_dashboard');
       expect(roleRoutes[AppRole.dual], '/hunter_dashboard');

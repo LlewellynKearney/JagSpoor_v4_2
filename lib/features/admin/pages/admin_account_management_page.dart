@@ -1,70 +1,73 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../../../core/theme/app_theme.dart';
-import '../../../core/layout/web_layout.dart';
-import '../../../core/widgets/safe_bottom_inset.dart';
-import '../../subscription/services/play_billing_service.dart';
-import '../../subscription/services/subscription_pricing.dart';
 import '../services/admin_analytics_service.dart';
-import '../services/admin_auth_guard.dart';
 import '../services/admin_kpi_service.dart';
 import '../services/media_storage_analytics.dart';
 import '../services/subscription_config_service.dart';
 import '../services/usage_analytics_service.dart';
-import '../widgets/admin_mode_switcher.dart';
 import '../widgets/media_storage_charts.dart';
 import '../widgets/referral_rewards_admin_card.dart';
-import 'create_user_screen.dart';
-import 'bulk_csv_import_screen.dart';
+import '../screens/bulk_csv_import_screen.dart';
+import '../screens/create_user_screen.dart';
 
-/// Master Admin Analytics Dashboard.
+/// The Admin Portal V2 **Account Management** tab.
 ///
-/// Accessible only to users who pass [AdminAuthGuard]. Presents five reporting
-/// sections:
-///   - Entity Overview (counts of outfitters, hunters, packages, bookings,
-///     trophies).
-///   - Financial Analytics (daily/weekly/monthly/yearly gross booking revenue,
-///     in ZAR).
-///   - Subscription Revenue (admin-configured hunter/outfitter rates × the
-///     current subscriber counts; manual input fields).
-///   - Feature Usage (screen-view / feature-usage telemetry partitioned by
-///     role — Hunter vs. Outfitter).
-///   - User Engagement (registered users and active sessions).
+/// Absorbs the ORIGINAL Admin Portal's unique operator actions and control
+/// planes now that the old portal is retired and `/admin` / `/admin_dashboard`
+/// redirect to V2:
+///   - **Create User** + **Bulk CSV Import** (the two unique account-provisioning
+///     actions) — each opens its standalone screen.
+///   - Entity Overview (registered users / outfitters / hunters / packages /
+///     bookings / trophies).
+///   - Financial Analytics (daily / weekly / monthly / yearly gross + net).
+///   - Subscription Revenue control plane (admin-configured hunter/outfitter
+///     amounts) + the derived MRR / ARR.
+///   - Referral Rewards configuration card.
+///   - Feature Usage by role (Hunter vs. Outfitter).
+///   - Media & Storage footprint.
+///   - User Engagement metrics.
 ///
-/// Also provides entry points to manual account creation and bulk CSV import.
-class AdminDashboardScreen extends StatefulWidget {
+/// READ/WRITE scope is unchanged from the old portal: the only writes are the
+/// admin-controlled config saves (subscription amounts, referral rewards), which
+/// target `admin_config/*` (admin-write per `firestore.rules`). No billing /
+/// payment code is touched.
+class AdminAccountManagementPage extends StatefulWidget {
   final ThemeController theme;
 
-  const AdminDashboardScreen({super.key, required this.theme});
+  const AdminAccountManagementPage({super.key, required this.theme});
 
   @override
-  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+  State<AdminAccountManagementPage> createState() =>
+      _AdminAccountManagementPageState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminAccountManagementPageState
+    extends State<AdminAccountManagementPage> {
   AdminMetrics? _metrics;
   FinancialAnalytics? _financials;
   UsageAnalytics _usage = const UsageAnalytics(byRole: {});
   SubscriptionRevenue? _subscriptionRevenue;
   MediaStorageAnalytics? _mediaAnalytics;
 
-  /// Server-computed KPIs from `getAdminPortalKpis` (null when the callable
-  /// was unreachable — the dashboard then renders the locally computed
-  /// figures and shows a "local estimates" note).
+  /// Server-computed KPIs from `getAdminPortalKpis` (null when the callable was
+  /// unreachable — the page then renders the locally computed figures).
   AdminPortalKpis? _kpis;
   String? _kpiError;
+
   final TextEditingController _hunterSubController = TextEditingController();
   final TextEditingController _outfitterSubController = TextEditingController();
   bool _savingConfig = false;
   bool _loading = true;
   String? _error;
-  final AdminAuthGuard _guard = AdminAuthGuard.instance;
-  bool _authorized = false;
 
-  /// Live Play-vs-admin price mismatch warnings (empty when aligned or when
-  /// the Play catalog is unavailable).
-  List<String> _priceDivergenceMessages = const [];
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
 
   @override
   void dispose() {
@@ -73,26 +76,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     super.dispose();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _bootstrap();
-  }
-
   Future<void> _bootstrap({bool forceRefreshKpis = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      _authorized = await _guard.isCurrentUserAdmin();
-      if (!_authorized) {
-        setState(() {
-          _loading = false;
-          _error = 'Access denied. This portal is restricted to platform admins.';
-        });
-        return;
-      }
       final results = await Future.wait([
         AdminAnalyticsService.instance.fetchEntityMetrics(),
         AdminAnalyticsService.instance.fetchFinancialAnalytics(),
@@ -105,6 +94,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _hunterSubController.text = _formatAmount(config.hunterSubscriptionZAR);
       _outfitterSubController.text =
           _formatAmount(config.outfitterSubscriptionZAR);
+      if (!mounted) return;
       setState(() {
         _metrics = metrics;
         _financials = results[1] as FinancialAnalytics;
@@ -117,78 +107,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
         _loading = false;
       });
-      // Server-side KPIs — the authoritative figures. Fetched after the local
-      // metrics so the portal paints immediately and the numbers upgrade in
-      // place when the callable answers.
+      // Server-side KPIs — the authoritative figures. Best-effort.
       unawaited(_loadKpis(forceRefresh: forceRefreshKpis));
-      // Compare the live Play Console prices against the admin-configured
-      // prices and surface a mismatch banner (the store is the charge truth).
-      unawaited(_checkPriceDivergence(config));
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Failed to load analytics: $e';
+        _error = 'Failed to load account management data: $e';
       });
     }
   }
 
-  /// Loads the server-computed KPIs from `getAdminPortalKpis`.
-  ///
-  /// Best-effort: a failure records [_kpiError] so the dashboard can label the
-  /// locally computed figures as estimates instead of pretending they are
-  /// authoritative.
   Future<void> _loadKpis({bool forceRefresh = false}) async {
-    final result =
-        await AdminKpiService.instance.fetchKpis(forceRefresh: forceRefresh);
-    if (!mounted) return;
-    setState(() {
-      _kpis = result.kpis;
-      _kpiError = result.fromServer ? null : result.error;
-    });
-  }
-
-  /// Pull-to-refresh: reloads everything and asks the server to bypass any
-  /// cached KPI payload.
-  Future<void> _refreshAll() => _bootstrap(forceRefreshKpis: true);
-
-  /// Fetches the live Play catalog prices and reconciles each against the
-  /// admin-configured `admin_config/pricing` amount under the Option A
-  /// (VAT-inclusive listed price) model.
-  ///
-  /// Under Option A the Play Console base plan carries the FINAL VAT-inclusive
-  /// charge (R34.99 / R299.99) — the same figure the Admin control plane
-  /// stores — so the two are compared directly (via [PlayPriceReconciliation]).
-  /// Example: Play R34.99 == Admin R34.99 → NO warning. The banner is shown
-  /// ONLY when the amounts differ by more than the documented 2-cent tolerance.
-  ///
-  /// Best-effort: a billing-unavailable / catalog-miss / error leaves the
-  /// banner hidden (nothing to compare).
-  Future<void> _checkPriceDivergence(SubscriptionConfig config) async {
     try {
-      if (!await PlayBillingService.instance.isBillingSupported()) return;
-      final products = await PlayBillingService.instance.loadProducts();
-      final messages = <String>[];
-      for (final tier in SubscriptionTier.values) {
-        final product = products[tier];
-        if (product == null) continue; // catalog miss — nothing to compare
-        final adminPrice = tier == SubscriptionTier.outfitter
-            ? config.outfitterSubscriptionZAR
-            : config.hunterSubscriptionZAR;
-        if (adminPrice <= 0) continue;
-        final reconciliation = PlayPriceReconciliation.compare(
-          playExVat: product.rawPrice,
-          adminInclVat: adminPrice,
-          currencySymbol: product.currencySymbol,
-        );
-        // Reconciled figures agree (Play R34.99 == Admin R34.99 within
-        // tolerance): do NOT warn.
-        if (reconciliation.matches) continue;
-        messages.add(reconciliation.mismatchMessage);
-      }
+      final result =
+          await AdminKpiService.instance.fetchKpis(forceRefresh: forceRefresh);
       if (!mounted) return;
-      setState(() => _priceDivergenceMessages = messages);
+      setState(() {
+        _kpis = result.kpis;
+        _kpiError = result.fromServer ? null : result.error;
+      });
     } catch (e) {
-      debugPrint('AdminDashboardScreen: price divergence check failed: $e');
+      if (!mounted) return;
+      setState(() => _kpiError = '$e');
     }
   }
 
@@ -222,7 +163,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       messenger?.showSnackBar(const SnackBar(
           content: Text('Subscription amounts saved.'),
           backgroundColor: Colors.green));
-      unawaited(_checkPriceDivergence(config));
     } catch (e) {
       if (!mounted) return;
       setState(() => _savingConfig = false);
@@ -234,99 +174,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.theme,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: widget.theme.backgroundColor,
-          appBar: AppBar(
-            title: const Text('🛡️ Admin Portal'),
-            backgroundColor: widget.theme.backgroundColor,
-            foregroundColor: widget.theme.textColor,
-            elevation: 0,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded),
-                tooltip: 'Refresh',
-                onPressed: _refreshAll,
-              ),
-              IconButton(
-                icon: const Icon(Icons.logout_rounded),
-                tooltip: 'Sign out',
-                onPressed: () async {
-                  await AdminAnalyticsService.instance.signOut();
-                  if (!mounted || !context.mounted) return;
-                  Navigator.pushReplacementNamed(context, '/');
-                },
-              ),
-            ],
-          ),
-          body: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? _buildError()
-                  : RefreshIndicator(
-                      onRefresh: _refreshAll,
-                      child: WebLayout.responsive(
-                        // Centred, max-width container on desktop so the admin
-                        // analytics sections don't stretch edge-to-edge on a
-                        // wide browser window. Unchanged on mobile.
-                        child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: EdgeInsets.fromLTRB(
-                            16, 8, 16, SafeBottomInset.of(context)),
-                        children: [
-                          AdminModeSwitcher(
-                            theme: widget.theme,
-                            activeMode: AdminMode.admin,
-                          ),
-                          _buildSectionHeader('Entity Overview'),
-                          _buildEntityGrid(),
-                          _buildKpiSourceNote(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Financial Analytics (ZAR)'),
-                          _buildFinancialSection(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Subscription Revenue (ZAR)'),
-                          if (_priceDivergenceMessages.isNotEmpty)
-                            _buildPriceDivergenceBanner(),
-                          _buildSubscriptionConfigCard(),
-                          _buildSubscriptionRevenueCard(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Referral Rewards (ZAR)'),
-                          ReferralRewardsAdminCard(
-                            theme: widget.theme,
-                            isAdmin: _authorized,
-                          ),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Feature Usage by Role'),
-                          _buildFeatureUsageSection(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Media & Storage'),
-                          _buildMediaStorageSection(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('User Engagement'),
-                          _buildEngagementRow(),
-                          const SizedBox(height: 24),
-                          _buildSectionHeader('Account Management'),
-                          _buildManagementCards(),
-                        ],
-                      ),
-                      ),
-                    ),
-        );
-      },
+    return Column(
+      key: const ValueKey('adminV2AccountManagementTab'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // The provisioning actions do not depend on any fetched data, so they
+        // render in every state (loading / error / loaded) — the operator can
+        // always create a user or run a CSV import.
+        _sectionHeader('Account Provisioning'),
+        _buildProvisioningCards(),
+        const SizedBox(height: 24),
+        _buildDataSections(),
+      ],
     );
   }
 
-  Widget _buildError() {
-    return Center(
-      child: Padding(
+  /// The data-driven sections — loading spinner / error / loaded content.
+  Widget _buildDataSections() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline, size: 48, color: widget.theme.accentColor),
+            Icon(Icons.error_outline,
+                size: 40, color: widget.theme.accentColor),
             const SizedBox(height: 12),
             Text(
               _error!,
@@ -334,17 +211,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: TextStyle(color: widget.theme.textColor),
             ),
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/'),
-              child: const Text('Back to login'),
+            FilledButton.icon(
+              onPressed: () => _bootstrap(),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Retry'),
             ),
           ],
         ),
-      ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('Entity Overview'),
+        _buildEntityGrid(),
+        _buildKpiSourceNote(),
+        const SizedBox(height: 24),
+        _sectionHeader('Financial Analytics (ZAR)'),
+        _buildFinancialSection(),
+        const SizedBox(height: 24),
+        _sectionHeader('Subscription Revenue (ZAR)'),
+        _buildSubscriptionConfigCard(),
+        _buildSubscriptionRevenueCard(),
+        const SizedBox(height: 24),
+        _sectionHeader('Referral Rewards (ZAR)'),
+        ReferralRewardsAdminCard(theme: widget.theme, isAdmin: true),
+        const SizedBox(height: 24),
+        _sectionHeader('Feature Usage by Role'),
+        _buildFeatureUsageSection(),
+        const SizedBox(height: 24),
+        _sectionHeader('Media & Storage'),
+        _buildMediaStorageSection(),
+        const SizedBox(height: 24),
+        _sectionHeader('User Engagement'),
+        _buildEngagementRow(),
+      ],
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _sectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
@@ -359,658 +265,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // ── Entity Overview ──────────────────────────────────────────────────────
-  Widget _buildEntityGrid() {
-    final m = _metrics!;
-    final kpis = _kpis;
-    // Prefer the server-computed figures (authoritative); fall back to the
-    // locally aggregated metrics when the callable was unreachable.
-    final outfitters = kpis?.totalOutfitters ?? m.totalOutfitters;
-    final hunters = kpis?.totalHunters ?? m.activeHunters;
-    final listed = kpis?.listedPackages ?? m.listedPackages;
-    final bookings = kpis?.activeBookings ?? m.activeBookings;
-    final trophies = kpis?.totalTrophies ?? m.totalTrophies;
-    final users = kpis?.registeredUsers ?? m.registeredUsers;
-    final installs = kpis?.totalInstalls;
-    final totalSubs = kpis?.totalSubscribers;
-    final payfastSubs = kpis?.payfastSubscribers;
-    final googleSubs = kpis?.googleSubscribers;
-    final otherSubs = kpis?.unknownSubscribers;
-    final packages = kpis?.totalPackages;
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.4,
-      children: [
-        _metricCard(Icons.business, 'Outfitters', outfitters),
-        _metricCard(Icons.person_outline, 'Hunters', hunters),
-        _metricCard(Icons.groups_outlined, 'Registered Users', users),
-        _metricCard(
-          Icons.download_for_offline_outlined,
-          'Total Installs',
-          installs,
-        ),
-        _metricCard(Icons.card_membership, 'Total Subscribers', totalSubs),
-        _metricCard(Icons.account_balance_wallet_outlined,
-            'PayFast Subscribers', payfastSubs),
-        _metricCard(Icons.play_circle_outline, 'Google Subscribers', googleSubs),
-        _metricCard(Icons.help_outline, 'Other Subscribers', otherSubs),
-        _metricCard(Icons.inventory_2_outlined, 'Total Packages', packages),
-        _metricCard(Icons.visibility_outlined, 'Listed Packages', listed),
-        _metricCard(Icons.book_online_rounded, 'Active Bookings', bookings),
-        _metricCard(Icons.emoji_events_outlined, 'Total Trophies', trophies),
-      ],
-    );
-  }
-
-  /// The "server / local" provenance note shown under the Entity Overview.
-  Widget _buildKpiSourceNote() {
-    final kpis = _kpis;
-    final fromServer = kpis != null;
-    final color = fromServer ? Colors.green : Colors.orange;
-    final label = fromServer
-        ? (kpis.installsMeasured
-            ? 'Live KPIs from the server (installs measured)'
-            : 'Live KPIs from the server (installs = registered accounts)')
-        : 'Local estimates — ${_kpiError ?? 'server KPIs unavailable'}';
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Icon(
-            fromServer ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-            size: 14,
-            color: color,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: color, fontSize: 11),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// A metric card. A `null` value renders a dash (the figure is not
-  /// available) rather than a misleading 0.
-  Widget _metricCard(IconData icon, String label, int? value) {
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: widget.theme.accentColor, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: widget.theme.subtitleColor,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Text(
-            value == null ? '—' : _formatCount(value),
-            style: TextStyle(
-              color: widget.theme.textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 26,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Financial Analytics ─────────────────────────────────────────────────
-  Widget _buildFinancialSection() {
-    final f = _financials!;
-    // Prefer the server-computed revenue windows; fall back to the locally
-    // summed periods when the KPI callable was unreachable.
-    final kpis = _kpis;
-    final daily = kpis?.dailyRevenue ?? f.daily.grossBookingRevenue;
-    final weekly = kpis?.weeklyRevenue ?? f.weekly.grossBookingRevenue;
-    final monthly = kpis?.monthlyRevenue ?? f.monthly.grossBookingRevenue;
-    final yearly = kpis?.yearlyRevenue ?? f.yearly.grossBookingRevenue;
+  // ── Account provisioning entry points ────────────────────────────────────
+  Widget _buildProvisioningCards() {
     return Column(
       children: [
-        _financialRow(FinancialPeriod(
-            label: f.daily.label, grossBookingRevenue: daily)),
-        _financialRow(FinancialPeriod(
-            label: f.weekly.label, grossBookingRevenue: weekly)),
-        _financialRow(FinancialPeriod(
-            label: f.monthly.label, grossBookingRevenue: monthly)),
-        _financialRow(FinancialPeriod(
-            label: f.yearly.label, grossBookingRevenue: yearly)),
-      ],
-    );
-  }
-
-  Widget _financialRow(FinancialPeriod p) {
-    return Card(
-      color: widget.theme.cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(
-                p.label,
-                style: TextStyle(
-                  color: widget.theme.textColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            Expanded(
-              child: _financialValue('Gross', p.grossBookingRevenue, Colors.green),
-            ),
-            Expanded(
-              child: _financialValue('Net', p.outfitterNet, widget.theme.subtitleColor),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _financialValue(String label, double value, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: widget.theme.subtitleColor, fontSize: 10)),
-        Text(
-          'R ${value.toStringAsFixed(2)}',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Subscription Revenue ────────────────────────────────────────────────
-  Widget _subscriptionInput({
-    required String label,
-    required TextEditingController controller,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: TextStyle(color: widget.theme.textColor, fontSize: 13),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle:
-            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
-        prefixText: 'R ',
-        prefixStyle:
-            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
-        filled: true,
-        fillColor: widget.theme.cardColor,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none),
-      ),
-    );
-  }
-
-  /// Warning banner shown when the live Play Console price differs from the
-  /// admin-configured `admin_config/pricing` amount by more than the documented
-  /// reconciliation tolerance ([priceDivergenceToleranceZAR]). Both figures are
-  /// the final VAT-inclusive charge under Option A. The Play Console is the
-  /// charge truth; the operator must align the base plan.
-  Widget _buildPriceDivergenceBanner() {
-    return Container(
-      key: const ValueKey('adminPriceDivergenceBanner'),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.withAlpha(20),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withAlpha(120)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'PRICE DIVERGENCE',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          for (final message in _priceDivergenceMessages)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                message,
-                style: TextStyle(color: widget.theme.textColor, fontSize: 12),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubscriptionConfigCard() {
-    return Card(
-      color: widget.theme.cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Subscription amounts (per user / month)',
-              style: TextStyle(
-                color: widget.theme.textColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _subscriptionInput(
-                label: 'Hunter subscription (ZAR)',
-                controller: _hunterSubController),
-            const SizedBox(height: 10),
-            _subscriptionInput(
-                label: 'Outfitter subscription (ZAR)',
-                controller: _outfitterSubController),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: _savingConfig ? null : _saveSubscriptionConfig,
-                icon: _savingConfig
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.save_rounded, size: 18),
-                label: Text(_savingConfig ? 'SAVING…' : 'SAVE'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubscriptionRevenueCard() {
-    final revenue = _subscriptionRevenue;
-    if (revenue == null) return const SizedBox.shrink();
-    // Prefer the server-computed MRR / subscriber counts (they cover accounts
-    // the client cannot enumerate); fall back to the locally derived figures.
-    final kpis = _kpis;
-    final mrr = kpis?.mrr ?? revenue.monthlyRecurringRevenue;
-    final arr = kpis?.arr ?? revenue.annualProjection;
-    final daily = kpis == null ? revenue.dailyEstimate : kpis.mrr / 30.0;
-    final weekly = kpis == null ? revenue.weeklyEstimate : kpis.mrr / 30.0 * 7.0;
-    final hunterCount = kpis?.hunterSubscribers ?? revenue.hunterCount;
-    final outfitterCount = kpis?.outfitterSubscribers ?? revenue.outfitterCount;
-    // Use the server's amounts when the server supplied the counts, so the
-    // caption's arithmetic matches the MRR row above it.
-    final hunterPrice =
-        kpis?.hunterPrice ?? revenue.config.hunterSubscriptionZAR;
-    final outfitterPrice =
-        kpis?.outfitterPrice ?? revenue.config.outfitterSubscriptionZAR;
-    return Card(
-      color: widget.theme.cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _subscriptionRow('MRR', mrr),
-            _subscriptionRow('Daily estimate', daily),
-            _subscriptionRow('Weekly estimate', weekly),
-            _subscriptionRow('ARR', arr),
-            const SizedBox(height: 4),
-            Text(
-              '$hunterCount hunters × '
-              'R ${hunterPrice.toStringAsFixed(2)} + '
-              '$outfitterCount outfitters × '
-              'R ${outfitterPrice.toStringAsFixed(2)}',
-              style: TextStyle(
-                color: widget.theme.subtitleColor,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _subscriptionRow(String label, double value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          SizedBox(
-              width: 110,
-              child: Text(label,
-                  style: TextStyle(
-                      color: widget.theme.subtitleColor, fontSize: 10))),
-          Text(
-            'R ${value.toStringAsFixed(2)}',
-            style: TextStyle(
-              color: Colors.green,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Feature usage by role ───────────────────────────────────────────────
-  Widget _buildFeatureUsageSection() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-            child: _usageCard(
-                icon: Icons.person_outline,
-                title: 'Hunters',
-                summary: _usage.hunters)),
-        const SizedBox(width: 12),
-        Expanded(
-            child: _usageCard(
-                icon: Icons.business_outlined,
-                title: 'Outfitters',
-                summary: _usage.outfitters)),
-      ],
-    );
-  }
-
-  Widget _usageCard({
-    required IconData icon,
-    required String title,
-    required RoleUsageSummary summary,
-  }) {
-    final entries = summary.breakdown(limit: 5);
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: widget.theme.accentColor, size: 18),
-              const SizedBox(width: 6),
-              Text(title,
-                  style: TextStyle(
-                      color: widget.theme.textColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-              const Spacer(),
-              Text(
-                summary.total.toString(),
-                style: TextStyle(
-                  color: widget.theme.accentColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (entries.isEmpty)
-            Text(
-              'No usage recorded yet.',
-              style: TextStyle(
-                  color: widget.theme.subtitleColor, fontSize: 11),
-            )
-          else ...[
-            ...entries.map((entry) => Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: entry.name == UsageBreakdownEntry.otherName
-                                  ? widget.theme.subtitleColor.withAlpha(160)
-                                  : widget.theme.subtitleColor,
-                              fontStyle:
-                                  entry.name == UsageBreakdownEntry.otherName
-                                      ? FontStyle.italic
-                                      : FontStyle.normal,
-                              fontSize: 11),
-                        ),
-                      ),
-                      Text(
-                        '${entry.count} · ${entry.percent.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                            color: widget.theme.textColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11),
-                      ),
-                    ],
-                  ),
-                )),
-            const SizedBox(height: 6),
-            Divider(height: 1, color: widget.theme.textColor.withAlpha(15)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Total',
-                    style: TextStyle(
-                        color: widget.theme.subtitleColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11),
-                  ),
-                ),
-                Text(
-                  '${summary.total} · 100.0%',
-                  style: TextStyle(
-                      color: widget.theme.accentColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── Media & Storage ─────────────────────────────────────────────────────
-  Widget _buildMediaStorageSection() {
-    final analytics = _mediaAnalytics;
-    if (analytics == null) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-                child: _metricCard(
-                    Icons.photo_library_outlined,
-                    'Photos Uploaded',
-                    analytics.totalPhotos)),
-            const SizedBox(width: 12),
-            Expanded(
-                child: _metricCard(Icons.cloud_outlined, 'Est. Storage (MB)',
-                    analytics.estimatedFootprintMb.round())),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: widget.theme.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Photo Upload Volume (last ${analytics.dailyTrend.length} days)',
-                style: TextStyle(
-                    color: widget.theme.textColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              PhotoUploadTrendBarChart(
-                theme: widget.theme,
-                points: analytics.dailyTrend,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: widget.theme.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Storage Footprint by Collection (est.)',
-                style: TextStyle(
-                    color: widget.theme.textColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12),
-              ),
-              const SizedBox(height: 10),
-              StorageFootprintPieChart(
-                theme: widget.theme,
-                byCollection: analytics.byCollection,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${analytics.totalDocsWithPhotos} documents carry photos · '
-                '~${MediaStorageAggregator.averagePhotoBytes ~/ 1024} KB per photo',
-                style: TextStyle(
-                    color: widget.theme.subtitleColor, fontSize: 10),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── User Engagement ─────────────────────────────────────────────────────
-  Widget _buildEngagementRow() {
-    final m = _metrics!;
-    final kpis = _kpis;
-    final registered = kpis?.registeredUsers ?? m.registeredUsers;
-    final sessions = m.activeSessions;
-    final completed = kpis?.completedBookings;
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-                child: _metricCard(
-                    Icons.how_to_reg, 'Registered Users', registered)),
-            const SizedBox(width: 12),
-            Expanded(
-                child: _metricCard(
-                    Icons.sensors, 'Active Sessions', sessions)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-                child: _metricCard(Icons.task_alt, 'Completed Bookings',
-                    completed ?? m.activeBookings)),
-            const SizedBox(width: 12),
-            Expanded(
-                child: _metricCard(
-                    Icons.card_membership, 'Subscribers', kpis?.totalSubscribers)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ── Account Management entry points ─────────────────────────────────────
-  Widget _buildManagementCards() {
-    return Column(
-      children: [
-        _managementCard(
-          icon: Icons.insights_rounded,
-          title: 'Admin Portal V2',
-          description:
-              'Dashboard + read-only Users, Packages, Bookings and Revenue '
-              'pages (filters, MRR/ARR, trial KPIs, charts).',
-          onTap: () => Navigator.pushNamed(context, '/admin_portal_v2'),
-        ),
         _managementCard(
           icon: Icons.person_add_alt_1,
           title: 'Create User',
-          description: 'Manually provision a single hunter or outfitter account.',
+          description:
+              'Manually provision a single hunter or outfitter account.',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -1018,6 +281,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
         _managementCard(
           icon: Icons.upload_file,
           title: 'Bulk CSV Import',
@@ -1090,10 +354,589 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  // ── Entity Overview ──────────────────────────────────────────────────────
+  Widget _buildEntityGrid() {
+    final m = _metrics!;
+    final kpis = _kpis;
+    final outfitters = kpis?.totalOutfitters ?? m.totalOutfitters;
+    final hunters = kpis?.totalHunters ?? m.activeHunters;
+    final listed = kpis?.listedPackages ?? m.listedPackages;
+    final bookings = kpis?.activeBookings ?? m.activeBookings;
+    final trophies = kpis?.totalTrophies ?? m.totalTrophies;
+    final users = kpis?.registeredUsers ?? m.registeredUsers;
+    final installs = kpis?.totalInstalls;
+    final totalSubs = kpis?.totalSubscribers;
+    final payfastSubs = kpis?.payfastSubscribers;
+    final googleSubs = kpis?.googleSubscribers;
+    final otherSubs = kpis?.unknownSubscribers;
+    final packages = kpis?.totalPackages;
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.6,
+      children: [
+        _metricCard(Icons.business, 'Outfitters', outfitters),
+        _metricCard(Icons.person_outline, 'Hunters', hunters),
+        _metricCard(Icons.groups_outlined, 'Registered Users', users),
+        _metricCard(
+            Icons.download_for_offline_outlined, 'Total Installs', installs),
+        _metricCard(Icons.card_membership, 'Total Subscribers', totalSubs),
+        _metricCard(Icons.account_balance_wallet_outlined,
+            'PayFast Subscribers', payfastSubs),
+        _metricCard(Icons.play_circle_outline, 'Google Subscribers', googleSubs),
+        _metricCard(Icons.help_outline, 'Other Subscribers', otherSubs),
+        _metricCard(Icons.inventory_2_outlined, 'Total Packages', packages),
+        _metricCard(Icons.visibility_outlined, 'Listed Packages', listed),
+        _metricCard(Icons.book_online_rounded, 'Active Bookings', bookings),
+        _metricCard(Icons.emoji_events_outlined, 'Total Trophies', trophies),
+      ],
+    );
+  }
+
+  Widget _buildKpiSourceNote() {
+    final kpis = _kpis;
+    final fromServer = kpis != null;
+    final color = fromServer ? Colors.green : Colors.orange;
+    final label = fromServer
+        ? (kpis.installsMeasured
+            ? 'Live KPIs from the server (installs measured)'
+            : 'Live KPIs from the server (installs = registered accounts)')
+        : 'Local estimates — ${_kpiError ?? 'server KPIs unavailable'}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(
+            fromServer ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(label, style: TextStyle(color: color, fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricCard(IconData icon, String label, int? value) {
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: widget.theme.accentColor, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: widget.theme.subtitleColor, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value == null ? '—' : _formatCount(value),
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 26,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Financial Analytics ──────────────────────────────────────────────────
+  Widget _buildFinancialSection() {
+    final f = _financials!;
+    final kpis = _kpis;
+    final daily = kpis?.dailyRevenue ?? f.daily.grossBookingRevenue;
+    final weekly = kpis?.weeklyRevenue ?? f.weekly.grossBookingRevenue;
+    final monthly = kpis?.monthlyRevenue ?? f.monthly.grossBookingRevenue;
+    final yearly = kpis?.yearlyRevenue ?? f.yearly.grossBookingRevenue;
+    return Column(
+      children: [
+        _financialRow(
+            FinancialPeriod(label: f.daily.label, grossBookingRevenue: daily)),
+        _financialRow(FinancialPeriod(
+            label: f.weekly.label, grossBookingRevenue: weekly)),
+        _financialRow(FinancialPeriod(
+            label: f.monthly.label, grossBookingRevenue: monthly)),
+        _financialRow(FinancialPeriod(
+            label: f.yearly.label, grossBookingRevenue: yearly)),
+      ],
+    );
+  }
+
+  Widget _financialRow(FinancialPeriod p) {
+    return Card(
+      color: widget.theme.cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(
+                p.label,
+                style: TextStyle(
+                  color: widget.theme.textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Expanded(
+              child: _financialValue(
+                  'Gross', p.grossBookingRevenue, Colors.green),
+            ),
+            Expanded(
+              child: _financialValue(
+                  'Net', p.outfitterNet, widget.theme.subtitleColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _financialValue(String label, double value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: TextStyle(color: widget.theme.subtitleColor, fontSize: 10)),
+        Text(
+          'R ${value.toStringAsFixed(2)}',
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Subscription Revenue ─────────────────────────────────────────────────
+  Widget _subscriptionInput({
+    required String label,
+    required TextEditingController controller,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: TextStyle(color: widget.theme.textColor, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle:
+            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
+        prefixText: 'R ',
+        prefixStyle:
+            TextStyle(color: widget.theme.subtitleColor, fontSize: 12),
+        filled: true,
+        fillColor: widget.theme.cardColor,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionConfigCard() {
+    return Card(
+      color: widget.theme.cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Subscription amounts (per user / month)',
+              style: TextStyle(
+                color: widget.theme.textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _subscriptionInput(
+                label: 'Hunter subscription (ZAR)',
+                controller: _hunterSubController),
+            const SizedBox(height: 10),
+            _subscriptionInput(
+                label: 'Outfitter subscription (ZAR)',
+                controller: _outfitterSubController),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _savingConfig ? null : _saveSubscriptionConfig,
+                icon: _savingConfig
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.save_rounded, size: 18),
+                label: Text(_savingConfig ? 'SAVING…' : 'SAVE'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionRevenueCard() {
+    final revenue = _subscriptionRevenue;
+    if (revenue == null) return const SizedBox.shrink();
+    final kpis = _kpis;
+    final mrr = kpis?.mrr ?? revenue.monthlyRecurringRevenue;
+    final arr = kpis?.arr ?? revenue.annualProjection;
+    final daily = kpis == null ? revenue.dailyEstimate : kpis.mrr / 30.0;
+    final weekly =
+        kpis == null ? revenue.weeklyEstimate : kpis.mrr / 30.0 * 7.0;
+    final hunterCount = kpis?.hunterSubscribers ?? revenue.hunterCount;
+    final outfitterCount = kpis?.outfitterSubscribers ?? revenue.outfitterCount;
+    final hunterPrice =
+        kpis?.hunterPrice ?? revenue.config.hunterSubscriptionZAR;
+    final outfitterPrice =
+        kpis?.outfitterPrice ?? revenue.config.outfitterSubscriptionZAR;
+    return Card(
+      color: widget.theme.cardColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _subscriptionRow('MRR', mrr),
+            _subscriptionRow('Daily estimate', daily),
+            _subscriptionRow('Weekly estimate', weekly),
+            _subscriptionRow('ARR', arr),
+            const SizedBox(height: 4),
+            Text(
+              '$hunterCount hunters × '
+              'R ${hunterPrice.toStringAsFixed(2)} + '
+              '$outfitterCount outfitters × '
+              'R ${outfitterPrice.toStringAsFixed(2)}',
+              style: TextStyle(
+                color: widget.theme.subtitleColor,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _subscriptionRow(String label, double value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+              width: 110,
+              child: Text(label,
+                  style: TextStyle(
+                      color: widget.theme.subtitleColor, fontSize: 10))),
+          Text(
+            'R ${value.toStringAsFixed(2)}',
+            style: const TextStyle(
+              color: Colors.green,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Feature usage by role ────────────────────────────────────────────────
+  Widget _buildFeatureUsageSection() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+            child: _usageCard(
+                icon: Icons.person_outline,
+                title: 'Hunters',
+                summary: _usage.hunters)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _usageCard(
+                icon: Icons.business_outlined,
+                title: 'Outfitters',
+                summary: _usage.outfitters)),
+      ],
+    );
+  }
+
+  Widget _usageCard({
+    required IconData icon,
+    required String title,
+    required RoleUsageSummary summary,
+  }) {
+    final entries = summary.breakdown(limit: 5);
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: widget.theme.accentColor, size: 18),
+              const SizedBox(width: 6),
+              Text(title,
+                  style: TextStyle(
+                      color: widget.theme.textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12)),
+              const Spacer(),
+              Text(
+                summary.total.toString(),
+                style: TextStyle(
+                  color: widget.theme.accentColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (entries.isEmpty)
+            Text(
+              'No usage recorded yet.',
+              style: TextStyle(color: widget.theme.subtitleColor, fontSize: 11),
+            )
+          else ...[
+            ...entries.map((entry) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          entry.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: entry.name == UsageBreakdownEntry.otherName
+                                  ? widget.theme.subtitleColor.withAlpha(160)
+                                  : widget.theme.subtitleColor,
+                              fontStyle:
+                                  entry.name == UsageBreakdownEntry.otherName
+                                      ? FontStyle.italic
+                                      : FontStyle.normal,
+                              fontSize: 11),
+                        ),
+                      ),
+                      Text(
+                        '${entry.count} · ${entry.percent.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                            color: widget.theme.textColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11),
+                      ),
+                    ],
+                  ),
+                )),
+            const SizedBox(height: 6),
+            Divider(height: 1, color: widget.theme.textColor.withAlpha(15)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(
+                        color: widget.theme.subtitleColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11),
+                  ),
+                ),
+                Text(
+                  '${summary.total} · 100.0%',
+                  style: TextStyle(
+                      color: widget.theme.accentColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Media & Storage ──────────────────────────────────────────────────────
+  Widget _buildMediaStorageSection() {
+    final analytics = _mediaAnalytics;
+    if (analytics == null) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(Icons.photo_library_outlined,
+                    'Photos Uploaded', analytics.totalPhotos)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(Icons.cloud_outlined, 'Est. Storage (MB)',
+                    analytics.estimatedFootprintMb.round())),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: widget.theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Photo Upload Volume (last ${analytics.dailyTrend.length} days)',
+                style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              PhotoUploadTrendBarChart(
+                theme: widget.theme,
+                points: analytics.dailyTrend,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: widget.theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.theme.textColor.withAlpha(15)),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Storage Footprint by Collection (est.)',
+                style: TextStyle(
+                    color: widget.theme.textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              StorageFootprintPieChart(
+                theme: widget.theme,
+                byCollection: analytics.byCollection,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${analytics.totalDocsWithPhotos} documents carry photos · '
+                '~${MediaStorageAggregator.averagePhotoBytes ~/ 1024} KB per photo',
+                style: TextStyle(
+                    color: widget.theme.subtitleColor, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── User Engagement ──────────────────────────────────────────────────────
+  Widget _buildEngagementRow() {
+    final m = _metrics!;
+    final kpis = _kpis;
+    final registered = kpis?.registeredUsers ?? m.registeredUsers;
+    final sessions = m.activeSessions;
+    final completed = kpis?.completedBookings;
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(
+                    Icons.how_to_reg, 'Registered Users', registered)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(Icons.sensors, 'Active Sessions', sessions)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+                child: _metricCard(Icons.task_alt, 'Completed Bookings',
+                    completed ?? m.activeBookings)),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _metricCard(Icons.card_membership, 'Subscribers',
+                    kpis?.totalSubscribers)),
+          ],
+        ),
+      ],
+    );
+  }
+
   String _formatCount(int value) {
     if (value >= 1000) {
       final k = value / 1000;
-      return k == k.roundToDouble() ? '${k.toInt()}k' : '${k.toStringAsFixed(1)}k';
+      return k == k.roundToDouble()
+          ? '${k.toInt()}k'
+          : '${k.toStringAsFixed(1)}k';
     }
     return value.toString();
   }

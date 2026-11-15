@@ -186,7 +186,7 @@ class _AdminSubscribersListSectionState
         ? Colors.blue.shade600
         : isPayfast
             ? Colors.green.shade700
-            : theme.subtitleColor;
+            : Colors.orange.shade800;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(

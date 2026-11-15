@@ -36,7 +36,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   ///
   /// This is the ONLY path an admin takes here: the Admin Portal is never
   /// selectable from the UI (the card was removed). A stored `role: 'admin'`
-  /// resolves to [AppRole.admin] and is bounced to `/admin_dashboard` by
+  /// resolves to [AppRole.admin] and is bounced to `/admin_portal_v2` by
   /// [RoleGuard.defaultHomeFor] — admin is granted solely out-of-band via the
   /// Firebase Console / custom claims, never through this screen.
   Future<void> _skipIfRoleAlreadyAssigned() async {
@@ -241,7 +241,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               // granted out-of-band (Firebase Console / custom claims) to the
               // platform owner + superuser only, and is never self-selectable
               // from the UI. An admin never reaches this screen: a stored
-              // `role: 'admin'` is bounced to /admin_dashboard by
+              // `role: 'admin'` is bounced to /admin_portal_v2 by
               // [_skipIfRoleAlreadyAssigned].
             ],
           ),

@@ -225,6 +225,43 @@ void main() {
       expect(m.providerPercentLabel(AdminProviderBucket.unknown), '100.0%');
     });
 
+    // JOB 2B — the reconciliation line makes the 3-active split visible.
+    test('providerReconciliationLabel shows "Active subscribers: 3 '
+        '(PayFast 2 + Unknown 1)"', () {
+      final m = AdminRevenueMetrics.aggregate([
+        activeSub('u1', plan: 'hunter_monthly', provider: 'payfast'),
+        activeSub('u2', plan: 'outfitter_monthly', provider: 'payfast'),
+        // Active but plan is null -> the Unknown plan account.
+        activeSub('u3', plan: '', provider: ''),
+      ], now: now);
+      expect(m.activeSubscribers, 3);
+      expect(m.providerReconciliationLabel,
+          'Active subscribers: 3 (PayFast 2 + Unknown 1)');
+    });
+
+    test('providerReconciliationLabel omits zero buckets', () {
+      final m = AdminRevenueMetrics.aggregate([
+        activeSub('u1', plan: 'hunter_monthly', provider: 'google_play'),
+      ], now: now);
+      expect(m.providerReconciliationLabel, 'Active subscriber: 1 (Google 1)');
+    });
+
+    test('the split always reconciles to the active total', () {
+      final m = AdminRevenueMetrics.aggregate([
+        activeSub('u1', plan: 'hunter_monthly', provider: 'payfast'),
+        activeSub('u2', plan: 'hunter_monthly', provider: 'google_play'),
+        activeSub('u3', plan: 'hunter_monthly', provider: 'user_choice'),
+        activeSub('u4', plan: '', provider: ''),
+      ], now: now);
+      expect(
+        m.providerCountFor(AdminProviderBucket.payfast) +
+            m.providerCountFor(AdminProviderBucket.play) +
+            m.providerCountFor(AdminProviderBucket.userChoice) +
+            m.providerCountFor(AdminProviderBucket.unknown),
+        m.activeSubscribers,
+      );
+    });
+
     test('an unpriced active subscriber is excluded from MRR but counted', () {
       final m = AdminRevenueMetrics.aggregate([
         activeSub('u1', plan: 'premium_tier'),

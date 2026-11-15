@@ -193,7 +193,7 @@ class _AuthScreenState extends State<AuthScreen> {
   ///   - `hunter`    → mandatory-profile check: if Name / Surname / a
   ///     contact detail are missing, redirect to the Hunter Profile screen
   ///     to complete onboarding; otherwise `/hunter_dashboard`.
-  ///   - `admin`     → `/admin_dashboard`
+  ///   - `admin`     → `/admin_portal_v2`
   ///   - `unknown` / dual-role / unassigned → [RoleSelectionScreen]
   ///
   /// This mirrors [SplashScreen._navigateToNextScreen] so a returning
@@ -263,7 +263,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
     switch (role) {
       case AppRole.admin:
-        Navigator.pushReplacementNamed(context, '/admin_dashboard');
+        Navigator.pushReplacementNamed(context, '/admin_portal_v2');
         break;
       case AppRole.hunter:
         Navigator.pushReplacementNamed(context, '/hunter_dashboard');

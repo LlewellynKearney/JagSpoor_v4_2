@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../models/admin_revenue_metrics.dart';
+import '../models/admin_subscription_metrics.dart';
 import '../widgets/admin_v2_common.dart';
 
 /// The Admin Portal V2 **Revenue** page (Task 6, Phase 1 — READ ONLY).
@@ -19,10 +20,17 @@ class AdminRevenuePage extends StatelessWidget {
   final ThemeController theme;
   final AdminRevenueMetrics metrics;
 
+  /// The subscription KPI payload, used to surface the ACTIVE subscribers whose
+  /// plan could not be priced (Provider = Unknown / Plan = Unknown) with their
+  /// email + provider + start date so the operator can fix them manually.
+  /// Read-only — nothing is backfilled.
+  final AdminSubscriptionMetrics? subscriptionMetrics;
+
   const AdminRevenuePage({
     super.key,
     required this.theme,
     required this.metrics,
+    this.subscriptionMetrics,
   });
 
   @override
@@ -87,8 +95,9 @@ class AdminRevenuePage extends StatelessWidget {
             for (final row in metrics.providerSplit)
               MapEntry(row.label, '${row.count}  ·  ${row.percentLabel}'),
           ],
-          note: 'Active subscribers: ${metrics.activeSubscribers}',
+          note: metrics.providerReconciliationLabel,
         ),
+        _unknownPlanSubscribersCard(),
         _pipelineCard(),
         AdminV2MetricCard(
           key: const ValueKey('adminV2PageCardChurned'),
@@ -120,6 +129,32 @@ class AdminRevenuePage extends StatelessWidget {
               'filter). Prices: hunter R34.99/mo · R349.99/yr (MRR R29.17) · '
               'outfitter R299.99/mo · R2999.99/yr (MRR R250.00).',
         ),
+      ],
+    );
+  }
+
+  /// The ACTIVE subscribers whose plan could not be priced — shown with
+  /// Provider = Unknown / Plan = Unknown + email + start date so the operator
+  /// can identify and fix each account manually. Read-only: nothing is
+  /// backfilled and no plan is invented.
+  Widget _unknownPlanSubscribersCard() {
+    final rows = subscriptionMetrics?.unknownPlanRows ?? const [];
+    final count = metrics.unknownPlanActiveSubscribers;
+    if (count <= 0 && rows.isEmpty) return const SizedBox.shrink();
+    return AdminV2TableCard(
+      key: const ValueKey('adminV2PageUnknownPlanSubscribers'),
+      theme: theme,
+      title: 'Unknown Plan Subscribers (unpriced) — $count',
+      emptyLabel: 'No active subscriber is missing a plan.',
+      headers: const ['Email', 'Provider', 'Plan', 'Start Date'],
+      rows: [
+        for (final r in rows)
+          [
+            r.email.isEmpty ? '—' : r.email,
+            r.provider.label,
+            'Unknown',
+            r.startDateLabel,
+          ],
       ],
     );
   }

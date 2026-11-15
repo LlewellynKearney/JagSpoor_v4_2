@@ -29,7 +29,6 @@ import 'features/hunter_mode/trophy_detail_screen.dart';
 import 'features/hunter_mode/add_trophy_screen.dart';
 import 'features/hunter_mode/edit_trophy_screen.dart';
 import 'features/outfitter_mode/outfitter_dashboard.dart';
-import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/admin/screens/admin_portal_v2_screen.dart';
 import 'features/ballistics/data/services/ballistics_seeder.dart';
 import 'utils/animal_seeder.dart';
@@ -350,10 +349,10 @@ Future<void> main() async {
 ///
 /// Flutter's web engine derives its default route from the URL **hash**, so a
 /// *path*-based deep link (`https://jag-spoor.co.za/admin_portal_v2`, no `#`)
-/// left the hash empty and the app fell back to the splash — which routed an
-/// admin to the OLD `/admin_dashboard`. This resolves the boot route from the
-/// browser path too, so `/admin_portal_v2` loads [AdminPortalV2Screen]
-/// directly.
+/// left the hash empty and the app fell back to the splash — which then
+/// routed an admin to the (now retired) old admin dashboard. This resolves the
+/// boot route from the browser path too, so `/admin_portal_v2` loads
+/// [AdminPortalV2Screen] directly.
 ///
 /// The engine still overrides the boot route with the hash route when the hash
 /// names a route, so the existing `#/route` deep-link behaviour is unchanged.
@@ -377,9 +376,9 @@ class JagspoorApp extends StatelessWidget {
   ///
   /// Resolved once in [main] from the URL hash **and** the browser path, so a
   /// path deep link (`https://jag-spoor.co.za/admin_portal_v2`) is honoured
-  /// instead of falling back to the splash (which used to bounce an admin to
-  /// the OLD `/admin_dashboard`). Defaults to the splash so an ordinary launch
-  /// — and every test that constructs this widget directly — is unchanged.
+  /// instead of falling back to the splash. Defaults to the splash so an
+  /// ordinary launch — and every test that constructs this widget directly —
+  /// is unchanged.
   final String initialRoute;
 
   const JagspoorApp({
@@ -438,20 +437,20 @@ class JagspoorApp extends StatelessWidget {
                 builder: (_) => OutfitterDashboard(theme: themeController),
               ),
             '/admin_dashboard': (context) => RoleGuardedRoute(
-                route: '/admin_dashboard',
-                builder: (_) => AdminDashboardScreen(theme: themeController),
+                route: '/admin_portal_v2',
+                requiresPremium: false,
+                builder: (_) => AdminPortalV2Screen(theme: themeController),
               ),
             // Friendly alias so `/admin` (and `#/admin`) still reaches the
-            // ORIGINAL Admin Portal. Kept as a distinct route so the old
-            // portal stays reachable after the V2 split.
+            // admin portal. The old portal is retired — this redirects to V2.
             '/admin': (context) => RoleGuardedRoute(
-                route: '/admin_dashboard',
-                builder: (_) => AdminDashboardScreen(theme: themeController),
+                route: '/admin_portal_v2',
+                requiresPremium: false,
+                builder: (_) => AdminPortalV2Screen(theme: themeController),
               ),
-            // Admin Portal V2 — the trial/subscription KPI surface. Gated on
-            // the same admin-only route policy as `/admin_dashboard`, and
-            // `requiresPremium: false` so an admin whose own subscription has
-            // lapsed can still reach the operator portal.
+            // Admin Portal V2 — the ONLY admin portal. Gated on the admin-only
+            // route policy, and `requiresPremium: false` so an admin whose own
+            // subscription has lapsed can still reach the operator portal.
             '/admin_portal_v2': (context) => RoleGuardedRoute(
                 route: '/admin_portal_v2',
                 requiresPremium: false,

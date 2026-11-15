@@ -39,7 +39,7 @@ void main() {
         '/hunter_dashboard': (_) => const Scaffold(body: Text('HUNTER HOME')),
         '/outfitter_dashboard': (_) =>
             const Scaffold(body: Text('OUTFITTER HOME')),
-        '/admin_dashboard': (_) => const Scaffold(body: Text('ADMIN HOME')),
+        '/admin_portal_v2': (_) => const Scaffold(body: Text('ADMIN HOME')),
       },
     ));
     await tester.pumpAndSettle();

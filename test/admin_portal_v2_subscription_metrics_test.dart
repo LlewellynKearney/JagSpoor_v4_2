@@ -232,4 +232,106 @@ void main() {
       expect(metrics.visibleSubscribers(query: 'zzz'), isEmpty);
     });
   });
+
+  // ==========================================================================
+  // JOB 2B — the 4-total / 3-active / 1-unknown reconciliation.
+  //
+  // The screenshot case: 4 subscribers total, 3 priced (2 PayFast + 1 Google)
+  // and 1 active with no plan. The Dashboard "Total Subscribers" and the
+  // Revenue "Active subscribers" MUST agree (active-only), and the unknown-plan
+  // account must be surfaced explicitly with its email + provider + start date.
+  // ==========================================================================
+  group('subscriber count reconciliation (JOB 2B)', () {
+    test('Total Subscribers == active (trials counted separately)', () {
+      final metrics = AdminSubscriptionMetrics.aggregate([
+        sub(uid: 'p1', provider: 'payfast', plan: 'hunter_monthly'),
+        sub(uid: 'p2', provider: 'payfast', plan: 'outfitter_monthly'),
+        sub(uid: 'g1', provider: 'google_play', plan: 'hunter_yearly'),
+        // Active but plan is null -> the "Unknown plan" account.
+        sub(uid: 'u1', provider: '', plan: ''),
+        // A running trial must NOT inflate the active subscriber count.
+        AdminUserRecord(
+          uid: 't1',
+          role: 'hunter',
+          subscriptionStatus: 'trialing',
+          trialEnd: now.add(const Duration(days: 5)),
+        ),
+      ], now: now);
+
+      expect(metrics.totalSubscribers, 4, reason: 'active only');
+      expect(metrics.trialCount, 1);
+      // The provider split reconciles to the active total.
+      expect(
+        metrics.googleCount +
+            metrics.payfastCount +
+            metrics.unknownProviderCount,
+        metrics.totalSubscribers,
+      );
+      expect(metrics.payfastCount, 2);
+      expect(metrics.googleCount, 1);
+      expect(metrics.unknownProviderCount, 1);
+    });
+
+    test('totalSubscribersCountLabel is the plain active count', () {
+      final metrics = AdminSubscriptionMetrics.aggregate([
+        sub(uid: 'p1', provider: 'payfast'),
+        sub(uid: 'u1', provider: '', plan: ''),
+      ], now: now);
+      expect(metrics.totalSubscribersCountLabel, '2');
+    });
+
+    test('subscribersDefinitionLabel spells out the definition + arithmetic',
+        () {
+      final metrics = AdminSubscriptionMetrics.aggregate([
+        sub(uid: 'p1', provider: 'payfast'),
+        sub(uid: 'p2', provider: 'payfast'),
+        sub(uid: 'u1', provider: '', plan: ''),
+      ], now: now);
+      final label = metrics.subscribersDefinitionLabel;
+      expect(label, contains('active paid subscribers only'));
+      expect(label, contains('excludes trials'));
+      expect(label, contains('PayFast 2'));
+      expect(label, contains('Unknown 1'));
+      expect(label, contains('= 3'));
+    });
+
+    test('unknownPlanRows surfaces the active unpriced accounts only', () {
+      final metrics = AdminSubscriptionMetrics.aggregate([
+        sub(uid: 'priced', provider: 'payfast', plan: 'hunter_monthly'),
+        sub(
+          uid: 'unknown',
+          email: 'mystery@example.com',
+          provider: '',
+          plan: '',
+        ),
+        // A TRIAL with no plan is NOT an "unknown plan active subscriber".
+        AdminUserRecord(
+          uid: 'trial',
+          role: 'hunter',
+          subscriptionStatus: 'trialing',
+          trialEnd: now.add(const Duration(days: 5)),
+        ),
+      ], now: now);
+
+      final rows = metrics.unknownPlanRows;
+      expect(rows.length, 1);
+      final r = rows.single;
+      expect(r.uid, 'unknown');
+      expect(r.email, 'mystery@example.com');
+      expect(r.planLabel, 'Unknown');
+      expect(r.provider.label, 'Unknown');
+      expect(r.isUnknownPlan, isTrue);
+      expect(r.isUnknownProvider, isTrue);
+      // The start date is still shown (em dash when unrecorded).
+      expect(r.startDateLabel, isNotNull);
+    });
+
+    test('a priced active subscriber is NOT flagged unknown', () {
+      final metrics = AdminSubscriptionMetrics.aggregate([
+        sub(uid: 'priced', provider: 'google_play', plan: 'hunter_monthly'),
+      ], now: now);
+      expect(metrics.unknownPlanRows, isEmpty);
+      expect(metrics.subscribers.single.isUnknownPlan, isFalse);
+    });
+  });
 }

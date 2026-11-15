@@ -19,7 +19,7 @@ class RoleGuard {
   /// Role-scoped dashboard routes — a user may only open the dashboard that
   /// matches their role (admins may open any).
   static const Map<AppRole, String> roleHomeRoutes = {
-    AppRole.admin: '/admin_dashboard',
+    AppRole.admin: '/admin_portal_v2',
     AppRole.outfitter: '/outfitter_dashboard',
     AppRole.hunter: '/hunter_dashboard',
   };
@@ -30,7 +30,8 @@ class RoleGuard {
   ///   - **Admins have full cross-mode access to EVERY route** (Hunter,
   ///     Outfitter, and Admin Portal, plus all forms/screens) — short-circuited
   ///     first so an admin can never trigger an Access Denied banner.
-  ///   - Admin-only routes (e.g. `/admin_dashboard`) deny every non-admin.
+  ///   - Admin-only routes (e.g. `/admin_portal_v2`, `/admin_dashboard`) deny
+  ///     every non-admin.
   ///   - The Hunter / Outfitter dashboards require the matching non-admin role.
   ///     **Dual-role accounts are admitted to BOTH** dashboards.
   ///   - Every other route (forms, detail screens, license scanner, etc.) is

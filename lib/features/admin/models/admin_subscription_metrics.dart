@@ -13,7 +13,7 @@ import 'admin_user_metrics.dart';
 enum AdminSubscriptionProvider {
   google('Google'),
   payfast('PayFast'),
-  none('—');
+  none('Unknown');
 
   const AdminSubscriptionProvider(this.label);
 
@@ -82,6 +82,11 @@ class AdminSubscriberRow {
   final DateTime? startDate;
   final AdminSubscriberStatus status;
 
+  /// Whether this row's plan could not be priced (blank / unrecognised
+  /// `subscriptionProduct`). Such a row is shown with Plan = Unknown so the
+  /// operator can identify + fix it manually (nothing is invented).
+  final bool isUnknownPlan;
+
   const AdminSubscriberRow({
     required this.uid,
     this.name = '',
@@ -90,10 +95,14 @@ class AdminSubscriberRow {
     this.planLabel = '—',
     this.startDate,
     this.status = AdminSubscriberStatus.expired,
+    this.isUnknownPlan = false,
   });
 
   /// The Start Date rendered as `yyyy-MM-dd`, or an em dash when unknown.
   String get startDateLabel => formatAdminDate(startDate);
+
+  /// Whether the provider is unknown (blank / unrecognised).
+  bool get isUnknownProvider => provider == AdminSubscriptionProvider.none;
 
   /// Whether this row matches a free-text [query] (name or email,
   /// case-insensitive).
@@ -196,6 +205,7 @@ class AdminSubscriptionMetrics {
       // subscribers, running trials, cancellations, and expired subscriptions.
       if (!premiumNow && !trialNow && !cancelled && !expired) continue;
 
+      final bucket = resolveAdminPlanBucket(r.plan);
       rows.add(AdminSubscriberRow(
         uid: r.uid,
         name: r.displayName,
@@ -208,6 +218,9 @@ class AdminSubscriptionMetrics {
           trialNow: trialNow,
           cancelled: cancelled,
         ),
+        // An ACTIVE subscriber whose plan cannot be priced is flagged so the
+        // list shows Plan = Unknown and the operator can fix it manually.
+        isUnknownPlan: premiumNow && bucket == null,
       ));
     }
 
@@ -244,6 +257,33 @@ class AdminSubscriptionMetrics {
         .toList(growable: false);
   }
 
+  /// The Dashboard "Total Subscribers" card count — active paid subscribers
+  /// ONLY, so it matches the Revenue tab's "Active subscribers" exactly.
+  ///
+  /// This is the ONE definition used everywhere: trials are reported
+  /// separately (the "Trial Users" card), never folded into "Total
+  /// Subscribers". See [subscribersDefinitionLabel].
+  String get totalSubscribersCountLabel => totalSubscribers.toString();
+
+  /// The one-line DEFINITION note under the Dashboard subscription row so the
+  /// operator knows what "Total Subscribers" means and how it reconciles with
+  /// the Revenue tab.
+  String get subscribersDefinitionLabel =>
+      'Total Subscribers = active paid subscribers only (excludes trials; '
+      'trials are the "Trial Users" card). '
+      'Active = Google $googleCount + PayFast $payfastCount'
+      '${unknownProviderCount > 0 ? ' + Unknown $unknownProviderCount' : ''} '
+      '= $totalSubscribers.';
+
+  /// The Subscribers List rows for ACTIVE subscribers whose plan could not be
+  /// priced (`subscriptionProduct` / `plan` blank or unrecognised).
+  ///
+  /// Surfaced in the list with Provider = Unknown / Plan = Unknown so the
+  /// operator can identify each account (email + provider + start date) and
+  /// fix it manually. READ-ONLY — nothing is backfilled or invented.
+  List<AdminSubscriberRow> get unknownPlanRows =>
+      subscribers.where((r) => r.isUnknownPlan).toList(growable: false);
+
   static AdminSubscriberStatus _statusFor({
     required bool premiumNow,
     required bool trialNow,
@@ -277,12 +317,15 @@ class AdminSubscriptionMetrics {
   }
 
   /// The plan label for the Subscribers List — the canonical bucket label when
-  /// the plan id resolves, the raw stored plan otherwise, or an em dash when
-  /// there is none.
+  /// the plan id resolves, otherwise `Unknown` (an unpriced plan is surfaced,
+  /// never hidden behind an em dash or the raw id), or an em dash when there is
+  /// no plan at all AND the account is not an active subscriber.
   static String _planLabel(String plan) {
     final bucket = resolveAdminPlanBucket(plan);
     if (bucket != null) return bucket.label;
     final trimmed = plan.trim();
-    return trimmed.isEmpty ? '—' : trimmed;
+    // A blank plan (no `subscriptionProduct` at all) on an active subscriber
+    // is the "Unknown" bucket the operator must identify + fix manually.
+    return trimmed.isEmpty ? 'Unknown' : trimmed;
   }
 }

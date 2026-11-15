@@ -126,7 +126,7 @@ class _SplashScreenState extends State<SplashScreen>
   /// the dashboard routes read a single consistent value.
   ///
   ///   currentUser == null                 → AuthScreen (login / register)
-  ///   admin (claim / email / role==admin) → /admin_dashboard
+  ///   admin (claim / email / role==admin) → /admin_portal_v2
   ///   role == 'hunter'                     → /hunter_dashboard
   ///   role == 'outfitter'                  → /outfitter_dashboard
   ///   no role assigned yet (or fetch error)→ RoleSelectionScreen
@@ -214,7 +214,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
     switch (role) {
       case AppRole.admin:
-        Navigator.pushReplacementNamed(context, '/admin_dashboard');
+        Navigator.pushReplacementNamed(context, '/admin_portal_v2');
         break;
       case AppRole.hunter:
         Navigator.pushReplacementNamed(context, '/hunter_dashboard');
