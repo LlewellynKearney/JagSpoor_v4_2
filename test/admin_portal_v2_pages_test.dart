@@ -190,7 +190,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('alice@example.com'), findsWidgets);
-    expect(find.text('bob@example.com'), findsNothing);
+    // Scope to the users table: the Email Verification card (also in the Users
+    // tab) legitimately lists every unverified account, so a global
+    // `findsNothing` would match it.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('adminV2UsersPage')),
+        matching: find.text('bob@example.com'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('Users page role filter isolates the role', (tester) async {
@@ -213,7 +222,16 @@ void main() {
     // table. (The hunter may still appear in the No Role table only if it had
     // no role — it has one, so it is absent entirely.)
     expect(find.text('o@example.com'), findsWidgets);
-    expect(find.text('h@example.com'), findsNothing);
+    // Scope to the users table: the Email Verification card (also in the Users
+    // tab) legitimately lists every unverified account, so a global
+    // `findsNothing` would match it.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('adminV2UsersPage')),
+        matching: find.text('h@example.com'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('Users page shows the No Role list', (tester) async {

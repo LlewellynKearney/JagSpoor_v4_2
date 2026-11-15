@@ -1,5 +1,146 @@
 # JagSpoor -- Agent Memory
 
+## FIX: Email verification emails not sending + admin resend + identify missed users (added 2026-11-15)
+
+Branch `fix/email-verification-not-sending` (base `main` @ `5ee7f92`, v4.2.28+28).
+**NOT merged, NOT deployed.**
+
+### ROOT CAUSE (one sentence)
+Verification emails stopped because the send is entirely **client-side**
+(`User.sendEmailVerification()` in `EmailVerificationService`) and its failure
+was **swallowed by a bare `debugPrint`** — so any account whose send failed (or
+that was created while the client could not reach Firebase Auth) was silently
+left unverified with **no record anywhere** of the failure and **no admin path
+to re-send**.
+
+There is **no Cloud Function and no SMTP/SendGrid step in the verification
+path** — the mail is delivered by **Firebase Auth's own email service**. The
+`EMAIL_PASS` SMTP path only powers the *support-inbox* notifications
+(`onUserCreate` etc.). The Alternative Billing (PayFast / User Choice Billing)
+work did **not** touch verification (verified: `git log -S sendEmailVerification`
+has only the hosting commit; the billing commits changed
+`billing_service.dart`, `alternative_billing*.ts`, `payfast/*`, version files).
+
+### Four concrete gaps found
+1. `sendVerificationEmail()` caught every failure with a bare `debugPrint` — no
+   record of WHICH account failed.
+2. Nothing wrote a send-status flag to `users/{uid}`.
+3. `emailVerified` was **never mirrored** to `users/{uid}` — the admin portal
+   reads Firestore, never the Auth list, so it could not tell verified from
+   unverified.
+4. No server-side resend existed — the app can only resend for the *signed-in*
+   user; re-sending for someone else needs the Admin SDK
+   `generateEmailVerificationLink()`.
+
+### THE FIX
+- **Client** (`lib/features/auth/services/email_verification_service.dart`):
+  every send now writes an audit trail on `users/{uid}` —
+  `verificationEmailSent` (true only on confirmed dispatch),
+  `verificationEmailLastError` (code+message on failure),
+  `verificationEmailLastAttemptAt`. `checkVerified()` now MIRRORS
+  `emailVerified` onto `users/{uid}`. Both writes are best-effort
+  (`SetOptions(merge: true)`); a failure never masks the send result. Seams:
+  `firestoreForTesting` / `currentUserIdResolverForTesting` / `sendOverride` /
+  `resetTestSeams()`. These fields are NOT frozen in `firestore.rules`, so the
+  owner may write them.
+- **Server** (`functions/src/email_verification.ts`, exported from `index.ts`):
+  two admin-only callables, both declaring `secrets: [emailPass]`:
+  - `resendVerificationEmail` — one account.
+  - `resendVerificationEmailsBulk` — a capped batch, `BULK_LIMIT = 50`,
+    processed SEQUENTIALLY (a `Promise.all` burst would trip the SMTP rate
+    limit).
+  Both gate on the SAME `isAdminRequest` used by `getAdminPortalKpis` (claim ->
+  email allow-list -> `users/{uid}.role`), mint a fresh link via
+  `generateEmailVerificationLink()`, deliver it from the support mailbox via
+  `sendSupportEmail`, and record the SAME audit flags. If `EMAIL_PASS` is unset
+  the link is still minted (the account is recoverable) and the result reports
+  `delivered: false` with the reason recorded.
+- **Admin Portal V2 → Users tab**
+  (`lib/features/admin/widgets/admin_verification_card.dart`): a new **Email
+  Verification (N unverified)** card with a per-row **RESEND** button
+  (`adminV2ResendRow_<uid>`) + a **RESEND TO ALL UNVERIFIED (N)** bulk action
+  (`adminV2ResendAllUnverifiedButton`) behind a "Resend to X users?"
+  confirmation dialog. The bulk action is capped at
+  `kAdminVerificationResendBatchLimit` (50). Admin-only: a non-admin sees the
+  counts but every action is disabled (`onPressed: null`) + an "Admin only"
+  note. The server re-checks privileges regardless.
+- **Pure model** (`lib/features/admin/models/admin_verification_target.dart`):
+  `AdminVerificationTarget` (`missedVerification` = unverified AND no
+  successful send; `statusLabel` = Verified/Sent/Failed/Never sent) +
+  `adminVerificationResendBatch(...)` (the cap contract). `AdminUserRecord`
+  gained `emailVerified` / `verificationEmailSent` /
+  `verificationEmailLastError` / `verificationEmailLastAttemptAt` +
+  `verificationTarget`.
+- **Client service** (`lib/features/admin/services/admin_verification_resend_service.dart`):
+  the callable-over-HTTPS pattern (`EntitlementService` / `AdminKpiService`) —
+  no `cloud_functions` plugin, so the native builds are untouched. Trims the
+  batch to the cap client-side too.
+- **Identify missed users** (LIST-ONLY — sends nothing):
+  `functions/src/identify_missed_verification_users.ts` +
+  `docs/fix-email-verification/identify-missed-users.md`. Selects
+  `emailVerified != true AND verificationEmailSent != true` (the Auth flag is
+  authoritative; the `users` mirror is the fallback), cross-references the Auth
+  user list, and writes a CSV
+  (`Email, Created Date, Name, Role, emailVerified, verificationEmailSent`).
+  Run: `cd functions && npm run build && node
+  lib/identify_missed_verification_users.js --out /tmp/missed.csv` (npm script
+  `audit:missed-verification`). A test asserts it NEVER calls
+  `sendSupportEmail` / `generateEmailVerificationLink` / `resendVerification`.
+
+### Tests
+- NEW `test/admin_verification_resend_test.dart` (15): the failed send records
+  `verificationEmailSent=false` + the error (FakeFirebaseFirestore); the success
+  records `true` and clears the error; no-uid is a silent no-op; the
+  `AdminVerificationTarget` predicate + `statusLabel` + `fromMap`;
+  `adminVerificationResendBatch` returns all under the limit, caps at 50, only
+  includes unverified, honours a custom limit; the card renders the count +
+  per-row RESEND; the row button calls the service; the bulk action shows the
+  confirm dialog then resends exactly 50; a non-admin's actions are disabled.
+- NEW `functions/test/email_verification.test.js` (13): the callables + limit
+  exported; the field names match the Flutter service; the email body carries
+  the minted link; both callables admin-gated via `isAdminRequest`; the bulk
+  cap + sequential loop; `generateEmailVerificationLink` used; exported from
+  `index.ts`; the CSV header + `isMissedVerification` matrix; the audit script
+  never sends; `buildCsv` escaping; `formatDate`; `resolveName`.
+
+### Verification (this sandbox)
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
+  (unchanged baseline). All new/changed files: "No issues found".
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2683 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
+  touches no file in this change. +15 net vs the 2668-pass baseline (exactly
+  the new `admin_verification_resend_test`). Two pre-existing
+  `admin_portal_v2_pages_test` cases ("email search filters the table" /
+  "role filter isolates the role") were scoped to
+  `find.descendant(of: ValueKey('adminV2UsersPage'))` because the new Email
+  Verification card (same Users tab) legitimately also lists unverified
+  emails, so their global `findsNothing` would have matched it.
+- `cd functions && npm test`: **203 passed, 0 failed** (was 190; +13).
+- `flutter build web --release`: **SUCCESS** (`build/web`).
+- Env: Flutter **3.44.9** cloned to `/tmp/flutter_sdk`; `apt-get install unzip`
+  (the SDK bootstrap needs it); `~/libs/libsqlite3.so` symlink for the
+  sqflite-FFI suites; `pubspec.lock` drift from `pub get` reverted.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code touched (the fix is
+additive to the verification path only); no iOS code touched.
+
+### Files
+- NEW: `functions/src/email_verification.ts`,
+  `functions/src/identify_missed_verification_users.ts`,
+  `functions/test/email_verification.test.js`,
+  `lib/features/admin/models/admin_verification_target.dart`,
+  `lib/features/admin/services/admin_verification_resend_service.dart`,
+  `lib/features/admin/widgets/admin_verification_card.dart`,
+  `test/admin_verification_resend_test.dart`,
+  `docs/fix-email-verification/identify-missed-users.md`.
+- MODIFIED: `lib/features/auth/services/email_verification_service.dart`,
+  `lib/features/admin/models/admin_user_metrics.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `functions/src/index.ts`, `functions/package.json`, `AGENTS.md`.
+
 ## FEAT: Admin Portal V2 replaces the old portal + mobile KPI layout + subscriber-count reconciliation (added 2026-11-15)
 
 Branch `feature/admin-v2-replaces-old` (base `2e719a2`). **NOT merged, NOT

@@ -21,6 +21,7 @@ import '../services/admin_user_metrics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
 import '../widgets/admin_subscribers_list_section.dart';
 import '../widgets/admin_users_export_card.dart';
+import '../widgets/admin_verification_card.dart';
 import '../widgets/admin_v2_charts.dart';
 import '../widgets/admin_v2_common.dart';
 
@@ -327,6 +328,12 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AdminUsersExportCard(
+              theme: widget.theme,
+              records: _records,
+              isAdmin: _authorized,
+            ),
+            const SizedBox(height: 16),
+            AdminVerificationCard(
               theme: widget.theme,
               records: _records,
               isAdmin: _authorized,

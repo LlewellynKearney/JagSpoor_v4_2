@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../services/entitlement_service.dart'
     show trialEndFieldAliases, trialStartFieldAliases;
+import 'admin_verification_target.dart';
 
 /// Date-range filter for the Admin Portal V2 "New Users" metric.
 ///
@@ -172,6 +173,17 @@ class AdminUserRecord {
   /// The document's `updatedAt` — the fallback cancellation timestamp.
   final DateTime? updatedAt;
 
+  /// Whether the account's email is verified. Mirrored from Firebase Auth onto
+  /// `users/{uid}` by the app; missing / non-`true` counts as unverified.
+  final bool emailVerified;
+
+  /// Whether a verification email was last confirmed dispatched, and the last
+  /// failure / attempt audit trail (written by `EmailVerificationService`).
+  /// See `admin_verification_target.dart` for the missed-email predicate.
+  final bool verificationEmailSent;
+  final String? verificationEmailLastError;
+  final DateTime? verificationEmailLastAttemptAt;
+
   const AdminUserRecord({
     required this.uid,
     this.email = '',
@@ -196,6 +208,10 @@ class AdminUserRecord {
     this.premiumExpiry,
     this.cancelledAt,
     this.updatedAt,
+    this.emailVerified = false,
+    this.verificationEmailSent = false,
+    this.verificationEmailLastError,
+    this.verificationEmailLastAttemptAt,
   });
 
   /// Status strings that indicate an in-progress free trial (mirrors
@@ -425,8 +441,27 @@ class AdminUserRecord {
           _toDate(d['cancelledAt']) ??
           _toDate(d['cancelled_at']),
       updatedAt: _toDate(d['updatedAt']) ?? _toDate(d['updated_at']),
+      emailVerified: d['emailVerified'] == true,
+      verificationEmailSent: d['verificationEmailSent'] == true,
+      verificationEmailLastError: () {
+        final e = (d['verificationEmailLastError'] ?? '').toString().trim();
+        return e.isEmpty ? null : e;
+      }(),
+      verificationEmailLastAttemptAt:
+          _toDate(d['verificationEmailLastAttemptAt']),
     );
   }
+
+  /// Reduces this record to the fields the email-verification resend logic
+  /// needs (see `admin_verification_target.dart`).
+  AdminVerificationTarget get verificationTarget => AdminVerificationTarget(
+        uid: uid,
+        email: email,
+        emailVerified: emailVerified,
+        verificationEmailSent: verificationEmailSent,
+        verificationEmailLastError: verificationEmailLastError,
+        verificationEmailLastAttemptAt: verificationEmailLastAttemptAt,
+      );
 
   static DateTime? _resolveTrialEnd(Map<String, dynamic> data) {
     for (final key in trialEndFieldAliases) {

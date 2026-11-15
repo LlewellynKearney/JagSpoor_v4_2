@@ -187,6 +187,21 @@ export {
 } from "./admin/kpis";
 
 // ────────────────────────────────────────────────────────────────────────────
+// Email-verification resend (admin-only). Firebase Auth owns the verification
+// mail send path; the admin portal uses these to re-send to accounts that
+// missed it (the Admin SDK's generateEmailVerificationLink is required).
+// ────────────────────────────────────────────────────────────────────────────
+export {
+  resendVerificationEmail,
+  resendVerificationEmailsBulk,
+  BULK_LIMIT as VERIFICATION_BULK_LIMIT,
+  VERIFICATION_SENT_FIELD,
+  VERIFICATION_LAST_ERROR_FIELD,
+  VERIFICATION_LAST_ATTEMPT_FIELD,
+  buildVerificationEmailBody,
+} from "./email_verification";
+
+// ────────────────────────────────────────────────────────────────────────────
 // 1. Admin: create outfitter account + document + custom claims
 // ────────────────────────────────────────────────────────────────────────────
 
