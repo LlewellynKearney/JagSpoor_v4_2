@@ -458,6 +458,187 @@ void main() {
     });
   });
 
+  group('AdminVerificationResendService sendOobCode diagnostic', () {
+    tearDown(() => AdminVerificationResendService.resetTestSeams());
+
+    test('describeOne surfaces the sendOobCode status code + reason', () {
+      final msg = AdminVerificationResendService.describeOne(
+        delivered: false,
+        statusCode: 400,
+        reason: 'send failed: 400: INVALID_ID_TOKEN',
+      );
+      expect(msg, contains('sendOobCode 400'));
+      expect(msg, contains('INVALID_ID_TOKEN'));
+    });
+
+    test('describeOne reports a successful send plainly', () {
+      expect(
+        AdminVerificationResendService.describeOne(delivered: true),
+        'Verification email sent.',
+      );
+    });
+
+    test('describeOne reports the no-API-key link fallback', () {
+      final msg = AdminVerificationResendService.describeOne(
+        delivered: false,
+        link: 'https://example/verify',
+      );
+      expect(msg, contains('verification link generated'));
+    });
+
+    test('describeBulk appends the distinct failure status codes', () {
+      expect(
+        AdminVerificationResendService.describeBulk(
+          delivered: 0,
+          total: 3,
+          statusCodes: {400},
+        ),
+        'Resent to 0 of 3. (sendOobCode 400)',
+      );
+      expect(
+        AdminVerificationResendService.describeBulk(
+          delivered: 3,
+          total: 3,
+          statusCodes: {},
+        ),
+        'Resent to 3 of 3.',
+      );
+    });
+
+    test('resendOne parses the status code + reason from the callable result',
+        () async {
+      AdminVerificationResendService.idTokenResolverForTesting =
+          () async => 'admin-id-token';
+      AdminVerificationResendService.httpClientForTesting =
+          _StubClient((_) async {
+        return http.Response(
+          jsonEncode({
+            'result': {
+              'uid': 'u1',
+              'email': 'u1@example.com',
+              'delivered': false,
+              'linkGenerated': false,
+              'reason': 'send failed: 400: INVALID_ID_TOKEN',
+              'statusCode': 400,
+            },
+          }),
+          200,
+        );
+      });
+
+      final outcome =
+          await AdminVerificationResendService.instance.resendOne('u1');
+      expect(outcome.delivered, isFalse);
+      expect(outcome.statusCode, 400);
+      expect(outcome.reason, contains('INVALID_ID_TOKEN'));
+      expect(outcome.message, contains('sendOobCode 400'));
+    });
+
+    test('resendOne returns the minted link on the no-API-key fallback',
+        () async {
+      AdminVerificationResendService.idTokenResolverForTesting =
+          () async => 'admin-id-token';
+      AdminVerificationResendService.httpClientForTesting =
+          _StubClient((_) async {
+        return http.Response(
+          jsonEncode({
+            'result': {
+              'uid': 'u1',
+              'delivered': false,
+              'linkGenerated': true,
+              'verificationLink': 'https://jagspoor.firebaseapp.com/verify?x=1',
+            },
+          }),
+          200,
+        );
+      });
+
+      final outcome =
+          await AdminVerificationResendService.instance.resendOne('u1');
+      expect(outcome.delivered, isFalse);
+      expect(
+        outcome.verificationLink,
+        'https://jagspoor.firebaseapp.com/verify?x=1',
+      );
+      expect(outcome.message, contains('verification link generated'));
+    });
+
+    test('resendBulk collects the distinct status codes', () async {
+      AdminVerificationResendService.idTokenResolverForTesting =
+          () async => 'admin-id-token';
+      AdminVerificationResendService.httpClientForTesting =
+          _StubClient((_) async {
+        return http.Response(
+          jsonEncode({
+            'result': {
+              'processed': 2,
+              'skipped': 0,
+              'results': [
+                {
+                  'uid': 'u1',
+                  'delivered': false,
+                  'statusCode': 400,
+                  'reason': 'send failed: 400: INVALID_ID_TOKEN',
+                },
+                {
+                  'uid': 'u2',
+                  'delivered': false,
+                  'statusCode': 400,
+                  'reason': 'send failed: 400: INVALID_ID_TOKEN',
+                },
+              ],
+            },
+          }),
+          200,
+        );
+      });
+
+      final outcome =
+          await AdminVerificationResendService.instance.resendBulk(['u1', 'u2']);
+      expect(outcome.delivered, 0);
+      expect(outcome.statusCodes, [400]);
+      expect(outcome.message, contains('sendOobCode 400'));
+    });
+
+    testWidgets('a per-row failure shows a persistent status-code diagnostic',
+        (tester) async {
+      final theme = ThemeController();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: AdminVerificationCard(
+              theme: theme,
+              isAdmin: true,
+              records: const [
+                AdminUserRecord(
+                  uid: 'n1',
+                  email: 'n1@example.com',
+                  role: '',
+                  emailVerified: false,
+                ),
+              ],
+              resendOneOverride: (uid) async => const ResendOutcome(
+                delivered: false,
+                statusCode: 400,
+                reason: 'send failed: 400: INVALID_ID_TOKEN',
+                message: 'sendOobCode 400: send failed: 400: INVALID_ID_TOKEN',
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.byKey(const ValueKey('adminV2ResendRow_n1')));
+      await tester.pumpAndSettle();
+      // The diagnostic persists on the row (not only in the transient snackbar).
+      final reason = find.byKey(const ValueKey('adminV2ResendReason_n1'));
+      expect(reason, findsOneWidget);
+      expect(
+        (tester.widget<Text>(reason)).data,
+        contains('INVALID_ID_TOKEN'),
+      );
+    });
+  });
+
   group('AdminVerificationResendService error surfacing', () {
     tearDown(() => AdminVerificationResendService.resetTestSeams());
 
@@ -499,4 +680,23 @@ void main() {
       );
     });
   });
+}
+
+/// A minimal [http.Client] stub so the resend service's response-parsing path
+/// can be exercised without a live Cloud Function.
+class _StubClient extends http.BaseClient {
+  _StubClient(this._handler);
+
+  final Future<http.Response> Function(http.BaseRequest request) _handler;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final res = await _handler(request);
+    return http.StreamedResponse(
+      Stream.value(res.bodyBytes),
+      res.statusCode,
+      headers: res.headers,
+      request: request,
+    );
+  }
 }

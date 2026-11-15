@@ -67,85 +67,221 @@ test("the audit-trail field names match the Flutter service", () => {
 
 test("the resend delivers via Firebase Auth's built-in sender (accounts:sendOobCode)", () => {
   const src = stripComments(read(path.join(SRC, "email_verification.ts")));
-  // The admin sendOobCode endpoint is the built-in sender.
+  // The public sendOobCode endpoint is the built-in sender.
   assert.ok(
     src.includes("/accounts:sendOobCode"),
-    "must call the admin accounts:sendOobCode endpoint"
+    "must call the accounts:sendOobCode endpoint"
   );
   assert.match(src, /requestType:\s*"VERIFY_EMAIL"/);
-  // It must NOT mint-only (returnOobLink / generateEmailVerificationLink
-  // suppress the send, which is the opposite of a resend).
-  assert.ok(
-    !/generateEmailVerificationLink/.test(src),
-    "must not use the mint-only generateEmailVerificationLink"
-  );
+  // It must NOT suppress the send (returnOobLink mints a link instead).
   assert.ok(!/returnOobLink/.test(src), "must not suppress the send");
+  // generateEmailVerificationLink may appear ONLY as the no-API-key fallback
+  // (a real verification link), never as the primary send path.
+  const fn = src.slice(src.indexOf("sendVerificationEmailViaFirebase"));
+  assert.ok(
+    /if\s*\(!apiKey\)/.test(fn) && /mintVerificationLink\(/.test(fn),
+    "the link fallback must be gated on a missing API key"
+  );
 });
 
-test("the built-in sender calls the ADMIN endpoint with a Bearer token + email", () => {
+test("the sender uses the PUBLIC key endpoint + a minted user idToken", () => {
+  // The PUBLIC endpoint takes the Web API key as ?key= — never the
+  // service-account project path.
   assert.equal(
-    ev.sendOobCodeEndpoint("jagspoor"),
-    "https://identitytoolkit.googleapis.com/v1/projects/jagspoor/accounts:sendOobCode"
+    ev.sendOobCodeEndpoint("AIzaTEST"),
+    "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaTEST"
+  );
+  assert.equal(
+    ev.signInWithCustomTokenEndpoint("AIzaTEST"),
+    "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=AIzaTEST"
+  );
+  assert.ok(
+    !/projects\/\$\{/.test(ev.sendOobCodeEndpoint("jagspoor")),
+    "must not use the admin projects/{projectId} path"
   );
   assert.equal(typeof ev.sendVerificationEmailViaFirebase, "function");
+  assert.equal(typeof ev.mintCustomToken, "function");
+  assert.equal(typeof ev.mintUserIdToken, "function");
+  assert.equal(typeof ev.mintVerificationLink, "function");
+  assert.equal(typeof ev.resolveApiKey, "function");
+  assert.equal(typeof ev.setApiKeyForTesting, "function");
+  assert.equal(typeof ev.setCustomTokenMinterForTesting, "function");
   assert.equal(typeof ev.setSendOobCodeFetchForTesting, "function");
-  assert.equal(typeof ev.setAccessTokenResolverForTesting, "function");
   assert.equal(typeof ev.setSendOobCodeProjectIdForTesting, "function");
   assert.equal(typeof ev.isPermissionDeniedError, "function");
+  assert.equal(typeof ev.isInvalidIdTokenError, "function");
 });
 
-test("sendVerificationEmailViaFirebase POSTs VERIFY_EMAIL with no idToken", async () => {
-  let captured = null;
-  ev.setAccessTokenResolverForTesting(async () => "sa-token");
-  ev.setSendOobCodeProjectIdForTesting("jagspoor");
+test("sendVerificationEmailViaFirebase does the two-step flow with a USER idToken", async () => {
+  const calls = [];
+  ev.setApiKeyForTesting("AIzaTEST");
+  ev.setCustomTokenMinterForTesting(async (uid) => `custom-${uid}`);
   ev.setSendOobCodeFetchForTesting(async (url, init) => {
-    captured = { url, init };
+    calls.push({ url, init });
+    if (url.includes("signInWithCustomToken")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ idToken: "user-id-token-123" }),
+      };
+    }
     return { ok: true, status: 200, text: async () => "{}" };
   });
   try {
-    await ev.sendVerificationEmailViaFirebase("hunter@example.com");
+    const outcome = await ev.sendVerificationEmailViaFirebase(
+      "uid-1",
+      "hunter@example.com"
+    );
+    assert.equal(outcome.delivered, true);
+    assert.equal(outcome.statusCode, 200);
   } finally {
     ev.setSendOobCodeFetchForTesting(null);
-    ev.setAccessTokenResolverForTesting(null);
-    ev.setSendOobCodeProjectIdForTesting(null);
+    ev.setCustomTokenMinterForTesting(null);
+    ev.resetApiKeyForTesting();
   }
-  assert.ok(captured, "the endpoint must be called");
-  assert.equal(captured.init.method, "POST");
-  assert.equal(captured.init.headers.Authorization, "Bearer sa-token");
-  assert.equal(captured.init.headers["Content-Type"], "application/json");
-  const body = JSON.parse(captured.init.body);
-  assert.equal(body.requestType, "VERIFY_EMAIL");
-  assert.equal(body.email, "hunter@example.com");
-  // An admin send carries NO idToken (that is the whole point).
-  assert.ok(!("idToken" in body), "the admin send must not send an idToken");
-  assert.equal(captured.url, ev.sendOobCodeEndpoint("jagspoor"));
+
+  assert.equal(calls.length, 2, "exactly two calls: mint idToken, then send");
+  // Step 2 — exchange the custom token for an idToken.
+  const signIn = calls[0];
+  assert.ok(signIn.url.includes("accounts:signInWithCustomToken?key=AIzaTEST"));
+  assert.equal(signIn.init.method, "POST");
+  const signInBody = JSON.parse(signIn.init.body);
+  assert.equal(signInBody.token, "custom-uid-1");
+  assert.equal(signInBody.returnSecureToken, true);
+  // Step 3 — sendOobCode with the USER idToken, NOT a service-account token.
+  const send = calls[1];
+  assert.equal(
+    send.url,
+    "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaTEST"
+  );
+  const sendBody = JSON.parse(send.init.body);
+  assert.equal(sendBody.requestType, "VERIFY_EMAIL");
+  assert.equal(sendBody.idToken, "user-id-token-123");
+  assert.ok(!("email" in sendBody), "the send uses idToken, not an email");
+  // The service-account OAuth token must NEVER be used for the send.
+  assert.ok(
+    !("Authorization" in send.init.headers),
+    "sendOobCode must not carry a service-account Bearer token"
+  );
 });
 
-test("sendVerificationEmailViaFirebase throws a PERMISSION_DENIED on a 403", async () => {
-  ev.setAccessTokenResolverForTesting(async () => "sa-token");
-  ev.setSendOobCodeProjectIdForTesting("jagspoor");
+test("mintUserIdToken throws when the exchange fails", async () => {
   ev.setSendOobCodeFetchForTesting(async () => ({
     ok: false,
-    status: 403,
-    text: async () => "PERMISSION_DENIED",
+    status: 400,
+    text: async () => "INVALID_CUSTOM_TOKEN",
   }));
   try {
     await assert.rejects(
-      () => ev.sendVerificationEmailViaFirebase("hunter@example.com"),
+      () => ev.mintUserIdToken("bad-token", "AIzaTEST"),
       (err) => {
-        assert.equal(err.status, "PERMISSION_DENIED");
-        assert.equal(err.httpStatus, 403);
+        assert.equal(err.httpStatus, 400);
+        assert.equal(err.step, "signInWithCustomToken");
         return true;
       }
     );
   } finally {
     ev.setSendOobCodeFetchForTesting(null);
-    ev.setAccessTokenResolverForTesting(null);
-    ev.setSendOobCodeProjectIdForTesting(null);
   }
 });
 
-test("isPermissionDeniedError catches the admin sendOobCode denial shape", () => {
+test("sendVerificationEmailViaFirebase propagates the sendOobCode status code", async () => {
+  ev.setApiKeyForTesting("AIzaTEST");
+  ev.setCustomTokenMinterForTesting(async () => "custom-token");
+  ev.setSendOobCodeFetchForTesting(async (url) => {
+    if (url.includes("signInWithCustomToken")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ idToken: "user-id-token" }),
+      };
+    }
+    return { ok: false, status: 400, text: async () => "INVALID_ID_TOKEN" };
+  });
+  try {
+    await assert.rejects(
+      () => ev.sendVerificationEmailViaFirebase("uid-1", "hunter@example.com"),
+      (err) => {
+        assert.equal(err.httpStatus, 400, "the response code must be surfaced");
+        assert.equal(err.step, "sendOobCode");
+        assert.ok(!/Bearer/.test(err.message), "no token may leak into the error");
+        return true;
+      }
+    );
+  } finally {
+    ev.setSendOobCodeFetchForTesting(null);
+    ev.setCustomTokenMinterForTesting(null);
+    ev.resetApiKeyForTesting();
+  }
+});
+
+test("sendVerificationEmailViaFirebase returns a link when no API key is set", async () => {
+  ev.setApiKeyForTesting(null);
+  ev.setVerificationLinkMinterForTesting(
+    async (email) => `https://link.example/verify?email=${email}`
+  );
+  ev.setCustomTokenMinterForTesting(async () => {
+    throw new Error("must not mint a custom token without an API key");
+  });
+  try {
+    const outcome = await ev.sendVerificationEmailViaFirebase(
+      "uid-1",
+      "hunter@example.com"
+    );
+    assert.equal(outcome.delivered, false);
+    assert.equal(
+      outcome.verificationLink,
+      "https://link.example/verify?email=hunter@example.com"
+    );
+  } finally {
+    ev.setVerificationLinkMinterForTesting(null);
+    ev.setCustomTokenMinterForTesting(null);
+    ev.resetApiKeyForTesting();
+  }
+});
+
+test("resolveApiKey prefers the env override, then the public default", () => {
+  const prev = process.env.FIREBASE_API_KEY;
+  try {
+    delete process.env.FIREBASE_API_KEY;
+    assert.equal(ev.resolveApiKey(), ev.FIREBASE_WEB_API_KEY_DEFAULT);
+    process.env.FIREBASE_API_KEY = "AIzaENV";
+    assert.equal(ev.resolveApiKey(), "AIzaENV");
+  } finally {
+    if (prev === undefined) delete process.env.FIREBASE_API_KEY;
+    else process.env.FIREBASE_API_KEY = prev;
+    ev.resetApiKeyForTesting();
+  }
+});
+
+test("the default API key is the public client Web key (not a secret)", () => {
+  // It ships in lib/firebase_options.dart, so it is not a secret.
+  assert.ok(ev.FIREBASE_WEB_API_KEY_DEFAULT.startsWith("AIza"));
+  const opts = read(
+    path.resolve(SRC, "..", "..", "lib", "firebase_options.dart")
+  );
+  assert.ok(
+    opts.includes(ev.FIREBASE_WEB_API_KEY_DEFAULT),
+    "the default must be the same public key the client build ships"
+  );
+});
+
+test("isInvalidIdTokenError recognises the service-account-token bug", () => {
+  assert.equal(
+    ev.isInvalidIdTokenError({ message: "INVALID_ID_TOKEN" }),
+    true
+  );
+  assert.equal(
+    ev.isInvalidIdTokenError({
+      message: '{"error":{"message":"INVALID_ID_TOKEN"}}',
+    }),
+    true
+  );
+  assert.equal(ev.isInvalidIdTokenError({ message: "USER_DISABLED" }), false);
+  assert.equal(ev.isInvalidIdTokenError(null), false);
+});
+
+test("isPermissionDeniedError catches the Identity Toolkit denial shape", () => {
   assert.equal(
     ev.isPermissionDeniedError({ status: "PERMISSION_DENIED" }),
     true
@@ -209,9 +345,13 @@ test("the bulk callable caps the batch at BULK_LIMIT and processes sequentially"
   assert.ok(!/Promise\.all\(\s*batch/.test(src));
 });
 
-test("the resend mints a link with generateEmailVerificationLink", () => {
+test("the resend keeps a real verification-link fallback (never SMTP)", () => {
   const src = read(path.join(SRC, "email_verification.ts"));
+  // generateEmailVerificationLink is the documented no-API-key fallback: it
+  // mints a REAL verification link for the admin to deliver.
   assert.ok(src.includes("generateEmailVerificationLink"));
+  // ...and it is reached only when the API key is missing.
+  assert.ok(/if\s*\(!apiKey\)/.test(src));
 });
 
 test("the module is exported from index.ts (deployable)", () => {

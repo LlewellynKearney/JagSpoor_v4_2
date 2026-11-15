@@ -189,8 +189,9 @@ export {
 // ────────────────────────────────────────────────────────────────────────────
 // Email-verification resend (admin-only). Firebase Auth owns the verification
 // mail send path; the admin portal uses these to re-send to accounts that
-// missed it. Delivery goes through Firebase Auth's OWN sender (the admin
-// `accounts:sendOobCode` endpoint) — no custom SMTP.
+// missed it. Delivery goes through Firebase Auth's OWN sender (the public
+// `accounts:sendOobCode` endpoint, authorized with a minted USER idToken — a
+// service-account token is rejected with INVALID_ID_TOKEN) — no custom SMTP.
 // ────────────────────────────────────────────────────────────────────────────
 export {
   resendVerificationEmail,
@@ -199,7 +200,8 @@ export {
   VERIFICATION_SENT_FIELD,
   VERIFICATION_LAST_ERROR_FIELD,
   VERIFICATION_LAST_ATTEMPT_FIELD,
-  REQUIRED_AUTH_SEND_EMAIL_PERMISSION,
+  REQUIRED_AUTH_CUSTOM_TOKEN_PERMISSION,
+  FIREBASE_WEB_API_KEY_DEFAULT,
 } from "./email_verification";
 
 // ────────────────────────────────────────────────────────────────────────────

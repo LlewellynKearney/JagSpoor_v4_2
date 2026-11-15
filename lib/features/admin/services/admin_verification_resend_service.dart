@@ -9,14 +9,23 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Email-verification mails are sent by Firebase Auth itself, so the app can
 /// only resend for the signed-in user. Re-sending on behalf of an arbitrary
-/// account needs the Admin SDK (`generateEmailVerificationLink`), which lives
-/// in the `resendVerificationEmail` / `resendVerificationEmailsBulk` callables.
+/// account needs the Admin SDK, which lives in the `resendVerificationEmail` /
+/// `resendVerificationEmailsBulk` callables. The server mints a custom token
+/// for the target account, exchanges it for that account's idToken, and calls
+/// the Identity Toolkit `accounts:sendOobCode` endpoint with it (a
+/// service-account token is rejected with `INVALID_ID_TOKEN`); with no API key
+/// configured it returns a minted verification link instead.
 ///
 /// The callables are invoked over HTTPS with the caller's Firebase ID token
 /// (Bearer) — the SAME dependency-free pattern `EntitlementService` and
 /// `AdminKpiService` use, so no `cloud_functions` plugin is required and the
 /// native builds are untouched. The server re-checks admin privileges; the
 /// client-side `isAdmin` gate is defense-in-depth only.
+///
+/// A per-account failure carries the `accounts:sendOobCode` HTTP status code
+/// back to the portal ([ResendOutcome.statusCode]) so the admin sees
+/// `sendOobCode 400: INVALID_ID_TOKEN` instead of a bare "could not be
+/// delivered".
 class AdminVerificationResendService {
   AdminVerificationResendService._();
   static final AdminVerificationResendService instance =
@@ -45,12 +54,31 @@ class AdminVerificationResendService {
   @visibleForTesting
   static Future<String?> Function()? idTokenResolverForTesting;
 
+  /// Test seam: overrides the HTTP client so the response-parsing path (the
+  /// sendOobCode status code surfacing) is testable without a live function.
+  @visibleForTesting
+  static http.Client? httpClientForTesting;
+
   @visibleForTesting
   static void resetTestSeams() {
     resendOneForTesting = null;
     resendBulkForTesting = null;
     idTokenResolverForTesting = null;
+    httpClientForTesting = null;
     projectIdForTesting = 'jagspoor';
+  }
+
+  /// The POST used by both callables (overridable via [httpClientForTesting]).
+  static Future<http.Response> _post(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Object body,
+  }) {
+    final client = httpClientForTesting;
+    if (client != null) {
+      return client.post(uri, headers: headers, body: body);
+    }
+    return http.post(uri, headers: headers, body: body);
   }
 
   Future<String?> _idToken() async {
@@ -79,7 +107,7 @@ class AdminVerificationResendService {
       );
     }
     try {
-      final res = await http.post(
+      final res = await _post(
         Uri.parse(_endpoint(resendOneCallable)),
         headers: {
           'Content-Type': 'application/json',
@@ -92,17 +120,22 @@ class AdminVerificationResendService {
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body) as Map<String, dynamic>;
         final result = decoded['result'];
-        final delivered =
-            result is Map && result['delivered'] == true;
+        final map = result is Map ? result : const {};
+        final delivered = map['delivered'] == true;
+        final statusCode = (map['statusCode'] as num?)?.toInt();
+        final reason = (map['reason'] as String?)?.trim();
+        final link = (map['verificationLink'] as String?)?.trim();
         return ResendOutcome(
           delivered: delivered,
-          message: delivered
-              ? 'Verification email sent.'
-              : 'Link generated but the email could not be delivered.',
+          statusCode: statusCode,
+          reason: (reason == null || reason.isEmpty) ? null : reason,
+          verificationLink: (link == null || link.isEmpty) ? null : link,
+          message: describeOne(delivered: delivered, statusCode: statusCode, reason: reason, link: link),
         );
       }
       return ResendOutcome(
         delivered: false,
+        statusCode: res.statusCode,
         message: errorMessageFor(res, 'Resend failed (${res.statusCode}).'),
       );
     } catch (e) {
@@ -112,6 +145,45 @@ class AdminVerificationResendService {
         message: 'Resend failed — check your connection and try again.',
       );
     }
+  }
+
+  /// Builds the row-level message from the server's per-account result.
+  ///
+  /// The `sendOobCode` HTTP STATUS CODE is included whenever the server
+  /// reached the endpoint (e.g. `sendOobCode 400: INVALID_ID_TOKEN`) so a
+  /// failure is diagnosable straight from the portal instead of a bare
+  /// "could not be delivered".
+  @visibleForTesting
+  static String describeOne({
+    required bool delivered,
+    int? statusCode,
+    String? reason,
+    String? link,
+  }) {
+    if (delivered) return 'Verification email sent.';
+    final code = statusCode == null ? '' : 'sendOobCode $statusCode: ';
+    if (link != null && link.isNotEmpty) {
+      return 'No API key configured — verification link generated. '
+          'Deliver it manually.';
+    }
+    final detail = (reason == null || reason.isEmpty)
+        ? 'the email could not be delivered'
+        : reason;
+    return '$code$detail';
+  }
+
+  /// Builds the bulk summary, appending the distinct failure status codes so
+  /// "Resent to 0 of 12." becomes "Resent to 0 of 12 (sendOobCode 400)."
+  @visibleForTesting
+  static String describeBulk({
+    required int delivered,
+    required int total,
+    required Set<int> statusCodes,
+  }) {
+    final base = 'Resent to $delivered of $total.';
+    if (delivered == total || statusCodes.isEmpty) return base;
+    final codes = (statusCodes.toList()..sort()).join(', ');
+    return '$base (sendOobCode $codes)';
   }
 
   /// Resends to a capped batch of accounts. The server enforces the cap; the
@@ -133,7 +205,7 @@ class AdminVerificationResendService {
       );
     }
     try {
-      final res = await http.post(
+      final res = await _post(
         Uri.parse(_endpoint(resendBulkCallable)),
         headers: {
           'Content-Type': 'application/json',
@@ -148,15 +220,23 @@ class AdminVerificationResendService {
         final result = decoded['result'];
         if (result is Map) {
           final results = (result['results'] as List?) ?? const [];
-          final delivered = results
-              .whereType<Map>()
-              .where((r) => r['delivered'] == true)
-              .length;
+          final maps = results.whereType<Map>();
+          final delivered = maps.where((r) => r['delivered'] == true).length;
+          final statusCodes = <int>{};
+          for (final r in maps) {
+            final code = (r['statusCode'] as num?)?.toInt();
+            if (code != null) statusCodes.add(code);
+          }
           return BulkResendOutcome(
             delivered: delivered,
             processed: (result['processed'] as num?)?.toInt() ?? results.length,
             skipped: (result['skipped'] as num?)?.toInt() ?? 0,
-            message: 'Resent to $delivered of ${results.length}.',
+            statusCodes: statusCodes.toList(growable: false),
+            message: describeBulk(
+              delivered: delivered,
+              total: results.length,
+              statusCodes: statusCodes,
+            ),
           );
         }
       }
@@ -164,6 +244,7 @@ class AdminVerificationResendService {
         delivered: 0,
         processed: 0,
         skipped: 0,
+        statusCodes: [res.statusCode],
         message: errorMessageFor(res, 'Bulk resend failed (${res.statusCode}).'),
       );
     } catch (e) {
@@ -214,7 +295,26 @@ class ResendOutcome {
   final bool delivered;
   final String message;
 
-  const ResendOutcome({required this.delivered, required this.message});
+  /// The `accounts:sendOobCode` HTTP status code, when the server reached the
+  /// endpoint. Surfaced in the row diagnostic (e.g. `400` for
+  /// `INVALID_ID_TOKEN`) — never a token.
+  final int? statusCode;
+
+  /// The server's failure reason, verbatim (e.g.
+  /// `send failed: 400: INVALID_ID_TOKEN`).
+  final String? reason;
+
+  /// The minted verification link, present ONLY on the no-API-key fallback
+  /// path (the admin delivers it manually). Null on a normal send.
+  final String? verificationLink;
+
+  const ResendOutcome({
+    required this.delivered,
+    required this.message,
+    this.statusCode,
+    this.reason,
+    this.verificationLink,
+  });
 }
 
 /// Outcome of a bulk resend.
@@ -224,10 +324,16 @@ class BulkResendOutcome {
   final int skipped;
   final String message;
 
+  /// The distinct `accounts:sendOobCode` status codes seen across the batch's
+  /// failures (empty when every attempt succeeded). Lets the portal show WHY
+  /// a batch failed without a per-row drill-down.
+  final List<int> statusCodes;
+
   const BulkResendOutcome({
     required this.delivered,
     required this.processed,
     required this.skipped,
     required this.message,
+    this.statusCodes = const [],
   });
 }

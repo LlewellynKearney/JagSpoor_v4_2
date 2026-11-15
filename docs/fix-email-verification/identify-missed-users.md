@@ -272,3 +272,77 @@ exact identity + missing role on failure, e.g.:
 > Auth Admin call rejected: the credential has insufficient permission.
 > Identity: 1234567890-compute@developer.gserviceaccount.com (source:
 > computeMetadata). Grant roles/firebaseauth.admin to this service account.
+
+---
+
+## 7. Follow-up fix — `400 INVALID_ID_TOKEN` on the send (2026-11-15)
+
+### 7.1 The failure
+
+Live log from the Admin Portal after the previous fix:
+
+```
+resendVerificationEmail: not delivered
+email: info@jag-spoor.co.za, linkGenerated: false
+reason: "send failed: 400: INVALID_ID_TOKEN"
+```
+
+### 7.2 Root cause
+
+The send called the **admin** Identity Toolkit endpoint
+(`projects/{projectId}/accounts:sendOobCode`) with the runtime **service
+account's OAuth token**. For `requestType: "VERIFY_EMAIL"` that endpoint
+authorizes on the **target user's `idToken`** — a service account is not a
+user, so Firebase rejects the call with `400 INVALID_ID_TOKEN`. The
+service-account token was simply the wrong credential for this endpoint.
+
+### 7.3 Fix — mint a user idToken, then send with it
+
+`functions/src/email_verification.ts` now performs the standard
+"act as the user from a trusted server" flow:
+
+1. `admin.auth().createCustomToken(uid)` — a signed custom token.
+2. `POST accounts:signInWithCustomToken?key=<API_KEY>`
+   `{token, returnSecureToken: true}` → that account's `idToken`.
+3. `POST accounts:sendOobCode?key=<API_KEY>`
+   `{requestType: "VERIFY_EMAIL", idToken}` — the real send.
+
+`?key=` is the **public Firebase Web API key** (not a secret — it already
+ships in every client build; see `lib/firebase_options.dart`). It only
+identifies the project; the send still requires a valid user idToken.
+`resolveApiKey()` reads `FIREBASE_API_KEY` from the environment first, then
+falls back to the compiled-in project web key.
+
+**Fallback (no API key configured):** `admin.auth()
+.generateEmailVerificationLink()` mints the SAME link the email would carry
+and returns it to the caller so the admin can deliver it. A real verification
+link — never SMTP. SMTP stays removed; do not reintroduce it.
+
+**IAM:** the pinned service account needs `roles/firebaseauth.admin` (to mint
+the custom token / look the user up). It no longer needs
+`firebaseauth.users.sendEmail`, because the mail is sent with the user's
+idToken.
+
+### 7.4 Diagnostics
+
+The `accounts:sendOobCode` HTTP **status code** is logged on failure (never a
+token) and surfaced in the portal:
+
+* per-row: `sendOobCode 400: send failed: 400: INVALID_ID_TOKEN`
+* bulk: `Resent to 0 of 12. (sendOobCode 400)`
+
+`isInvalidIdTokenError()` names the service-account-token bug explicitly so a
+recurrence is obvious.
+
+### 7.5 Verify
+
+Set `FIREBASE_API_KEY` (optional — the default already works) and deploy:
+
+```bash
+cd functions && npm run build && npm test
+firebase deploy --only functions:resendVerificationEmail,resendVerificationEmailsBulk
+```
+
+Then re-run **Resend to No Role** (or a single RESEND) in Admin Portal V2.
+The account should receive the Firebase verification email, and the audit
+trail on `users/{uid}` should show `verificationEmailSent: true`.

@@ -1,6 +1,120 @@
 # JagSpoor -- Agent Memory
 
 
+## FIX: sendOobCode with a USER idToken via a custom token (added 2026-11-15)
+
+Branch `fix/email-verification-not-sending` (base `e10646c`, the "resend via
+Firebase sender, drop custom SMTP" commit). **NOT merged, NOT deployed.**
+
+### The reported failure (live log, new code)
+```
+resendVerificationEmail: not delivered
+email: info@jag-spoor.co.za, linkGenerated: false
+reason: "send failed: 400: INVALID_ID_TOKEN"
+```
+
+### Root cause
+The previous fix called the **admin** Identity Toolkit endpoint
+(`projects/{projectId}/accounts:sendOobCode`) with the runtime **service
+account's OAuth token**. For `requestType: "VERIFY_EMAIL"` that endpoint
+authorizes on the **target user's `idToken`** — a service account is not a
+user, so Firebase answers `400 INVALID_ID_TOKEN`. The service-account token
+was the wrong credential for the endpoint; the `?key=`-style public endpoint
+is the one that takes a user idToken.
+
+### The fix (`functions/src/email_verification.ts`)
+`sendVerificationEmailViaFirebase(uid, email)` now performs the standard
+"act as the user from a trusted server" flow:
+1. `admin.auth().createCustomToken(uid)` (new `mintCustomToken`).
+2. `POST accounts:signInWithCustomToken?key=<API_KEY>` with
+   `{token, returnSecureToken: true}` -> that account's `idToken`
+   (new `mintUserIdToken`).
+3. `POST accounts:sendOobCode?key=<API_KEY>` with
+   `{requestType: "VERIFY_EMAIL", idToken}` (new `sendOobCodeEndpoint`).
+
+- `sendOobCodeEndpoint(apiKey)` now returns the **public** endpoint
+  `.../v1/accounts:sendOobCode?key=<API_KEY>` (was the `projects/...` admin
+  path). A new `signInWithCustomTokenEndpoint(apiKey)` builds step 2.
+- `?key=` is the **public Firebase Web API key** — NOT a secret (it already
+  ships in every client build). `FIREBASE_WEB_API_KEY_DEFAULT` is the
+  project's web key; `resolveApiKey()` prefers the `FIREBASE_API_KEY` env var
+  then that default. The send still needs a valid user idToken, so the key
+  alone grants nothing.
+- The service-account OAuth token is **never** sent to `sendOobCode` (the
+  removed `setAccessTokenResolverForTesting` / `resolveSenderAccessToken`).
+  The unused `credential` import is gone.
+- **No-API-key fallback**: `admin.auth().generateEmailVerificationLink()`
+  (new `mintVerificationLink`) returns the SAME link the email would carry so
+  the admin can deliver it. A real verification link — **no SMTP / no
+  `EMAIL_PASS`** (SMTP stays removed; do not reintroduce it).
+- `REQUIRED_AUTH_SEND_EMAIL_PERMISSION` (the old
+  `firebaseauth.users.sendEmail` requirement) is replaced by
+  `REQUIRED_AUTH_CUSTOM_TOKEN_PERMISSION` (`firebaseauth.users.get`) — the
+  pinned service account needs `roles/firebaseauth.admin` to mint the custom
+  token, and no longer needs the send-email permission.
+
+### Diagnostics (the response CODE, never a token)
+- `ResendResult` gained `statusCode` (the `sendOobCode` HTTP code) and
+  `verificationLink` (the fallback link). `resendOne` logs
+  `sendOobCode failed { uid, statusCode, reason }` and returns the code;
+  `httpStatusOf(err)` extracts it from the thrown error's `httpStatus`/`code`.
+- `isInvalidIdTokenError(err)` names the service-account-token bug so a
+  recurrence is obvious.
+- Client (`AdminVerificationResendService`): `ResendOutcome` gained
+  `statusCode` / `reason` / `verificationLink`; `BulkResendOutcome` gained
+  `statusCodes`. New public pure `describeOne` / `describeBulk` render e.g.
+  `sendOobCode 400: send failed: 400: INVALID_ID_TOKEN` and
+  `Resent to 0 of 12. (sendOobCode 400)`. A new `httpClientForTesting` seam
+  makes the response-parsing path testable.
+- The Admin Portal card keeps a **persistent per-row** diagnostic
+  (`_failureReasons` -> `adminV2ResendReason_<uid>`) so the code survives the
+  transient snackbar, and the bulk snackbar appends the distinct status codes.
+
+### Tests
+- `functions/test/email_verification.test.js`: rewrote the send-path tests for
+  the two-step flow — asserts EXACTLY two HTTP calls
+  (`signInWithCustomToken` then `sendOobCode`), that the send body carries the
+  **user idToken** (not an email, and NO `Authorization` Bearer header), that
+  the public `?key=` endpoint is used (not `projects/...`), that a 400
+  propagates its status code, and that the no-API-key path returns a link.
+  **42/42 pass** (functions suite **232/232**).
+- `test/admin_verification_resend_test.dart` +8: `describeOne` / `describeBulk`
+  copy, the `resendOne`/`resendBulk` response parsing (status code + reason +
+  fallback link via the `httpClientForTesting` stub), and the persistent
+  per-row diagnostic widget test. **53/53 pass**.
+
+### Verification
+- `cd functions && npm run build` (tsc) clean; `npm test` **232/232 pass**.
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
+  (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`):
+  **2699 passed, 1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape while the trigger is v2 `onUserCreated`), PROVEN pre-existing by
+  `git stash -u` and re-running at the clean base (identical failure). It
+  touches no file in this change.
+- Env: Flutter **3.44.9** cloned to `/tmp/flutter_sdk` (the sandbox had no
+  SDK and no `unzip`; a Python `unzip` shim that restores exec bits lives at
+  `~/bin/unzip`). `pubspec.lock` drift from `pub get` (test-only transitive
+  bumps: matcher/meta/test/test_api/test_core) reverted.
+
+### Constraints honoured
+No merge; no Web deploy; no `admin_config` / `min_required_version` change;
+no SMTP / `EMAIL_PASS` reintroduction.
+
+### Files
+- MODIFIED: `functions/src/email_verification.ts`,
+  `functions/src/index.ts`, `functions/test/email_verification.test.js`,
+  `lib/features/admin/services/admin_verification_resend_service.dart`,
+  `lib/features/admin/widgets/admin_verification_card.dart`,
+  `test/admin_verification_resend_test.dart`,
+  `docs/fix-email-verification/identify-missed-users.md`, `AGENTS.md`.
+- Deploy reminder: `firebase deploy --only
+  functions:resendVerificationEmail,resendVerificationEmailsBulk` in a
+  credentialed env. Optionally set `FIREBASE_API_KEY` (the default already
+  works). Ensure the pinned SA holds `roles/firebaseauth.admin`.
+
+
 ## FIX: resend via Firebase sender, drop custom SMTP (added 2026-11-15)
 
 Branch `fix/email-verification-not-sending` (base `2bb2d66`, the SA-pinning

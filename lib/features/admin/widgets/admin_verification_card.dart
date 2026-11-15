@@ -65,6 +65,11 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
   /// uids that were successfully resent this session (row shows a tick).
   final Set<String> _sentUids = {};
 
+  /// uid -> the last failure reason, so the row keeps a PERSISTENT diagnostic
+  /// (the snackbar is transient). Includes the `sendOobCode` status code when
+  /// the server reached the endpoint.
+  final Map<String, String> _failureReasons = {};
+
   List<AdminVerificationTarget> get _targets =>
       widget.records.map((r) => r.verificationTarget).toList();
 
@@ -106,7 +111,12 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
     if (!mounted) return;
     setState(() {
       _busyUids.remove(target.uid);
-      if (outcome.delivered) _sentUids.add(target.uid);
+      if (outcome.delivered) {
+        _sentUids.add(target.uid);
+        _failureReasons.remove(target.uid);
+      } else {
+        _failureReasons[target.uid] = outcome.message;
+      }
     });
     _showMessage(outcome.message, error: !outcome.delivered);
   }
@@ -160,14 +170,17 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
       // credential/IAM `failed-precondition`, `outcome.message` carries the
       // actionable diagnostic (the exact service account + the missing role).
       // Showing "0 of 0" here is what hid the real problem — surface the
-      // diagnostic instead.
+      // diagnostic instead. `outcome.message` also names the sendOobCode
+      // status code for a per-account failure.
       _showMessage(outcome.message, error: true);
       return;
     }
     _showMessage(
       'Resent to ${outcome.delivered} of ${outcome.processed}'
-      '${outcome.skipped > 0 ? ' (${outcome.skipped} skipped by the cap)' : ''}.',
-      error: false,
+      '${outcome.skipped > 0 ? ' (${outcome.skipped} skipped by the cap)' : ''}'
+      '${outcome.statusCodes.isNotEmpty ? ' (sendOobCode '
+          '${outcome.statusCodes.join(', ')})' : ''}.',
+      error: outcome.statusCodes.isNotEmpty,
     );
   }
 
@@ -395,6 +408,7 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
   Widget _row(ThemeController theme, AdminVerificationTarget target) {
     final busy = _busyUids.contains(target.uid);
     final sent = _sentUids.contains(target.uid);
+    final failure = _failureReasons[target.uid];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -420,6 +434,24 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
                     fontSize: 10,
                   ),
                 ),
+                // The PERSISTENT diagnostic: the sendOobCode status code + the
+                // server reason survive the transient snackbar, so the admin
+                // can read WHY the send failed (e.g. `sendOobCode 400:
+                // INVALID_ID_TOKEN`) while fixing it.
+                if (failure != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      failure,
+                      key: ValueKey('adminV2ResendReason_${target.uid}'),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
