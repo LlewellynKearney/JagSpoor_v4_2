@@ -182,27 +182,67 @@ is unauthenticated here).
 
 If the resend still returns that error, the function is running as an identity
 that lacks **`roles/firebaseauth.admin`** ("Firebase Authentication Admin").
-Use the new diagnostic (the error message now names the identity) plus these
-checks:
+Both resend functions are now **pinned to the Admin SDK service account** in
+code, so this should no longer happen — but the checks below remain useful if a
+manual Cloud Run change or a stray key re-appears.
+
+### 6.0 The pin (why the two functions can no longer drift)
+
+`functions/src/email_verification.ts` exports ONE shared options factory and
+BOTH callables use it:
+
+```ts
+export const RESEND_SERVICE_ACCOUNT =
+  "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com";
+
+export function resendCallableOptions() {
+  return {
+    region: "us-central1",
+    maxInstances: 10,
+    secrets: [emailPass],
+    serviceAccount: RESEND_SERVICE_ACCOUNT,   // <- pins BOTH functions
+  };
+}
+```
+
+`resendVerificationEmail` and `resendVerificationEmailsBulk` are both declared
+with `onCall(resendCallableOptions(), …)`. The Firebase CLI writes
+`serviceAccountEmail` onto each deployed Cloud Run revision from this option, so
+**every deploy overwrites any manual change** and the two functions are always
+identical. Previously the bulk function had been re-pointed by hand while the
+singular one was left on the project's default compute account — that drift is
+now structurally impossible, and a test asserts the two compiled endpoints carry
+the same `serviceAccountEmail`.
 
 ### 6.1 Which service account does the function actually use?
 
 The resend functions are **2nd gen**, so each is backed by a **Cloud Run
-service**. Cloud Console → **Cloud Run → `resendverificationemailsbulk` →
-Security → Service account**. That field is the account that needs the role —
-it is **not** necessarily one of the two accounts in the IAM screenshots
-(`firebase-adminsdk-fbsvc@…` is the Admin SDK service account used by tooling;
-`jagspoor@appspot.gserviceaccount.com` is the App Engine default). The 2nd-gen
-default runtime identity is usually
-`<project-number>-compute@developer.gserviceaccount.com` unless a
-`serviceAccount` was set on the function.
+service**. Cloud Console → **Cloud Run → `resendverificationemail` (and
+`resendverificationemailsbulk`) → Security → Service account**. That field is the
+account that needs the role. With the pin in place it reads
+`firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com`.
 
 Equivalent CLI:
 
 ```bash
-gcloud run services describe resendverificationemailsbulk \
+gcloud run services describe resendverificationemail \
   --region us-central1 --format='value(spec.template.spec.serviceAccountName)'
 ```
+
+### 6.1a The error names the identity itself
+
+The credential diagnostic resolves the runtime service account from the
+**metadata server** (`/compute/v1/instance/service-accounts/default/email`) and
+the `FUNCTION_IDENTITY` / `K_SERVICE` env vars, so the failure message names the
+exact service account rather than telling you to go look it up:
+
+> Auth Admin call rejected: the credential has insufficient permission.
+> Identity: firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com
+> (source: computeMetadata). Grant roles/firebaseauth.admin to this service
+> account.
+
+When the identity genuinely cannot be resolved (e.g. a local emulator) the
+message falls back to the placeholder — production always resolves it.
 
 ### 6.2 Grant the role to THAT account
 

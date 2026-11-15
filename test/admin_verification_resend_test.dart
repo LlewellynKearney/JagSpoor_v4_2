@@ -387,6 +387,58 @@ void main() {
       expect(launched!.path, 'support@jag-spoor.co.za');
     });
 
+    testWidgets('the no-role bulk action surfaces a server diagnostic (not "0 of 0")',
+        (tester) async {
+      // The server returns failed-precondition with the actionable diagnostic
+      // when EVERY attempt was denied for IAM reasons. The card must show that
+      // diagnostic — the old code showed a bare "Resent to 0 of 0." which hid
+      // the real problem.
+      const diagnostic =
+          'Auth Admin call rejected: the credential has insufficient '
+          'permission. Identity: 475471855344-compute@developer.gserviceaccount.com '
+          '(source: computeMetadata). Grant roles/firebaseauth.admin to this '
+          'service account.';
+      await tester.pumpWidget(build(
+        records: [rec('n1'), rec('n2')],
+        resendBulk: (uids) async => const BulkResendOutcome(
+          delivered: 0,
+          processed: 0,
+          skipped: 0,
+          message: diagnostic,
+        ),
+      ));
+      await tester.tap(
+          find.byKey(const ValueKey('adminV2ResendNoRoleButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('adminV2ConfirmBulkResend')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('roles/firebaseauth.admin'), findsOneWidget);
+      expect(
+        find.textContaining('475471855344-compute@developer.gserviceaccount.com'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('0 of 0'), findsNothing);
+    });
+
+    testWidgets('a successful no-role bulk resend reports the delivered count',
+        (tester) async {
+      await tester.pumpWidget(build(
+        records: [rec('n1'), rec('n2')],
+        resendBulk: (uids) async => BulkResendOutcome(
+          delivered: uids.length,
+          processed: uids.length,
+          skipped: 0,
+          message: 'ok',
+        ),
+      ));
+      await tester.tap(
+          find.byKey(const ValueKey('adminV2ResendNoRoleButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('adminV2ConfirmBulkResend')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Resent to 2 of 2'), findsOneWidget);
+    });
+
     testWidgets('a non-admin sees the counts but every action is disabled',
         (tester) async {
       await tester.pumpWidget(build(

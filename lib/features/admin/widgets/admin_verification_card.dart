@@ -155,10 +155,19 @@ class _AdminVerificationCardState extends State<AdminVerificationCard> {
     final outcome = await _resendBulk(batch.map((t) => t.uid).toList());
     if (!mounted) return;
     setState(() => _bulkBusy = false);
+    if (outcome.delivered == 0) {
+      // Nothing was delivered. When the server rejected the run with a
+      // credential/IAM `failed-precondition`, `outcome.message` carries the
+      // actionable diagnostic (the exact service account + the missing role).
+      // Showing "0 of 0" here is what hid the real problem — surface the
+      // diagnostic instead.
+      _showMessage(outcome.message, error: true);
+      return;
+    }
     _showMessage(
       'Resent to ${outcome.delivered} of ${outcome.processed}'
       '${outcome.skipped > 0 ? ' (${outcome.skipped} skipped by the cap)' : ''}.',
-      error: outcome.delivered == 0,
+      error: false,
     );
   }
 

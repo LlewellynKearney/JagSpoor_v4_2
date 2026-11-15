@@ -1,7 +1,13 @@
 import { logger } from "firebase-functions/v2";
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
-import { auth, firestore, describeCredential, type CredentialDiagnostic } from "./firebase";
+import {
+  auth,
+  firestore,
+  describeCredential,
+  resolveRuntimeServiceAccountEmail,
+  type CredentialDiagnostic,
+} from "./firebase";
 import { emailPass } from "./params";
 import {
   EmailNotificationKind,
@@ -95,10 +101,43 @@ export interface ResendDiagnostic {
   explicitCredential: boolean;
   /** The raw credential class name (e.g. ServiceAccountCredential). */
   credentialClass: string;
+  /** The Cloud Run service name (`K_SERVICE`) when known. */
+  cloudRunService?: string | null;
 }
 
 /** The IAM role the resend functions need on their service account. */
 export const REQUIRED_AUTH_ADMIN_ROLE = "roles/firebaseauth.admin";
+
+/**
+ * The service account BOTH resend functions are pinned to.
+ *
+ * The two functions were originally left on the project's default compute
+ * service account (`<project-number>-compute@developer.gserviceaccount.com`),
+ * which does NOT hold Firebase Authentication Admin. The bulk function was
+ * later re-pointed at the Admin SDK account by hand — but the singular one was
+ * missed, so the two drifted apart and only the bulk path worked. Pinning BOTH
+ * to the SAME account here (via the `serviceAccount` deploy option) makes the
+ * divergence impossible: the CLI applies this on every deploy, overwriting any
+ * manual change.
+ *
+ * The email is a NON-SECRET identifier; the account is a deploy-time IAM
+ * identity, not a credential.
+ */
+export const RESEND_SERVICE_ACCOUNT =
+  "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com";
+
+/**
+ * The shared `onCall` options for BOTH resend callables. Identical by
+ * construction so the two functions can never be configured differently.
+ */
+export function resendCallableOptions() {
+  return {
+    region: "us-central1" as const,
+    maxInstances: 10,
+    secrets: [emailPass],
+    serviceAccount: RESEND_SERVICE_ACCOUNT,
+  };
+}
 
 /** True when an error is the Admin SDK "insufficient permission" Auth error. */
 export function isInsufficientPermissionError(err: unknown): boolean {
@@ -115,21 +154,30 @@ export function isInsufficientPermissionError(err: unknown): boolean {
 /**
  * Builds the actionable diagnostic for a credential failure. Pure +
  * testable; takes the credential descriptor so a test can inject one.
+ *
+ * `runtimeServiceAccount` is the email resolved from the metadata server / env
+ * (see `resolveRuntimeServiceAccountEmail`); when present it is used to NAME
+ * the identity instead of the placeholder that told the operator to go find it
+ * in the Cloud Run console.
  */
 export function buildResendDiagnostic(
   err: unknown,
-  cred: CredentialDiagnostic
+  cred: CredentialDiagnostic,
+  runtimeServiceAccount?: string | null
 ): ResendDiagnostic {
   const e = err as { code?: string; message?: string };
   const identity =
     cred.serviceAccount ??
+    runtimeServiceAccount ??
     (cred.source === "computeMetadata"
       ? "(runtime service account — resolve via Cloud Run console)"
       : "(unknown service account)");
   const rootCause = cred.explicitCredential
     ? "an explicit credential was passed to initializeApp() — remove it so " +
       "the function uses its runtime service account"
-    : "the function's runtime service account is missing the role";
+    : `the function's runtime service account is missing the role; the ` +
+      `function should be pinned to ${RESEND_SERVICE_ACCOUNT} (the Admin SDK ` +
+      `account) via the serviceAccount deploy option`;
   return {
     code: (e?.code ?? "insufficient-permission").toString(),
     message:
@@ -138,10 +186,11 @@ export function buildResendDiagnostic(
       `Grant ${REQUIRED_AUTH_ADMIN_ROLE} to this service account. ` +
       `Likely root cause: ${rootCause}.`,
     missingRole: REQUIRED_AUTH_ADMIN_ROLE,
-    serviceAccount: cred.serviceAccount,
+    serviceAccount: cred.serviceAccount ?? runtimeServiceAccount ?? null,
     credentialSource: cred.source,
     explicitCredential: cred.explicitCredential,
     credentialClass: cred.credentialClass,
+    cloudRunService: cred.cloudRunService ?? null,
   };
 }
 
@@ -172,7 +221,7 @@ export function buildVerificationEmailBody(
  * the support mailbox; records the outcome on `users/{uid}`.
  */
 export const resendVerificationEmail = onCall(
-  { region: "us-central1", maxInstances: 10, secrets: [emailPass] },
+  resendCallableOptions(),
   async (req: CallableRequest<{ uid?: string }>): Promise<ResendResult> => {
     const caller = req.auth;
     if (!caller || !caller.uid) {
@@ -210,7 +259,7 @@ export const resendVerificationEmail = onCall(
  * results plus the number skipped by the cap.
  */
 export const resendVerificationEmailsBulk = onCall(
-  { region: "us-central1", maxInstances: 10, secrets: [emailPass] },
+  resendCallableOptions(),
   async (
     req: CallableRequest<{ uids?: string[] }>
   ): Promise<{
@@ -284,6 +333,43 @@ async function assertAdmin(caller: CallableRequest["auth"]): Promise<void> {
   }
 }
 
+/**
+ * Memoised runtime service-account email.
+ *
+ * Resolved from the metadata server / env on the FIRST credential failure only
+ * (the happy path never pays for it), then cached for the process lifetime —
+ * the identity cannot change while the container is running.
+ */
+let runtimeServiceAccountCache: string | null | undefined;
+
+/** Test seam: override the resolved runtime SA (null = "unknown"). */
+export function setRuntimeServiceAccountForTesting(value: string | null): void {
+  runtimeServiceAccountCache = value;
+}
+
+/** Test seam: reset the memoised runtime SA so it re-resolves. */
+export function resetRuntimeServiceAccountForTesting(): void {
+  runtimeServiceAccountCache = undefined;
+}
+
+async function runtimeServiceAccountEmail(): Promise<string | null> {
+  if (runtimeServiceAccountCache !== undefined) {
+    return runtimeServiceAccountCache;
+  }
+  runtimeServiceAccountCache = await resolveRuntimeServiceAccountEmail();
+  return runtimeServiceAccountCache;
+}
+
+/**
+ * Builds the credential diagnostic for an Auth Admin failure, naming the exact
+ * runtime service account (resolved from the metadata server / env) instead of
+ * the "resolve via Cloud Run console" placeholder.
+ */
+async function diagnosticFor(err: unknown): Promise<ResendDiagnostic> {
+  const runtimeSa = await runtimeServiceAccountEmail();
+  return buildResendDiagnostic(err, describeCredential(), runtimeSa);
+}
+
 /** Resends to one uid, recording the outcome. Never throws for a per-account
  * failure (a missing user / mail failure is reported in the result). */
 async function resendOne(uid: string): Promise<ResendResult> {
@@ -299,7 +385,7 @@ async function resendOne(uid: string): Promise<ResendResult> {
   } catch (err) {
     const reason = `lookup failed: ${describe(err)}`;
     const diagnostic = isInsufficientPermissionError(err)
-      ? buildResendDiagnostic(err, describeCredential())
+      ? await diagnosticFor(err)
       : undefined;
     if (diagnostic) {
       logger.error("resendOne: Auth Admin lookup DENIED (IAM)", {
@@ -320,7 +406,7 @@ async function resendOne(uid: string): Promise<ResendResult> {
   } catch (err) {
     const reason = `link generation failed: ${describe(err)}`;
     const diagnostic = isInsufficientPermissionError(err)
-      ? buildResendDiagnostic(err, describeCredential())
+      ? await diagnosticFor(err)
       : undefined;
     if (diagnostic) {
       logger.error("resendOne: generateEmailVerificationLink DENIED (IAM)", {

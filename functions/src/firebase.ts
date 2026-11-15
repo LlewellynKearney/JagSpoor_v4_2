@@ -69,6 +69,8 @@ export interface CredentialDiagnostic {
   projectId: string | null;
   /** The service-account email the credential acts as, when determinable. */
   serviceAccount: string | null;
+  /** The Cloud Run service name (`K_SERVICE`), when running in the runtime. */
+  cloudRunService?: string | null;
 }
 
 /** Reads a non-empty trimmed string, else null. */
@@ -76,6 +78,66 @@ function asText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The GCE/Cloud-Run metadata server host. `GCE_METADATA_HOST` is honoured (the
+ * same env var `google-auth-library` reads) so an emulator / test can point it
+ * elsewhere; otherwise the production metadata host is used.
+ */
+export function metadataHost(): string {
+  return asText(process.env.GCE_METADATA_HOST) ?? "metadata.google.internal";
+}
+
+/** The metadata path that returns the runtime service account's email. */
+export const METADATA_SA_EMAIL_PATH =
+  "/computeMetadata/v1/instance/service-accounts/default/email";
+
+/** How long to wait for the metadata server before giving up (ms). */
+export const METADATA_TIMEOUT_MS = 800;
+
+/**
+ * Resolves the RUNTIME service account's email from the environment / metadata
+ * server, so a credential diagnostic can name the exact identity instead of
+ * "(runtime service account — resolve via Cloud Run console)".
+ *
+ * Resolution order:
+ *   1. `FUNCTION_IDENTITY` — 1st-gen functions export the identity directly.
+ *   2. The metadata server (`/computeMetadata/v1/instance/service-accounts/
+ *      default/email`) — the authoritative source for 2nd-gen Cloud Run
+ *      functions, which run as a service account with no email in the env.
+ *   3. `SERVICE_ACCOUNT_EMAIL` / `FIREBASE_SERVICE_ACCOUNT_EMAIL` env aliases,
+ *      when an operator sets one explicitly.
+ *
+ * Best-effort + bounded: never throws, times out fast, and returns null when
+ * the identity cannot be determined (e.g. local emulator). The result is
+ * NON-SECRET — a service-account email is an identifier, not a credential.
+ */
+export async function resolveRuntimeServiceAccountEmail(): Promise<
+  string | null
+> {
+  const fromEnv =
+    asText(process.env.FUNCTION_IDENTITY) ??
+    asText(process.env.SERVICE_ACCOUNT_EMAIL) ??
+    asText(process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL);
+  if (fromEnv) return fromEnv;
+
+  const url = `http://${metadataHost()}${METADATA_SA_EMAIL_PATH}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { "Metadata-Flavor": "Google" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const text = (await res.text()).trim();
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -120,6 +182,7 @@ export function describeCredential(): CredentialDiagnostic {
         // the class above (computeMetadata) is the decisive signal.
         asText(process.env.FUNCTION_IDENTITY) ??
         null,
+      cloudRunService: asText(process.env.K_SERVICE),
     };
   } catch (err) {
     return {
@@ -128,6 +191,7 @@ export function describeCredential(): CredentialDiagnostic {
       source: "unknown",
       projectId: null,
       serviceAccount: null,
+      cloudRunService: asText(process.env.K_SERVICE),
     };
   }
 }

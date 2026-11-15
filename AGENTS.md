@@ -1,5 +1,109 @@
 # JagSpoor -- Agent Memory
 
+## FIX: pin BOTH resend functions to the Admin SDK SA + name the SA in the diagnostic (added 2026-11-15)
+
+Branch `fix/email-verification-not-sending` (base `main` @ `5ee7f92`, v4.2.28+28).
+**NOT merged, NOT deployed. Web NOT deployed. `admin_config` /
+`min_required_version` NOT touched.**
+
+### THE BUG (the singular function had drifted)
+The user re-pointed **`resendverificationemailsbulk`** at
+`firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com` by hand and
+redeployed — but **`resendverificationemail` (singular) was left on
+`475471855344-compute@developer.gserviceaccount.com`**, which lacks
+`roles/firebaseauth.admin`. So the individual RESEND row failed with the red
+"Auth Admin call rejected: credential has insufficient permission … Grant
+roles/firebaseauth.admin", the bulk button showed "(12)" but returned "0 of 0",
+and every individual row showed Failed.
+
+### 1. Pin BOTH functions to the SAME SA (no drift possible)
+`functions/src/email_verification.ts`:
+- NEW `RESEND_SERVICE_ACCOUNT =
+  "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com"` — the non-secret
+  deploy identity both functions run as.
+- NEW `resendCallableOptions()` — ONE shared `onCall` options object
+  (`region` / `maxInstances` / `secrets: [emailPass]` / **`serviceAccount:
+  RESEND_SERVICE_ACCOUNT`**). BOTH callables are now declared
+  `onCall(resendCallableOptions(), …)`, so the two can never be configured
+  differently. The Firebase CLI writes `serviceAccountEmail` onto each
+  Cloud Run revision from this option, so **every deploy overwrites a manual
+  change** — the divergence is structurally impossible.
+- The previous inline options objects were removed (a structural test asserts
+  no `onCall( { region: …` survives).
+
+### 2. The diagnostic NAMES the runtime SA (no console lookup)
+`functions/src/firebase.ts`:
+- NEW `resolveRuntimeServiceAccountEmail()` — resolves the runtime service
+  account's email from `FUNCTION_IDENTITY` (1st-gen) /
+  `SERVICE_ACCOUNT_EMAIL` / `FIREBASE_SERVICE_ACCOUNT_EMAIL`, else the
+  **metadata server**
+  (`http://<GCE_METADATA_HOST>/computeMetadata/v1/instance/service-accounts/
+  default/email`, `Metadata-Flavor: Google`, 800 ms `AbortController` timeout).
+  Best-effort + never throws (a local emulator returns null).
+- `describeCredential()` now also reports `cloudRunService` (`K_SERVICE`).
+- `CredentialDiagnostic` gained the optional `cloudRunService` field.
+- `buildResendDiagnostic(err, cred, runtimeServiceAccount?)` — the new third
+  param is used to NAME the identity instead of the old
+  "(runtime service account — resolve via Cloud Run console)" placeholder, and
+  the non-explicit-credential root cause now names
+  `RESEND_SERVICE_ACCOUNT` as the account the function should be pinned to.
+- `ResendDiagnostic` gained `cloudRunService`.
+- `email_verification.ts`: the runtime SA is resolved **lazily + memoised**
+  (`runtimeServiceAccountEmail()`), so the happy path never pays for a metadata
+  call; test seams `setRuntimeServiceAccountForTesting` /
+  `resetRuntimeServiceAccountForTesting`.
+
+### 3. Bulk: a full-denial returns `failed-precondition`, not "0 of 0"
+- Server: `resendVerificationEmailsBulk` already threw
+  `failed-precondition` when EVERY attempt carried a diagnostic — unchanged +
+  re-verified.
+- **Client** (`lib/features/admin/widgets/admin_verification_card.dart`): the
+  bulk handler now, when `outcome.delivered == 0`, surfaces
+  `outcome.message` (the server's actionable diagnostic — exact SA + missing
+  role) instead of the old `"Resent to 0 of 0."` snackbar that hid the cause.
+
+### Tests
+- `functions/test/email_verification.test.js` +8 (221 total): the pinned SA
+  constant; the shared options pin the SA + still mount `EMAIL_PASS`; **BOTH
+  compiled callables carry the SAME `serviceAccountEmail`** (asserted against
+  `__endpoint`, the CLI's source of truth) and neither is the compute default;
+  both callables use the shared options factory (no inline object);
+  `buildResendDiagnostic` names a resolved runtime SA with NO console
+  placeholder; the pinned-SDK guidance appears when no SA resolves; the
+  metadata path + `FUNCTION_IDENTITY` resolution.
+- `test/admin_verification_resend_test.dart` +2 (23 total): the no-role bulk
+  action surfaces the server diagnostic (never "0 of 0"); a successful bulk
+  reports the delivered count.
+
+### Verification (this sandbox)
+- `cd functions && npm run build` (tsc): clean; `npm test`: **221/221 pass**
+  (was 213).
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
+  (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2691 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), proven
+  pre-existing by `git stash -u` (identical failure); it touches no file in
+  this change.
+- Env: Flutter **3.44.9** cloned to `/tmp/flutter`; the engine bootstrap needs
+  `unzip` — apt has none here, so a Python `unzip` shim lives at
+  `~/bin/unzip` (on PATH); `~/libs/libsqlite3.so -> libsqlite3.so.0` for the
+  sqflite-FFI suites; `pubspec.lock` / `analysis_options.yaml` drift from
+  `pub get` reverted.
+
+### Constraints honoured
+No merge; no deploy (hosting/web NOT deployed); no `admin_config` /
+`min_required_version` change; no version bump.
+
+### Files
+- MODIFIED: `functions/src/email_verification.ts` (pin + shared options +
+  memoised runtime SA), `functions/src/firebase.ts`
+  (`resolveRuntimeServiceAccountEmail` + `cloudRunService`),
+  `functions/test/email_verification.test.js`,
+  `lib/features/admin/widgets/admin_verification_card.dart` (bulk diagnostic),
+  `test/admin_verification_resend_test.dart`,
+  `docs/fix-email-verification/identify-missed-users.md`, `AGENTS.md`.
+
 ## FIX: Email verification emails not sending + admin resend + identify missed users (added 2026-11-15)
 
 Branch `fix/email-verification-not-sending` (base `main` @ `5ee7f92`, v4.2.28+28).

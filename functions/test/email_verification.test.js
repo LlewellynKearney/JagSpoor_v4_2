@@ -14,6 +14,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ev = require("../lib/email_verification.js");
+const evFirebase = require("../lib/firebase.js");
 const audit = require("../lib/identify_missed_verification_users.js");
 
 const SRC = path.resolve(__dirname, "..", "src");
@@ -344,4 +345,143 @@ test("the resend callables surface the diagnostic (failed-precondition)", () => 
   assert.ok(/"failed-precondition"/.test(src));
   // The bulk surfaces it when EVERY attempt failed.
   assert.ok(/diagnostics\.length === results\.length/.test(src));
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Both resend functions MUST run as the Admin SDK service account.
+//
+// The singular function was left on the project's default compute account
+// (`<project-number>-compute@developer.gserviceaccount.com`) while the bulk
+// one was re-pointed at `firebase-adminsdk-fbsvc@…` by hand, so the two drifted
+// apart and only the bulk path could call the Auth Admin API. Pinning BOTH via
+// the `serviceAccount` deploy option (one shared options object) makes the
+// divergence impossible.
+// ────────────────────────────────────────────────────────────────────────────
+
+test("RESEND_SERVICE_ACCOUNT is the Admin SDK account", () => {
+  assert.equal(
+    ev.RESEND_SERVICE_ACCOUNT,
+    "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com"
+  );
+});
+
+test("the shared resend options pin the Admin SDK service account", () => {
+  const opts = ev.resendCallableOptions();
+  assert.equal(opts.serviceAccount, ev.RESEND_SERVICE_ACCOUNT);
+  assert.equal(opts.region, "us-central1");
+  // The SMTP secret must still be mounted.
+  assert.equal(opts.secrets.length, 1);
+  assert.equal(opts.secrets[0].name, "EMAIL_PASS");
+});
+
+test("BOTH compiled resend callables run as the SAME pinned service account", () => {
+  // The compiled endpoint is the source of truth the CLI deploys from — assert
+  // against it directly (not just the source text) so a drift cannot slip
+  // through.
+  const one = ev.resendVerificationEmail.__endpoint;
+  const bulk = ev.resendVerificationEmailsBulk.__endpoint;
+  assert.equal(
+    one.serviceAccountEmail,
+    "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com"
+  );
+  assert.equal(
+    bulk.serviceAccountEmail,
+    "firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com"
+  );
+  // The two must be IDENTICAL — this is the anti-drift contract.
+  assert.equal(one.serviceAccountEmail, bulk.serviceAccountEmail);
+  assert.equal(one.serviceAccountEmail, ev.RESEND_SERVICE_ACCOUNT);
+  // Neither may run as the default compute account.
+  for (const ep of [one, bulk]) {
+    assert.ok(
+      !/-compute@developer\.gserviceaccount\.com$/.test(
+        ep.serviceAccountEmail ?? ""
+      ),
+      `must not run as the compute default: ${ep.serviceAccountEmail}`
+    );
+  }
+});
+
+test("both callables declare the serviceAccount option (no drift possible)", () => {
+  const src = read(path.join(SRC, "email_verification.ts"));
+  // The two onCall() calls share ONE options factory, so they cannot differ.
+  const usesSharedOptions =
+    (src.match(/onCall\(\s*\n?\s*resendCallableOptions\(\)/g) || []).length;
+  assert.equal(
+    usesSharedOptions,
+    2,
+    "both callables must use the shared resendCallableOptions()"
+  );
+  // No inline options object survives (the old, drift-prone shape).
+  assert.ok(!/onCall\(\s*\n?\s*\{\s*region:/.test(src));
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// The diagnostic must NAME the runtime service account, resolved from the
+// metadata server / env — not the "(runtime service account — resolve via
+// Cloud Run console)" placeholder.
+// ────────────────────────────────────────────────────────────────────────────
+
+test("buildResendDiagnostic names the resolved runtime SA (no placeholder)", () => {
+  const d = ev.buildResendDiagnostic(
+    { code: "auth/insufficient-permission" },
+    {
+      explicitCredential: false,
+      credentialClass: "ComputeEngineCredential",
+      source: "computeMetadata",
+      projectId: "jagspoor",
+      serviceAccount: null,
+      cloudRunService: "resendverificationemail",
+    },
+    "475471855344-compute@developer.gserviceaccount.com"
+  );
+  assert.ok(
+    d.message.includes("475471855344-compute@developer.gserviceaccount.com"),
+    "the diagnostic must name the exact runtime SA"
+  );
+  assert.ok(
+    !/resolve via Cloud Run console/.test(d.message),
+    "the placeholder must be gone when the SA is resolvable"
+  );
+  assert.equal(d.serviceAccount, "475471855344-compute@developer.gserviceaccount.com");
+  assert.equal(d.cloudRunService, "resendverificationemail");
+});
+
+test("buildResendDiagnostic still explains the pinned-SDK account on failure", () => {
+  const d = ev.buildResendDiagnostic(
+    { code: "auth/insufficient-permission" },
+    {
+      explicitCredential: false,
+      credentialClass: "ComputeEngineCredential",
+      source: "computeMetadata",
+      projectId: "jagspoor",
+      serviceAccount: null,
+    }
+  );
+  // No runtime SA supplied -> the placeholder remains as a last resort.
+  assert.ok(/runtime service account/i.test(d.message));
+  assert.ok(/firebase-adminsdk-fbsvc@jagspoor\.iam\.gserviceaccount\.com/.test(d.message));
+});
+
+test("resolveRuntimeServiceAccountEmail reads env first, then the metadata path", () => {
+  const src = read(path.join(SRC, "firebase.ts"));
+  assert.ok(src.includes("FUNCTION_IDENTITY"), "1st-gen identity env");
+  assert.ok(src.includes("K_SERVICE"), "Cloud Run service name");
+  assert.ok(
+    src.includes("instance/service-accounts/default/email"),
+    "metadata server email path"
+  );
+  assert.ok(src.includes("Metadata-Flavor"), "metadata header required");
+});
+
+test("resolveRuntimeServiceAccountEmail returns FUNCTION_IDENTITY when set", async () => {
+  const prev = process.env.FUNCTION_IDENTITY;
+  process.env.FUNCTION_IDENTITY = "runtime-sa@jagspoor.iam.gserviceaccount.com";
+  try {
+    const resolved = await evFirebase.resolveRuntimeServiceAccountEmail();
+    assert.equal(resolved, "runtime-sa@jagspoor.iam.gserviceaccount.com");
+  } finally {
+    if (prev === undefined) delete process.env.FUNCTION_IDENTITY;
+    else process.env.FUNCTION_IDENTITY = prev;
+  }
 });
