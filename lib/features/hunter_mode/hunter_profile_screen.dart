@@ -112,7 +112,7 @@ class _HunterProfileScreenState extends State<HunterProfileScreen> {
     final role = UserRoleProvider.instance.role;
     final route = switch (role) {
       AppRole.outfitter => '/outfitter_dashboard',
-      AppRole.admin => '/admin_dashboard',
+      AppRole.admin => '/admin_portal_v2',
       _ => '/hunter_dashboard',
     };
     Navigator.of(context).pushNamedAndRemoveUntil(route, (r) => false);

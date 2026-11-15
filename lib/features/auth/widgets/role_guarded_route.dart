@@ -116,7 +116,7 @@ class _RoleGuardedRouteState extends State<RoleGuardedRoute> {
 
     // Role-selection gate: this route only admits an account that has NOT yet
     // chosen a permanent role. Anyone who already has one is bounced to that
-    // role's home (an admin to /admin_dashboard, a hunter to
+    // role's home (an admin to /admin_portal_v2, a hunter to
     // /hunter_dashboard, …), so role selection can never be re-entered after
     // it is set.
     if (widget.roleSelectionGate) {

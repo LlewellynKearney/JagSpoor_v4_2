@@ -54,18 +54,26 @@ class AdminModeSwitcher extends StatelessWidget {
                 Icon(Icons.swap_horiz_rounded,
                     color: theme.accentColor, size: 18),
                 const SizedBox(width: 6),
-                Text(
-                  'INSTANT MODE SWITCHER',
-                  style: TextStyle(
-                    color: theme.accentColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                    letterSpacing: 1.2,
+                Flexible(
+                  child: Text(
+                    'INSTANT MODE SWITCHER',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.accentColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                 ),
                 const Spacer(),
                 Text(
                   showAdmin ? 'Superuser' : 'Dual Profile',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: theme.subtitleColor,
                     fontSize: 10,
@@ -163,7 +171,7 @@ class AdminModeSwitcher extends StatelessWidget {
     final route = switch (mode) {
       AdminMode.hunter => '/hunter_dashboard',
       AdminMode.outfitter => '/outfitter_dashboard',
-      AdminMode.admin => '/admin_dashboard',
+      AdminMode.admin => '/admin_portal_v2',
     };
     // Defense-in-depth: only admins may use the instant mode switcher. The
     // switcher button is only rendered for admins in the first place, but

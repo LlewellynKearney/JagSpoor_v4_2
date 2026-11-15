@@ -13,6 +13,7 @@ import '../pages/admin_bookings_page.dart';
 import '../pages/admin_packages_page.dart';
 import '../pages/admin_revenue_page.dart';
 import '../pages/admin_users_page.dart';
+import '../pages/admin_account_management_page.dart';
 import '../services/admin_analytics_service.dart';
 import '../services/admin_auth_guard.dart';
 import '../services/admin_operational_metrics_service.dart';
@@ -23,13 +24,14 @@ import '../widgets/admin_users_export_card.dart';
 import '../widgets/admin_v2_charts.dart';
 import '../widgets/admin_v2_common.dart';
 
-/// The Admin Portal V2 tab pages (Task 6).
+/// The Admin Portal V2 tab pages.
 enum AdminV2Tab {
   dashboard('Dashboard'),
   users('Users'),
   packages('Packages'),
   bookings('Bookings'),
-  revenue('Revenue');
+  revenue('Revenue'),
+  accountManagement('Account Management');
 
   const AdminV2Tab(this.label);
 
@@ -253,28 +255,32 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   /// [VersionInfo] (the same source as the profile / settings footer) and
   /// ellipsises rather than overflowing on a narrow phone header.
   Widget _buildHeaderTitle() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          '🛡️ Admin Portal V2',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
+    // Scaled down to fit so the wordmark AND the version label both stay fully
+    // readable on a narrow phone (the AppBar title box is ~232 px at 360 px).
+    // A plain Row (no Flexible) keeps both strings whole inside the FittedBox.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '🛡️ Admin Portal V2',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 8),
+          Text(
             _versionLabel,
             key: const ValueKey('adminV2VersionLabel'),
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: widget.theme.subtitleColor,
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -342,7 +348,10 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         return AdminRevenuePage(
           theme: widget.theme,
           metrics: _revenueMetrics,
+          subscriptionMetrics: _subscriptionMetrics,
         );
+      case AdminV2Tab.accountManagement:
+        return AdminAccountManagementPage(theme: widget.theme);
     }
   }
 
@@ -504,6 +513,11 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
               value: s.trialCount,
             ),
           ],
+        ),
+        AdminV2Note(
+          key: const ValueKey('adminV2DashSubscribersDefinition'),
+          theme: widget.theme,
+          text: s.subscribersDefinitionLabel,
         ),
         const SizedBox(height: 16),
 
@@ -1437,6 +1451,9 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
 
   /// A metric card. A `null` [value] with a [valueLabel] renders the label
   /// (e.g. a percentage); a `null` [value] with no label renders a dash.
+  ///
+  /// Delegates to the shared [AdminV2MetricCard] so the single-line label /
+  /// value contract (the mobile no-wrap fix) applies to every detail grid too.
   Widget _metricCard(
     IconData icon,
     String label,
@@ -1444,51 +1461,13 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
     String? valueLabel,
     Key? key,
   }) {
-    return Container(
+    return AdminV2MetricCard(
       key: key,
-      decoration: BoxDecoration(
-        color: widget.theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: widget.theme.textColor.withAlpha(15)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: widget.theme.accentColor, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: widget.theme.subtitleColor,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Text(
-            valueLabel ?? (value == null ? '—' : _formatCount(value)),
-            style: TextStyle(
-              color: widget.theme.textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 26,
-            ),
-          ),
-        ],
-      ),
+      theme: widget.theme,
+      icon: icon,
+      label: label,
+      value: value,
+      valueLabel: valueLabel,
     );
-  }
-
-  String _formatCount(int value) {
-    if (value >= 1000) {
-      final k = value / 1000;
-      return k == k.roundToDouble() ? '${k.toInt()}k' : '${k.toStringAsFixed(1)}k';
-    }
-    return value.toString();
   }
 }

@@ -47,12 +47,12 @@ void main() {
       );
     });
 
-    test('path deep link /admin resolves to the OLD portal (alias)', () {
-      expect(resolve(path: '/admin'), AppRoutes.adminDashboard);
+    test('path deep link /admin resolves to Admin Portal V2 (redirect)', () {
+      expect(resolve(path: '/admin'), AppRoutes.adminPortalV2);
     });
 
-    test('path deep link /admin_dashboard resolves to the OLD portal', () {
-      expect(resolve(path: '/admin_dashboard'), AppRoutes.adminDashboard);
+    test('path deep link /admin_dashboard resolves to Admin Portal V2', () {
+      expect(resolve(path: '/admin_dashboard'), AppRoutes.adminPortalV2);
     });
 
     test('path alias /admin-portal-v2 resolves to the V2 route', () {
@@ -110,8 +110,13 @@ void main() {
   });
 
   group('AppRouter.resolvePathAlias', () {
-    test('/admin keeps the OLD portal reachable', () {
-      expect(AppRouter.resolvePathAlias('/admin'), AppRoutes.adminDashboard);
+    test('/admin redirects to Admin Portal V2', () {
+      expect(AppRouter.resolvePathAlias('/admin'), AppRoutes.adminPortalV2);
+    });
+
+    test('/admin_dashboard redirects to Admin Portal V2', () {
+      expect(AppRouter.resolvePathAlias('/admin_dashboard'),
+          AppRoutes.adminPortalV2);
     });
 
     test('matching is case-insensitive', () {
@@ -125,7 +130,8 @@ void main() {
   });
 
   group('AppRoutes constants', () {
-    test('both admin portals are registered, with the old portal retained', () {
+    test('Admin Portal V2 is canonical; legacy admin routes are retained '
+        'as redirect aliases', () {
       expect(AppRoutes.adminPortalV2, '/admin_portal_v2');
       expect(AppRoutes.adminDashboard, '/admin_dashboard');
       expect(AppRoutes.all, contains(AppRoutes.adminPortalV2));
@@ -135,8 +141,8 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // main.dart route table — the V2 route maps to the V2 screen, and the old
-  // portal is preserved (not redirected away).
+  // main.dart route table — every admin route loads AdminPortalV2Screen, and the
+  // OLD portal screen is GONE.
   // ---------------------------------------------------------------------------
   group('main.dart route table', () {
     final main =
@@ -166,19 +172,30 @@ void main() {
         () {
       final block = routeBlock('/admin_portal_v2');
       expect(block, contains('AdminPortalV2Screen'));
-      // The bug was a redirect to the OLD dashboard — it must never come back.
       expect(block, isNot(contains('pushReplacementNamed')));
       expect(block, isNot(contains('/admin_dashboard')));
     });
 
-    test('/admin_dashboard still loads the OLD AdminDashboardScreen', () {
+    test('/admin_dashboard now loads AdminPortalV2Screen (old portal gone)',
+        () {
       final block = routeBlock('/admin_dashboard');
-      expect(block, contains('AdminDashboardScreen'));
+      expect(block, contains('AdminPortalV2Screen'));
+      expect(block, isNot(contains('AdminDashboardScreen')));
     });
 
-    test('/admin (alias) also loads the OLD AdminDashboardScreen', () {
+    test('/admin (alias) also loads AdminPortalV2Screen', () {
       final block = routeBlock('/admin');
-      expect(block, contains('AdminDashboardScreen'));
+      expect(block, contains('AdminPortalV2Screen'));
+      expect(block, isNot(contains('AdminDashboardScreen')));
+    });
+
+    test('the old AdminDashboardScreen file + class are DELETED', () {
+      expect(
+        File('lib/features/admin/screens/admin_dashboard_screen.dart')
+            .existsSync(),
+        isFalse,
+      );
+      expect(main, isNot(contains('AdminDashboardScreen')));
     });
 
     test('the boot route is resolved from the hash AND the browser path', () {

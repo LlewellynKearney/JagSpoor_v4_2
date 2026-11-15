@@ -4,13 +4,13 @@
 /// default route from the URL hash (`#/admin_portal_v2`). A *path*-based deep
 /// link — `https://jag-spoor.co.za/admin_portal_v2`, no `#` — leaves the hash
 /// empty, and `WidgetsApp` then falls back to its hard-coded `initialRoute`
-/// (`/splash`). The splash routes a signed-in admin to `/admin_dashboard`, so
-/// a path deep link used to land on the OLD Admin Portal instead of the
-/// requested screen.
+/// (`/splash`).
 ///
-/// [AppRouter.resolveInitialRoute] is the pure fix: it prefers a hash route,
-/// then a path route (honouring a few friendly aliases), and only then the
-/// splash fallback. It is dependency-free so it is fully unit-testable.
+/// Admin Portal V2 is now the ONLY admin portal: `/admin` and
+/// `/admin_dashboard` are legacy aliases that redirect to `/admin_portal_v2`.
+/// [AppRouter.resolveInitialRoute] prefers a hash route, then a path route
+/// (resolving the legacy aliases), and only then the splash fallback. It is
+/// dependency-free so it is fully unit-testable.
 library;
 
 /// Canonical named routes. The single source of truth for the route strings
@@ -24,15 +24,17 @@ class AppRoutes {
   static const String hunterDashboard = '/hunter_dashboard';
   static const String outfitterDashboard = '/outfitter_dashboard';
 
-  /// The ORIGINAL Admin Portal (entity overview + instant mode switcher).
+  /// Admin Portal V2 — the ONLY admin portal. `/admin_dashboard` and `/admin`
+  /// are legacy aliases that redirect here.
+  static const String adminPortalV2 = '/admin_portal_v2';
+
+  /// Legacy alias for the retired Admin Portal. Kept registered so old links
+  /// still resolve, but it now redirects to [adminPortalV2].
   static const String adminDashboard = '/admin_dashboard';
 
-  /// Friendly alias for the ORIGINAL Admin Portal, so `/admin` stays reachable
-  /// after the V2 split (the old portal is NOT removed).
+  /// Friendly alias for the retired Admin Portal. Also redirects to
+  /// [adminPortalV2].
   static const String adminLegacy = '/admin';
-
-  /// Admin Portal V2 — the trial/subscription KPI surface.
-  static const String adminPortalV2 = '/admin_portal_v2';
 
   static const String scanLicense = '/scan_license';
   static const String addFirearmForm = '/add_firearm_form';
@@ -65,12 +67,13 @@ class AppRouter {
   AppRouter._();
 
   /// Friendly path aliases -> canonical route. Keys are lower-cased; matching
-  /// is case-insensitive. `/admin` and its variants keep the OLD portal
-  /// reachable, `/admin-portal-v2` etc. reach Admin Portal V2.
+  /// is case-insensitive. Every legacy admin path redirects to Admin Portal V2
+  /// (the old portal is retired).
   static const Map<String, String> pathAliases = <String, String>{
-    '/admin': AppRoutes.adminDashboard,
-    '/admin-portal': AppRoutes.adminDashboard,
-    '/admin_dashboard_v1': AppRoutes.adminDashboard,
+    '/admin': AppRoutes.adminPortalV2,
+    '/admin-portal': AppRoutes.adminPortalV2,
+    '/admin_dashboard': AppRoutes.adminPortalV2,
+    '/admin_dashboard_v1': AppRoutes.adminPortalV2,
     '/admin-portal-v2': AppRoutes.adminPortalV2,
     '/admin_v2': AppRoutes.adminPortalV2,
   };

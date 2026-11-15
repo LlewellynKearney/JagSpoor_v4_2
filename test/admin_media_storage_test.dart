@@ -403,9 +403,10 @@ void main() {
     });
   });
 
-  group('Admin dashboard media section wiring contract', () {
-    final src = File('lib/features/admin/screens/admin_dashboard_screen.dart')
-        .readAsStringSync();
+  group('Admin Account Management media section wiring contract', () {
+    final src =
+        File('lib/features/admin/pages/admin_account_management_page.dart')
+            .readAsStringSync();
 
     test('renders the Media & Storage section with both charts', () {
       expect(src.contains("Media & Storage"), isTrue);

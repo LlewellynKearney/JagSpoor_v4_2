@@ -20,9 +20,9 @@ import '../../referral/services/referral_repository.dart';
 ///     `admin_config/referral_rewards`, admin-only per `firestore.rules`);
 ///     a non-admin caller's write fails server-side and is surfaced.
 ///
-/// Mirror widget of the existing "Subscription Revenue (ZAR)" manual-input
-/// card on [AdminDashboardScreen]; the state is self-contained so it can be
-/// reused on any admin surface.
+/// Mirror widget of the "Subscription Revenue (ZAR)" manual-input card on the
+/// Admin Portal Account Management tab; the state is self-contained so it can
+/// be reused on any admin surface.
 class ReferralRewardsAdminCard extends StatefulWidget {
   final ThemeController theme;
   final ReferralRepository? repository;

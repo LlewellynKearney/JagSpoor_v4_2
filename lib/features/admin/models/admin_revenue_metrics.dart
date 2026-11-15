@@ -141,6 +141,30 @@ String _groupThousandsComma(String intPart) {
   return buf.toString().split('').reversed.join();
 }
 
+/// Builds the provider-reconciliation line for an active-subscriber set, e.g.
+/// `Active subscribers: 3 (PayFast 2 + Unknown 1)`.
+///
+/// Lists only the NON-ZERO buckets so the arithmetic is visible and reconciles:
+/// `payfast + play + userChoice + unknown == total`. A bucket with a zero count
+/// is omitted (except the total, which always shows).
+String adminProviderReconciliationLabel({
+  required int total,
+  int payfast = 0,
+  int play = 0,
+  int userChoice = 0,
+  int unknown = 0,
+}) {
+  final parts = <String>[
+    if (payfast > 0) 'PayFast $payfast',
+    if (play > 0) 'Google $play',
+    if (userChoice > 0) 'User Choice $userChoice',
+    if (unknown > 0) 'Unknown $unknown',
+  ];
+  final noun = total == 1 ? 'subscriber' : 'subscribers';
+  if (parts.isEmpty) return 'Active $noun: $total';
+  return 'Active $noun: $total (${parts.join(' + ')})';
+}
+
 /// One churned account row: the email, the plan it was on, and when it was
 /// cancelled (falling back to `updatedAt` when no explicit cancellation
 /// timestamp exists).
@@ -298,6 +322,20 @@ class AdminRevenueMetrics {
   /// The provider-split percentage rendered to one decimal (e.g. `"42.9%"`).
   String providerPercentLabel(AdminProviderBucket bucket) =>
       '${providerPercent(bucket).toStringAsFixed(1)}%';
+
+  /// The provider reconciliation line, e.g.
+  /// `Active subscribers: 3 (PayFast 2 + Unknown 1)`.
+  ///
+  /// Makes the arithmetic visible: `payfast + play + userChoice + unknown ==
+  /// activeSubscribers`, so the Dashboard "Total Subscribers" and the Revenue
+  /// "Active subscribers" reconcile at a glance (zero buckets are omitted).
+  String get providerReconciliationLabel => adminProviderReconciliationLabel(
+        total: activeSubscribers,
+        payfast: providerCountFor(AdminProviderBucket.payfast),
+        play: providerCountFor(AdminProviderBucket.play),
+        userChoice: providerCountFor(AdminProviderBucket.userChoice),
+        unknown: providerCountFor(AdminProviderBucket.unknown),
+      );
 
   /// The "pipeline" value: what the recurring revenue would be if EVERY active
   /// trial converted — `(Trial Active Hunters × 34.99) +

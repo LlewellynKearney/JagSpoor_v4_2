@@ -281,9 +281,9 @@ void main() {
     });
   });
 
-  group('Admin dashboard wiring contract', () {
+  group('Admin Account Management wiring contract', () {
     final src =
-        File('lib/features/admin/screens/admin_dashboard_screen.dart')
+        File('lib/features/admin/pages/admin_account_management_page.dart')
             .readAsStringSync();
 
     test('renders the subscription config card with hunter + outfitter fields',

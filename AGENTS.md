@@ -1,5 +1,148 @@
 # JagSpoor -- Agent Memory
 
+## FEAT: Admin Portal V2 replaces the old portal + mobile KPI layout + subscriber-count reconciliation (added 2026-11-15)
+
+Branch `feature/admin-v2-replaces-old` (base `2e719a2`). **NOT merged, NOT
+deployed.**
+
+### JOB 1 -- V2 replaces the old Admin Portal COMPLETELY
+- **DELETED** `lib/features/admin/screens/admin_dashboard_screen.dart` (the
+  old `AdminDashboardScreen`, ~1100 lines). There is now exactly ONE admin
+  portal.
+- `lib/core/router/app_router.dart`: `pathAliases` now redirects EVERY legacy
+  admin path (`/admin`, `/admin-portal`, `/admin_dashboard`,
+  `/admin_dashboard_v1`) to `/admin_portal_v2`. `AppRoutes` doc updated; the
+  legacy route constants remain (registered) but now redirect.
+- `lib/main.dart`: `/admin_dashboard` AND `/admin` both build
+  `RoleGuardedRoute(route: '/admin_portal_v2', requiresPremium: false, builder:
+  AdminPortalV2Screen)` -- so an admin landing on any legacy route gets V2.
+  The old-screen import was removed.
+- Navigation updated to V2 everywhere: `splash_screen.dart` +
+  `auth_screen.dart` (post-auth admin routing), `role_guard.dart`
+  (`AppRole.admin: '/admin_portal_v2'`), `hunter_profile_screen.dart`,
+  `admin_mode_switcher.dart` (`AdminMode.admin => '/admin_portal_v2'`).
+- **NEW `lib/features/admin/pages/admin_account_management_page.dart`** -- the
+  V2 **Account Management** tab. It absorbs the old portal's unique content
+  so nothing is lost: **Create User** + **Bulk CSV Import** buttons (open the
+  existing standalone `CreateUserScreen` / `BulkCsvImportScreen`), Entity
+  Overview, Financial Analytics, the Subscription Revenue control plane
+  (admin-configured hunter/outfitter amounts + derived MRR/ARR), the Referral
+  Rewards card, Feature Usage by Role, Media & Storage, and User Engagement.
+  The provisioning buttons render in every load state (they need no fetched
+  data). The old "Account Management -> Admin Portal V2" card is GONE with the
+  old screen.
+- `AdminV2Tab` gained `accountManagement('Account Management')`; the V2 screen
+  switch renders the new page. The header still shows
+  `Admin Portal V2 <VersionInfo.label>` (e.g. `v4.2.27+27`).
+
+### JOB 2A -- V2 KPI cards on mobile
+- `lib/features/admin/widgets/admin_v2_common.dart`:
+  - `AdminV2MetricGrid` is now responsive -- **2 columns below 600 px**
+    (`mobileBreakpoint`), 4 columns at/above; aspect ratio 1.8 on mobile
+    (taller card) vs 1.55 on desktop.
+  - `AdminV2MetricCard` label is now `maxLines: 1, softWrap: false,
+    overflow: ellipsis` and the VALUE sits in a `FittedBox(scaleDown)` so
+    `R69.98` can never letter-wrap; padding tightens to 12 px on a narrow
+    card (<200 px).
+  - The V2 screen's private `_metricCard` now delegates to `AdminV2MetricCard`
+    so the same single-line contract covers the detail grids.
+- The V2 screen's header title is a `FittedBox` so the wordmark + version both
+  fit at 360 px (no AppBar overflow); `AdminModeSwitcher`'s header row gained
+  `Flexible`/ellipsis (it overflowed 304 px at 360 px).
+- Applies to ALL KPI rows (Dashboard rows 1-4 + every detail grid + the
+  Revenue KPIs) since they all route through `AdminV2MetricGrid` /
+  `AdminV2MetricCard`.
+
+### JOB 2B -- Subscription count reconciliation (read-only + labelling)
+- **Definition (one place, used everywhere):** "Total Subscribers" = ACTIVE
+  PAID subscribers ONLY; trials are reported separately by the "Trial Users"
+  card. `AdminSubscriptionMetrics.totalSubscribersCountLabel` +
+  `subscribersDefinitionLabel` (e.g. "Total Subscribers = active paid
+  subscribers only (excludes trials; trials are the "Trial Users" card).
+  Active = Google 0 + PayFast 2 + Unknown 1 = 3.") make it explicit on the
+  Dashboard.
+- `AdminRevenueMetrics.providerReconciliationLabel` ->
+  `"Active subscribers: 3 (PayFast 2 + Unknown 1)"` (zero buckets omitted;
+  `adminProviderReconciliationLabel(...)` is the pure builder). Shown as the
+  note under the PayFast vs Play vs User Choice card.
+- **Unknown plan is surfaced, never hidden:** `AdminSubscriberRow.isUnknownPlan`
+  (set when an ACTIVE subscriber's plan cannot be priced), `_planLabel` now
+  returns `'Unknown'` (not an em dash / raw id) for an unpriced plan, and
+  `AdminSubscriptionMetrics.unknownPlanRows`. `AdminSubscriptionProvider.none`
+  label changed `—` -> `Unknown` (badge now orange so it stands out). The
+  Revenue page gained an **"Unknown Plan Subscribers (unpriced)"** table
+  (Email / Provider / Plan / Start Date) so the admin can identify + fix each
+  account manually.
+- **No billing / provider / plan / price code changed, no backfill** -- pure
+  read-only labelling + aggregation.
+
+### Tests
+- NEW `test/admin_v2_mobile_kpi_layout_test.dart` (6): the card single-line +
+  FittedBox contract at 80 px; the grid is 2 columns <600 px / 4 at >=600 px;
+  pumping the real V2 Dashboard at **360 px** asserts the FULL labels render
+  ("Total Users" / "Hunters" / "Outfitters" / "No Role" / "Trial Active") and
+  the broken fragments ("Tot al", "Use rs", "Hu nte rs", "Out fitt") do NOT,
+  and every KPI grid is 2-across.
+- `test/admin_portal_v2_subscription_metrics_test.dart` +5: the 4-total /
+  3-active / 1-unknown reconciliation, the count + definition labels, and
+  `unknownPlanRows`.
+- `test/admin_portal_v2_revenue_test.dart` +3: `providerReconciliationLabel`
+  exact string + zero-bucket omission + the split always reconciling.
+- `test/admin_portal_v2_route_test.dart`: rewritten for the redirect (legacy
+  paths -> V2; `/admin_dashboard` + `/admin` load `AdminPortalV2Screen`; the
+  old file/class are asserted DELETED).
+- `test/role_guard_test.dart`, `role_selection_*_test.dart`,
+  `admin_analytics_enhancements_test.dart`, `admin_media_storage_test.dart`:
+  updated to the V2 route + the new Account Management page as the source-parse
+  target.
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
+  (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2668 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
+  touches no file in this change (no `functions/` file modified).
+- `flutter build web --release`: **SUCCESS**; `build/web/main.dart.js` carries
+  "Admin Portal V2", "Account Management", "Create User", "Bulk CSV Import",
+  "Total Subscribers", "Unknown Plan Subscribers" and NO old-portal title.
+- Env: Flutter **3.44.9** (CI pin) cloned to `/tmp/flutter_sdk`;
+  `~/libs/libsqlite3.so` symlink for the sqflite-FFI suites; `pubspec.lock`
+  drift from `pub get` reverted.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code changed (only a doc
+comment in `referral_rewards_admin_card.dart` + the admin route string in
+`hunter_profile_screen.dart`); no iOS change.
+
+### Files
+- NEW: `lib/features/admin/pages/admin_account_management_page.dart`,
+  `test/admin_v2_mobile_kpi_layout_test.dart`.
+- DELETED: `lib/features/admin/screens/admin_dashboard_screen.dart`.
+- MODIFIED: `lib/main.dart`, `lib/core/router/app_router.dart`,
+  `lib/core/splash_screen.dart`, `lib/features/auth/auth_screen.dart`,
+  `lib/features/auth/services/role_guard.dart`,
+  `lib/features/auth/role_selection_screen.dart`,
+  `lib/features/auth/widgets/role_guarded_route.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `lib/features/admin/widgets/admin_v2_common.dart`,
+  `lib/features/admin/widgets/admin_mode_switcher.dart`,
+  `lib/features/admin/widgets/admin_subscribers_list_section.dart`,
+  `lib/features/admin/widgets/referral_rewards_admin_card.dart`,
+  `lib/features/admin/models/admin_revenue_metrics.dart`,
+  `lib/features/admin/models/admin_subscription_metrics.dart`,
+  `lib/features/admin/pages/admin_revenue_page.dart`,
+  `lib/features/hunter_mode/hunter_profile_screen.dart`,
+  `test/admin_portal_v2_route_test.dart`,
+  `test/admin_portal_v2_screen_test.dart`,
+  `test/admin_portal_v2_subscription_metrics_test.dart`,
+  `test/admin_portal_v2_revenue_test.dart`,
+  `test/admin_analytics_enhancements_test.dart`,
+  `test/admin_media_storage_test.dart`, `test/role_guard_test.dart`,
+  `test/role_selection_screen_test.dart`,
+  `test/role_selection_route_guard_test.dart`, `AGENTS.md`.
+
 ## FIX: Admin Portal V2 header app version + export card (added 2026-11-15)
 
 Branch `fix/admin-v2-export-on-v2-users` (base `77db7b1`, the export-card fix).
