@@ -103,7 +103,7 @@ class AdminVerificationResendService {
       }
       return ResendOutcome(
         delivered: false,
-        message: _errorMessage(res, 'Resend failed (${res.statusCode}).'),
+        message: errorMessageFor(res, 'Resend failed (${res.statusCode}).'),
       );
     } catch (e) {
       debugPrint('AdminVerificationResendService.resendOne error: $e');
@@ -164,7 +164,7 @@ class AdminVerificationResendService {
         delivered: 0,
         processed: 0,
         skipped: 0,
-        message: _errorMessage(res, 'Bulk resend failed (${res.statusCode}).'),
+        message: errorMessageFor(res, 'Bulk resend failed (${res.statusCode}).'),
       );
     } catch (e) {
       debugPrint('AdminVerificationResendService.resendBulk error: $e');
@@ -178,12 +178,18 @@ class AdminVerificationResendService {
   }
 
   /// Extracts the callable error message (`error.message`) from a response.
-  String _errorMessage(http.Response res, String fallback) {
+  ///
+  /// This is what surfaces a server-side `failed-precondition` diagnostic
+  /// (e.g. the credential/IAM identity + missing role) to the admin UI, so the
+  /// user sees WHY a resend failed instead of a bare "0 of N".
+  @visibleForTesting
+  static String errorMessageFor(http.Response res, String fallback) {
     try {
       final decoded = jsonDecode(res.body) as Map<String, dynamic>;
       final err = decoded['error'];
       if (err is Map && err['message'] != null) {
-        return err['message'].toString();
+        final msg = err['message'].toString().trim();
+        if (msg.isNotEmpty) return msg;
       }
     } catch (_) {}
     return fallback;

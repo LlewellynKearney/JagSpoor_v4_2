@@ -1,7 +1,7 @@
 import { logger } from "firebase-functions/v2";
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
-import { auth, firestore } from "./firebase";
+import { auth, firestore, describeCredential, type CredentialDiagnostic } from "./firebase";
 import { emailPass } from "./params";
 import {
   EmailNotificationKind,
@@ -70,6 +70,79 @@ export interface ResendResult {
   delivered: boolean;
   linkGenerated: boolean;
   reason?: string;
+  /**
+   * Present when the failure is a CREDENTIAL problem (the Auth Admin call was
+   * rejected because the service account lacks a permission). Carries the
+   * non-secret identity + the missing role so the admin UI can fix IAM instead
+   * of staring at a bare "0 of N".
+   */
+  diagnostic?: ResendDiagnostic;
+}
+
+/** Actionable, non-secret context for a credential/permission failure. */
+export interface ResendDiagnostic {
+  /** Short machine-ish code, e.g. "insufficient-permission". */
+  code: string;
+  /** What went wrong, in one line. */
+  message: string;
+  /** The role that must be granted to `serviceAccount`. */
+  missingRole: string;
+  /** The service account the function ran as (non-secret identifier). */
+  serviceAccount: string | null;
+  /** Credential source: serviceAccountKey | computeMetadata | ... */
+  credentialSource: string;
+  /** True when the root cause is the explicit-credential bug. */
+  explicitCredential: boolean;
+  /** The raw credential class name (e.g. ServiceAccountCredential). */
+  credentialClass: string;
+}
+
+/** The IAM role the resend functions need on their service account. */
+export const REQUIRED_AUTH_ADMIN_ROLE = "roles/firebaseauth.admin";
+
+/** True when an error is the Admin SDK "insufficient permission" Auth error. */
+export function isInsufficientPermissionError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; message?: string };
+  const code = (e.code ?? "").toString().toLowerCase();
+  const message = (e.message ?? "").toString().toLowerCase();
+  return (
+    code.includes("insufficient-permission") ||
+    message.includes("insufficient permission")
+  );
+}
+
+/**
+ * Builds the actionable diagnostic for a credential failure. Pure +
+ * testable; takes the credential descriptor so a test can inject one.
+ */
+export function buildResendDiagnostic(
+  err: unknown,
+  cred: CredentialDiagnostic
+): ResendDiagnostic {
+  const e = err as { code?: string; message?: string };
+  const identity =
+    cred.serviceAccount ??
+    (cred.source === "computeMetadata"
+      ? "(runtime service account — resolve via Cloud Run console)"
+      : "(unknown service account)");
+  const rootCause = cred.explicitCredential
+    ? "an explicit credential was passed to initializeApp() — remove it so " +
+      "the function uses its runtime service account"
+    : "the function's runtime service account is missing the role";
+  return {
+    code: (e?.code ?? "insufficient-permission").toString(),
+    message:
+      `Auth Admin call rejected: the credential has insufficient permission. ` +
+      `Identity: ${identity} (source: ${cred.source}). ` +
+      `Grant ${REQUIRED_AUTH_ADMIN_ROLE} to this service account. ` +
+      `Likely root cause: ${rootCause}.`,
+    missingRole: REQUIRED_AUTH_ADMIN_ROLE,
+    serviceAccount: cred.serviceAccount,
+    credentialSource: cred.source,
+    explicitCredential: cred.explicitCredential,
+    credentialClass: cred.credentialClass,
+  };
 }
 
 /** Builds the verification email body for a minted link. */
@@ -113,6 +186,11 @@ export const resendVerificationEmail = onCall(
     }
 
     const result = await resendOne(uid);
+    if (result.diagnostic) {
+      // A credential/IAM problem: surface the actionable identity + missing
+      // role to the caller (the audit trail was already written).
+      throw new HttpsError("failed-precondition", result.diagnostic.message);
+    }
     if (!result.delivered) {
       // Surface a hard failure to the caller so the UI can report it; a
       // partial (link minted, mail not sent) is still a 200 with
@@ -170,6 +248,21 @@ export const resendVerificationEmailsBulk = onCall(
       skipped,
       delivered: results.filter((r) => r.delivered).length,
     });
+
+    // If EVERY attempt failed with the SAME credential problem, the caller
+    // gets a bare "0 of N" — surface the actionable identity + missing role
+    // instead so the admin fixes IAM rather than guessing.
+    const diagnostics = results
+      .map((r) => r.diagnostic)
+      .filter((d): d is ResendDiagnostic => !!d);
+    if (results.length > 0 && diagnostics.length === results.length) {
+      logger.error("resendVerificationEmailsBulk: all attempts DENIED (IAM)", {
+        diagnostic: diagnostics[0],
+        attempted: results.length,
+      });
+      throw new HttpsError("failed-precondition", diagnostics[0].message);
+    }
+
     return { results, processed: results.length, skipped, limit: BULK_LIMIT };
   }
 );
@@ -205,9 +298,19 @@ async function resendOne(uid: string): Promise<ResendResult> {
     }
   } catch (err) {
     const reason = `lookup failed: ${describe(err)}`;
-    logger.warn("resendOne: user lookup failed", { uid, reason });
+    const diagnostic = isInsufficientPermissionError(err)
+      ? buildResendDiagnostic(err, describeCredential())
+      : undefined;
+    if (diagnostic) {
+      logger.error("resendOne: Auth Admin lookup DENIED (IAM)", {
+        uid,
+        diagnostic,
+      });
+    } else {
+      logger.warn("resendOne: user lookup failed", { uid, reason });
+    }
     await recordOutcome(uid, { sent: false, error: reason });
-    return { uid, email, delivered: false, linkGenerated: false, reason };
+    return { uid, email, delivered: false, linkGenerated: false, reason, diagnostic };
   }
 
   // Mint a fresh verification link (this is the part that needs the Admin SDK).
@@ -216,12 +319,22 @@ async function resendOne(uid: string): Promise<ResendResult> {
     link = await auth().generateEmailVerificationLink(email);
   } catch (err) {
     const reason = `link generation failed: ${describe(err)}`;
-    logger.error("resendOne: generateEmailVerificationLink failed", {
-      uid,
-      reason,
-    });
+    const diagnostic = isInsufficientPermissionError(err)
+      ? buildResendDiagnostic(err, describeCredential())
+      : undefined;
+    if (diagnostic) {
+      logger.error("resendOne: generateEmailVerificationLink DENIED (IAM)", {
+        uid,
+        diagnostic,
+      });
+    } else {
+      logger.error("resendOne: generateEmailVerificationLink failed", {
+        uid,
+        reason,
+      });
+    }
     await recordOutcome(uid, { sent: false, error: reason });
-    return { uid, email, delivered: false, linkGenerated: false, reason };
+    return { uid, email, delivered: false, linkGenerated: false, reason, diagnostic };
   }
 
   // Deliver the minted link from the support mailbox.

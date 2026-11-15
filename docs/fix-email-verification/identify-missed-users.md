@@ -55,6 +55,30 @@ notifications).
 
 ## 2. Fix
 
+* **Credential (the "insufficient permission" bug)** —
+  `functions/src/firebase.ts` initialized the Admin SDK with an **explicit
+  credential**:
+
+  ```ts
+  admin.initializeApp({ credential: admin.credential.applicationDefault() });
+  ```
+
+  That form **honours a stray `GOOGLE_APPLICATION_CREDENTIALS`** (a limited
+  service-account key left on the deploy machine / CI runner). The limited key —
+  not the function's runtime service account — then becomes the identity, and
+  every Auth Admin call fails with:
+
+  > *Credential implementation provided to `initializeApp()` via the
+  > "credential" property has insufficient permission to access the requested
+  > resource.*
+
+  The fix is to call `admin.initializeApp()` **with no arguments**, so the SDK
+  uses Application Default Credentials, which inside the Cloud Functions runtime
+  resolve to the function's own **runtime service account** (the identity Cloud
+  Run runs the container as). That account already holds
+  `roles/firebaseauth.admin` per the IAM audit. Every other
+  `initializeApp()` call in `src/` was already argument-free; `firebase.ts` was
+  the only offender.
 * **Client** (`EmailVerificationService`): every send now writes an audit trail
   on `users/{uid}` — `verificationEmailSent`, `verificationEmailLastError`,
   `verificationEmailLastAttemptAt` — and `checkVerified()` mirrors
@@ -64,6 +88,13 @@ notifications).
   (capped batch, `BULK_LIMIT = 50`). They mint a fresh link via the Admin SDK
   `generateEmailVerificationLink()` and deliver it from the support mailbox
   (`sendSupportEmail`), then update the same audit flags.
+* **Actionable errors** (`describeCredential()` + `buildResendDiagnostic()`):
+  when an Auth Admin call is rejected for insufficient permission the callable
+  throws a `failed-precondition` whose message names **the service account the
+  function ran as**, its **credential source**, and the **missing role**
+  (`roles/firebaseauth.admin`) — instead of the UI showing a bare "0 of N".
+  The diagnostic contains only non-secret identifiers (the service-account
+  email + project id), never key material.
 * **Admin Portal V2 → Users tab**: new **Email Verification** card with TWO
   counts and TWO actions:
   * **Resend to No Role (N)** — the ONLY bulk resend target (capped at 50/run,
@@ -146,3 +177,58 @@ Run the script in a credentialed environment to get the live numbers; both
 counts are printed to stdout and written to the two CSVs. They cannot be
 computed from this sandbox (no Firebase credentials — `firebase projects:list`
 is unauthenticated here).
+
+## 6. "Credential … has insufficient permission" troubleshooting
+
+If the resend still returns that error, the function is running as an identity
+that lacks **`roles/firebaseauth.admin`** ("Firebase Authentication Admin").
+Use the new diagnostic (the error message now names the identity) plus these
+checks:
+
+### 6.1 Which service account does the function actually use?
+
+The resend functions are **2nd gen**, so each is backed by a **Cloud Run
+service**. Cloud Console → **Cloud Run → `resendverificationemailsbulk` →
+Security → Service account**. That field is the account that needs the role —
+it is **not** necessarily one of the two accounts in the IAM screenshots
+(`firebase-adminsdk-fbsvc@…` is the Admin SDK service account used by tooling;
+`jagspoor@appspot.gserviceaccount.com` is the App Engine default). The 2nd-gen
+default runtime identity is usually
+`<project-number>-compute@developer.gserviceaccount.com` unless a
+`serviceAccount` was set on the function.
+
+Equivalent CLI:
+
+```bash
+gcloud run services describe resendverificationemailsbulk \
+  --region us-central1 --format='value(spec.template.spec.serviceAccountName)'
+```
+
+### 6.2 Grant the role to THAT account
+
+```bash
+gcloud projects add-iam-policy-binding jagspoor \
+  --member="serviceAccount:<THE_CLOUD_RUN_SA_FROM_6.1>" \
+  --role="roles/firebaseauth.admin"
+```
+
+### 6.3 Make sure no stray key is being picked up
+
+The root-cause fix removed the explicit credential, but confirm the deploy
+environment does not still export a key that ADC would pick up:
+
+* **Locally / CI**: `echo "${GOOGLE_APPLICATION_CREDENTIALS:-<unset>}"` before
+  deploying. If it points at a limited key, unset it — the deployed function
+  uses its runtime service account, not the deployer's credentials, but the
+  same variable leaking into a Cloud Run revision's env would hijack ADC.
+* **Cloud Run env vars**: Cloud Console → the service → Variables — there must
+  be **no** `GOOGLE_APPLICATION_CREDENTIALS`.
+
+### 6.4 Verify
+
+Re-run **Resend to No Role** from Admin Portal V2. The snackbar now shows the
+exact identity + missing role on failure, e.g.:
+
+> Auth Admin call rejected: the credential has insufficient permission.
+> Identity: 1234567890-compute@developer.gserviceaccount.com (source:
+> computeMetadata). Grant roles/firebaseauth.admin to this service account.

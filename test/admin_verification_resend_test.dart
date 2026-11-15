@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/admin/models/admin_user_metrics.dart';
@@ -401,6 +403,48 @@ void main() {
           find.byKey(const ValueKey('adminV2ResendRow_n1')));
       expect(row.onPressed, isNull);
       expect(find.textContaining('Admin only'), findsOneWidget);
+    });
+  });
+
+  group('AdminVerificationResendService error surfacing', () {
+    tearDown(() => AdminVerificationResendService.resetTestSeams());
+
+    test('a failed-precondition diagnostic is surfaced verbatim (not "0 of N")',
+        () {
+      final body = jsonEncode({
+        'error': {
+          'status': 'FAILED_PRECONDITION',
+          'message':
+              'Auth Admin call rejected: the credential has insufficient '
+              'permission. Identity: firebase-adminsdk-fbsvc@jagspoor.'
+              'iam.gserviceaccount.com (source: computeMetadata). '
+              'Grant roles/firebaseauth.admin to this service account.',
+        },
+      });
+      final msg = AdminVerificationResendService.errorMessageFor(
+        http.Response(body, 400),
+        'Bulk resend failed (400).',
+      );
+      expect(msg, contains('roles/firebaseauth.admin'));
+      expect(msg, contains('firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com'));
+      expect(msg, isNot(contains('0 of')));
+    });
+
+    test('falls back when the body carries no callable error message', () {
+      expect(
+        AdminVerificationResendService.errorMessageFor(
+          http.Response('not json', 500),
+          'Bulk resend failed (500).',
+        ),
+        'Bulk resend failed (500).',
+      );
+      expect(
+        AdminVerificationResendService.errorMessageFor(
+          http.Response(jsonEncode({'error': {'message': '   '}}), 500),
+          'fallback',
+        ),
+        'fallback',
+      );
     });
   });
 }

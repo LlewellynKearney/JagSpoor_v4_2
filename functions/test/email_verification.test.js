@@ -220,3 +220,128 @@ test("resolveName prefers first+last, then the legacy fullName", () => {
   assert.equal(audit.resolveName({ fullName: "Don Kearney" }), "Don Kearney");
   assert.equal(audit.resolveName({}), "");
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Credential fix: the Admin SDK MUST be initialized WITHOUT an explicit
+// credential so it uses the function's runtime service account (the account
+// that holds Firebase Authentication Admin). Passing
+// `{ credential: admin.credential.applicationDefault() }` was the bug: it
+// honours a stray GOOGLE_APPLICATION_CREDENTIALS limited key and every Auth
+// Admin call then fails with "insufficient permission".
+// ────────────────────────────────────────────────────────────────────────────
+
+const { firebaseSrc, initCall } = (() => {
+  const src = read(path.join(SRC, "firebase.ts"));
+  // The actual (non-comment) initializeApp call in the wrapper.
+  const initCall = src
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*"))
+    .find((l) => l.includes("initializeApp("));
+  return { firebaseSrc: src, initCall: initCall || "" };
+})();
+
+test("firebase.ts initializes the Admin SDK with NO explicit credential", () => {
+  assert.ok(
+    /admin\.initializeApp\(\)/.test(initCall),
+    `initializeApp must be argument-free, got: ${initCall.trim()}`
+  );
+  assert.ok(
+    !/credential\s*:/.test(initCall),
+    "the runtime initializeApp() must not pass a credential"
+  );
+});
+
+test("firebase.ts does not pass admin.credential.applicationDefault() to initializeApp", () => {
+  // The string may appear ONLY inside the read-only describeCredential()
+  // classifier, never as a credential passed to initializeApp.
+  const initLines = firebaseSrc
+    .split("\n")
+    .filter((l) => l.includes("initializeApp(") && !l.trim().startsWith("*"));
+  for (const l of initLines) {
+    assert.ok(
+      !l.includes("applicationDefault"),
+      `no initializeApp() call may use applicationDefault(): ${l.trim()}`
+    );
+  }
+});
+
+test("every module-level admin.initializeApp() in src is argument-free", () => {
+  const files = ["admin/kpis.ts", "firebase.ts", "seed_pricing.ts",
+    "seed_app_version.ts", "identify_missed_verification_users.ts",
+    "sync_purchases.ts"];
+  for (const f of files) {
+    const src = read(path.join(SRC, f));
+    const calls = src
+      .split("\n")
+      .filter((l) => /initializeApp\(/.test(l) && !l.trim().startsWith("*"));
+    for (const c of calls) {
+      assert.ok(
+        /initializeApp\(\s*\)/.test(c),
+        `${f}: initializeApp must be argument-free -> ${c.trim()}`
+      );
+    }
+  }
+});
+
+test("describeCredential flags an explicit credential + its source", () => {
+  const withKey = ev.buildResendDiagnostic(
+    { code: "auth/insufficient-permission" },
+    {
+      explicitCredential: true,
+      credentialClass: "ServiceAccountCredential",
+      source: "serviceAccountKey",
+      projectId: "jagspoor",
+      serviceAccount: "limited-key@jagspoor.iam.gserviceaccount.com",
+    }
+  );
+  assert.equal(withKey.explicitCredential, true);
+  assert.equal(withKey.missingRole, ev.REQUIRED_AUTH_ADMIN_ROLE);
+  assert.equal(ev.REQUIRED_AUTH_ADMIN_ROLE, "roles/firebaseauth.admin");
+  assert.ok(
+    withKey.message.includes("limited-key@jagspoor.iam.gserviceaccount.com"),
+    "the diagnostic must name the service account actually used"
+  );
+  assert.ok(withKey.message.includes("roles/firebaseauth.admin"));
+  assert.ok(/explicit credential/i.test(withKey.message));
+});
+
+test("buildResendDiagnostic names the runtime SA when source is computeMetadata", () => {
+  const d = ev.buildResendDiagnostic(
+    { code: "auth/insufficient-permission" },
+    {
+      explicitCredential: false,
+      credentialClass: "ComputeEngineCredential",
+      source: "computeMetadata",
+      projectId: "jagspoor",
+      serviceAccount: null,
+    }
+  );
+  assert.equal(d.explicitCredential, false);
+  assert.ok(/runtime service account/i.test(d.message));
+  assert.ok(/missing the role/i.test(d.message));
+});
+
+test("isInsufficientPermissionError matches the Admin SDK error shape", () => {
+  assert.equal(
+    ev.isInsufficientPermissionError({
+      code: "auth/insufficient-permission",
+      message:
+        "Credential implementation provided to initializeApp() via the " +
+        '"credential" property has insufficient permission to access the ' +
+        "requested resource.",
+    }),
+    true
+  );
+  assert.equal(ev.isInsufficientPermissionError({ code: "auth/user-not-found" }), false);
+  assert.equal(ev.isInsufficientPermissionError(null), false);
+  assert.equal(ev.isInsufficientPermissionError("nope"), false);
+});
+
+test("the resend callables surface the diagnostic (failed-precondition)", () => {
+  const src = read(path.join(SRC, "email_verification.ts"));
+  // The single resend throws failed-precondition on a diagnostic.
+  assert.ok(/result\.diagnostic/.test(src));
+  assert.ok(/"failed-precondition"/.test(src));
+  // The bulk surfaces it when EVERY attempt failed.
+  assert.ok(/diagnostics\.length === results\.length/.test(src));
+});

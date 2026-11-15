@@ -21,6 +21,28 @@ work did **not** touch verification (verified: `git log -S sendEmailVerification
 has only the hosting commit; the billing commits changed
 `billing_service.dart`, `alternative_billing*.ts`, `payfast/*`, version files).
 
+### THE IAM BUG behind "Credential … has insufficient permission"
+`functions/src/firebase.ts` initialized the Admin SDK with an **explicit
+credential**:
+
+```ts
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
+```
+
+That form **honours a stray `GOOGLE_APPLICATION_CREDENTIALS`** — a limited
+service-account key (left on the deploy machine / CI runner) becomes the
+identity instead of the function's runtime service account, so every Auth Admin
+call (`auth().getUser`, `generateEmailVerificationLink`) fails with
+*"Credential implementation provided to initializeApp() via the 'credential'
+property has insufficient permission…"*. The IAM roles on the two accounts in
+the screenshots were never the problem. Fix: `admin.initializeApp()` with **no
+arguments** so ADC resolves to the function's runtime service account (which
+holds `roles/firebaseauth.admin`). Every other `initializeApp()` in `src/` was
+already argument-free — `firebase.ts` was the only offender. `describeCredential()`
+reports the actual identity; `buildResendDiagnostic()` turns an IAM rejection
+into a `failed-precondition` message naming the service account + the missing
+role (instead of a bare "0 of N").
+
 ### Four concrete gaps found
 1. `sendVerificationEmail()` caught every failure with a bare `debugPrint` — no
    record of WHICH account failed.
@@ -97,7 +119,7 @@ has only the hosting commit; the billing commits changed
   `sendSupportEmail` / `generateEmailVerificationLink` / `resendVerification`.
 
 ### Tests
-- NEW `test/admin_verification_resend_test.dart` (19): the failed send records
+- NEW `test/admin_verification_resend_test.dart` (21): the failed send records
   `verificationEmailSent=false` + the error (FakeFirebaseFirestore); the success
   records `true` and clears the error; no-uid is a silent no-op; the
   `AdminVerificationTarget` predicate + `hasRole` + the two buckets being
@@ -107,29 +129,36 @@ has only the hosting commit; the billing commits changed
   the card shows BOTH counts (and the old single button is gone); the row
   button calls the service; the no-role bulk confirms then resends only no-role
   uids (capped at 50); the with-role reminder opens a mailto (never a resend);
-  a non-admin's actions are disabled.
-- NEW `functions/test/email_verification.test.js` (16): the callables + limit
+  a non-admin's actions are disabled; the service surfaces the server's
+  `failed-precondition` diagnostic verbatim (the SA + missing role, not "0 of
+  N") and falls back cleanly.
+- NEW `functions/test/email_verification.test.js` (23): the callables + limit
   exported; the field names match the Flutter service; the email body carries
   the minted link; both callables admin-gated via `isAdminRequest`; the bulk
   cap + sequential loop; `generateEmailVerificationLink` used; exported from
   `index.ts`; the CSV header + the two bucket file names + labels; the
   `isMissedVerification` matrix; `hasRole`; `splitByRole` (no loss); the audit
-  script never sends; `buildCsv` escaping; `formatDate`; `resolveName`.
+  script never sends; `buildCsv` escaping; `formatDate`; `resolveName`;
+  **`firebase.ts` initializes the Admin SDK with NO explicit credential** (the
+  IAM-bug guard) + every `initializeApp()` in `src/` is argument-free;
+  `describeCredential` flags the explicit-credential + source;
+  `buildResendDiagnostic` names the SA + `roles/firebaseauth.admin`;
+  `isInsufficientPermissionError` matches the Admin SDK error shape.
 
 ### Verification (this sandbox)
 - `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
   (unchanged baseline). All new/changed files: "No issues found".
-- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2687 passed,
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2689 passed,
   1 failed** — the DOCUMENTED pre-existing
   `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
-  touches no file in this change. +19 net vs the 2668-pass baseline (exactly
+  touches no file in this change. +21 net vs the 2668-pass baseline (exactly
   the new `admin_verification_resend_test`). Two pre-existing
   `admin_portal_v2_pages_test` cases ("email search filters the table" /
   "role filter isolates the role") were scoped to
   `find.descendant(of: ValueKey('adminV2UsersPage'))` because the new Email
   Verification card (same Users tab) legitimately also lists unverified
   emails, so their global `findsNothing` would have matched it.
-- `cd functions && npm test`: **206 passed, 0 failed** (was 190; +16).
+- `cd functions && npm test`: **213 passed, 0 failed** (was 190; +23).
 - `flutter build web --release`: **SUCCESS** (`build/web`).
 - Env: Flutter **3.44.9** cloned to `/tmp/flutter_sdk`; `apt-get install unzip`
   (the SDK bootstrap needs it); `~/libs/libsqlite3.so` symlink for the
