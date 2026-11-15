@@ -57,66 +57,79 @@ has only the hosting commit; the billing commits changed
   `delivered: false` with the reason recorded.
 - **Admin Portal V2 → Users tab**
   (`lib/features/admin/widgets/admin_verification_card.dart`): a new **Email
-  Verification (N unverified)** card with a per-row **RESEND** button
-  (`adminV2ResendRow_<uid>`) + a **RESEND TO ALL UNVERIFIED (N)** bulk action
-  (`adminV2ResendAllUnverifiedButton`) behind a "Resend to X users?"
-  confirmation dialog. The bulk action is capped at
-  `kAdminVerificationResendBatchLimit` (50). Admin-only: a non-admin sees the
-  counts but every action is disabled (`onPressed: null`) + an "Admin only"
-  note. The server re-checks privileges regardless.
+  Verification** card with TWO counts and TWO actions (a single "Resend to All
+  Unverified (72)" button would SPAM active users — role selection does NOT
+  require a verified email, so a role-bearing account demonstrably got in):
+  - **Resend to No Role (N)** (`adminV2ResendNoRoleButton`) — BUCKET 2, the
+    ONLY bulk resend target, capped at `kAdminVerificationResendBatchLimit`
+    (50) behind a "Resend to X no-role users?" confirmation dialog.
+  - **Remind Unverified With Role (M)** (`adminV2RemindWithRoleButton`) —
+    BUCKET 1, opens a pre-filled support-mail draft (mailto, BCC) so the admin
+    sends a gentle reminder, NOT a fresh verification link.
+  Per-row **RESEND** (`adminV2ResendRow_<uid>`) stays on both lists. Admin-only:
+  a non-admin sees the counts but every action is disabled (`onPressed: null`)
+  + an "Admin only" note. The server re-checks privileges regardless.
 - **Pure model** (`lib/features/admin/models/admin_verification_target.dart`):
-  `AdminVerificationTarget` (`missedVerification` = unverified AND no
-  successful send; `statusLabel` = Verified/Sent/Failed/Never sent) +
-  `adminVerificationResendBatch(...)` (the cap contract). `AdminUserRecord`
-  gained `emailVerified` / `verificationEmailSent` /
-  `verificationEmailLastError` / `verificationEmailLastAttemptAt` +
-  `verificationTarget`.
+  `AdminVerificationTarget` gained `role` + `hasRole` (blank / `none` /
+  `unassigned` / `unknown` = no role) and the TWO-bucket predicates
+  `missedNoRole` (bucket 2 — resend targets) / `unverifiedWithRole` (bucket 1 —
+  reminder only); `missedVerification` is the RAW union (over-counts).
+  `adminVerificationResendBatch(...)` now selects ONLY the no-role bucket (so a
+  role-bearing account can never be bulk re-sent). `AdminUserRecord` gained
+  `emailVerified` / `verificationEmailSent` / `verificationEmailLastError` /
+  `verificationEmailLastAttemptAt` + `verificationTarget` (passes `role`).
 - **Client service** (`lib/features/admin/services/admin_verification_resend_service.dart`):
   the callable-over-HTTPS pattern (`EntitlementService` / `AdminKpiService`) —
   no `cloud_functions` plugin, so the native builds are untouched. Trims the
-  batch to the cap client-side too.
+  batch to the cap client-side too; also `launchMailto(Uri)` for the reminder.
 - **Identify missed users** (LIST-ONLY — sends nothing):
   `functions/src/identify_missed_verification_users.ts` +
   `docs/fix-email-verification/identify-missed-users.md`. Selects
   `emailVerified != true AND verificationEmailSent != true` (the Auth flag is
-  authoritative; the `users` mirror is the fallback), cross-references the Auth
-  user list, and writes a CSV
-  (`Email, Created Date, Name, Role, emailVerified, verificationEmailSent`).
+  authoritative; the `users` mirror is the fallback), then SPLITS by role into
+  two buckets and writes TWO CSVs:
+  `missed-no-role.csv` (bucket 2 — the resend targets) +
+  `unverified-with-role.csv` (bucket 1 — reminder only), both with
+  `Email, Created Date, Name, Role, emailVerified, verificationEmailSent`.
   Run: `cd functions && npm run build && node
-  lib/identify_missed_verification_users.js --out /tmp/missed.csv` (npm script
+  lib/identify_missed_verification_users.js --out-dir /tmp` (npm script
   `audit:missed-verification`). A test asserts it NEVER calls
   `sendSupportEmail` / `generateEmailVerificationLink` / `resendVerification`.
 
 ### Tests
-- NEW `test/admin_verification_resend_test.dart` (15): the failed send records
+- NEW `test/admin_verification_resend_test.dart` (19): the failed send records
   `verificationEmailSent=false` + the error (FakeFirebaseFirestore); the success
   records `true` and clears the error; no-uid is a silent no-op; the
-  `AdminVerificationTarget` predicate + `statusLabel` + `fromMap`;
-  `adminVerificationResendBatch` returns all under the limit, caps at 50, only
-  includes unverified, honours a custom limit; the card renders the count +
-  per-row RESEND; the row button calls the service; the bulk action shows the
-  confirm dialog then resends exactly 50; a non-admin's actions are disabled.
-- NEW `functions/test/email_verification.test.js` (13): the callables + limit
+  `AdminVerificationTarget` predicate + `hasRole` + the two buckets being
+  disjoint and partitioning the unverified set + `statusLabel` + `fromMap`;
+  `adminVerificationResendBatch` returns all no-role under the limit, caps at
+  50, NEVER includes role-bearing/verified accounts, honours a custom limit;
+  the card shows BOTH counts (and the old single button is gone); the row
+  button calls the service; the no-role bulk confirms then resends only no-role
+  uids (capped at 50); the with-role reminder opens a mailto (never a resend);
+  a non-admin's actions are disabled.
+- NEW `functions/test/email_verification.test.js` (16): the callables + limit
   exported; the field names match the Flutter service; the email body carries
   the minted link; both callables admin-gated via `isAdminRequest`; the bulk
   cap + sequential loop; `generateEmailVerificationLink` used; exported from
-  `index.ts`; the CSV header + `isMissedVerification` matrix; the audit script
-  never sends; `buildCsv` escaping; `formatDate`; `resolveName`.
+  `index.ts`; the CSV header + the two bucket file names + labels; the
+  `isMissedVerification` matrix; `hasRole`; `splitByRole` (no loss); the audit
+  script never sends; `buildCsv` escaping; `formatDate`; `resolveName`.
 
 ### Verification (this sandbox)
 - `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
   (unchanged baseline). All new/changed files: "No issues found".
-- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2683 passed,
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2687 passed,
   1 failed** — the DOCUMENTED pre-existing
   `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
-  touches no file in this change. +15 net vs the 2668-pass baseline (exactly
+  touches no file in this change. +19 net vs the 2668-pass baseline (exactly
   the new `admin_verification_resend_test`). Two pre-existing
   `admin_portal_v2_pages_test` cases ("email search filters the table" /
   "role filter isolates the role") were scoped to
   `find.descendant(of: ValueKey('adminV2UsersPage'))` because the new Email
   Verification card (same Users tab) legitimately also lists unverified
   emails, so their global `findsNothing` would have matched it.
-- `cd functions && npm test`: **203 passed, 0 failed** (was 190; +13).
+- `cd functions && npm test`: **206 passed, 0 failed** (was 190; +16).
 - `flutter build web --release`: **SUCCESS** (`build/web`).
 - Env: Flutter **3.44.9** cloned to `/tmp/flutter_sdk`; `apt-get install unzip`
   (the SDK bootstrap needs it); `~/libs/libsqlite3.so` symlink for the

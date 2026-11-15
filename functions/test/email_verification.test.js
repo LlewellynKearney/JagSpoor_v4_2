@@ -141,8 +141,50 @@ test("the audit script NEVER sends email (read-only)", () => {
   assert.ok(!src.includes("sendSupportEmail"), "must not send");
   assert.ok(!src.includes("generateEmailVerificationLink"), "must not mint");
   assert.ok(!src.includes("resendVerification"), "must not resend");
-  // It only reads Firestore + writes a local CSV.
+  // It only reads Firestore + writes the two local CSVs.
   assert.ok(src.includes("writeFileSync"));
+});
+
+test("the audit splits into the two role buckets + names the CSVs", () => {
+  assert.equal(audit.NO_ROLE_CSV_FILENAME, "missed-no-role.csv");
+  assert.equal(audit.WITH_ROLE_CSV_FILENAME, "unverified-with-role.csv");
+  // The labels carry the required operator wording.
+  assert.ok(/never completed signup/i.test(audit.NO_ROLE_LABEL));
+  assert.ok(/resend target/i.test(audit.NO_ROLE_LABEL));
+  assert.ok(/do not bulk resend/i.test(audit.WITH_ROLE_LABEL));
+  assert.ok(/reminder only/i.test(audit.WITH_ROLE_LABEL));
+});
+
+test("hasRole: blank / none / unassigned / unknown are NO role", () => {
+  for (const v of ["", "  ", "none", "NONE", "unassigned", "unknown", null]) {
+    assert.equal(audit.hasRole(v), false, `"${v}" must be no role`);
+  }
+  for (const v of ["hunter", "Outfitter", "admin", "dual"]) {
+    assert.equal(audit.hasRole(v), true, `"${v}" must be a role`);
+  }
+});
+
+test("splitByRole routes accounts to the right bucket (no loss)", () => {
+  const rows = [
+    { role: "" },
+    { role: "none" },
+    { role: "hunter" },
+    { role: "outfitter" },
+  ].map((r, i) => ({
+    email: `u${i}@example.com`,
+    createdDate: "2026-11-01",
+    name: "",
+    role: r.role,
+    emailVerified: false,
+    verificationEmailSent: false,
+  }));
+  const { noRole, withRole } = audit.splitByRole(rows);
+  assert.equal(noRole.length, 2);
+  assert.equal(withRole.length, 2);
+  // The two buckets partition the input — nothing is dropped.
+  assert.equal(noRole.length + withRole.length, rows.length);
+  assert.ok(noRole.every((r) => !audit.hasRole(r.role)));
+  assert.ok(withRole.every((r) => audit.hasRole(r.role)));
 });
 
 test("buildCsv escapes commas / quotes and formats the rows", () => {

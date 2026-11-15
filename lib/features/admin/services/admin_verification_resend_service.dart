@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 /// Client for the admin-only email-verification resend Cloud Functions.
 ///
@@ -186,6 +187,19 @@ class AdminVerificationResendService {
       }
     } catch (_) {}
     return fallback;
+  }
+
+  /// Opens a `mailto:` URI in the platform's mail client (used by the
+  /// "Remind Unverified With Role" action, which sends a gentle reminder —
+  /// NOT a fresh verification link — to active users). Returns whether the
+  /// hand-off succeeded; never throws.
+  Future<bool> launchMailto(Uri mailto) async {
+    try {
+      return await launchUrl(mailto, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('AdminVerificationResendService.launchMailto error: $e');
+      return false;
+    }
   }
 }
 

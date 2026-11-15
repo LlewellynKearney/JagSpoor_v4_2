@@ -457,6 +457,7 @@ class AdminUserRecord {
   AdminVerificationTarget get verificationTarget => AdminVerificationTarget(
         uid: uid,
         email: email,
+        role: role,
         emailVerified: emailVerified,
         verificationEmailSent: verificationEmailSent,
         verificationEmailLastError: verificationEmailLastError,
