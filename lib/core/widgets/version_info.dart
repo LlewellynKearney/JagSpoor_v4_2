@@ -20,6 +20,22 @@ class VersionInfo {
   static const String fallbackVersionCode = '27';
   static const String fallbackVersionName = '4.2.27';
 
+  /// The compact `v<name>+<code>` label (e.g. `v4.2.27+27`) for surfaces that
+  /// render the version inline with other UI (the Admin Portal V2 header).
+  ///
+  /// Mirrors the pubspec `version: <name>+<code>` shape so the running build is
+  /// unambiguous, and reads from the same source as [resolve] (versionName +
+  /// versionCode). Never renders "Unknown": a null/blank [name] or [code]
+  /// falls back to the documented pubspec-mirrored [fallbackVersionName] /
+  /// [fallbackVersionCode].
+  static String label({String? name, String? code}) {
+    final resolvedName =
+        (name ?? '').trim().isEmpty ? fallbackVersionName : name!.trim();
+    final resolvedCode =
+        (code ?? '').trim().isEmpty ? fallbackVersionCode : code!.trim();
+    return 'v$resolvedName+$resolvedCode';
+  }
+
   /// Asynchronously resolves the installed app version + build number.
   ///
   /// Returns a map of `{name, code, display}`. `name` is the human-readable

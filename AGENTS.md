@@ -1,5 +1,64 @@
 # JagSpoor -- Agent Memory
 
+## FIX: Admin Portal V2 header app version + export card (added 2026-11-15)
+
+Branch `fix/admin-v2-export-on-v2-users` (base `77db7b1`, the export-card fix).
+**NOT merged, NOT deployed.**
+
+### What was added
+- `lib/core/widgets/version_info.dart` -- new pure `VersionInfo.label({name,
+  code})` helper returning the compact `v<name>+<code>` label (e.g.
+  `v4.2.27+27`), reading the SAME source as `VersionInfo.resolve()` (versionName
+  + versionCode). A null/blank name or code falls back to the
+  pubspec-mirrored `fallbackVersionName` / `fallbackVersionCode`, so it NEVER
+  renders "Unknown" on Web / headless hosts.
+- `lib/features/admin/screens/admin_portal_v2_screen.dart` -- the AppBar title
+  is now `_buildHeaderTitle()`: the bold `🛡️ Admin Portal V2` wordmark + the
+  version label (`ValueKey('adminV2VersionLabel')`, small grey
+  `theme.subtitleColor`, 12px, ellipsised) on the SAME line. The label lives in
+  the AppBar (not a tab body) so it shows on ALL five tabs (Dashboard / Users /
+  Packages / Bookings / Revenue). `_versionLabel` is seeded with
+  `VersionInfo.label()` (fallback) for the first frame then refreshed from
+  `VersionInfo.resolve()` in `initState` -- no hardcoded string in two places,
+  and the same value on Web + Android (package_info_plus resolves the deployed
+  build on Web).
+
+### The export-card fix is KEPT
+The `AdminUsersExportCard` still renders FIRST in the V2 Users tab body
+(`_buildTabContent` `case AdminV2Tab.users` -> `adminV2UsersTabContent`
+Column), with `AdminUsersPage(showExportCard: false)` below so it renders
+exactly once. Not touched by the version work.
+
+### Tests
+- `test/admin_portal_v2_screen_test.dart` +3 (group "header app version"):
+  the label matches `VersionInfo.label(...)` for a mocked live bundle
+  (`PackageInfo.setMockInitialValues`, proving the label is sourced from
+  VersionInfo not a hardcoded string) + the wordmark is beside it; the label
+  renders on every tab (taps Users / Packages / Bookings / Revenue); an
+  unresolved bundle (blank name + code) falls back to the constants and never
+  reads "Unknown". The group's `tearDown` re-seeds the `PackageInfo` global so
+  a mocked version cannot leak.
+- The 3 pre-existing export-card tests stay green.
+
+### Verification
+- `flutter analyze`: **0 errors**, 320 pre-existing infos (unchanged baseline).
+- `flutter test test/admin_portal_v2_screen_test.dart`: **21/21 pass**.
+- Related suites (route / export widgets / users csv / pages / version info):
+  **95/95 pass**.
+- Full suite: see below. Env: Flutter **3.44.9** at `/workspace/sdk/flutter`;
+  `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites; `pubspec.lock`
+  drift from `pub get` reverted.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code touched; the OLD Admin
+Portal (`/admin`) untouched.
+
+### Files
+- MODIFIED: `lib/core/widgets/version_info.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `test/admin_portal_v2_screen_test.dart`, `AGENTS.md`.
+
 ## FIX: Admin Portal V2 Users tab -- CSV export card owned by the V2 tab (added 2026-11-15)
 
 Branch `fix/admin-v2-export-on-v2-users` (base `feature/admin-v2-export-subs`
