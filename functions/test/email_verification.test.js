@@ -23,6 +23,13 @@ function read(p) {
   return fs.readFileSync(p, "utf8");
 }
 
+/** Strips line + block comments so source assertions inspect real code only. */
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
 test("the resend callables + bulk limit are exported", () => {
   assert.equal(typeof ev.resendVerificationEmail, "function");
   assert.equal(typeof ev.resendVerificationEmailsBulk, "function");
@@ -58,14 +65,130 @@ test("the audit-trail field names match the Flutter service", () => {
   }
 });
 
-test("the verification email body carries the minted link", () => {
-  const body = ev.buildVerificationEmailBody(
-    "hunter@example.com",
-    "https://jagspoor.firebaseapp.com/__/auth/action?oobCode=abc"
+test("the resend delivers via Firebase Auth's built-in sender (accounts:sendOobCode)", () => {
+  const src = stripComments(read(path.join(SRC, "email_verification.ts")));
+  // The admin sendOobCode endpoint is the built-in sender.
+  assert.ok(
+    src.includes("/accounts:sendOobCode"),
+    "must call the admin accounts:sendOobCode endpoint"
   );
-  assert.ok(body.includes("https://jagspoor.firebaseapp.com/__/auth/action"));
-  assert.ok(body.includes("hunter@example.com"));
-  assert.ok(/verify/i.test(body));
+  assert.match(src, /requestType:\s*"VERIFY_EMAIL"/);
+  // It must NOT mint-only (returnOobLink / generateEmailVerificationLink
+  // suppress the send, which is the opposite of a resend).
+  assert.ok(
+    !/generateEmailVerificationLink/.test(src),
+    "must not use the mint-only generateEmailVerificationLink"
+  );
+  assert.ok(!/returnOobLink/.test(src), "must not suppress the send");
+});
+
+test("the built-in sender calls the ADMIN endpoint with a Bearer token + email", () => {
+  assert.equal(
+    ev.sendOobCodeEndpoint("jagspoor"),
+    "https://identitytoolkit.googleapis.com/v1/projects/jagspoor/accounts:sendOobCode"
+  );
+  assert.equal(typeof ev.sendVerificationEmailViaFirebase, "function");
+  assert.equal(typeof ev.setSendOobCodeFetchForTesting, "function");
+  assert.equal(typeof ev.setAccessTokenResolverForTesting, "function");
+  assert.equal(typeof ev.setSendOobCodeProjectIdForTesting, "function");
+  assert.equal(typeof ev.isPermissionDeniedError, "function");
+});
+
+test("sendVerificationEmailViaFirebase POSTs VERIFY_EMAIL with no idToken", async () => {
+  let captured = null;
+  ev.setAccessTokenResolverForTesting(async () => "sa-token");
+  ev.setSendOobCodeProjectIdForTesting("jagspoor");
+  ev.setSendOobCodeFetchForTesting(async (url, init) => {
+    captured = { url, init };
+    return { ok: true, status: 200, text: async () => "{}" };
+  });
+  try {
+    await ev.sendVerificationEmailViaFirebase("hunter@example.com");
+  } finally {
+    ev.setSendOobCodeFetchForTesting(null);
+    ev.setAccessTokenResolverForTesting(null);
+    ev.setSendOobCodeProjectIdForTesting(null);
+  }
+  assert.ok(captured, "the endpoint must be called");
+  assert.equal(captured.init.method, "POST");
+  assert.equal(captured.init.headers.Authorization, "Bearer sa-token");
+  assert.equal(captured.init.headers["Content-Type"], "application/json");
+  const body = JSON.parse(captured.init.body);
+  assert.equal(body.requestType, "VERIFY_EMAIL");
+  assert.equal(body.email, "hunter@example.com");
+  // An admin send carries NO idToken (that is the whole point).
+  assert.ok(!("idToken" in body), "the admin send must not send an idToken");
+  assert.equal(captured.url, ev.sendOobCodeEndpoint("jagspoor"));
+});
+
+test("sendVerificationEmailViaFirebase throws a PERMISSION_DENIED on a 403", async () => {
+  ev.setAccessTokenResolverForTesting(async () => "sa-token");
+  ev.setSendOobCodeProjectIdForTesting("jagspoor");
+  ev.setSendOobCodeFetchForTesting(async () => ({
+    ok: false,
+    status: 403,
+    text: async () => "PERMISSION_DENIED",
+  }));
+  try {
+    await assert.rejects(
+      () => ev.sendVerificationEmailViaFirebase("hunter@example.com"),
+      (err) => {
+        assert.equal(err.status, "PERMISSION_DENIED");
+        assert.equal(err.httpStatus, 403);
+        return true;
+      }
+    );
+  } finally {
+    ev.setSendOobCodeFetchForTesting(null);
+    ev.setAccessTokenResolverForTesting(null);
+    ev.setSendOobCodeProjectIdForTesting(null);
+  }
+});
+
+test("isPermissionDeniedError catches the admin sendOobCode denial shape", () => {
+  assert.equal(
+    ev.isPermissionDeniedError({ status: "PERMISSION_DENIED" }),
+    true
+  );
+  assert.equal(
+    ev.isPermissionDeniedError({ message: "PERMISSION_DENIED: nope" }),
+    true
+  );
+  assert.equal(
+    ev.isPermissionDeniedError({
+      code: "auth/insufficient-permission",
+    }),
+    true
+  );
+  assert.equal(ev.isPermissionDeniedError({ status: "INVALID_ARGUMENT" }), false);
+  assert.equal(ev.isPermissionDeniedError(null), false);
+});
+
+test("the resend module has NO nodemailer / SMTP / EMAIL_PASS surface", () => {
+  const raw = read(path.join(SRC, "email_verification.ts"));
+  const src = stripComments(raw);
+  for (const needle of [
+    "nodemailer",
+    "sendSupportEmail",
+    "emailPass",
+    "EMAIL_PASS",
+    "secrets:",
+    "SMTP",
+  ]) {
+    assert.ok(
+      !src.includes(needle),
+      `email_verification.ts must not reference ${needle} (custom SMTP removed)`
+    );
+  }
+});
+
+test("the resend callables surface the diagnostic (failed-precondition)", () => {
+  const src = read(path.join(SRC, "email_verification.ts"));
+  // The single resend throws failed-precondition on a diagnostic.
+  assert.ok(/result\.diagnostic/.test(src));
+  assert.ok(/"failed-precondition"/.test(src));
+  // The bulk surfaces it when EVERY attempt failed.
+  assert.ok(/diagnostics\.length === results\.length/.test(src));
 });
 
 test("both callables are admin-gated via isAdminRequest", () => {
@@ -369,9 +492,13 @@ test("the shared resend options pin the Admin SDK service account", () => {
   const opts = ev.resendCallableOptions();
   assert.equal(opts.serviceAccount, ev.RESEND_SERVICE_ACCOUNT);
   assert.equal(opts.region, "us-central1");
-  // The SMTP secret must still be mounted.
-  assert.equal(opts.secrets.length, 1);
-  assert.equal(opts.secrets[0].name, "EMAIL_PASS");
+  // The custom SMTP secret is NO LONGER mounted — delivery goes through the
+  // Firebase Auth built-in sender, which needs no SMTP credential.
+  assert.equal(
+    opts.secrets,
+    undefined,
+    "the resend must not mount EMAIL_PASS (SMTP removed)"
+  );
 });
 
 test("BOTH compiled resend callables run as the SAME pinned service account", () => {

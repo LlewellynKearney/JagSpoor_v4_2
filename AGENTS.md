@@ -1,5 +1,97 @@
 # JagSpoor -- Agent Memory
 
+
+## FIX: resend via Firebase sender, drop custom SMTP (added 2026-11-15)
+
+Branch `fix/email-verification-not-sending` (base `2bb2d66`, the SA-pinning
+fix). **NOT merged, NOT deployed.**
+
+### Why SMTP was a dead end (proven by the live logs)
+`Email config check: host mail.jag-spoor.co.za, port 465, secure true, user
+support@jag-spoor.co.za, passLen 13` — every setting correct, secret mounted,
+password works in webmail — and STILL `535 Incorrect authentication data`.
+The failure is outside the code (Afrihost / SMTP AUTH block), so the custom
+SMTP send path was removed for the two resend callables.
+
+### What changed (`functions/src/email_verification.ts`)
+- **Removed** the nodemailer / SMTP send path from BOTH resend callables:
+  the `sendSupportEmail` call, the `buildVerificationEmailBody` helper, the
+  `emailPass` import, the `secrets: [emailPass]` mount, and the
+  `EmailNotificationKind`/`buildSubject`/`SendResult` imports.
+- **Delivery now goes through Firebase Auth's OWN sender** — the Identity
+  Toolkit admin endpoint `projects/{projectId}/accounts:sendOobCode` with
+  `{requestType:"VERIFY_EMAIL", email}` and the runtime service account's
+  OAuth token (`sendVerificationEmailViaFirebase`). This is the SAME code path
+  / template the client's `sendEmailVerification()` uses, so the resend and the
+  original send look identical.
+- **Why the ADMIN endpoint, not the public key endpoint**: the public
+  `identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=…` requires the
+  target user's `idToken` for `VERIFY_EMAIL` (proven empirically: an
+  email-only call returns `INVALID_ID_TOKEN`), so an admin cannot use it. The
+  admin endpoint authorizes on the caller's OAuth credential instead and needs
+  no idToken; it needs the IAM permission `firebaseauth.users.sendEmail`
+  (granted by `roles/firebaseauth.admin` or the narrower
+  `roles/identitytoolkit.admin`) on the runtime service account.
+- **`generateEmailVerificationLink()` is deliberately NOT used**: it sets
+  `returnOobLink: true`, which MINTS the code and SUPPRESSES the send — the
+  opposite of a resend.
+- New `REQUIRED_AUTH_SEND_EMAIL_PERMISSION = "firebaseauth.users.sendEmail"`;
+  the diagnostic copy now names the role OR the narrower permission.
+- New `isPermissionDeniedError()` (superset of `isInsufficientPermissionError`)
+  catches the raw Identity Toolkit `PERMISSION_DENIED` a 403 returns, so a
+  missing send permission surfaces as the actionable diagnostic rather than a
+  bare "0 of N".
+- `resendOne()` now: look up the email → `sendVerificationEmailViaFirebase`
+  → audit. No separate link-generation step.
+- Test seams: `setSendOobCodeFetchForTesting` / `setAccessTokenResolverForTesting`
+  / `setSendOobCodeProjectIdForTesting` so the send path is unit-testable with
+  no network + no credential.
+
+### Kept (per the brief)
+- `initializeApp()` with NO args (unchanged) — the runtime SA's OAuth token is
+  read via `app.options.credential ?? credential.applicationDefault()`.
+- BOTH callables pinned to
+  `firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com` via the shared
+  `resendCallableOptions()` (verified in the compiled `__endpoint`).
+- The SA diagnostic (`buildResendDiagnostic` + `describeCredential` +
+  `resolveRuntimeServiceAccountEmail`) is intact.
+- The bulk callable still never returns a bare "0 of 0": when EVERY attempt is
+  denied it throws `failed-precondition` with the diagnostic.
+
+### Tests
+- `functions/test/email_verification.test.js` updated: the
+  `buildVerificationEmailBody` test replaced with built-in-sender tests
+  (endpoint shape, POST VERIFY_EMAIL + Bearer token + NO idToken, the 403 →
+  `PERMISSION_DENIED` throw, `isPermissionDeniedError`, a "no nodemailer /
+  SMTP / EMAIL_PASS surface" guard, `sendOobCodeEndpoint`); the
+  `resendCallableOptions` test now asserts `opts.secrets === undefined`.
+- `functions`: `npm run build` (tsc) clean; `npm test` **227/227 pass**.
+- Compiled endpoints: both pinned to the Admin SDK SA with
+  `secretEnvironmentVariables === undefined`.
+- `flutter analyze lib test`: **0 errors, 0 warnings**, 320 pre-existing infos
+  (unchanged baseline). `pubspec.lock` drift reverted.
+- The relevant Dart suites (`admin_verification_resend_test` +
+  `email_verification_test`) still pass 45/45 — the response contract
+  (`{delivered, linkGenerated, results[]}`) is unchanged.
+
+### ⚠️ Operator step (cannot be done in this sandbox)
+Grant the runtime service account the send permission so the built-in sender
+actually dispatches (a missing permission makes the endpoint return
+`PERMISSION_DENIED` instead of sending):
+```
+gcloud projects add-iam-policy-binding jagspoor \
+  --member="serviceAccount:firebase-adminsdk-fbsvc@jagspoor.iam.gserviceaccount.com" \
+  --role="roles/firebaseauth.admin"
+```
+Then `npx firebase-tools deploy --only functions:resendVerificationEmail,resendVerificationEmailsBulk`.
+The `EMAIL_PASS` secret is no longer needed by these two functions (the other
+mail triggers still use it for their own sends).
+
+### Files
+- MODIFIED: `functions/src/email_verification.ts`, `functions/src/index.ts`,
+  `functions/test/email_verification.test.js`, `AGENTS.md`.
+
+
 ## FIX: pin BOTH resend functions to the Admin SDK SA + name the SA in the diagnostic (added 2026-11-15)
 
 Branch `fix/email-verification-not-sending` (base `main` @ `5ee7f92`, v4.2.28+28).

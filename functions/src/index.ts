@@ -189,7 +189,8 @@ export {
 // ────────────────────────────────────────────────────────────────────────────
 // Email-verification resend (admin-only). Firebase Auth owns the verification
 // mail send path; the admin portal uses these to re-send to accounts that
-// missed it (the Admin SDK's generateEmailVerificationLink is required).
+// missed it. Delivery goes through Firebase Auth's OWN sender (the admin
+// `accounts:sendOobCode` endpoint) — no custom SMTP.
 // ────────────────────────────────────────────────────────────────────────────
 export {
   resendVerificationEmail,
@@ -198,7 +199,7 @@ export {
   VERIFICATION_SENT_FIELD,
   VERIFICATION_LAST_ERROR_FIELD,
   VERIFICATION_LAST_ATTEMPT_FIELD,
-  buildVerificationEmailBody,
+  REQUIRED_AUTH_SEND_EMAIL_PERMISSION,
 } from "./email_verification";
 
 // ────────────────────────────────────────────────────────────────────────────

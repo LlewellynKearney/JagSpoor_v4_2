@@ -1,20 +1,15 @@
 import { logger } from "firebase-functions/v2";
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
+import { credential } from "firebase-admin";
 import {
   auth,
   firestore,
+  getAdmin,
   describeCredential,
   resolveRuntimeServiceAccountEmail,
   type CredentialDiagnostic,
 } from "./firebase";
-import { emailPass } from "./params";
-import {
-  EmailNotificationKind,
-  buildSubject,
-  sendSupportEmail,
-  type SendResult,
-} from "./email";
 import { ADMIN_EMAIL_ALLOW_LIST, isAdminRequest } from "./admin/kpis";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -26,7 +21,7 @@ import { ADMIN_EMAIL_ALLOW_LIST, isAdminRequest } from "./admin/kpis";
 // (`User.sendEmailVerification()` on the client) — there is no Cloud Function
 // in the send path, so the app cannot resend on behalf of an account it is not
 // signed into. The admin portal needs to re-send to accounts that missed the
-// mail, which requires the Admin SDK's `generateEmailVerificationLink()`.
+// mail.
 //
 // This module owns that admin-only surface:
 //   * `resendVerificationEmail`        — one account.
@@ -36,17 +31,30 @@ import { ADMIN_EMAIL_ALLOW_LIST, isAdminRequest } from "./admin/kpis";
 // `getAdminPortalKpis` (custom claim -> email allow-list -> `users/{uid}.role`),
 // so a non-admin can never trigger a resend.
 //
-// ## Delivery
+// ## Delivery — Firebase Auth's OWN sender (no custom SMTP)
 //
-// Firebase Auth's own template delivery cannot be forced from the Admin SDK —
-// `generateEmailVerificationLink()` only MINTS the link. Two delivery paths:
+// The mail is delivered by **Firebase Auth's built-in sender** via the Identity
+// Toolkit admin endpoint `projects/{projectId}/accounts:sendOobCode`. This is
+// the SAME code path / template the client's `sendEmailVerification()` uses, so
+// the resend and the original send are guaranteed to look identical — and it
+// removes the custom SMTP dependency entirely (the Afrihost mailbox rejected the
+// SMTP AUTH with `535 Incorrect authentication data` even with the correct
+// password, so SMTP was a dead end).
 //
-//   1. SMTP (preferred when the mailbox secret is configured): the minted link
-//      is emailed to the user from the support mailbox. This works for every
-//      account and needs no client involvement.
-//   2. Fallback: when SMTP is unavailable the link is still minted (so the
-//      account is recoverable) and logged, and the function reports
-//      `delivered: false` with the link status — the caller surfaces it.
+// Why the admin endpoint and NOT the public key endpoint:
+//   * `identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=…` (the client
+//     path) requires a valid `idToken` for `VERIFY_EMAIL` — the caller must be
+//     the account itself, which is exactly what the admin cannot supply.
+//   * The ADMIN endpoint (`projects/{projectId}/accounts:sendOobCode`, called
+//     with the runtime service-account OAuth token) sends the built-in template
+//     WITHOUT an idToken, and needs the IAM permission
+//     `firebaseauth.users.sendEmail` on the runtime service account (a one-time
+//     grant — see `REQUIRED_AUTH_SEND_EMAIL_ROLE`).
+//
+// The Admin SDK's `generateEmailVerificationLink()` is deliberately NOT used: it
+// sets `returnOobLink: true`, which MINTS a link and suppresses the send — the
+// opposite of what a resend needs. The endpoint is called directly so the
+// built-in sender actually fires.
 //
 // Every attempt writes the SAME audit trail the client writes
 // (`verificationEmailSent` / `verificationEmailLastError` /
@@ -62,8 +70,8 @@ export const VERIFICATION_LAST_ATTEMPT_FIELD = "verificationEmailLastAttemptAt";
 /**
  * The maximum number of accounts a single bulk resend may address.
  *
- * Resending mints a link + sends a mail per account; an unbounded batch could
- * exhaust the SMTP / Auth quota and get the project throttled. The bulk action
+ * Resending sends one mail per account; an unbounded batch could exhaust the
+ * Identity Toolkit send quota and get the project throttled. The bulk action
  * processes at most this many accounts per run and reports the remainder.
  * Mirrors `kAdminVerificationResendBatchLimit` on the client.
  */
@@ -109,6 +117,19 @@ export interface ResendDiagnostic {
 export const REQUIRED_AUTH_ADMIN_ROLE = "roles/firebaseauth.admin";
 
 /**
+ * The IAM permission the resend functions need on their service account to
+ * make the built-in sender actually dispatch the mail.
+ *
+ * The admin `accounts:sendOobCode` endpoint authorizes on the IAM permission
+ * `firebaseauth.users.sendEmail` (granted by `roles/firebaseauth.admin` or the
+ * narrower `roles/identitytoolkit.admin`). When it is missing the endpoint
+ * still mints the OOB code but returns `PERMISSION_DENIED` instead of sending,
+ * so the resend must surface that as an actionable diagnostic.
+ */
+export const REQUIRED_AUTH_SEND_EMAIL_PERMISSION =
+  "firebaseauth.users.sendEmail";
+
+/**
  * The service account BOTH resend functions are pinned to.
  *
  * The two functions were originally left on the project's default compute
@@ -129,12 +150,15 @@ export const RESEND_SERVICE_ACCOUNT =
 /**
  * The shared `onCall` options for BOTH resend callables. Identical by
  * construction so the two functions can never be configured differently.
+ *
+ * NO `secrets` entry: the resend no longer authenticates to SMTP (the custom
+ * mailbox path was a dead end), so the `EMAIL_PASS` secret is neither mounted
+ * nor read here. Delivery goes through Firebase Auth's own sender.
  */
 export function resendCallableOptions() {
   return {
     region: "us-central1" as const,
     maxInstances: 10,
-    secrets: [emailPass],
     serviceAccount: RESEND_SERVICE_ACCOUNT,
   };
 }
@@ -175,15 +199,16 @@ export function buildResendDiagnostic(
   const rootCause = cred.explicitCredential
     ? "an explicit credential was passed to initializeApp() — remove it so " +
       "the function uses its runtime service account"
-    : `the function's runtime service account is missing the role; the ` +
-      `function should be pinned to ${RESEND_SERVICE_ACCOUNT} (the Admin SDK ` +
-      `account) via the serviceAccount deploy option`;
+    : `the function's runtime service account is missing the role/permission; ` +
+      `the function should be pinned to ${RESEND_SERVICE_ACCOUNT} (the Admin ` +
+      `SDK account) via the serviceAccount deploy option`;
   return {
     code: (e?.code ?? "insufficient-permission").toString(),
     message:
       `Auth Admin call rejected: the credential has insufficient permission. ` +
       `Identity: ${identity} (source: ${cred.source}). ` +
-      `Grant ${REQUIRED_AUTH_ADMIN_ROLE} to this service account. ` +
+      `Grant ${REQUIRED_AUTH_ADMIN_ROLE} (or the narrower ` +
+      `${REQUIRED_AUTH_SEND_EMAIL_PERMISSION}) to this service account. ` +
       `Likely root cause: ${rootCause}.`,
     missingRole: REQUIRED_AUTH_ADMIN_ROLE,
     serviceAccount: cred.serviceAccount ?? runtimeServiceAccount ?? null,
@@ -194,31 +219,32 @@ export function buildResendDiagnostic(
   };
 }
 
-/** Builds the verification email body for a minted link. */
-export function buildVerificationEmailBody(
-  email: string,
-  link: string
-): string {
-  return [
-    "Welcome to JagSpoor!",
-    "",
-    "Please confirm your email address to finish setting up your account.",
-    "Open the link below in your browser to verify:",
-    "",
-    link,
-    "",
-    `This link was sent to ${email}. If you did not request it, you can`,
-    "safely ignore this message.",
-    "",
-    "— The JagSpoor Team",
-  ].join("\n");
+/**
+ * True when an error is a permission/authorization failure for the built-in
+ * sender — either the Admin SDK's `auth/insufficient-permission` or the raw
+ * Identity Toolkit `PERMISSION_DENIED` the admin `accounts:sendOobCode`
+ * endpoint returns when the runtime service account lacks
+ * `firebaseauth.users.sendEmail`.
+ */
+export function isPermissionDeniedError(err: unknown): boolean {
+  if (isInsufficientPermissionError(err)) return true;
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: string; code?: string | number; message?: string };
+  if ((e.status ?? "").toString().toUpperCase() === "PERMISSION_DENIED") {
+    return true;
+  }
+  if ((e.code ?? "").toString().toUpperCase() === "PERMISSION_DENIED") {
+    return true;
+  }
+  return (e.message ?? "").toString().toLowerCase().includes("permission_denied");
 }
 
 /**
  * Resends the verification email to a SINGLE account.
  *
- * Admin-only. Mints a fresh Firebase Auth verification link and emails it from
- * the support mailbox; records the outcome on `users/{uid}`.
+ * Admin-only. Delivers the mail through Firebase Auth's own sender (the
+ * `accounts:sendOobCode` admin endpoint) and records the outcome on
+ * `users/{uid}`.
  */
 export const resendVerificationEmail = onCall(
   resendCallableOptions(),
@@ -285,9 +311,9 @@ export const resendVerificationEmailsBulk = onCall(
     const skipped = requested.length - batch.length;
 
     const results: ResendResult[] = [];
-    // Sequential (not Promise.all) so the batch cannot open BULK_LIMIT
-    // simultaneous SMTP connections — a burst is the fastest way to trip a
-    // provider's rate limit.
+    // Sequential (not Promise.all) so the batch cannot burst the Identity
+    // Toolkit send quota — a concurrent flood is the fastest way to trip a
+    // rate limit.
     for (const uid of batch) {
       results.push(await resendOne(uid));
     }
@@ -384,7 +410,7 @@ async function resendOne(uid: string): Promise<ResendResult> {
     }
   } catch (err) {
     const reason = `lookup failed: ${describe(err)}`;
-    const diagnostic = isInsufficientPermissionError(err)
+    const diagnostic = isPermissionDeniedError(err)
       ? await diagnosticFor(err)
       : undefined;
     if (diagnostic) {
@@ -399,60 +425,161 @@ async function resendOne(uid: string): Promise<ResendResult> {
     return { uid, email, delivered: false, linkGenerated: false, reason, diagnostic };
   }
 
-  // Mint a fresh verification link (this is the part that needs the Admin SDK).
-  let link = "";
+  // Deliver via Firebase Auth's OWN sender. The admin `accounts:sendOobCode`
+  // endpoint both MINTS the code AND sends the built-in template, so there is
+  // no separate link-generation step (and no custom SMTP).
   try {
-    link = await auth().generateEmailVerificationLink(email);
+    await sendVerificationEmailViaFirebase(email);
+    await recordOutcome(uid, { sent: true });
+    logger.info("resendOne: verification email sent via Firebase sender", {
+      uid,
+      email,
+    });
+    return { uid, email, delivered: true, linkGenerated: true };
   } catch (err) {
-    const reason = `link generation failed: ${describe(err)}`;
-    const diagnostic = isInsufficientPermissionError(err)
+    const reason = `send failed: ${describe(err)}`;
+    const diagnostic = isPermissionDeniedError(err)
       ? await diagnosticFor(err)
       : undefined;
     if (diagnostic) {
-      logger.error("resendOne: generateEmailVerificationLink DENIED (IAM)", {
-        uid,
-        diagnostic,
-      });
+      logger.error("resendOne: sendOobCode DENIED (IAM)", { uid, diagnostic });
     } else {
-      logger.error("resendOne: generateEmailVerificationLink failed", {
-        uid,
-        reason,
-      });
+      logger.warn("resendOne: sendOobCode failed", { uid, reason });
     }
     await recordOutcome(uid, { sent: false, error: reason });
     return { uid, email, delivered: false, linkGenerated: false, reason, diagnostic };
   }
+}
 
-  // Deliver the minted link from the support mailbox.
-  const send: SendResult = await sendSupportEmail({
-    kind: EmailNotificationKind.NewUser,
-    detail: `Verify your email — ${email}`,
-    body: buildVerificationEmailBody(email, link),
-    to: email,
-  });
+/**
+ * The Identity Toolkit admin endpoint that both mints the OOB code AND sends
+ * the Firebase Auth verification template — the server-side equivalent of the
+ * client's `sendEmailVerification()`.
+ *
+ * The PUBLIC endpoint (`identitytoolkit.googleapis.com/v1/accounts:sendOobCode
+ * ?key=…`) requires the target user's `idToken` for `VERIFY_EMAIL`, so an admin
+ * cannot use it. The ADMIN endpoint below (`projects/{projectId}/…`) authorizes
+ * on the caller's OAuth credential (the runtime service account) instead and
+ * needs no idToken.
+ */
+export function sendOobCodeEndpoint(projectId: string): string {
+  return (
+    `https://identitytoolkit.googleapis.com/v1/projects/${projectId}` +
+    `/accounts:sendOobCode`
+  );
+}
 
-  if (send.sent) {
-    await recordOutcome(uid, { sent: true });
-    logger.info("resendOne: verification email sent", { uid, email });
-    return { uid, email, delivered: true, linkGenerated: true };
+/** Injectable fetch seam so the send path is unit-testable without network. */
+export type SendOobCodeFetch = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
   }
+) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
-  // The link was minted but the mail was not sent (SMTP not configured /
-  // failed). Record the failure with the send reason.
-  const reason = send.reason ?? "email delivery failed";
-  await recordOutcome(uid, { sent: false, error: reason });
-  logger.warn("resendOne: link minted but not delivered", {
-    uid,
-    email,
-    reason,
+let sendOobCodeFetchForTesting: SendOobCodeFetch | null = null;
+
+/** Test seam: override the fetch used to call the endpoint. */
+export function setSendOobCodeFetchForTesting(
+  fetchImpl: SendOobCodeFetch | null
+): void {
+  sendOobCodeFetchForTesting = fetchImpl;
+}
+
+/** Test seam: override the resolved project id. */
+let sendOobCodeProjectIdForTesting: string | null = null;
+
+/** Test seam: override the project id (null = use the runtime default). */
+export function setSendOobCodeProjectIdForTesting(
+  projectId: string | null
+): void {
+  sendOobCodeProjectIdForTesting = projectId;
+}
+
+/** Resolves an OAuth access token for the sender (the runtime SA's token). */
+export type AccessTokenResolver = () => Promise<string | null>;
+
+/** Test seam: override the access-token resolver. */
+let accessTokenResolverForTesting: AccessTokenResolver | null = null;
+
+/** Test seam: override the access-token resolver (null = use the SDK). */
+export function setAccessTokenResolverForTesting(
+  resolver: AccessTokenResolver | null
+): void {
+  accessTokenResolverForTesting = resolver;
+}
+
+/**
+ * The OAuth access token used to call the admin sendOobCode endpoint. Defaults
+ * to the Admin SDK credential — the SAME identity `initializeApp()` uses — so
+ * the call is authorized as the function's runtime service account.
+ */
+async function resolveSenderAccessToken(): Promise<string> {
+  if (accessTokenResolverForTesting) {
+    const token = await accessTokenResolverForTesting();
+    if (!token) throw new Error("no access token from the resolver");
+    return token;
+  }
+  const app = getAdmin();
+  const cred = app.options.credential ?? credential.applicationDefault();
+  const token = await cred.getAccessToken();
+  if (!token?.access_token) {
+    throw new Error("could not obtain an OAuth access token for the sender");
+  }
+  return token.access_token;
+}
+
+function resolveProjectId(): string {
+  if (sendOobCodeProjectIdForTesting) return sendOobCodeProjectIdForTesting;
+  const app = getAdmin();
+  const fromOptions = (app.options.projectId ?? "").toString().trim();
+  if (fromOptions) return fromOptions;
+  const fromEnv =
+    (process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? "").toString().trim();
+  if (fromEnv) return fromEnv;
+  throw new Error("Unable to resolve the Firebase project id for sendOobCode.");
+}
+
+/**
+ * Sends the Firebase Auth email-verification template to `email` through the
+ * built-in sender (admin `accounts:sendOobCode`). Throws on any non-2xx so the
+ * caller can record the reason + build a diagnostic.
+ *
+ * Uses the runtime service account's OAuth token — obtained from the Admin
+ * SDK's credential (`app.options.credential ?? applicationDefault()`), which is
+ * the SAME identity `initializeApp()` uses. No explicit credential is passed to
+ * `initializeApp()` (see `firebase.ts`).
+ */
+export async function sendVerificationEmailViaFirebase(
+  email: string
+): Promise<void> {
+  const token = await resolveSenderAccessToken();
+  const url = sendOobCodeEndpoint(resolveProjectId());
+  const doFetch: SendOobCodeFetch =
+    sendOobCodeFetchForTesting ??
+    ((u, init) => fetch(u, init) as unknown as ReturnType<SendOobCodeFetch>);
+
+  const res = await doFetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ requestType: "VERIFY_EMAIL", email }),
   });
-  return {
-    uid,
-    email,
-    delivered: false,
-    linkGenerated: true,
-    reason,
-  };
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    // Surface the Identity Toolkit status so a PERMISSION_DENIED becomes an
+    // actionable diagnostic (missing firebaseauth.users.sendEmail).
+    throw Object.assign(new Error(text || `HTTP ${res.status}`), {
+      status: res.status === 403 ? "PERMISSION_DENIED" : undefined,
+      code: res.status,
+      httpStatus: res.status,
+    });
+  }
 }
 
 /** Writes the verification audit trail (best-effort; never throws). */
