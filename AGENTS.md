@@ -1,5 +1,136 @@
 # JagSpoor -- Agent Memory
 
+## FIX: Admin Portal V2 header app version + export card (added 2026-11-15)
+
+Branch `fix/admin-v2-export-on-v2-users` (base `77db7b1`, the export-card fix).
+**NOT merged, NOT deployed.**
+
+### What was added
+- `lib/core/widgets/version_info.dart` -- new pure `VersionInfo.label({name,
+  code})` helper returning the compact `v<name>+<code>` label (e.g.
+  `v4.2.27+27`), reading the SAME source as `VersionInfo.resolve()` (versionName
+  + versionCode). A null/blank name or code falls back to the
+  pubspec-mirrored `fallbackVersionName` / `fallbackVersionCode`, so it NEVER
+  renders "Unknown" on Web / headless hosts.
+- `lib/features/admin/screens/admin_portal_v2_screen.dart` -- the AppBar title
+  is now `_buildHeaderTitle()`: the bold `🛡️ Admin Portal V2` wordmark + the
+  version label (`ValueKey('adminV2VersionLabel')`, small grey
+  `theme.subtitleColor`, 12px, ellipsised) on the SAME line. The label lives in
+  the AppBar (not a tab body) so it shows on ALL five tabs (Dashboard / Users /
+  Packages / Bookings / Revenue). `_versionLabel` is seeded with
+  `VersionInfo.label()` (fallback) for the first frame then refreshed from
+  `VersionInfo.resolve()` in `initState` -- no hardcoded string in two places,
+  and the same value on Web + Android (package_info_plus resolves the deployed
+  build on Web).
+
+### The export-card fix is KEPT
+The `AdminUsersExportCard` still renders FIRST in the V2 Users tab body
+(`_buildTabContent` `case AdminV2Tab.users` -> `adminV2UsersTabContent`
+Column), with `AdminUsersPage(showExportCard: false)` below so it renders
+exactly once. Not touched by the version work.
+
+### Tests
+- `test/admin_portal_v2_screen_test.dart` +3 (group "header app version"):
+  the label matches `VersionInfo.label(...)` for a mocked live bundle
+  (`PackageInfo.setMockInitialValues`, proving the label is sourced from
+  VersionInfo not a hardcoded string) + the wordmark is beside it; the label
+  renders on every tab (taps Users / Packages / Bookings / Revenue); an
+  unresolved bundle (blank name + code) falls back to the constants and never
+  reads "Unknown". The group's `tearDown` re-seeds the `PackageInfo` global so
+  a mocked version cannot leak.
+- The 3 pre-existing export-card tests stay green.
+
+### Verification
+- `flutter analyze`: **0 errors**, 320 pre-existing infos (unchanged baseline).
+- `flutter test test/admin_portal_v2_screen_test.dart`: **21/21 pass**.
+- Related suites (route / export widgets / users csv / pages / version info):
+  **95/95 pass**.
+- Full suite: see below. Env: Flutter **3.44.9** at `/workspace/sdk/flutter`;
+  `LD_LIBRARY_PATH="$HOME/libs"` for the sqflite-FFI suites; `pubspec.lock`
+  drift from `pub get` reverted.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code touched; the OLD Admin
+Portal (`/admin`) untouched.
+
+### Files
+- MODIFIED: `lib/core/widgets/version_info.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `test/admin_portal_v2_screen_test.dart`, `AGENTS.md`.
+
+## FIX: Admin Portal V2 Users tab -- CSV export card owned by the V2 tab (added 2026-11-15)
+
+Branch `fix/admin-v2-export-on-v2-users` (base `feature/admin-v2-export-subs`
+@ `4126002`). **NOT merged, NOT deployed.**
+
+### The reported symptom
+On `https://jag-spoor.co.za/#/admin_portal_v2` → Users tab the export card was
+reported missing, while the screenshot showed the V2 Users UI (Search by email +
+All / Hunter / Outfitter / Dual / No Role chips + "Users (75 of 75)").
+
+### What was actually wrong
+There is only ONE users page in the repo (`lib/features/admin/pages/admin_users_page.dart`)
+and it IS the V2 Users tab body (`AdminPortalV2Screen._buildTabContent` →
+`case AdminV2Tab.users: return AdminUsersPage(...)`); the export card was
+already rendered as its first child. The real problem was **ownership/robustness**:
+the card lived inside the page widget, so its placement depended on how that
+page composed its children (and a future refactor of the page could silently
+drop it again). The brief also asks for the card at the very top of the **V2
+Users tab**.
+
+### The fix
+- `lib/features/admin/screens/admin_portal_v2_screen.dart` — the `users` case
+  now builds a `Column` (key `adminV2UsersTabContent`) that renders the
+  `AdminUsersExportCard` **first** (owned by the V2 tab, above the search box)
+  followed by the page with `showExportCard: false`, so the card can never be
+  lost by a page-layout change and is never duplicated.
+- `lib/features/admin/pages/admin_users_page.dart` — gained `showExportCard`
+  (default `true`, so the page stays self-contained when used directly); the
+  card renders only when it is true.
+- `lib/features/admin/models/admin_user_metrics.dart` — documented why the
+  export's no-role predicate stays the role-STRING predicate (`hasNoRoleForExport`)
+  while the visible "No Role" section uses the role-CATEGORY predicate
+  (`hasNoOperationalRole`): the export targets accounts stuck without a role
+  (blank / `none` / `unassigned`), not deliberate platform-admin accounts.
+
+### Reuse (no CSV logic rebuilt)
+The fix reuses the existing `AdminUsersCsv` builder
+(`lib/features/admin/models/admin_users_csv.dart`) + `deliverCsv`
+(`lib/features/admin/services/csv_export.dart`) unchanged, via the existing
+`AdminUsersExportCard` widget — the counts are `AdminUsersCsv.rowCount` over the
+same list the CSV is built from, so the label and the file always agree.
+
+### Tests
+- `test/admin_portal_v2_screen_test.dart` +2 (and the existing export-card test
+  kept): the card renders **exactly once** on the Users tab; the button counts
+  match the fetched rows (3 users / 2 no-role → `Export All Users (3)` +
+  `Export No Role (2)`).
+- The existing V2 Users-tab + pages + export-widget + CSV suites stay green
+  (`admin_portal_v2_route_test` **24/24** unchanged).
+
+### Verification
+- `flutter analyze`: **0 errors**, 320 pre-existing infos (unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2648 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), identical
+  to the pre-change baseline.
+- `flutter build web --release`: **SUCCESS**.
+- Env: Flutter **3.44.9** at `/tmp/fl/flutter`; `LD_LIBRARY_PATH="$HOME/libs"`
+  for the sqflite-FFI suites.
+
+### Constraints honoured
+No deploy; no merge to `main`; no `admin_config` / `min_required_version`
+change; no payment / billing / referral / profile code touched; the Provider
+column rendering (trial / google_play / payfast / —) is unchanged; the old
+Admin Portal (`/admin`) untouched.
+
+### Files
+- MODIFIED: `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `lib/features/admin/pages/admin_users_page.dart`,
+  `lib/features/admin/models/admin_user_metrics.dart`,
+  `test/admin_portal_v2_screen_test.dart`, `AGENTS.md`.
+
 ## FEAT: Admin Portal V2 -- Users CSV Export + Subscription KPIs (added 2026-11-15)
 
 Branch `feature/admin-v2-export-subs` (base `main` @ `b15373d`). **NOT merged,

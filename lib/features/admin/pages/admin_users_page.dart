@@ -23,11 +23,20 @@ class AdminUsersPage extends StatefulWidget {
   /// note and the emails are never exposed.
   final bool isAdmin;
 
+  /// Whether this page renders its own "Users Export (CSV)" card.
+  ///
+  /// Defaults to `true` so the page is self-contained when used directly. The
+  /// Admin Portal V2 Users tab renders the card itself (so the card is owned by
+  /// the V2 screen, exactly as the brief specifies) and passes `false` here to
+  /// avoid rendering two cards.
+  final bool showExportCard;
+
   const AdminUsersPage({
     super.key,
     required this.theme,
     required this.records,
     this.isAdmin = false,
+    this.showExportCard = true,
   });
 
   @override
@@ -78,12 +87,14 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       key: const ValueKey('adminV2UsersPage'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AdminUsersExportCard(
-          theme: widget.theme,
-          records: widget.records,
-          isAdmin: widget.isAdmin,
-        ),
-        const SizedBox(height: 12),
+        if (widget.showExportCard) ...[
+          AdminUsersExportCard(
+            theme: widget.theme,
+            records: widget.records,
+            isAdmin: widget.isAdmin,
+          ),
+          const SizedBox(height: 12),
+        ],
         AdminV2SearchField(
           theme: widget.theme,
           controller: _search,

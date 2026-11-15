@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/layout/web_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/safe_bottom_inset.dart';
+import '../../../core/widgets/version_info.dart';
 import '../../hunter_mode/models/booking_status.dart';
 import '../models/admin_operational_metrics.dart';
 import '../models/admin_revenue_metrics.dart';
@@ -18,6 +19,7 @@ import '../services/admin_operational_metrics_service.dart';
 import '../services/admin_user_metrics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
 import '../widgets/admin_subscribers_list_section.dart';
+import '../widgets/admin_users_export_card.dart';
 import '../widgets/admin_v2_charts.dart';
 import '../widgets/admin_v2_common.dart';
 
@@ -96,10 +98,30 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   /// alongside the user records.
   int _referredUsersCount = 0;
 
+  /// The compact app-version label shown beside the header title (e.g.
+  /// `v4.2.27+27`). Resolved from [VersionInfo] so it reads the same source as
+  /// the profile / settings footer (versionName + versionCode) and never shows
+  /// "Unknown". Seeded with the pubspec-mirrored fallback so the very first
+  /// frame (before the async resolve lands) is already correct on every
+  /// platform, including Web.
+  String _versionLabel = VersionInfo.label();
+
   @override
   void initState() {
     super.initState();
+    _resolveVersionLabel();
     _bootstrap();
+  }
+
+  Future<void> _resolveVersionLabel() async {
+    final info = await VersionInfo.resolve();
+    if (!mounted) return;
+    setState(() {
+      _versionLabel = VersionInfo.label(
+        name: info['name'],
+        code: info['code'],
+      );
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -172,7 +194,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         return Scaffold(
           backgroundColor: widget.theme.backgroundColor,
           appBar: AppBar(
-            title: const Text('🛡️ Admin Portal V2'),
+            title: _buildHeaderTitle(),
             backgroundColor: widget.theme.backgroundColor,
             foregroundColor: widget.theme.textColor,
             elevation: 0,
@@ -223,6 +245,39 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
     );
   }
 
+  /// The AppBar title: the bold "🛡️ Admin Portal V2" wordmark with the compact
+  /// app-version label ("v4.2.27+27") in small grey type on the SAME line.
+  ///
+  /// Lives in the AppBar (not the tab body) so it is visible on every tab
+  /// (Dashboard / Users / Packages / Bookings / Revenue). The label reads from
+  /// [VersionInfo] (the same source as the profile / settings footer) and
+  /// ellipsises rather than overflowing on a narrow phone header.
+  Widget _buildHeaderTitle() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          '🛡️ Admin Portal V2',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            _versionLabel,
+            key: const ValueKey('adminV2VersionLabel'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: widget.theme.subtitleColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// The tab bar that switches between the Dashboard and the four read-only
   /// pages (Task 6).
   Widget _buildTabBar() {
@@ -257,10 +312,27 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
       case AdminV2Tab.dashboard:
         return _buildDashboard();
       case AdminV2Tab.users:
-        return AdminUsersPage(
-          theme: widget.theme,
-          records: _records,
-          isAdmin: _authorized,
+        // The CSV export card is rendered HERE (owned by the V2 Users tab) so
+        // it always appears at the very top of the tab, above the search box —
+        // regardless of how the page widget is composed. The page is told not
+        // to render its own copy.
+        return Column(
+          key: const ValueKey('adminV2UsersTabContent'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AdminUsersExportCard(
+              theme: widget.theme,
+              records: _records,
+              isAdmin: _authorized,
+            ),
+            const SizedBox(height: 16),
+            AdminUsersPage(
+              theme: widget.theme,
+              records: _records,
+              isAdmin: _authorized,
+              showExportCard: false,
+            ),
+          ],
         );
       case AdminV2Tab.packages:
         return AdminPackagesPage(theme: widget.theme, data: _operational);

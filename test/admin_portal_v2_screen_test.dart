@@ -3,11 +3,13 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
+import 'package:jagspoor/core/widgets/version_info.dart';
 import 'package:jagspoor/features/admin/screens/admin_portal_v2_screen.dart';
 import 'package:jagspoor/features/admin/services/admin_auth_guard.dart';
 import 'package:jagspoor/features/admin/services/admin_operational_metrics_service.dart';
 import 'package:jagspoor/features/admin/services/admin_user_metrics_service.dart';
 import 'package:jagspoor/features/auth/services/user_role_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 /// Widget tests for the Admin Portal V2 screen.
 ///
@@ -281,6 +283,45 @@ void main() {
     expect(find.textContaining('Export All Users ('), findsOneWidget);
   });
 
+  testWidgets('the export card renders exactly once on the Users tab',
+      (tester) async {
+    await firestore.collection('users').doc('u1').set({
+      'email': 'u1@x.com',
+      'role': 'hunter',
+    });
+    await pumpScreen(tester, height: 6000);
+
+    await tester.tap(find.byKey(const ValueKey('adminV2Tab_users')));
+    await tester.pumpAndSettle();
+
+    // Exactly one card (the V2 tab owns it; the page renders no duplicate).
+    expect(find.byKey(const ValueKey('adminV2UsersExportCard')), findsOneWidget);
+    expect(find.text('Users Export (CSV)'), findsOneWidget);
+  });
+
+  testWidgets('the export counts match the fetched user rows', (tester) async {
+    // 3 users total, 2 with no role (blank + 'none').
+    await firestore.collection('users').doc('h1').set({
+      'email': 'h1@x.com',
+      'role': 'hunter',
+    });
+    await firestore.collection('users').doc('n1').set({
+      'email': 'n1@x.com',
+      'role': '',
+    });
+    await firestore.collection('users').doc('n2').set({
+      'email': 'n2@x.com',
+      'role': 'none',
+    });
+    await pumpScreen(tester, height: 6000);
+
+    await tester.tap(find.byKey(const ValueKey('adminV2Tab_users')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export All Users (3)'), findsOneWidget);
+    expect(find.text('Export No Role (2)'), findsOneWidget);
+  });
+
   // ==========================================================================
   // TASK 4 — Packages + Bookings
   // ==========================================================================
@@ -405,5 +446,93 @@ void main() {
     final avgCard = find.byKey(const ValueKey('adminV2CardAvgDaysToConfirm'));
     expect(find.descendant(of: avgCard, matching: find.text('—')),
         findsOneWidget);
+  });
+
+  // ==========================================================================
+  // HEADER APP VERSION
+  // ==========================================================================
+
+  group('header app version', () {
+    tearDown(() {
+      // PackageInfo.setMockInitialValues writes a process-global singleton;
+      // clear it so a mocked version cannot leak into another suite.
+      PackageInfo.setMockInitialValues(
+        appName: 'jagspoor',
+        packageName: 'za.co.jagspoor.app',
+        version: VersionInfo.fallbackVersionName,
+        buildNumber: VersionInfo.fallbackVersionCode,
+        buildSignature: '',
+      );
+    });
+
+    testWidgets('header shows the version label matching VersionInfo',
+        (tester) async {
+      // Drive a deterministic live resolution so the assertion proves the
+      // label is sourced from VersionInfo (not a hardcoded string).
+      PackageInfo.setMockInitialValues(
+        appName: 'jagspoor',
+        packageName: 'za.co.jagspoor.app',
+        version: '9.9.9',
+        buildNumber: '99',
+        buildSignature: '',
+      );
+
+      await pumpScreen(tester);
+
+      // The label reads the SAME source as VersionInfo (name + code).
+      final expected = VersionInfo.label(name: '9.9.9', code: '99');
+      expect(expected, 'v9.9.9+99');
+
+      final labelFinder = find.byKey(const ValueKey('adminV2VersionLabel'));
+      expect(labelFinder, findsOneWidget);
+      expect(tester.widget<Text>(labelFinder).data, expected);
+
+      // The title wordmark is still present beside it.
+      expect(find.text('🛡️ Admin Portal V2'), findsOneWidget);
+    });
+
+    testWidgets('version label is in the header, so it shows on every tab',
+        (tester) async {
+      await pumpScreen(tester, height: 6000);
+
+      // Present on the default Dashboard tab…
+      expect(find.byKey(const ValueKey('adminV2VersionLabel')),
+          findsOneWidget);
+
+      // …and unchanged after switching to each of the other tabs.
+      for (final tab in const ['users', 'packages', 'bookings', 'revenue']) {
+        await tester.tap(find.byKey(ValueKey('adminV2Tab_$tab')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('adminV2VersionLabel')),
+          findsOneWidget,
+          reason: 'version label must render on the $tab tab',
+        );
+      }
+    });
+
+    testWidgets('version label never renders "Unknown" when unresolved',
+        (tester) async {
+      // Simulate an unresolved bundle (Web / headless): a blank name + code
+      // must fall back to the pubspec-mirrored constants, not "Unknown".
+      PackageInfo.setMockInitialValues(
+        appName: 'jagspoor',
+        packageName: 'za.co.jagspoor.app',
+        version: '',
+        buildNumber: '',
+        buildSignature: '',
+      );
+
+      await pumpScreen(tester);
+
+      final expected =
+          'v${VersionInfo.fallbackVersionName}+${VersionInfo.fallbackVersionCode}';
+      final labelFinder = find.byKey(const ValueKey('adminV2VersionLabel'));
+      expect(labelFinder, findsOneWidget);
+      final labelText = tester.widget<Text>(labelFinder).data;
+      expect(labelText, expected);
+      // The label itself must never read "Unknown" on any platform.
+      expect(labelText, isNot(contains('Unknown')));
+    });
   });
 }
