@@ -6,6 +6,7 @@ import '../../../core/widgets/safe_bottom_inset.dart';
 import '../../hunter_mode/models/booking_status.dart';
 import '../models/admin_operational_metrics.dart';
 import '../models/admin_revenue_metrics.dart';
+import '../models/admin_subscription_metrics.dart';
 import '../models/admin_user_metrics.dart';
 import '../pages/admin_bookings_page.dart';
 import '../pages/admin_packages_page.dart';
@@ -16,6 +17,7 @@ import '../services/admin_auth_guard.dart';
 import '../services/admin_operational_metrics_service.dart';
 import '../services/admin_user_metrics_service.dart';
 import '../widgets/admin_mode_switcher.dart';
+import '../widgets/admin_subscribers_list_section.dart';
 import '../widgets/admin_v2_charts.dart';
 import '../widgets/admin_v2_common.dart';
 
@@ -73,6 +75,10 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   /// records (no extra Firestore read). A point-in-time snapshot that ignores
   /// the date filter.
   AdminRevenueMetrics _revenueMetrics = const AdminRevenueMetrics();
+
+  /// Task 6: the subscription KPIs + Subscribers List payload, aggregated from
+  /// the SAME user records (no extra Firestore read).
+  AdminSubscriptionMetrics _subscriptionMetrics = const AdminSubscriptionMetrics();
 
   bool _loading = true;
   bool _authorized = false;
@@ -133,6 +139,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         _packageMetrics = operational.packageMetrics();
         _bookingMetrics = operational.bookingMetrics();
         _revenueMetrics = AdminRevenueMetrics.aggregate(records);
+        _subscriptionMetrics = AdminSubscriptionMetrics.aggregate(records);
         _referredUsersCount = referredUsers;
         _loading = false;
       });
@@ -250,7 +257,11 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
       case AdminV2Tab.dashboard:
         return _buildDashboard();
       case AdminV2Tab.users:
-        return AdminUsersPage(theme: widget.theme, records: _records);
+        return AdminUsersPage(
+          theme: widget.theme,
+          records: _records,
+          isAdmin: _authorized,
+        );
       case AdminV2Tab.packages:
         return AdminPackagesPage(theme: widget.theme, data: _operational);
       case AdminV2Tab.bookings:
@@ -275,6 +286,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
     final p = _packageMetrics;
     final b = _bookingMetrics;
     final r = _revenueMetrics;
+    final s = _subscriptionMetrics;
 
     return Column(
       key: const ValueKey('adminV2DashboardTab'),
@@ -388,7 +400,42 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
         ),
         const SizedBox(height: 16),
 
-        // Row 4 — charts.
+        // Row 4 — subscriptions (Total / Google / PayFast / Trial).
+        AdminV2MetricGrid(
+          children: [
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTotalSubscribers'),
+              theme: widget.theme,
+              icon: Icons.card_membership_outlined,
+              label: 'Total Subscribers',
+              value: s.totalSubscribers,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashSubscribedGoogle'),
+              theme: widget.theme,
+              icon: Icons.android_outlined,
+              label: 'Subscribed via Google',
+              value: s.googleCount,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashSubscribedPayfast'),
+              theme: widget.theme,
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Subscribed via PayFast',
+              value: s.payfastCount,
+            ),
+            AdminV2MetricCard(
+              key: const ValueKey('adminV2DashTrialUsers'),
+              theme: widget.theme,
+              icon: Icons.hourglass_bottom_rounded,
+              label: 'Trial Users',
+              value: s.trialCount,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Row 5 — charts.
         AdminV2SectionHeader(theme: widget.theme, title: 'Charts'),
         _chartCard(
           key: const ValueKey('adminV2ChartNewUsers'),
@@ -413,6 +460,13 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
             theme: widget.theme,
             byProvince: p.provinceBreakdown,
           ),
+        ),
+
+        // Subscribers List (Task 6) — read-only table below the charts.
+        const SizedBox(height: 20),
+        AdminSubscribersListSection(
+          theme: widget.theme,
+          metrics: s,
         ),
 
         // Detail sections retained from Tasks 3-5 so the operator keeps the
