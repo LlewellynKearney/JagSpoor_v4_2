@@ -281,6 +281,45 @@ void main() {
     expect(find.textContaining('Export All Users ('), findsOneWidget);
   });
 
+  testWidgets('the export card renders exactly once on the Users tab',
+      (tester) async {
+    await firestore.collection('users').doc('u1').set({
+      'email': 'u1@x.com',
+      'role': 'hunter',
+    });
+    await pumpScreen(tester, height: 6000);
+
+    await tester.tap(find.byKey(const ValueKey('adminV2Tab_users')));
+    await tester.pumpAndSettle();
+
+    // Exactly one card (the V2 tab owns it; the page renders no duplicate).
+    expect(find.byKey(const ValueKey('adminV2UsersExportCard')), findsOneWidget);
+    expect(find.text('Users Export (CSV)'), findsOneWidget);
+  });
+
+  testWidgets('the export counts match the fetched user rows', (tester) async {
+    // 3 users total, 2 with no role (blank + 'none').
+    await firestore.collection('users').doc('h1').set({
+      'email': 'h1@x.com',
+      'role': 'hunter',
+    });
+    await firestore.collection('users').doc('n1').set({
+      'email': 'n1@x.com',
+      'role': '',
+    });
+    await firestore.collection('users').doc('n2').set({
+      'email': 'n2@x.com',
+      'role': 'none',
+    });
+    await pumpScreen(tester, height: 6000);
+
+    await tester.tap(find.byKey(const ValueKey('adminV2Tab_users')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export All Users (3)'), findsOneWidget);
+    expect(find.text('Export No Role (2)'), findsOneWidget);
+  });
+
   // ==========================================================================
   // TASK 4 — Packages + Bookings
   // ==========================================================================

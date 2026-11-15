@@ -271,6 +271,13 @@ class AdminUserRecord {
   /// "Export Users With No Role (CSV)" button filters on. A role of `none`
   /// (the brief's explicit spelling) counts as no role alongside blank /
   /// missing / unassigned values.
+  ///
+  /// Kept as the role-STRING predicate (rather than `hasNoOperationalRole`, the
+  /// role-CATEGORY predicate the visible "No Role" section uses) so the export
+  /// selects strictly by the stored role value: an admin account has no hunter
+  /// / outfitter role but is NOT "no role" in the sense this export targets
+  /// (it is a deliberate platform account), so it is excluded here. See
+  /// [AdminUsersCsv.noRoleUsers] for the export's exact selection.
   bool get hasNoRoleForExport {
     final normalized = role.trim().toLowerCase();
     return normalized.isEmpty ||
