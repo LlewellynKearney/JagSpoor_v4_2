@@ -102,7 +102,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   int _referredUsersCount = 0;
 
   /// The compact app-version label shown beside the header title (e.g.
-  /// `v4.2.27+27`). Resolved from [VersionInfo] so it reads the same source as
+  /// `v4.2.29+29`). Resolved from [VersionInfo] so it reads the same source as
   /// the profile / settings footer (versionName + versionCode) and never shows
   /// "Unknown". Seeded with the pubspec-mirrored fallback so the very first
   /// frame (before the async resolve lands) is already correct on every
@@ -249,7 +249,7 @@ class _AdminPortalV2ScreenState extends State<AdminPortalV2Screen> {
   }
 
   /// The AppBar title: the bold "🛡️ Admin Portal V2" wordmark with the compact
-  /// app-version label ("v4.2.27+27") in small grey type on the SAME line.
+  /// app-version label ("v4.2.29+29") in small grey type on the SAME line.
   ///
   /// Lives in the AppBar (not the tab body) so it is visible on every tab
   /// (Dashboard / Users / Packages / Bookings / Revenue). The label reads from

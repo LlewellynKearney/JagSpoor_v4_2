@@ -21059,3 +21059,53 @@ payment/billing/referral/profile/iOS code touched; CSV untouched.
 - MODIFIED: `lib/features/admin/widgets/admin_v2_common.dart`,
   `lib/features/admin/pages/admin_users_page.dart`,
   `test/admin_portal_v2_pages_test.dart`, `AGENTS.md`.
+
+## CHORE -- version bump 4.2.28+28 -> 4.2.29+29 (added 2026-11-16)
+
+Branch `main` (base `9b3ffe2`, the merged email-verification + Admin Users
+table work). The 4.2.28 AAB was never uploaded to Play, so the next Play
+release is **4.2.29+29** to carry the new code.
+
+### Version sources hand-synced (the Gradle values are HARDCODED -- they do NOT
+### track `flutter.versionCode`)
+- `pubspec.yaml`: `4.2.28+28` -> **`4.2.29+29`**.
+- `android/app/build.gradle.kts` (`defaultConfig`): `versionCode = 28` ->
+  **`29`**, `versionName = "4.2.28"` -> **`"4.2.29"`** (comment updated).
+- `lib/core/widgets/version_info.dart`: `fallbackVersionCode` `'28'` ->
+  `'29'`, `fallbackVersionName` `'4.2.28'` -> `'4.2.29'` (+ the doc-comment
+  examples). This is the single UI version surface (profile / settings footer
+  + the Admin Portal V2 header label). Verified live:
+  `VersionInfo.label()` -> **`v4.2.29+29`**.
+- `lib/features/admin/screens/admin_portal_v2_screen.dart`: doc-comment
+  examples `v4.2.27+27` -> `v4.2.29+29` (comments only; the header reads
+  `VersionInfo.label()` dynamically).
+- `test/version_info_and_facebook_test.dart`: fallback expectations ->
+  `'4.2.29'` / `'29'`.
+- `test/force_update_service_test.dart`: the shipped-build test now mirrors
+  versionCode 29 (floor 29 vs 28 blocks; floor 28 vs 28 does not).
+- iOS / macOS need NO native edit: `ios/Runner/Info.plist` uses
+  `$(FLUTTER_BUILD_NAME)` / `$(FLUTTER_BUILD_NUMBER)`, so they follow the
+  pubspec automatically.
+- `pubspec.lock` carries no project version, so no edit (test-only transitive
+  drift from `pub get` was reverted).
+
+### Verification
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing infos,
+  unchanged baseline).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2706 passed,
+  1 failed** -- the DOCUMENTED pre-existing `trial_onboarding_functions_contract_test`
+  (v1-vs-v2 auth trigger), which references no version file. Unrelated.
+- Admin + version suites (`admin_portal_v2_*`, `version_info_and_facebook_test`,
+  `force_update_service_test`, `app_version_check_test`): **97/97 pass**.
+
+### Constraints honoured
+No AAB built; no Web deploy; no Functions deploy; no `admin_config` /
+`min_required_version` change (stays 27 until Play shows 4.2.29 live); no
+payment/billing/referral/profile/iOS code touched.
+
+### Files
+- MODIFIED: `pubspec.yaml`, `android/app/build.gradle.kts`,
+  `lib/core/widgets/version_info.dart`,
+  `lib/features/admin/screens/admin_portal_v2_screen.dart`,
+  `test/version_info_and_facebook_test.dart`,
+  `test/force_update_service_test.dart`, `AGENTS.md`.
