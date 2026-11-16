@@ -21004,3 +21004,58 @@ payment/billing/referral/profile/iOS code touched; CSV untouched.
 - MODIFIED: `lib/features/admin/widgets/admin_v2_common.dart`,
   `lib/features/admin/pages/admin_users_page.dart`,
   `test/admin_portal_v2_pages_test.dart`, `AGENTS.md`.
+
+## FIX -- Users table Trial dates truncated on Web (IntrinsicColumnWidth unreliable) (added 2026-11-16)
+
+Branch `feature/admin-users-table-columns` (follow-up to the `3ce555b`
+attempt). **NOT merged, NOT deployed.**
+
+### Why the first fix failed
+`3ce555b` sized the two date columns with `IntrinsicColumnWidth` and raised
+`minTableWidth` to 720. A VM widget test passed, but on the live Web the dates
+still rendered `2026-0…` / `2027-0…`. Root cause: `IntrinsicColumnWidth` asks
+the renderer for the column's intrinsic width, and that measurement is NOT
+reliable in the browser (the HTML/CanvasKit text measurement path differs), so
+the column collapsed back to a small share. A widget test on the VM cannot
+catch this — the VM and the browser measure text differently.
+
+### The fix — hard pixel widths, browser-safe
+- `AdminV2TableCard` replaced the `intrinsicColumns` param with
+  `fixedColumnWidths` (`Map<int, double>`, default `{}`); a listed column uses
+  `FixedColumnWidth`, which every renderer (Web + native) honours identically.
+  `minTableWidth` stays.
+- `AdminUsersPage` passes `fixedColumnWidths: {5: 115, 6: 115}` (Start / End)
+  + `minTableWidth: 760`. 115 px comfortably fits `YYYY-MM-DD` (measured ~60 px
+  in the real browser font), so the value can never clip; the wider table keeps
+  the flex columns from shrinking and the whole table still scrolls
+  horizontally on a phone.
+- Headers shortened to `Start` / `End` (single line, no wrap). CSV unchanged
+  (still `Trial Start Date` / `Trial End Date`, still `YYYY-MM-DD`).
+
+### Verification — real browser, NOT widget test alone
+- The `flutter test` harness uses the Ahem test font, where `2026-09-27` at
+  12 px measures **122.5 px** — wider than 115 px — so a VM width assertion is
+  NOT proof. Measured the REAL font width instead.
+- Built the production `AdminV2TableCard` with the exact Users config via
+  `flutter build web --release`, served it, and screenshotted it in headless
+  Chromium. Pixel analysis of the 800 px render: the two date columns are
+  exactly 115 px apart (x535 → 650 → 765) and each date glyph run is ~60 px
+  wide, ending well before the column edge — magnified crops read
+  `2026-09-27` / `2027-09-27` and `2025-01-02` / `2025-01-31` in full, no
+  ellipsis. A separate harness comparing the date's natural width vs its width
+  inside a 115 px `SizedBox` produced IDENTICAL pixel extents (x181..241),
+  proving the cell does not clip.
+- `flutter test --platform chrome test/admin_portal_v2_pages_test.dart`:
+  **21/21 pass on the real Chrome/web platform** (the two new date tests assert
+  the cell is exactly 115 px at both 800 px and 360 px).
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing infos).
+- Admin suites (VM): **186 tests all green**.
+
+### Constraints honoured
+No merge; no Web deploy; no `admin_config` / `min_required_version` change; no
+payment/billing/referral/profile/iOS code touched; CSV untouched.
+
+### Files
+- MODIFIED: `lib/features/admin/widgets/admin_v2_common.dart`,
+  `lib/features/admin/pages/admin_users_page.dart`,
+  `test/admin_portal_v2_pages_test.dart`, `AGENTS.md`.

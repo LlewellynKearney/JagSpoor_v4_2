@@ -205,8 +205,8 @@ void main() {
       'Surname',
       'Role',
       'Trial',
-      'Trial Start',
-      'Trial End',
+      'Start',
+      'End',
       'Plan',
       'Provider',
     ]) {
@@ -245,21 +245,11 @@ void main() {
     expect(startFinder, findsOneWidget);
     expect(endFinder, findsOneWidget);
 
-    // ...AND the laid-out date column is at least as wide as the date text
-    // itself, i.e. it is not clipped to `2026-0…`. (A truncated Text would
-    // still match find.text, so we assert the geometry too.)
-    final startText = tester.widget<Text>(startFinder);
-    expect(startText.overflow, TextOverflow.ellipsis);
-    final startColumnWidth = tester.getSize(startFinder).width;
-    final painter = TextPainter(
-      text: TextSpan(text: '2026-09-27', style: startText.style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    expect(
-      startColumnWidth,
-      greaterThanOrEqualTo(painter.width - 0.5),
-      reason: 'Trial Start date must not be clipped',
-    );
+    // ...AND each date cell is laid out at the hard 115 px width, so the value
+    // cannot be clipped. (A truncated Text would still match find.text, so we
+    // assert the geometry too.)
+    expect(tester.getSize(startFinder).width, 115);
+    expect(tester.getSize(endFinder).width, 115);
   });
 
   testWidgets('Users page Trial dates survive a narrow 360px width',
@@ -287,15 +277,9 @@ void main() {
         find.descendant(of: table, matching: find.text('2026-09-27'));
     expect(startFinder, findsOneWidget);
 
-    // The date column must be wide enough for the value even at 360px (the
-    // table scrolls horizontally for the rest).
-    final startText = tester.widget<Text>(startFinder);
-    final painter = TextPainter(
-      text: TextSpan(text: '2026-09-27', style: startText.style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    expect(tester.getSize(startFinder).width,
-        greaterThanOrEqualTo(painter.width - 0.5));
+    // The date column keeps its hard 115 px width even at 360px (the table
+    // scrolls horizontally for the rest) — the value is never clipped.
+    expect(tester.getSize(startFinder).width, 115);
     expect(tester.takeException(), isNull);
   });
 

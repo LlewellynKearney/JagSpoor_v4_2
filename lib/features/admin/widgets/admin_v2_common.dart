@@ -203,15 +203,17 @@ class AdminV2TableCard extends StatelessWidget {
   /// missing row) renders no tint.
   final List<Color?>? rowTints;
 
-  /// Column indices (into [headers]) sized to their content via
-  /// [IntrinsicColumnWidth], so a fixed-format value such as an ISO date
-  /// (`2026-09-27`) can never be clipped to `2026-0…`. Defaults to empty —
-  /// every non-first column is an equal flex share (the pre-existing layout).
-  final Set<int> intrinsicColumns;
+  /// Optional fixed pixel widths, keyed by column index. A listed column uses
+  /// [FixedColumnWidth], which is honoured identically by the HTML renderer on
+  /// Web and the CanvasKit/skia renderers on mobile/desktop — unlike
+  /// [IntrinsicColumnWidth], whose intrinsic measurement is unreliable in the
+  /// browser. This is the reliable way to guarantee a fixed-format value such
+  /// as an ISO date (`2026-09-27`) is never clipped. Defaults to empty.
+  final Map<int, double> fixedColumnWidths;
 
   /// Minimum width of the table. The surrounding horizontal scroll view still
-  /// scrolls on a narrow phone, but a wider value keeps the content-sized
-  /// [intrinsicColumns] from squeezing the flex columns. Defaults to `480`.
+  /// scrolls on a narrow phone, but a wider value keeps the fixed columns from
+  /// squeezing the flex columns. Defaults to `480`.
   final double minTableWidth;
 
   const AdminV2TableCard({
@@ -223,7 +225,7 @@ class AdminV2TableCard extends StatelessWidget {
     required this.rows,
     this.cellColors,
     this.rowTints,
-    this.intrinsicColumns = const <int>{},
+    this.fixedColumnWidths = const <int, double>{},
     this.minTableWidth = 480,
   });
 
@@ -276,8 +278,8 @@ class AdminV2TableCard extends StatelessWidget {
                   child: Table(
                     columnWidths: {
                       for (var i = 0; i < headers.length; i++)
-                        i: intrinsicColumns.contains(i)
-                            ? const IntrinsicColumnWidth()
+                        i: fixedColumnWidths.containsKey(i)
+                            ? FixedColumnWidth(fixedColumnWidths[i]!)
                             : (i == 0
                                 ? const FlexColumnWidth(2)
                                 : const FlexColumnWidth()),

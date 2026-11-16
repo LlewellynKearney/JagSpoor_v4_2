@@ -123,8 +123,8 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
             'Surname',
             'Role',
             'Trial',
-            'Trial Start',
-            'Trial End',
+            'Start',
+            'End',
             'Plan',
             'Provider',
           ],
@@ -142,11 +142,14 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                 r.provider.isEmpty ? '—' : r.provider,
               ],
           ],
-          // The two date columns (5 = Trial Start, 6 = Trial End) are sized to
-          // their content so a full `YYYY-MM-DD` value can never be clipped to
-          // `2026-0…`; the wider table keeps the other columns from shrinking.
-          intrinsicColumns: const {5, 6},
-          minTableWidth: 720,
+          // The two date columns (5 = Start, 6 = End) get a HARD 115 px so a
+          // full `YYYY-MM-DD` value is never clipped. FixedColumnWidth is
+          // honoured identically by the Web and native renderers, unlike
+          // IntrinsicColumnWidth (unreliable in the browser). The wider table
+          // keeps the flex columns from shrinking; the whole table still
+          // scrolls horizontally on a narrow phone.
+          fixedColumnWidths: const {5: 115, 6: 115},
+          minTableWidth: 760,
           // Color-code the Trial cell (col 4) green for Active / Converted and
           // red for Expired, plus a subtle matching row tint.
           cellColors: [
