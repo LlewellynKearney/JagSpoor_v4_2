@@ -205,8 +205,8 @@ void main() {
       'Surname',
       'Role',
       'Trial',
-      'Trial Start Date',
-      'Trial End Date',
+      'Trial Start',
+      'Trial End',
       'Plan',
       'Provider',
     ]) {
@@ -221,6 +221,82 @@ void main() {
       find.descendant(of: table, matching: find.text('Created')),
       findsNothing,
     );
+  });
+
+  testWidgets('Users page shows FULL Trial Start/End dates (never truncated)',
+      (tester) async {
+    await firestore.collection('users').doc('d1').set({
+      'email': 'dates@example.com',
+      'role': 'hunter',
+      'trialStart': Timestamp.fromDate(DateTime(2026, 9, 27)),
+      'trialEnd': Timestamp.fromDate(DateTime(2027, 9, 27)),
+    });
+
+    await pumpScreen(tester, height: 4000);
+    await openTab(tester, 'users');
+
+    final table = find.byKey(const ValueKey('adminV2UsersTable'));
+
+    // The full ISO value is rendered in the tree...
+    final startFinder =
+        find.descendant(of: table, matching: find.text('2026-09-27'));
+    final endFinder =
+        find.descendant(of: table, matching: find.text('2027-09-27'));
+    expect(startFinder, findsOneWidget);
+    expect(endFinder, findsOneWidget);
+
+    // ...AND the laid-out date column is at least as wide as the date text
+    // itself, i.e. it is not clipped to `2026-0…`. (A truncated Text would
+    // still match find.text, so we assert the geometry too.)
+    final startText = tester.widget<Text>(startFinder);
+    expect(startText.overflow, TextOverflow.ellipsis);
+    final startColumnWidth = tester.getSize(startFinder).width;
+    final painter = TextPainter(
+      text: TextSpan(text: '2026-09-27', style: startText.style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    expect(
+      startColumnWidth,
+      greaterThanOrEqualTo(painter.width - 0.5),
+      reason: 'Trial Start date must not be clipped',
+    );
+  });
+
+  testWidgets('Users page Trial dates survive a narrow 360px width',
+      (tester) async {
+    await firestore.collection('users').doc('d1').set({
+      'email': 'narrow@example.com',
+      'role': 'hunter',
+      'trialStart': Timestamp.fromDate(DateTime(2026, 9, 27)),
+      'trialEnd': Timestamp.fromDate(DateTime(2027, 9, 27)),
+    });
+
+    // 360px logical width — a typical small phone.
+    tester.view.physicalSize = const Size(360, 4000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(home: AdminPortalV2Screen(theme: ThemeController.instance)),
+    );
+    await tester.pumpAndSettle();
+    await openTab(tester, 'users');
+
+    final table = find.byKey(const ValueKey('adminV2UsersTable'));
+    final startFinder =
+        find.descendant(of: table, matching: find.text('2026-09-27'));
+    expect(startFinder, findsOneWidget);
+
+    // The date column must be wide enough for the value even at 360px (the
+    // table scrolls horizontally for the rest).
+    final startText = tester.widget<Text>(startFinder);
+    final painter = TextPainter(
+      text: TextSpan(text: '2026-09-27', style: startText.style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    expect(tester.getSize(startFinder).width,
+        greaterThanOrEqualTo(painter.width - 0.5));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Users page color-codes the Trial cell (Active green)',

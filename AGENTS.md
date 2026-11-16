@@ -20956,3 +20956,51 @@ profile, or iOS code touched.
   `lib/features/admin/widgets/admin_v2_common.dart`,
   `test/admin_portal_v2_pages_test.dart`,
   `test/admin_portal_v2_users_csv_test.dart`, `AGENTS.md`.
+
+## FIX -- Users table Trial Start/End dates truncated (added 2026-11-16)
+
+Branch `feature/admin-users-table-columns` (continues the prior add-on).
+**NOT merged, NOT deployed.**
+
+### The defect
+In `AdminV2TableCard` every non-first column was an equal `FlexColumnWidth`
+share. At the table's `minWidth: 480` with 9 columns, each share was ~48 px,
+so the ISO date cells (`2026-09-27`, `2027-09-27`) rendered as `2026-0…` /
+`2027-0…` — a truncated date is useless. Measured empirically (a throwaway
+probe test): all-flex at minWidth 480 gave the date columns 48 px while the
+value needs ~120 px in the test font.
+
+### The fix (Option A)
+- `AdminV2TableCard` gained two optional params:
+  - `intrinsicColumns` (`Set<int>`, default `{}`) — indices sized with
+    `IntrinsicColumnWidth` so a fixed-format value is never clipped;
+  - `minTableWidth` (`double`, default `480`) — the table's minimum width.
+  Existing call sites are unaffected (defaults preserve the old layout).
+- `AdminUsersPage` passes `intrinsicColumns: {5, 6}` (Trial Start / Trial
+  End) + `minTableWidth: 720`. The date columns size to their content
+  (~124 px for `2026-09-27`) and the wider table keeps the other columns from
+  shrinking. The table already lives in a horizontal `SingleChildScrollView`,
+  so on a narrow phone the full dates stay readable via scroll — never
+  clipped. No other column shrank; the value stays `YYYY-MM-DD`.
+- The two date headers were shortened to `Trial Start` / `Trial End` (the
+  brief's Option-B header relaxation) so the header itself fits its column
+  without ellipsis; the CSV headers stay `Trial Start Date` / `Trial End Date`
+  and the CSV dates stay `YYYY-MM-DD` (unchanged).
+
+### Tests
+- `test/admin_portal_v2_pages_test.dart`: header set updated to the shortened
+  labels; NEW "shows FULL Trial Start/End dates (never truncated)" asserts the
+  rendered date column is >= the date text's intrinsic width; NEW "Trial dates
+  survive a narrow 360px width" repeats the geometry assertion at a 360 px
+  viewport and asserts no layout exception.
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing infos).
+- `flutter test` (admin suites, 266 tests): all green.
+
+### Constraints honoured
+No merge; no Web deploy; no `admin_config` / `min_required_version` change; no
+payment/billing/referral/profile/iOS code touched; CSV untouched.
+
+### Files
+- MODIFIED: `lib/features/admin/widgets/admin_v2_common.dart`,
+  `lib/features/admin/pages/admin_users_page.dart`,
+  `test/admin_portal_v2_pages_test.dart`, `AGENTS.md`.

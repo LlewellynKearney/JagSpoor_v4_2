@@ -203,6 +203,17 @@ class AdminV2TableCard extends StatelessWidget {
   /// missing row) renders no tint.
   final List<Color?>? rowTints;
 
+  /// Column indices (into [headers]) sized to their content via
+  /// [IntrinsicColumnWidth], so a fixed-format value such as an ISO date
+  /// (`2026-09-27`) can never be clipped to `2026-0…`. Defaults to empty —
+  /// every non-first column is an equal flex share (the pre-existing layout).
+  final Set<int> intrinsicColumns;
+
+  /// Minimum width of the table. The surrounding horizontal scroll view still
+  /// scrolls on a narrow phone, but a wider value keeps the content-sized
+  /// [intrinsicColumns] from squeezing the flex columns. Defaults to `480`.
+  final double minTableWidth;
+
   const AdminV2TableCard({
     super.key,
     required this.theme,
@@ -212,6 +223,8 @@ class AdminV2TableCard extends StatelessWidget {
     required this.rows,
     this.cellColors,
     this.rowTints,
+    this.intrinsicColumns = const <int>{},
+    this.minTableWidth = 480,
   });
 
   /// The text color for cell ([row], [col]) — the optional [cellColors]
@@ -259,13 +272,15 @@ class AdminV2TableCard extends StatelessWidget {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 480),
+                  constraints: BoxConstraints(minWidth: minTableWidth),
                   child: Table(
                     columnWidths: {
                       for (var i = 0; i < headers.length; i++)
-                        i: i == 0
-                            ? const FlexColumnWidth(2)
-                            : const FlexColumnWidth(),
+                        i: intrinsicColumns.contains(i)
+                            ? const IntrinsicColumnWidth()
+                            : (i == 0
+                                ? const FlexColumnWidth(2)
+                                : const FlexColumnWidth()),
                     },
                     border: TableBorder(
                       horizontalInside: BorderSide(
