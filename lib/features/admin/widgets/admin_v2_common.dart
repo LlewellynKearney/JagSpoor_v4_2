@@ -146,14 +146,62 @@ class AdminV2MetricGrid extends StatelessWidget {
   }
 }
 
+/// The contrast-safe text color for a Users-table **Trial** cell label.
+///
+///  * GREEN — `Active` (trial running) or `Converted` (previously trial, now
+///    paid). A dark green in Day mode / a light green in Night mode so the
+///    text always contrasts against the card surface (never green-on-green).
+///  * RED — `Expired` (trial ended, no subscription). Dark red Day / light
+///    red Night.
+///  * `null` — `None` / blank / any other value → the default text color.
+Color? trialStatusColor(String label, {required bool isDarkMode}) {
+  switch (label.trim()) {
+    case 'Active':
+    case 'Converted':
+      return isDarkMode ? const Color(0xFF81C784) : const Color(0xFF1B5E20);
+    case 'Expired':
+      return isDarkMode ? const Color(0xFFEF9A9A) : const Color(0xFFB71C1C);
+    default:
+      return null;
+  }
+}
+
+/// A subtle row tint matching [trialStatusColor] — applied behind the whole
+/// row so a green/red trial reads at a glance without changing the layout.
+/// Returns `null` for `None` / blank / any other value (no tint).
+Color? trialRowTint(String label, {required bool isDarkMode}) {
+  switch (label.trim()) {
+    case 'Active':
+    case 'Converted':
+      return isDarkMode ? const Color(0x1F81C784) : const Color(0x141B5E20);
+    case 'Expired':
+      return isDarkMode ? const Color(0x1FEF9A9A) : const Color(0x14B71C1C);
+    default:
+      return null;
+  }
+}
+
 /// A titled table card. Renders [emptyLabel] when [rows] is empty so a zero
 /// state is always explicit (never a blank card).
+///
+/// [cellColors] and [rowTints] are optional, row-aligned overrides so a caller
+/// can color-code specific cells (e.g. the Users-table Trial badge) and tint a
+/// whole row — without changing the layout or fonts. Both are ignored when
+/// shorter than [rows].
 class AdminV2TableCard extends StatelessWidget {
   final ThemeController theme;
   final String title;
   final String emptyLabel;
   final List<String> headers;
   final List<List<String>> rows;
+
+  /// Optional per-cell text color overrides, aligned to [rows]. A `null` entry
+  /// falls back to [ThemeController.textColor].
+  final List<List<Color?>>? cellColors;
+
+  /// Optional per-row background tints, aligned to [rows]. A `null` entry (or a
+  /// missing row) renders no tint.
+  final List<Color?>? rowTints;
 
   const AdminV2TableCard({
     super.key,
@@ -162,7 +210,22 @@ class AdminV2TableCard extends StatelessWidget {
     required this.emptyLabel,
     required this.headers,
     required this.rows,
+    this.cellColors,
+    this.rowTints,
   });
+
+  /// The text color for cell ([row], [col]) — the optional [cellColors]
+  /// override when present, else the theme text color.
+  Color _cellColor(int row, int col) {
+    final colors = cellColors;
+    if (colors != null && row < colors.length) {
+      final rowColors = colors[row];
+      if (col < rowColors.length && rowColors[col] != null) {
+        return rowColors[col]!;
+      }
+    }
+    return theme.textColor;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,18 +289,23 @@ class AdminV2TableCard extends StatelessWidget {
                             ),
                         ],
                       ),
-                      for (final row in rows)
+                      for (var r = 0; r < rows.length; r++)
                         TableRow(
+                          decoration: (rowTints != null &&
+                                  r < rowTints!.length &&
+                                  rowTints![r] != null)
+                              ? BoxDecoration(color: rowTints![r])
+                              : null,
                           children: [
-                            for (final cell in row)
+                            for (var c = 0; c < rows[r].length; c++)
                               Padding(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 6),
                                 child: Text(
-                                  cell,
+                                  rows[r][c],
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: theme.textColor,
+                                    color: _cellColor(r, c),
                                     fontSize: 12,
                                   ),
                                 ),

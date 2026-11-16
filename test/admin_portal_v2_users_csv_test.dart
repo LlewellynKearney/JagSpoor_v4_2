@@ -19,7 +19,9 @@ void main() {
     DateTime? lastActive,
     String subscriptionStatus = '',
     String provider = '',
+    String plan = '',
     DateTime? premiumExpiry,
+    DateTime? trialStart,
     DateTime? trialEnd,
   }) =>
       AdminUserRecord(
@@ -33,28 +35,36 @@ void main() {
         lastActive: lastActive,
         subscriptionStatus: subscriptionStatus,
         provider: provider,
+        plan: plan,
         premiumExpiry: premiumExpiry,
+        trialStart: trialStart,
         trialEnd: trialEnd,
       );
 
   group('header + column order', () {
-    test('the header row is exactly the brief columns in order', () {
+    test('the header row matches the Users table columns in order', () {
       expect(AdminUsersCsv.headers, const [
         'Email',
-        'First Name',
+        'Name',
         'Surname',
         'Role',
-        'Created Date',
-        'Last Active',
-        'Subscription Status',
-        'Subscription Provider',
+        'Trial',
+        'Trial Start Date',
+        'Trial End Date',
+        'Plan',
+        'Provider',
       ]);
+    });
+
+    test('the header contains NO Created column', () {
+      expect(AdminUsersCsv.headers.contains('Created'), isFalse);
+      expect(AdminUsersCsv.headers.contains('Created Date'), isFalse);
     });
 
     test('build() emits the header as the first line', () {
       final csv = AdminUsersCsv.build(const <AdminUserRecord>[]);
-      expect(csv, 'Email,First Name,Surname,Role,Created Date,Last Active,'
-          'Subscription Status,Subscription Provider\r\n');
+      expect(csv, 'Email,Name,Surname,Role,Trial,Trial Start Date,'
+          'Trial End Date,Plan,Provider\r\n');
     });
 
     test('a data row carries every column in order', () {
@@ -67,10 +77,10 @@ void main() {
           lastName: 'Bosch',
           role: 'hunter',
           createdAt: DateTime(2026, 3, 4),
-          lastActive: DateTime(2026, 11, 1),
-          subscriptionStatus: 'active',
-          provider: 'google_play',
-          premiumExpiry: now.add(const Duration(days: 20)),
+          trialStart: DateTime(2026, 3, 4),
+          trialEnd: DateTime(2026, 11, 20),
+          plan: 'hunter_monthly',
+          provider: 'payfast',
         ),
       ], now: now);
 
@@ -78,8 +88,37 @@ void main() {
       expect(lines, hasLength(2));
       expect(
         lines[1],
-        'hunter@example.com,Jan,Bosch,hunter,2026-03-04,2026-11-01,Active,Google',
+        'hunter@example.com,Jan,Bosch,hunter,Active,2026-03-04,2026-11-20,'
+        'hunter_monthly,payfast',
       );
+    });
+
+    test('Trial reflects the computed label (Active for a live trial)', () {
+      final now = DateTime(2026, 11, 15);
+      final csv = AdminUsersCsv.build([
+        rec(
+          uid: 'u1',
+          email: 'a@x.com',
+          trialStart: now.subtract(const Duration(days: 3)),
+          trialEnd: now.add(const Duration(days: 27)),
+        ),
+      ], now: now);
+      final lines = csv.trim().split('\r\n');
+      expect(lines[1].split(','), ['a@x.com', '', '', '', 'Active',
+        '2026-11-12', '2026-12-12', '', '']);
+    });
+
+    test('Trial End in the past with no subscription -> Expired', () {
+      final now = DateTime(2026, 11, 15);
+      final csv = AdminUsersCsv.build([
+        rec(
+          uid: 'u1',
+          trialStart: now.subtract(const Duration(days: 60)),
+          trialEnd: now.subtract(const Duration(days: 30)),
+        ),
+      ], now: now);
+      final lines = csv.trim().split('\r\n');
+      expect(lines[1].split(',')[4], 'Expired');
     });
   });
 
@@ -127,8 +166,9 @@ void main() {
       final csv = AdminUsersCsv.build([rec(uid: 'empty')]);
       final lines = csv.trim().split('\r\n');
       expect(lines, hasLength(2));
-      // Every data cell is blank (7 commas between 8 empty cells).
-      expect(lines[1], ',,,,,,,');
+      // Every data cell is blank except Trial, which computes to `None`
+      // (9 cells: 8 blank + the computed trial label).
+      expect(lines[1], ',,,,None,,,,');
     });
 
     test('a name falls back to the legacy fullName when first/last are blank',
@@ -153,46 +193,38 @@ void main() {
     });
   });
 
-  group('subscription cells', () {
+  group('Trial cell + provider cell', () {
     final now = DateTime(2026, 11, 15);
 
-    test('Active when premium with a future expiry', () {
+    test('Trial cell is Active when the trial end is in the future', () {
+      final r = rec(uid: 'u', trialEnd: now.add(const Duration(days: 5)));
+      expect(AdminUsersCsv.rowFor(r, now)[4], 'Active');
+    });
+
+    test('Trial cell is Expired when the trial end has passed', () {
+      final r = rec(uid: 'u', trialEnd: now.subtract(const Duration(days: 1)));
+      expect(AdminUsersCsv.rowFor(r, now)[4], 'Expired');
+    });
+
+    test('Trial cell is Converted when premium is active', () {
       final r = rec(
         uid: 'u',
         subscriptionStatus: 'active',
         premiumExpiry: now.add(const Duration(days: 10)),
       );
-      expect(AdminUsersCsv.subscriptionStatusCell(r, now), 'Active');
+      expect(AdminUsersCsv.rowFor(r, now)[4], 'Converted');
     });
 
-    test('Trial when the trial end is in the future', () {
-      final r = rec(uid: 'u', trialEnd: now.add(const Duration(days: 5)));
-      expect(AdminUsersCsv.subscriptionStatusCell(r, now), 'Trial');
+    test('Trial cell is None when there is no trial', () {
+      expect(AdminUsersCsv.rowFor(rec(uid: 'u'), now)[4], 'None');
     });
 
-    test('Cancelled when the document records a cancellation', () {
-      final r = rec(uid: 'u', subscriptionStatus: 'cancelled');
-      expect(AdminUsersCsv.subscriptionStatusCell(r, now), 'Cancelled');
-    });
-
-    test('Expired when a premium expiry has passed', () {
-      final r = rec(
-        uid: 'u',
-        subscriptionStatus: 'active',
-        premiumExpiry: now.subtract(const Duration(days: 1)),
-      );
-      expect(AdminUsersCsv.subscriptionStatusCell(r, now), 'Expired');
-    });
-
-    test('blank when the account never had a subscription', () {
-      expect(AdminUsersCsv.subscriptionStatusCell(rec(uid: 'u'), now), '');
-    });
-
-    test('provider cell maps Google Play + PayFast, blank otherwise', () {
-      expect(AdminUsersCsv.subscriptionProviderCell(rec(uid: 'u', provider: 'google_play')), 'Google');
-      expect(AdminUsersCsv.subscriptionProviderCell(rec(uid: 'u', provider: 'payfast')), 'PayFast');
-      expect(AdminUsersCsv.subscriptionProviderCell(rec(uid: 'u', provider: 'payfast_alternative')), 'PayFast');
-      expect(AdminUsersCsv.subscriptionProviderCell(rec(uid: 'u')), '');
+    test('provider cell carries the raw stored provider verbatim', () {
+      expect(AdminUsersCsv.rowFor(rec(uid: 'u', provider: 'google_play'), now)[8],
+          'google_play');
+      expect(AdminUsersCsv.rowFor(rec(uid: 'u', provider: 'payfast'), now)[8],
+          'payfast');
+      expect(AdminUsersCsv.rowFor(rec(uid: 'u'), now)[8], '');
     });
   });
 

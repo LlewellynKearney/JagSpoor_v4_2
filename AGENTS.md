@@ -20877,3 +20877,82 @@ stack, the 65% web veil (and its absence on mobile), and the viewport meta.
   `lib/features/shared/widgets/jagspoor_dashboard_header.dart`,
   `web/index.html`.
 - No Firestore rules / index / Storage / pubspec / manifest changes.
+
+## ADD-ON -- Admin Portal V2 Users table columns + trial color coding + CSV parity (added 2026-11-16)
+
+Branch `feature/admin-users-table-columns` (base `main` @ `b8f1dd1`, the
+merged `fix/email-verification-not-sending`). **NOT merged, NOT deployed.**
+
+### 1. Users table columns (was Email | Role | Trial | Plan | Provider | Created)
+- `lib/features/admin/pages/admin_users_page.dart` now renders
+  `Email | Name | Surname | Role | Trial | Trial Start Date | Trial End Date |
+  Plan | Provider`. The `Created` column is REMOVED from the table (and the
+  No Role table's `Created` column too).
+- Name = `AdminUserRecord.firstName` (`users/{uid}.firstName` / `first_name`);
+  Surname = `lastName` (`lastName` / `last_name` / `surname`). Both already
+  parsed in `AdminUserRecord.fromMap` — NO new fetch / N+1 (the record set is
+  the single `AdminUsersService.fetchRecords()` payload the V2 screen already
+  holds). Missing values render `—` (never break the row).
+- Trial Start / End = `AdminUserRecord.trialStart` / `trialEnd`, resolved by
+  the existing `trialStartFieldAliases` / `trialEndFieldAliases` (the same
+  source the Trial label already uses — NO new trial calculation invented).
+  Formatted `YYYY-MM-DD` via the existing `formatAdminDate`; `—` when absent.
+- Email / Role / Trial / Plan / Provider unchanged.
+
+### 2. Trial color coding (row tint + Trial cell)
+- `lib/features/admin/widgets/admin_v2_common.dart`: new pure helpers
+  `trialStatusColor(label, isDarkMode)` (GREEN `#1B5E20` Day / `#81C784` Night
+  for `Active` + `Converted`; RED `#B71C1C` Day / `#EF9A9A` Night for
+  `Expired`; `null` for `None` / blank / other) and `trialRowTint(label,
+  isDarkMode)` (subtle matching row tint). Colors are chosen for contrast
+  against the light/dark card surface — never green-on-green.
+- `AdminV2TableCard` gained optional `cellColors` (per-cell text color) and
+  `rowTints` (per-row background) params, both row-aligned and ignored when
+  shorter than `rows`. Layout / fonts unchanged (only text color + an optional
+  `TableRow` decoration), so the table stays readable on mobile.
+- The Users page colors the Trial cell (index 4) + applies the matching row
+  tint. "Converted" keeps its existing Trial value (now green) — no value
+  change.
+
+### 3. CSV parity
+- `lib/features/admin/models/admin_users_csv.dart`: `headers` + `rowFor` now
+  emit the SAME 9 columns in the SAME order as the table
+  (`Email, Name, Surname, Role, Trial, Trial Start Date, Trial End Date, Plan,
+  Provider`). NO `Created` column. Dates `YYYY-MM-DD`; unknown dates blank
+  (`""`). Removed the now-dead `subscriptionStatusCell` /
+  `subscriptionProviderCell` helpers + the unused `admin_subscription_metrics`
+  import. Both "Export All Users" and "Export No Role" share `build`, so both
+  carry the new columns. The button counts (`rowCount` / `noRoleUsers`) are
+  unchanged.
+
+### 4. Tests + verification
+- `test/admin_portal_v2_users_csv_test.dart`: header + no-Created guard +
+  row-order (Name/Surname/Trial dates/Plan/Provider) + Trial-label cells
+  (Active/Expired/Converted/None) + blank-cell contract. Updated the
+  subscription-cell group to the new Trial/provider cells.
+- `test/admin_portal_v2_pages_test.dart`: Name + Surname render; Trial Start
+  Date renders; the `Created` header is gone; the new header set renders; the
+  Trial cell is GREEN for Active and RED for Expired.
+- `flutter analyze lib test`: **0 errors, 0 warnings** (320 pre-existing infos).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2704 passed,
+  1 failed** — the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (v1-vs-v2 auth trigger), which
+  touches no file in this change. Admin suites (191) all green.
+- Env: Flutter **3.44.9** extracted to `/tmp/flutter` (the sandbox had no
+  SDK + no `unzip`; a Python `unzip` shim lives at `~/bin/unzip`); the
+  `~/libs/libsqlite3.so -> libsqlite3.so.0` symlink for the sqflite-FFI
+  suites; `pubspec.lock` / `analysis_options.yaml` drift from `pub get`
+  reverted.
+
+### Constraints honoured
+No merge; no Web deploy; no `admin_config` / `min_required_version` change;
+no payment/billing (plans.ts, payfast.service, PlayBillingService,
+validateGooglePlayPurchase, prices, trial lengths, entitlements), referral,
+profile, or iOS code touched.
+
+### Files
+- MODIFIED: `lib/features/admin/models/admin_users_csv.dart`,
+  `lib/features/admin/pages/admin_users_page.dart`,
+  `lib/features/admin/widgets/admin_v2_common.dart`,
+  `test/admin_portal_v2_pages_test.dart`,
+  `test/admin_portal_v2_users_csv_test.dart`, `AGENTS.md`.

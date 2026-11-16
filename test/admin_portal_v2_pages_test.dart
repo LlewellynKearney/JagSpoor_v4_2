@@ -148,15 +148,21 @@ void main() {
   // Users page
   // ==========================================================================
 
-  testWidgets('Users page lists users with plan + provider', (tester) async {
+  testWidgets('Users page lists users with name, surname, trial + provider',
+      (tester) async {
     await firestore.collection('users').doc('h1').set({
       'email': 'hunter@example.com',
+      'firstName': 'Jan',
+      'surname': 'Bosch',
       'role': 'hunter',
       'subscriptionStatus': 'active',
       'subscriptionProduct': 'hunter_monthly',
       'subscriptionProvider': 'payfast',
       'premiumExpiry': Timestamp.fromDate(
           DateTime.now().add(const Duration(days: 30))),
+      'trialStart': Timestamp.fromDate(DateTime(2026, 1, 2)),
+      'trialEnd': Timestamp.fromDate(
+          DateTime.now().add(const Duration(days: 5))),
       'createdAt': Timestamp.fromDate(DateTime(2026, 1, 2)),
     });
 
@@ -165,9 +171,96 @@ void main() {
 
     expect(find.byKey(const ValueKey('adminV2UsersPage')), findsOneWidget);
     expect(find.text('hunter@example.com'), findsWidgets);
+    // Name + Surname columns (were absent from the old table).
+    expect(find.text('Jan'), findsWidgets);
+    expect(find.text('Bosch'), findsWidgets);
     expect(find.text('hunter_monthly'), findsOneWidget);
     expect(find.text('payfast'), findsOneWidget);
+    // Trial Start Date (YYYY-MM-DD) is rendered; the removed Created column's
+    // date is NOT shown anywhere in the users table.
     expect(find.text('2026-01-02'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('adminV2UsersTable')),
+        matching: find.text('Created'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Users page table headers match the new column order',
+      (tester) async {
+    await firestore.collection('users').doc('h1').set({
+      'email': 'hunter@example.com',
+      'role': 'hunter',
+    });
+
+    await pumpScreen(tester, height: 4000);
+    await openTab(tester, 'users');
+
+    final table = find.byKey(const ValueKey('adminV2UsersTable'));
+    for (final header in const [
+      'Email',
+      'Name',
+      'Surname',
+      'Role',
+      'Trial',
+      'Trial Start Date',
+      'Trial End Date',
+      'Plan',
+      'Provider',
+    ]) {
+      expect(
+        find.descendant(of: table, matching: find.text(header)),
+        findsOneWidget,
+        reason: 'header "$header" should render in the users table',
+      );
+    }
+    // The removed Created column header must be gone.
+    expect(
+      find.descendant(of: table, matching: find.text('Created')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Users page color-codes the Trial cell (Active green)',
+      (tester) async {
+    await firestore.collection('users').doc('t1').set({
+      'email': 'trial@example.com',
+      'role': 'hunter',
+      'trialEnd': Timestamp.fromDate(
+          DateTime.now().add(const Duration(days: 10))),
+    });
+
+    await pumpScreen(tester, height: 4000);
+    await openTab(tester, 'users');
+
+    final trialText = tester.widget<Text>(find.descendant(
+      of: find.byKey(const ValueKey('adminV2UsersTable')),
+      matching: find.text('Active'),
+    ));
+    expect(trialText.style?.color, const Color(0xFF1B5E20));
+  });
+
+  testWidgets('Users page color-codes the Trial cell (Expired red)',
+      (tester) async {
+    await firestore.collection('users').doc('e1').set({
+      'email': 'expired@example.com',
+      'role': 'hunter',
+      'trialStart': Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(days: 60))),
+      'trialEnd': Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(days: 30))),
+    });
+
+    await pumpScreen(tester, height: 4000);
+    await openTab(tester, 'users');
+
+    final trialText = tester.widget<Text>(find.descendant(
+      of: find.byKey(const ValueKey('adminV2UsersTable')),
+      matching: find.text('Expired'),
+    ));
+    expect(trialText.style?.color, const Color(0xFFB71C1C));
   });
 
   testWidgets('Users page email search filters the table', (tester) async {

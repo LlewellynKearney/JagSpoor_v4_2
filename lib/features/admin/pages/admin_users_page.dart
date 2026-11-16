@@ -119,22 +119,38 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           emptyLabel: 'No users match the current search / role filter.',
           headers: const [
             'Email',
+            'Name',
+            'Surname',
             'Role',
             'Trial',
+            'Trial Start Date',
+            'Trial End Date',
             'Plan',
             'Provider',
-            'Created',
           ],
           rows: [
             for (final r in filtered)
               [
                 r.email.isEmpty ? '—' : r.email,
+                r.firstName.isEmpty ? '—' : r.firstName,
+                r.lastName.isEmpty ? '—' : r.lastName,
                 _roleLabel(r),
                 r.trialLabel(now),
+                formatAdminDate(r.trialStart),
+                formatAdminDate(r.trialEnd),
                 r.plan.isEmpty ? '—' : r.plan,
                 r.provider.isEmpty ? '—' : r.provider,
-                formatAdminDate(r.createdAt),
               ],
+          ],
+          // Color-code the Trial cell (col 4) green for Active / Converted and
+          // red for Expired, plus a subtle matching row tint.
+          cellColors: [
+            for (final r in filtered) _userRowCellColors(r, now),
+          ],
+          rowTints: [
+            for (final r in filtered)
+              trialRowTint(r.trialLabel(now),
+                  isDarkMode: widget.theme.isDarkMode),
           ],
         ),
         const SizedBox(height: 16),
@@ -145,22 +161,22 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
           theme: widget.theme,
           title: 'Accounts With No Operational Role',
           emptyLabel: 'Every account has a role assigned.',
-          headers: const ['Email', 'Stored Role', 'Created'],
+          headers: const ['Email', 'Stored Role'],
           rows: [
             for (final r in noRole)
               [
                 r.email.isEmpty ? '—' : r.email,
                 r.role.isEmpty ? '(none)' : r.role,
-                formatAdminDate(r.createdAt),
               ],
           ],
         ),
         AdminV2Note(
           theme: widget.theme,
           text: 'Read-only (Phase 1). Trial is COMPUTED as of now (Active / '
-              'Expired / Converted / None). Plan = subscriptionProduct, '
-              'Provider = subscriptionProvider. No Role = not hunter / '
-              'outfitter / dual (admins included).',
+              'Expired / Converted / None) and color-coded: green = Active / '
+              'Converted, red = Expired. Trial dates are YYYY-MM-DD. '
+              'Plan = subscriptionProduct, Provider = subscriptionProvider. '
+              'No Role = not hunter / outfitter / dual (admins included).',
         ),
       ],
     );
@@ -177,5 +193,17 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       case AdminUserRoleCategory.noRole:
         return 'No Role';
     }
+  }
+
+  /// Per-cell color overrides for one Users-table row. Only the **Trial** cell
+  /// (index 4) is color-coded; every other cell keeps the default theme text
+  /// color (`null`).
+  List<Color?> _userRowCellColors(AdminUserRecord r, DateTime now) {
+    final colors = List<Color?>.filled(9, null);
+    colors[4] = trialStatusColor(
+      r.trialLabel(now),
+      isDarkMode: widget.theme.isDarkMode,
+    );
+    return colors;
   }
 }

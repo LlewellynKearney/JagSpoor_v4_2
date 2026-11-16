@@ -1,4 +1,3 @@
-import 'admin_subscription_metrics.dart';
 import 'admin_user_metrics.dart';
 
 /// Builds the Admin Portal V2 **Users CSV** exports.
@@ -7,67 +6,47 @@ import 'admin_user_metrics.dart';
 /// button, and the downloaded file are guaranteed to agree — the count IS the
 /// CSV row count.
 ///
-/// Columns (per the brief):
-/// `Email, First Name, Surname, Role, Created Date (YYYY-MM-DD),
-/// Last Active (YYYY-MM-DD), Subscription Status, Subscription Provider`.
-///
-/// Empty fields are emitted as an empty cell (never `—`, never `null`) so the
-/// file imports cleanly into a spreadsheet and no cell can crash the export.
+/// Columns mirror the Admin V2 Users **table** exactly, in the same order:
+/// `Email, Name, Surname, Role, Trial, Trial Start Date, Trial End Date,
+/// Plan, Provider`. There is NO `Created` column (it was removed from both the
+/// table and the CSV). Dates are `YYYY-MM-DD`; empty fields are emitted as an
+/// empty cell (never `—`, never `null`) so the file imports cleanly into a
+/// spreadsheet and no cell can crash the export.
 class AdminUsersCsv {
   AdminUsersCsv._();
 
-  /// The CSV header row, in the exact column order above.
+  /// The CSV header row, in the exact column order the Users table renders.
   static const List<String> headers = <String>[
     'Email',
-    'First Name',
+    'Name',
     'Surname',
     'Role',
-    'Created Date',
-    'Last Active',
-    'Subscription Status',
-    'Subscription Provider',
+    'Trial',
+    'Trial Start Date',
+    'Trial End Date',
+    'Plan',
+    'Provider',
   ];
 
   /// The role cell value: the stored role verbatim (trimmed), or blank when the
   /// account has none.
   static String roleCell(AdminUserRecord r) => r.role.trim();
 
-  /// The subscription-status cell: `Active` / `Trial` / `Cancelled` /
-  /// `Expired` when the account is on a subscription path, else blank.
-  static String subscriptionStatusCell(AdminUserRecord r, DateTime now) {
-    final premiumNow = r.isPremiumActive(now);
-    if (premiumNow) return 'Active';
-    if (r.isTrialActive(now)) return 'Trial';
-    if (r.subscriptionStatus == 'cancelled' || r.cancelledAt != null) {
-      return 'Cancelled';
-    }
-    final expiry = r.premiumExpiry;
-    final trialEnd = r.trialEnd;
-    if ((expiry != null && !expiry.isAfter(now)) ||
-        (trialEnd != null && !trialEnd.isAfter(now))) {
-      return 'Expired';
-    }
-    return '';
-  }
-
-  /// The subscription-provider cell: `Google` / `PayFast`, or blank when the
-  /// account has no known billing provider (the brief's "None" — left blank so
-  /// a no-role / never-subscribed row is unambiguous in a spreadsheet).
-  static String subscriptionProviderCell(AdminUserRecord r) {
-    final provider = resolveAdminSubscriptionProvider(r.provider);
-    return provider.isKnown ? provider.label : '';
-  }
-
-  /// One CSV data row for [r].
+  /// One CSV data row for [r], matching the Users table cells exactly.
+  ///
+  /// Dates use `YYYY-MM-DD` and render blank when unknown (never `—`); `Trial`
+  /// is the same computed label the table shows (`Active` / `Expired` /
+  /// `Converted` / `None`).
   static List<String> rowFor(AdminUserRecord r, DateTime now) => <String>[
         r.email,
         r.firstName,
         r.lastName,
         roleCell(r),
-        _dateCell(r.createdAt),
-        _dateCell(r.lastActive),
-        subscriptionStatusCell(r, now),
-        subscriptionProviderCell(r),
+        r.trialLabel(now),
+        _dateCell(r.trialStart),
+        _dateCell(r.trialEnd),
+        r.plan,
+        r.provider,
       ];
 
   /// The users the "Export Users With No Role (CSV)" button exports: every
