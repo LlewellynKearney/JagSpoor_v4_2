@@ -8,6 +8,22 @@
 // species that is absent from that table is carried as a placeholder
 // (`avgWeightKg: 0`, `feedingClass: unknown`) and listed in
 // [missingSpeciesNames] so it can be filled in during Phase 3.
+//
+// ══════════════════════════════════════════════════════════════════════════
+// VERIFY against official SA tables before go-live
+// ══════════════════════════════════════════════════════════════════════════
+// The three MOST UNCERTAIN weights in this table are the large-bodied species,
+// where a single "average" hides a very wide bull/cow range:
+//
+//   • African Elephant   — 4500 kg
+//   • Giraffe            — 1100 kg
+//   • Hippopotamus       — 1500 kg
+//
+// These are ADULT AVERAGES; mature bulls are materially heavier (an elephant
+// bull can exceed 6000 kg, a hippo bull 2000 kg). Because LSU is linear in
+// weight, an under-stated average under-states stocking pressure for these
+// species. Verify all three against the official SA tables before go-live.
+// NO VALUES WERE CHANGED in Phase 6 — this is a verification note only.
 
 /// Feeding-class labels used by [SpeciesDefault.feedingClass].
 class FeedingClass {

@@ -1,0 +1,74 @@
+// ══════════════════════════════════════════════════════════════════════════
+// GO-LIVE READY — DO NOT APPLY UNTIL LLEWELLYN SAYS GO. Review + apply manually.
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Veld & Carrying Capacity — Phase 6 permit-document Storage rules
+// (MERGE FRAGMENT).
+//
+// THIS FILE IS NOT A COMPLETE RULESET. It must NOT replace `storage.rules`.
+// It is the block to paste INTO the live `storage.rules`, inside
+// `service firebase.storage { match /b/{bucket}/o { ... } }`, immediately
+// ABOVE the existing default-deny catch-all:
+//
+//     match /{allPaths=**} {
+//       allow read, write: if false;
+//     }
+//
+// That catch-all must remain the LAST block.
+//
+// ── What it protects ─────────────────────────────────────────────────────
+// Permit documents uploaded by `VeldCarryPermitFormScreen` via
+// `ImageService.uploadDocument` land at:
+//
+//   veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName}
+//
+// See `VeldCarryPermitFormScreen.permitStoragePath` — that builder is the
+// authoritative contract and the path segments are stripped of `/` so a
+// crafted file name cannot escape its permit folder.
+//
+// ── Access model ─────────────────────────────────────────────────────────
+//   • OWNER READ/WRITE ONLY. The second path segment is the outfitter's uid,
+//     so `request.auth.uid == outfitterUid` is a single, non-spoofable check
+//     that needs no document read.
+//   • NO public read. A permit document is regulatory paperwork (permit
+//     numbers, issuing authorities) and must never be world-readable.
+//   • NO hunter read. The hunter veld view deliberately renders permit TYPE +
+//     EXPIRY + STATUS only and never links the file — the hunter must not be
+//     able to fetch it even with the URL. Granting a hunter read here would
+//     break that contract, so there is deliberately no hunter clause.
+//   • NO admin bypass. Add `|| isAdmin()` only if Llewellyn approves it
+//     explicitly at go-live (matches the Firestore fragment's posture).
+//
+// ── Validation performed on this file ────────────────────────────────────
+//   • braces balanced, parens balanced.
+//   • no unconditional read grant anywhere.
+//   • every path below matches `permitStoragePath` exactly.
+//
+// ══════════════════════════════════════════════════════════════════════════
+// [MERGE] permit documents — owner read/write only
+// ══════════════════════════════════════════════════════════════════════════
+
+    match /veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName} {
+      // The owning outfitter reads and writes their own permit documents.
+      // `request.auth != null` is implied by the uid comparison, but it is
+      // stated explicitly so an unauthenticated request can never satisfy the
+      // clause by comparing null to a path segment.
+      allow read: if request.auth != null
+        && request.auth.uid == outfitterUid;
+      allow write: if request.auth != null
+        && request.auth.uid == outfitterUid;
+    }
+
+// ══════════════════════════════════════════════════════════════════════════
+// END OF MERGE FRAGMENT.
+//
+// After pasting, the live `storage.rules` must still end with exactly one
+// default-deny catch-all:
+//
+//     match /{allPaths=**} {
+//       allow read, write: if false;
+//     }
+//
+// Do not paste that block from here — it already exists in the live file and
+// must not be duplicated.
+// ══════════════════════════════════════════════════════════════════════════

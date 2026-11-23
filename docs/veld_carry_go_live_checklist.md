@@ -279,7 +279,9 @@ fails.
       `/plantedAreas` + `/predators`, and `…/permits/{permitId}`.
 - [ ] Confirm the hunter read surface: camps + stock + plantedAreas + permits
       (`hunter_visible` only). **No** predator read. **No** hunter write.
-- [ ] Confirm the booking-check TODO is understood as a **known gap** (§7).
+- [ ] Confirm the booking gate is enforced in CODE
+      (`VeldCarryRepository.hunterHasBookingForFarm`, fail-closed) and that the
+      rules-level gate remains a documented limitation (§7.3).
 
 ### Step 2 — Llewellyn applies the rules **manually** in the Firebase Console
 - [ ] Firebase Console → Firestore Database → Rules.
@@ -346,8 +348,10 @@ Remote Config, no env var, and no other mechanism.
 - [ ] Watch Crashlytics / error logs for `permission-denied` on veld paths
       (a `permission-denied` here almost always means Step 2 was skipped or
       pasted in the wrong place).
-- [ ] Watch for the hunter permit-read failure described in §7 item 2 — it
-      presents as `permission-denied` on the permits collection.
+- [ ] The hunter permit read now uses
+      `.where('visibility', isEqualTo: 'hunter_visible')` (§7.2 — FIXED), so it
+      no longer fails with `permission-denied`. A `permission-denied` here now
+      means Step 2 was skipped or pasted in the wrong place.
 - [ ] 24-hour check-in: any operator report of missing/blank veld data.
 
 ---
@@ -410,30 +414,43 @@ Collection-name constants live in `VeldCarryRepository`
 
 ## 7. Known limitations (accept at go-live, or fix first)
 
-### 7.1 — Permit file upload is file-name only (Phase 6)
-`VeldCarryPermitFormScreen._pickFile` stores **only** the picked file's
-**name** (`fileName`). There is no Firebase Storage upload path for permit
-documents yet, and `fileUrl` is deliberately left unset rather than written as
-a link that resolves to nothing. See `TODO(Phase 6)` in
-`lib/features/veld_carry/ui/veld_carry_permit_form_screen.dart:162`.
+### 7.1 — Permit file upload (FIXED in Phase 6)
+`VeldCarryPermitFormScreen` now uploads the picked document to Firebase
+Storage and stores the download URL in `FarmPermit.fileUrl` alongside
+`FarmPermit.fileName`.
 
-Impact: an outfitter cannot attach the actual permit PDF/image and cannot
-retrieve it later from the app. Acceptable for a first release; schedule
-Phase 6 before marketing the permits vault as a document store.
+* **Helper reused, not duplicated.** The app already had ONE Storage uploader
+  (`lib/core/services/image_service.dart`). Phase 6 added a generic
+  `ImageService.uploadDocument(...)` (byte-for-byte upload with a progress
+  callback) next to the existing `uploadCompressedPhoto`, and a
+  `ImageService.deleteByDownloadUrl(...)` for cleanup — no second uploader
+  class was written.
+* **Path:** `veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName}`
+  (`VeldCarryPermitFormScreen.permitStoragePath`).
+* **Validation:** PDF or image only (`pdf`, `jpg`, `jpeg`, `png`, `webp`,
+  `heic`) and **max 10 MB**, enforced at pick time with an explicit error.
+* **UX:** the upload runs on save with a `LinearProgressIndicator` + a
+  percentage label; a failed upload ABORTS the save with a red error snackbar
+  so a permit never points at a missing file.
+* **Delete:** `VeldCarryPermitsScreen._delete` also deletes the Storage object,
+  best-effort — a Storage failure is logged and never fails the Firestore
+  delete.
+* **Storage rules:** NEW `storage.rules.veld_carry.GO_LIVE_READY` (owner
+  read/write only, no public read, **no hunter read**). The live
+  `storage.rules` is untouched.
+* **Hunter view:** still renders permit type + expiry + status only; the file
+  URL is never exposed (verified — no `fileUrl` / `fileName` reference exists
+  in `veld_carry_hunter_view_screen.dart`).
 
-### 7.2 — Hunter permit read will FAIL under the go-live rule (BLOCKER — needs a code change)
-`VeldCarryRepository.getPermitsForHunter` issues an **unconstrained**
-collection read (`.../permits.get()`) and then filters to
-`hunter_visible` **client-side**.
+### 7.2 — Hunter permit read under the go-live rule (BLOCKER — FIXED in Phase 6)
+`VeldCarryRepository.getPermitsForHunter` previously issued an
+**unconstrained** collection read and filtered to `hunter_visible`
+client-side. Firestore rules are not filters: the go-live rule
+(`resource.data.visibility == 'hunter_visible'`) can only be honoured for a
+query that **constrains the same field**, so a non-owner's unconstrained read
+would have been rejected with `permission-denied`.
 
-Firestore rules are not filters. The go-live rule for permits is
-`resource.data.visibility == 'hunter_visible'`, which Firestore can only honour
-for a query that **constrains the same field**. An unconstrained collection
-read by a non-owner is therefore rejected with `permission-denied` — the
-whole query fails, it does not silently return fewer documents.
-
-**Required before go-live (code, not rules):** change the hunter permit read
-to
+**Fixed (code, not rules).** The hunter permit read is now
 
 ```dart
 .collection(permitsCollection)
@@ -441,26 +458,50 @@ to
 .get()
 ```
 
-(or move the hunter permit read behind a callable). The camps / stock /
-plantedAreas hunter reads are **unaffected** — their rules have no per-document
-condition, so an unconstrained read is valid.
+and the client-side `hunterVisiblePermits` filter is **kept as a second line
+of defence** — the query is never trusted on its own.
 
-Impact if shipped as-is: the hunter view renders camps, stock and planted
-capacity correctly, but the permits section shows nothing (the read throws and
-the screen logs + degrades). It fails closed, so nothing leaks — but the
-hunter-visible permits feature does not work.
+* File / method: `lib/features/veld_carry/veld_carry_repository.dart`,
+  `VeldCarryRepository.getPermitsForHunter` (the `.where('visibility', ...)`
+  clause sits directly before `.get()`).
+* Tests: `test/veld_carry_phase6_test.dart` — the hunter read returns ONLY
+  `hunter_visible` permits from a mixed collection, a private-only collection
+  yields an empty list, and `hunterVisiblePermits` is asserted to be the
+  second gate.
+* **Camps / stock / plantedAreas need NO `where()`** — verified: their
+  go-live rules have no per-document condition, so an unconstrained read is
+  valid for them. Only permits are `resource.data`-guarded.
 
-### 7.3 — Booking check is not in the rules yet (Phase 6)
-The hunter read rules grant **any signed-in user** read on camps, stock,
-planted areas and hunter-visible permits for **any** `outfitterUid`/`farmId`
-they know. There is no check that the caller holds a booking on that farm.
+### 7.3 — Booking check (CODE gate implemented in Phase 6; rules-level gate still a limitation)
+`VeldCarryRepository.hunterHasBookingForFarm(hunterUid, farmId)` is now
+implemented against the app's **real** booking store:
 
-This is the documented interim gate (`TODO(veld-carry Phase 6)` in the rules
-file and in `VeldCarryRepository`). The exposure is bounded — camp names,
-species counts, hectares and hunter-visible permits only; no GPS, no weights,
-no predators, no private permits — but it is broader than "hunters with a
-booking". Phase 6 must add the booking relationship before the feature is
-promoted beyond a soft launch.
+* Collection: **`bookings`** (top-level; written by `PackageBookingManager`
+  and `FarmGamePriceListManager`).
+* Fields: `hunterId`, `farmId`, `status`.
+* Statuses that grant access: `BookingStatus.confirmed` + `BookingStatus.completed`
+  (the legacy `Paid` spelling is accepted too — `BookingStatus.normalize`
+  maps it to `Confirmed`). Pending / awaiting-payment / declined / cancelled
+  bookings do **not** grant access.
+* Query shape: `where('hunterId', isEqualTo: hunter)` (single-field equality —
+  automatic index, no composite index) then `farmId` + status filtered in
+  Dart.
+
+Every hunter read (`getCampsForHunter`, `getCampForHunter`,
+`getStockForHunter`, `getPlantedAreasForHunter`, `getPermitsForHunter`) takes
+an optional `hunterUid`; when it is supplied and the booking check is false
+the read returns an **empty list / null** (fail closed). `VeldCarryHunterViewScreen`
+and `VeldCarryHunterEntryTile` pass the signed-in uid.
+
+**Rules-level gate is NOT implemented** — a Firestore rule cannot read the
+`bookings` collection. The future shape (a denormalised `allowedHunterUids`
+array written by a booking-confirmation trigger) is described as a comment
+block in `firestore.rules.veld_carry.GO_LIVE_READY`. Until that data change
+happens, the residual exposure is: **hunter-visible veld data is readable by
+any signed-in hunter who knows the `outfitterUid` + `farmId`** (camp names,
+species counts, hectares, hunter-visible permit type/expiry/status only — no
+GPS, no weights, no predators, no private permits, no permit files). Accepted
+limitation for a soft launch.
 
 ### 7.4 — Species weight/feeding table needs verification against official SA tables
 `lib/features/veld_carry/species_defaults.dart` is a **fallback** table: the
@@ -470,6 +511,12 @@ authorised by Llewellyn but must be verified against the official SA tables
 (Phase 3 note in the file header). Any species absent from the table is
 carried as a placeholder (`avgWeightKg: 0`, `feedingClass: unknown`) and
 listed in `missingSpeciesNames`.
+
+Phase 6 added a header note listing the **three most uncertain weights** —
+African Elephant 4500 kg, Giraffe 1100 kg, Hippopotamus 1500 kg — as
+"VERIFY against official SA tables before go-live". These are adult
+averages; mature bulls are heavier, so the current values may understate
+stocking pressure for those three species. **No values were changed.**
 
 Impact: a species with `avgWeightKg: 0` contributes 0 LSU, which
 **understates** stocking pressure. Review `missingSpeciesNames` before go-live
@@ -504,11 +551,13 @@ unexpected Firestore usage.
 | Version bump | none |
 | Deploy | none |
 
-TODOs left in `lib/`:
+TODOs left in `lib/` after Phase 6:
 
 ```
-lib/features/veld_carry/veld_carry_repository.dart:481   TODO(go-live)
-lib/features/veld_carry/ui/veld_carry_permit_form_screen.dart:162  TODO(Phase 6)
+(none)
 ```
 
-Both are tracked in §7.1 and §7.3 above.
+The Phase 5 TODOs are resolved: the permit query fix (§7.2) and the permit
+Storage upload (§7.1) are implemented, and the booking check (§7.3) is
+implemented in code. The remaining rules-level booking gate is a DATA change
+documented in §7.3, not a `TODO` in `lib/`.

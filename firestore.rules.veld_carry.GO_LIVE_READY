@@ -63,14 +63,39 @@
 //   • every path below matches the repository's path builders exactly.
 //
 // ── Known limitation (documented in docs/veld_carry_go_live_checklist.md) ─
-// The hunter permit read is gated on `resource.data.visibility`, which
-// Firestore can only honour for a QUERY that constrains the same field.
-// `VeldCarryRepository.getPermitsForHunter` currently issues an unconstrained
-// collection read and filters client-side, so it will be rejected with
-// `permission-denied` for a non-owner under this rule. Phase 6 must add
-// `.where('visibility', isEqualTo: 'hunter_visible')` to that query (or move
-// the read behind a callable). This is a CODE change, not a rules change, and
-// it is listed as a go-live blocker in the checklist.
+// FIXED in Phase 6 (commit: "fix(veld): Phase 6 — hunter permits query fix +
+// permit Storage upload + booking check"). The hunter permit read is gated on
+// `resource.data.visibility`, which Firestore can only honour for a QUERY that
+// constrains the same field. `VeldCarryRepository.getPermitsForHunter` now
+// issues `.where('visibility', isEqualTo: 'hunter_visible')` and keeps the
+// client-side `hunterVisiblePermits` filter as a second line of defence
+// (veld_carry_repository.dart, method `getPermitsForHunter`). An unconstrained
+// read would have been rejected with `permission-denied`.
+//
+// ── Booking check (go-live relationship gate) ───────────────────────────
+// The hunter reads below grant any signed-in user access to hunter-safe veld
+// data for any `outfitterUid`/`farmId` they know. The real relationship gate —
+// "the hunter must hold a CONFIRMED/COMPLETED booking on this farm" — is
+// enforced in CODE (`VeldCarryRepository.hunterHasBookingForFarm`, called by
+// every `...ForHunter` read when a `hunterUid` is supplied; it fails closed).
+//
+// It CANNOT be expressed as a Firestore rule: a rule may not read another
+// collection (`bookings`), and `exists()`/`get()` on a different path is
+// limited to `get()`/`exists()` on a single document that the query also
+// constrains — a farm-wide booking lookup is not queryable that way. The
+// future, rules-level shape would therefore need a denormalised field on the
+// veld documents (e.g. an `allowedHunterUids` array written by a Cloud
+// Function when a booking is confirmed), so the rule becomes:
+//
+//     allow read: if isVeldOwner(outfitterUid)
+//       || (isSignedIn()
+//           && resource.data.allowedHunterUids is list
+//           && request.auth.uid in resource.data.allowedHunterUids);
+//
+// That is a DATA change (a booking-confirmation trigger + a backfill), not a
+// rules-only change, so it is NOT implemented here. Until it is, the code-side
+// `hunterHasBookingForFarm` gate is the enforcement point and the residual
+// exposure is the documented limitation in the checklist (§7.3).
 //
 // ══════════════════════════════════════════════════════════════════════════
 // [MERGE] helper — add next to the existing isSignedIn() / isOwnerOf() helpers
@@ -93,9 +118,10 @@
       // The owner is always signed in, so this single clause grants the
       // owner full read AND the interim hunter read.
       //
-      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
-      // this farm) to be added in Phase 6 — current rule allows any signed-in
-      // hunter to read hunter-visible data.
+      // Booking check: enforced in CODE, not here — see the "Booking check"
+      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
+      // gates every hunter read when a hunterUid is supplied and fails closed.
+      // A rule cannot read the `bookings` collection.
       allow read: if isSignedIn();
 
       // A camp document may never claim a farmId other than its own path
@@ -110,9 +136,10 @@
     // [MERGE] stock ledger — owner full read/write; hunter read (interim)
     // ═════════════════════════════════════════════════════════════════════
     match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId} {
-      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
-      // this farm) to be added in Phase 6 — current rule allows any signed-in
-      // hunter to read hunter-visible data.
+      // Booking check: enforced in CODE, not here — see the "Booking check"
+      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
+      // gates every hunter read when a hunterUid is supplied and fails closed.
+      // A rule cannot read the `bookings` collection.
       allow read: if isSignedIn();
 
       // A stock row may never claim a campId other than its own path segment.
@@ -128,9 +155,10 @@
     // Hunter read is granted because the hunter-facing capacity total includes
     // year-round planted feed (feed type + hectares are not sensitive).
     match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId} {
-      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
-      // this farm) to be added in Phase 6 — current rule allows any signed-in
-      // hunter to read hunter-visible data.
+      // Booking check: enforced in CODE, not here — see the "Booking check"
+      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
+      // gates every hunter read when a hunterUid is supplied and fails closed.
+      // A rule cannot read the `bookings` collection.
       allow read: if isSignedIn();
 
       // A planted area may never claim a campId other than its own path
@@ -171,15 +199,16 @@
       // A signed-in non-owner reads a permit ONLY when the outfitter marked it
       // `hunter_visible`. This is the interim gate.
       //
-      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
-      // this farm) to be added in Phase 6 — current rule allows any signed-in
-      // hunter to read hunter-visible data.
+      // Booking check: enforced in CODE, not here — see the "Booking check"
+      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
+      // gates every hunter read when a hunterUid is supplied and fails closed.
+      // A rule cannot read the `bookings` collection.
       //
-      // NOTE for Phase 6 (code, not rules): a `resource.data` condition can
-      // only be honoured for a QUERY that constrains the same field. The
-      // hunter read must become
-      // `.where('visibility', isEqualTo: 'hunter_visible')` before this rule
-      // can serve it. See the checklist's known limitations.
+      // FIXED in Phase 6 (code, not rules): a `resource.data` condition can
+      // only be honoured for a QUERY that constrains the same field, and
+      // `VeldCarryRepository.getPermitsForHunter` now issues
+      // `.where('visibility', isEqualTo: 'hunter_visible')` (plus a
+      // defence-in-depth Dart filter). This rule can now serve that read.
       allow read: if isVeldOwner(outfitterUid)
         || (isSignedIn() && resource.data.visibility == 'hunter_visible');
 

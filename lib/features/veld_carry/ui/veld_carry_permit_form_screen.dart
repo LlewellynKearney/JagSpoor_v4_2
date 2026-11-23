@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/core/services/image_service.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
@@ -12,6 +15,29 @@ import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_constants.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
+
+/// A permit document chosen by the outfitter, before it is uploaded.
+///
+/// Carries the local [path] (needed for the Storage upload), the display
+/// [name] and the [sizeBytes] used for the 10 MB guard.
+class PickedPermitFile {
+  const PickedPermitFile({
+    required this.name,
+    required this.path,
+    required this.sizeBytes,
+  });
+
+  final String name;
+  final String path;
+  final int sizeBytes;
+
+  /// Lower-cased extension without the dot (`pdf`, `jpg`, ...).
+  String get extension {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+}
 
 /// Add / edit one farm-wide permit.
 ///
@@ -29,6 +55,7 @@ class VeldCarryPermitFormScreen extends StatefulWidget {
     this.repository,
     this.currentUidOverride,
     this.filePickerOverride,
+    this.uploadOverride,
   });
 
   final String farmId;
@@ -48,10 +75,69 @@ class VeldCarryPermitFormScreen extends StatefulWidget {
   @visibleForTesting
   final String? currentUidOverride;
 
-  /// Test seam: returns a picked file name (or null when cancelled) so the
+  /// Test seam: returns a picked file (or null when cancelled) so the
   /// attachment flow is testable without a platform file dialog.
   @visibleForTesting
-  final Future<String?> Function()? filePickerOverride;
+  final Future<PickedPermitFile?> Function()? filePickerOverride;
+
+  /// Test seam: performs the Storage upload and returns the download URL.
+  /// Defaults to [ImageService.uploadDocument] so the app keeps ONE uploader.
+  @visibleForTesting
+  final Future<String> Function({
+    required File file,
+    required String storagePath,
+    required String contentType,
+    void Function(double progress)? onProgress,
+  })? uploadOverride;
+
+  /// Largest permit document accepted, in bytes (10 MB).
+  static const int maxPermitFileBytes = 10 * 1024 * 1024;
+
+  /// The document types a permit attachment may be.
+  static const List<String> allowedPermitFileExtensions = [
+    'pdf',
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'heic',
+  ];
+
+  /// `application/pdf` / `image/*` for [extension]; a safe octet-stream
+  /// fallback for anything else (the picker already restricts the types).
+  static String contentTypeForExtension(String extension) {
+    switch (extension.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  /// Storage path for a permit document:
+  /// `veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName}`.
+  ///
+  /// Pure so the layout is asserted in one place. Path segments are stripped of
+  /// `/` so a crafted file name cannot escape its permit folder.
+  static String permitStoragePath({
+    required String outfitterUid,
+    required String farmId,
+    required String permitId,
+    required String fileName,
+  }) {
+    final safeName = fileName.replaceAll('/', '_').replaceAll('\\', '_');
+    return 'veld_permits/${outfitterUid.trim()}/${farmId.trim()}/'
+        '${permitId.trim()}/$safeName';
+  }
 
   @override
   State<VeldCarryPermitFormScreen> createState() =>
@@ -82,8 +168,19 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
   final Set<String> _campIds = <String>{};
   String _visibility = FarmPermit.visibilityPrivate;
 
-  /// Attachment NAME only in this phase — see [_pickFile].
+  /// The attachment NAME shown on the button (also persisted as `fileName`).
   String? _fileName;
+
+  /// The picked document, when it still needs uploading (a NEW pick). Null
+  /// while editing a permit whose attachment was already uploaded.
+  PickedPermitFile? _pickedFile;
+
+  /// The stored download URL (`fileUrl`). Carried from the existing permit and
+  /// replaced by the upload result on save.
+  String? _fileUrl;
+
+  /// 0..1 while an upload is running; null when idle.
+  double? _uploadProgress;
 
   bool _saving = false;
 
@@ -107,6 +204,7 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
     _campIds.addAll(permit.campIds);
     _visibility = permit.visibility;
     _fileName = permit.fileName;
+    _fileUrl = permit.fileUrl;
   }
 
   @override
@@ -157,28 +255,113 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
     setState(() => _expiryDate = picked);
   }
 
-  /// Picks an attachment and keeps its NAME only.
+  /// Picks a permit document (image or PDF, max 10 MB).
   ///
-  /// TODO(Phase 6): Firebase Storage upload. This phase deliberately stores
-  /// `fileName` only — no upload path exists for permit documents yet, and
-  /// inventing one would write a `fileUrl` that resolves to nothing.
+  /// The pick itself only validates + stages the file — the Storage upload runs
+  /// on save (see [_uploadPickedFile]) so the operator can still change their
+  /// mind without leaving an orphaned object behind.
   Future<void> _pickFile() async {
     try {
       final override = widget.filePickerOverride;
-      String? name;
+      PickedPermitFile? picked;
       if (override != null) {
-        name = await override();
+        picked = await override();
       } else {
-        final result = await FilePicker.platform.pickFiles();
-        name = result?.files.isEmpty ?? true ? null : result!.files.first.name;
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: VeldCarryPermitFormScreen
+              .allowedPermitFileExtensions,
+        );
+        final file = (result == null || result.files.isEmpty)
+            ? null
+            : result.files.first;
+        if (file != null && file.path != null) {
+          picked = PickedPermitFile(
+            name: file.name,
+            path: file.path!,
+            sizeBytes: file.size,
+          );
+        }
       }
-      if (name == null || name.trim().isEmpty) return;
+      if (picked == null) return;
       if (!mounted) return;
-      setState(() => _fileName = name!.trim());
+
+      // Size guard — reject an oversized document before any upload begins.
+      if (picked.sizeBytes > VeldCarryPermitFormScreen.maxPermitFileBytes) {
+        _snack(
+          'That file is too large (${_formatBytes(picked.sizeBytes)}). '
+          'The maximum is 10 MB.',
+          Colors.red.shade700,
+        );
+        return;
+      }
+      // Type guard — the platform picker restricts this, but the override /
+      // a platform that ignores the filter must not slip a .docx through.
+      if (!VeldCarryPermitFormScreen.allowedPermitFileExtensions
+          .contains(picked.extension)) {
+        _snack(
+          'Unsupported file type (.${picked.extension}). '
+          'Attach a PDF or an image.',
+          Colors.red.shade700,
+        );
+        return;
+      }
+
+      setState(() {
+        _pickedFile = picked;
+        _fileName = picked!.name;
+      });
     } catch (e) {
       if (!mounted) return;
       _snack('Could not pick a file: $e', Colors.red.shade700);
     }
+  }
+
+  /// Uploads [_pickedFile] to Storage and returns its download URL, or the
+  /// previously stored URL when nothing new was picked.
+  ///
+  /// Throws on upload failure so the caller can abort the save with an error
+  /// state (a permit must never be saved pointing at a half-uploaded file).
+  Future<String?> _uploadPickedFile({
+    required String uid,
+    required String permitId,
+  }) async {
+    final picked = _pickedFile;
+    if (picked == null) return _fileUrl;
+    final storagePath = VeldCarryPermitFormScreen.permitStoragePath(
+      outfitterUid: uid,
+      farmId: widget.farmId,
+      permitId: permitId,
+      fileName: picked.name,
+    );
+    final upload = widget.uploadOverride ?? ImageService.uploadDocument;
+    setState(() => _uploadProgress = 0);
+    try {
+      final url = await upload(
+        file: File(picked.path),
+        storagePath: storagePath,
+        contentType: VeldCarryPermitFormScreen.contentTypeForExtension(
+          picked.extension,
+        ),
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _uploadProgress = progress.clamp(0.0, 1.0));
+        },
+      );
+      if (mounted) setState(() => _uploadProgress = null);
+      return url;
+    } catch (e) {
+      if (mounted) setState(() => _uploadProgress = null);
+      rethrow;
+    }
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    return '$bytes B';
   }
 
   Future<void> _save() async {
@@ -189,8 +372,32 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
       return;
     }
 
+    final permitId = widget.existingPermit?.id ?? VeldCarryRepository.newId();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final navigator = Navigator.of(context);
+    setState(() => _saving = true);
+
+    // 1. Upload the newly picked document (if any). A failed upload aborts the
+    //    save — a permit must never point at a file that does not exist.
+    String? fileUrl;
+    try {
+      fileUrl = await _uploadPickedFile(uid: uid, permitId: permitId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Could not upload the attachment: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    // 2. Persist the permit with the resolved download URL.
     final permit = FarmPermit(
-      id: widget.existingPermit?.id ?? VeldCarryRepository.newId(),
+      id: permitId,
       farmId: widget.farmId,
       permitType: _permitType,
       permitNumber: _numberController.text.trim(),
@@ -200,8 +407,7 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
       expiryDate: _expiryDate,
       speciesCovered: _speciesCovered.toList(growable: false),
       campIds: _campIds.toList(growable: false),
-      // No file URL in this phase: the attachment is a name only.
-      fileUrl: null,
+      fileUrl: fileUrl,
       fileName: _fileName,
       visibility: _visibility,
       notes: _notesController.text.trim(),
@@ -212,9 +418,6 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
       updatedAt: DateTime.now(),
     );
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final navigator = Navigator.of(context);
-    setState(() => _saving = true);
     try {
       await _repository.savePermit(uid, widget.farmId, permit);
       if (!mounted) return;
@@ -543,7 +746,7 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
                       key: const ValueKey('veldPermitPickFileButton'),
-                      onPressed: _pickFile,
+                      onPressed: _saving ? null : _pickFile,
                       icon: const Icon(Icons.attach_file_rounded, size: 18),
                       label: Text(
                         _fileName == null || _fileName!.isEmpty
@@ -560,10 +763,39 @@ class _VeldCarryPermitFormScreenState extends State<VeldCarryPermitFormScreen> {
                         ),
                       ),
                     ),
+                    if (_uploadProgress != null) ...[
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          key: const ValueKey('veldPermitUploadProgress'),
+                          value: _uploadProgress,
+                          minHeight: 6,
+                          backgroundColor:
+                              theme.accentColor.withValues(alpha: 0.15),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            theme.accentColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Uploading ${((_uploadProgress ?? 0) * 100).round()}%…',
+                        key: const ValueKey('veldPermitUploadProgressLabel'),
+                        style: TextStyle(
+                          color: OutfitterUi.subtitleColor(theme),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     Text(
-                      'Stores the file name only for now — document upload '
-                      'arrives in Phase 6.',
+                      _fileUrl != null && _pickedFile == null
+                          ? 'Document stored securely. Replacing it uploads a '
+                              'new file.'
+                          : 'PDF or image, maximum 10 MB. Stored privately in '
+                              'your permit vault — hunters never see the file.',
+                      key: const ValueKey('veldPermitAttachmentHint'),
                       style: TextStyle(
                         color: OutfitterUi.subtitleColor(theme),
                         fontSize: 11,

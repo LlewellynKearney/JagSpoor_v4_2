@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -628,7 +630,7 @@ void main() {
       );
     });
 
-    testWidgets('saves a permit private by default with the attachment name',
+    testWidgets('saves a permit private by default with the uploaded document',
         (tester) async {
       final firestore = FakeFirebaseFirestore();
       final repo = ownerRepo(firestore);
@@ -641,7 +643,18 @@ void main() {
           repository: repo,
           currentUidOverride: outfitterUid,
           camps: [buildCamp()],
-          filePickerOverride: () async => 'cae-certificate.pdf',
+          filePickerOverride: () async => const PickedPermitFile(
+            name: 'cae-certificate.pdf',
+            path: '/tmp/cae-certificate.pdf',
+            sizeBytes: 4096,
+          ),
+          uploadOverride: ({
+            required File file,
+            required String storagePath,
+            required String contentType,
+            void Function(double progress)? onProgress,
+          }) async =>
+              'https://storage.example/veld_permits/cae-certificate.pdf',
         ),
       );
 
@@ -668,8 +681,11 @@ void main() {
       expect(saved.single.issuingAuthority, 'Limpopo Nature Conservation');
       expect(saved.single.visibility, FarmPermit.visibilityPrivate);
       expect(saved.single.fileName, 'cae-certificate.pdf');
-      // No invented Storage URL in this phase.
-      expect(saved.single.fileUrl, isNull);
+      // Phase 6: the document is uploaded and the download URL persisted.
+      expect(
+        saved.single.fileUrl,
+        'https://storage.example/veld_permits/cae-certificate.pdf',
+      );
       expect(saved.single.status, FarmPermit.permitStatusNoExpiry);
     });
   });

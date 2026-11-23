@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -126,5 +127,66 @@ class ImageService {
       imageFile: compressed,
       storagePath: storagePath,
     );
+  }
+
+  /// Uploads an arbitrary document file (an image or a PDF) to Firebase
+  /// Storage at [storagePath] and returns the public download URL.
+  ///
+  /// This is the generic sibling of [uploadCompressedPhoto]: photos go through
+  /// [uploadCompressedPhoto] so they are downscaled first, while a document
+  /// (e.g. a permit PDF) is uploaded byte-for-byte. Both live here so the app
+  /// keeps exactly ONE Firebase Storage uploader.
+  ///
+  /// [onProgress] receives a 0..1 fraction as the upload advances (used to
+  /// render a progress bar). Throws on upload failure — the caller decides
+  /// whether to surface an error or abort the enclosing save.
+  static Future<String> uploadDocument({
+    required File file,
+    required String storagePath,
+    required String contentType,
+    void Function(double progress)? onProgress,
+  }) async {
+    final Reference ref = FirebaseStorage.instance.ref().child(storagePath);
+    final UploadTask uploadTask = ref.putFile(
+      file,
+      SettableMetadata(contentType: contentType),
+    );
+    StreamSubscription<TaskSnapshot>? progressSub;
+    if (onProgress != null) {
+      progressSub = uploadTask.snapshotEvents.listen(
+        (snapshot) {
+          final total = snapshot.totalBytes;
+          if (total > 0) {
+            onProgress((snapshot.bytesTransferred / total).clamp(0.0, 1.0));
+          }
+        },
+        onError: (Object _) {},
+      );
+    }
+    try {
+      final TaskSnapshot snapshot = await uploadTask;
+      return await snapshot.ref.getDownloadURL();
+    } finally {
+      await progressSub?.cancel();
+    }
+  }
+
+  /// Best-effort delete of a previously uploaded file, addressed by its
+  /// download URL.
+  ///
+  /// Returns true when the object was deleted. NEVER throws: a missing object,
+  /// a malformed URL, a permission error or an unavailable Storage instance
+  /// all resolve to false (the caller logs it and keeps going — a failed
+  /// Storage cleanup must not fail the Firestore delete that owns the record).
+  static Future<bool> deleteByDownloadUrl(String? downloadUrl) async {
+    final url = downloadUrl?.trim();
+    if (url == null || url.isEmpty) return false;
+    try {
+      await FirebaseStorage.instance.refFromURL(url).delete();
+      return true;
+    } catch (e) {
+      debugPrint('ImageService: storage delete failed for "$url" ($e)');
+      return false;
+    }
   }
 }

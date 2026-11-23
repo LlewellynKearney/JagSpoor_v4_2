@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
@@ -39,6 +40,7 @@ class VeldCarryHunterViewScreen extends StatefulWidget {
     this.campId,
     this.theme,
     this.repository,
+    this.currentUidOverride,
   });
 
   /// The farm's outfitter — the owner segment of the veld data path. The
@@ -54,6 +56,11 @@ class VeldCarryHunterViewScreen extends StatefulWidget {
 
   final ThemeController? theme;
   final VeldCarryRepository? repository;
+
+  /// Test seam: pins the signed-in hunter's uid so widget tests can drive the
+  /// screen against a fake Firestore without a Firebase app.
+  @visibleForTesting
+  final String? currentUidOverride;
 
   @override
   State<VeldCarryHunterViewScreen> createState() =>
@@ -110,6 +117,19 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
   List<HunterCampVeldView> _camps = const [];
   List<FarmPermit> _permits = const [];
 
+  /// The signed-in hunter's uid — the identity the booking gate is checked
+  /// against. Null when Firebase is unavailable (cold launch / widget tests
+  /// without an override), in which case the gate fails closed.
+  String? _currentUid() {
+    final override = widget.currentUidOverride;
+    if (override != null) return override;
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -121,6 +141,9 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
       _loading = true;
       _error = null;
     });
+    // The hunter must hold a booking on this farm. A missing uid fails closed:
+    // the repository returns no data rather than serving an unverified caller.
+    final hunterUid = _currentUid();
     try {
       final camps = <Camp>[];
       final campId = widget.campId?.trim();
@@ -129,6 +152,7 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
           widget.farmId,
           campId,
           outfitterUid: widget.outfitterUid,
+          hunterUid: hunterUid,
         );
         if (camp != null) camps.add(camp);
       } else {
@@ -136,6 +160,7 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
           await _repository.getCampsForHunter(
             widget.farmId,
             outfitterUid: widget.outfitterUid,
+            hunterUid: hunterUid,
           ),
         );
       }
@@ -149,6 +174,7 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
             widget.farmId,
             camp.id,
             outfitterUid: widget.outfitterUid,
+            hunterUid: hunterUid,
           );
         } catch (e) {
           // A stock read failure must not hide the camp's veld basics.
@@ -159,6 +185,7 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
             widget.farmId,
             camp.id,
             outfitterUid: widget.outfitterUid,
+            hunterUid: hunterUid,
           );
         } catch (e) {
           debugPrint('VeldCarryHunterView: planted read failed: $e');
@@ -173,6 +200,7 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
         permits = await _repository.getPermitsForHunter(
           widget.farmId,
           outfitterUid: widget.outfitterUid,
+          hunterUid: hunterUid,
         );
       } catch (e) {
         debugPrint('VeldCarryHunterView: permit read failed: $e');
@@ -639,6 +667,7 @@ class VeldCarryHunterEntryTile extends StatefulWidget {
     this.farmName,
     this.theme,
     this.repository,
+    this.currentUidOverride,
   });
 
   final String outfitterUid;
@@ -646,6 +675,10 @@ class VeldCarryHunterEntryTile extends StatefulWidget {
   final String? farmName;
   final ThemeController? theme;
   final VeldCarryRepository? repository;
+
+  /// Test seam: pins the signed-in hunter's uid for the booking-gate probe.
+  @visibleForTesting
+  final String? currentUidOverride;
 
   @override
   State<VeldCarryHunterEntryTile> createState() =>
@@ -658,6 +691,18 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
       widget.repository ?? VeldCarryRepository.instance;
 
   bool _visible = false;
+
+  /// The signed-in hunter's uid for the booking-gate probe (null when Firebase
+  /// is unavailable — the gate then fails closed and no tile renders).
+  String? _hunterUid() {
+    final override = widget.currentUidOverride;
+    if (override != null) return override;
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -682,6 +727,7 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
       final camps = await _repository.getCampsForHunter(
         widget.farmId,
         outfitterUid: widget.outfitterUid,
+        hunterUid: _hunterUid(),
       );
       if (!mounted) return;
       if (camps.isEmpty) return;

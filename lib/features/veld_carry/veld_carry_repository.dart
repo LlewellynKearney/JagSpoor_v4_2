@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:jagspoor/features/hunter_mode/models/booking_status.dart';
 
 import 'models/camp.dart';
 import 'models/farm_permit.dart';
@@ -478,19 +479,100 @@ class VeldCarryRepository {
   // outfitter uid explicitly (the hunter already has it from the package /
   // farm document it is allowed to read).
   //
-  // TODO(go-live): the live Firestore rules MUST enforce BOTH the hunter
-  // visibility and the booking relationship before this feature is switched
-  // on. These methods are a client-side convenience, not the security
-  // boundary: they only ever return hunter-safe data and the UI renders a
-  // restricted subset (no GPS, no weights, no permit number / file).
+  // The live Firestore rules enforce the hunter visibility, and the hunter
+  // reads fail closed on a booking relationship (see
+  // [hunterHasBookingForFarm]). These methods are a client-side convenience,
+  // not the security boundary: they only ever return hunter-safe data and the
+  // UI renders a restricted subset (no GPS, no weights, no permit number /
+  // file).
+  //
+  // QUERY SHAPE MATTERS. Firestore rules are not filters: a rule that inspects
+  // a field (`resource.data.visibility == 'hunter_visible'`) can only serve a
+  // QUERY that constrains the same field. `getPermitsForHunter` therefore
+  // issues a `where('visibility', ...)` query — an unconstrained read would be
+  // rejected with `permission-denied` for a non-owner, not silently narrowed.
+  // Camps / stock / plantedAreas carry no per-document condition in the
+  // go-live rules, so an unconstrained read is valid for them.
+
+  // ── Booking gate (hunter reads) ───────────────────────────────────────
+  //
+  // Go-live relationship check: a hunter may only read a farm's veld data when
+  // they hold a booking on that farm. The ruleset cannot express this (a rule
+  // cannot read another collection), so it is enforced here, client-side, and
+  // fails closed.
+
+  /// The app's real booking store (top-level `bookings` collection, written by
+  /// `PackageBookingManager` / `FarmGamePriceListManager`).
+  static const String bookingsCollection = 'bookings';
+
+  /// Booking statuses that grant a hunter access to a farm's veld data.
+  ///
+  /// Canonical [BookingStatus] values only; the legacy `Paid` spelling is
+  /// accepted too because [BookingStatus.normalize] maps it to
+  /// [BookingStatus.confirmed].
+  static const List<String> veldAccessBookingStatuses = [
+    BookingStatus.confirmed,
+    BookingStatus.completed,
+  ];
+
+  /// True when [hunterUid] holds a `confirmed` / `completed` booking on
+  /// [farmId].
+  ///
+  /// The query constrains `hunterId` only — a single-field equality, which uses
+  /// the automatic index and needs no composite index — and filters `farmId` +
+  /// the status client-side. That is the established project pattern for a
+  /// multi-condition read (see `OutfitterAnalyticsService`).
+  ///
+  /// Fails CLOSED: a blank uid / farmId, an unavailable Firestore or a read
+  /// error all resolve to `false`, so the caller hides the data rather than
+  /// serving it to a caller with no verified relationship to the farm.
+  Future<bool> hunterHasBookingForFarm(
+    String hunterUid,
+    String farmId,
+  ) async {
+    final hunter = hunterUid.trim();
+    final farm = farmId.trim();
+    if (hunter.isEmpty || farm.isEmpty) return false;
+    try {
+      final db = _requireFirestore();
+      final snapshot = await db
+          .collection(bookingsCollection)
+          .where('hunterId', isEqualTo: hunter)
+          .get();
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if ((data['farmId'] ?? '').toString().trim() != farm) continue;
+        final status = BookingStatus.normalize(data['status'] as String?);
+        if (veldAccessBookingStatuses.contains(status)) return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint(
+        'VeldCarryRepository: booking check failed ($e) — fail closed.',
+      );
+      return false;
+    }
+  }
+
+  /// Whether a hunter read should be served.
+  ///
+  /// A null [hunterUid] means "no booking gate requested" (the outfitter's own
+  /// screens and the pre-Phase-6 call sites), so the read proceeds. A non-null
+  /// uid is gated on [hunterHasBookingForFarm] and fails closed.
+  Future<bool> _hunterReadAllowed(String? hunterUid, String farmId) async {
+    if (hunterUid == null) return true;
+    return hunterHasBookingForFarm(hunterUid, farmId);
+  }
 
   /// Camps of [farmId], read for a hunter (no ownership check).
   Future<List<Camp>> getCampsForHunter(
     String farmId, {
     required String outfitterUid,
+    String? hunterUid,
   }) async {
     final farm = _requireFarmId(farmId);
     final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, farm)) return const <Camp>[];
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -507,14 +589,17 @@ class VeldCarryRepository {
 
   /// One camp of [farmId], read for a hunter (no ownership check).
   ///
-  /// Returns null when the camp does not exist.
+  /// Returns null when the camp does not exist, or when [hunterUid] is supplied
+  /// and has no booking on the farm (fail closed).
   Future<Camp?> getCampForHunter(
     String farmId,
     String campId, {
     required String outfitterUid,
+    String? hunterUid,
   }) async {
     final camp = _requireCampIds(farmId: farmId, campId: campId);
     final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, camp.farmId)) return null;
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -533,13 +618,20 @@ class VeldCarryRepository {
   ///
   /// The caller must render ONLY `speciesName` + `count` — the weights and the
   /// GU/BU split stay on the outfitter side.
+  ///
+  /// An empty list is returned when [hunterUid] is supplied and has no booking
+  /// on the farm (fail closed).
   Future<List<StockEntry>> getStockForHunter(
     String farmId,
     String campId, {
     required String outfitterUid,
+    String? hunterUid,
   }) async {
     final camp = _requireCampIds(farmId: farmId, campId: campId);
     final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, camp.farmId)) {
+      return const <StockEntry>[];
+    }
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -562,13 +654,20 @@ class VeldCarryRepository {
   /// Needed so the hunter-facing capacity total matches the outfitter screen
   /// (year-round planted areas add to the veld capacity). Feed type + hectares
   /// are not sensitive; no location data is exposed.
+  ///
+  /// An empty list is returned when [hunterUid] is supplied and has no booking
+  /// on the farm (fail closed).
   Future<List<PlantedArea>> getPlantedAreasForHunter(
     String farmId,
     String campId, {
     required String outfitterUid,
+    String? hunterUid,
   }) async {
     final camp = _requireCampIds(farmId: farmId, campId: campId);
     final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, camp.farmId)) {
+      return const <PlantedArea>[];
+    }
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -592,12 +691,26 @@ class VeldCarryRepository {
   /// reach the hunter view. The UI additionally renders ONLY the permit type,
   /// expiry date and status (never the permit number, the issuing authority or
   /// the attached file).
+  ///
+  /// The `where('visibility', ...)` constraint is REQUIRED, not an
+  /// optimisation: the go-live permit rule is
+  /// `resource.data.visibility == 'hunter_visible'`, and Firestore rejects an
+  /// unconstrained non-owner read of a `resource.data`-guarded collection with
+  /// `permission-denied`. The client-side [hunterVisiblePermits] filter is kept
+  /// as a second line of defence — the query is never trusted on its own.
+  ///
+  /// An empty list is returned when [hunterUid] is supplied and has no booking
+  /// on the farm (fail closed).
   Future<List<FarmPermit>> getPermitsForHunter(
     String farmId, {
     required String outfitterUid,
+    String? hunterUid,
   }) async {
     final farm = _requireFarmId(farmId);
     final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, farm)) {
+      return const <FarmPermit>[];
+    }
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -605,10 +718,14 @@ class VeldCarryRepository {
         .collection(farmsCollection)
         .doc(farm)
         .collection(permitsCollection)
+        .where('visibility', isEqualTo: FarmPermit.visibilityHunterVisible)
         .get();
     final permits = snapshot.docs
         .map((doc) => FarmPermit.fromMap(doc.data(), id: doc.id))
         .toList(growable: false);
+    // Defence in depth: filter again in Dart. A query is a request, not a
+    // guarantee — a mis-set document, a cached/offline read or a future rule
+    // change must never let a private permit through.
     return hunterVisiblePermits(permits);
   }
 

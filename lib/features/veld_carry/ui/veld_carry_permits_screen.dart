@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:jagspoor/core/services/image_service.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
@@ -159,6 +160,19 @@ class _VeldCarryPermitsScreenState extends State<VeldCarryPermitsScreen> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       await _repository.deletePermit(uid, widget.farmId, permit.id);
+      // Best-effort Storage cleanup. A failed object delete (already gone, a
+      // permission change, offline) is logged and never fails the Firestore
+      // delete that already succeeded.
+      if (permit.fileUrl != null && permit.fileUrl!.isNotEmpty) {
+        final removed =
+            await ImageService.deleteByDownloadUrl(permit.fileUrl);
+        if (!removed) {
+          debugPrint(
+            'VeldCarryPermits: Storage cleanup skipped for ${permit.id} '
+            '(file may already be gone).',
+          );
+        }
+      }
       if (!mounted) return;
       messenger?.showSnackBar(
         SnackBar(
