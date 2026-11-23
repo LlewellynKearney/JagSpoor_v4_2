@@ -12,8 +12,11 @@ import 'models/predator_entry.dart';
 import 'models/rainfall_entry.dart';
 import 'models/stock_entry.dart';
 import 'models/stock_movement.dart';
+import 'models/veld_alert.dart';
 import 'species_defaults.dart';
+import 'veld_carry_alerts.dart';
 import 'veld_carry_calculator.dart';
+import 'veld_carry_report.dart';
 
 /// Firestore repository for the Veld & Carrying Capacity feature.
 ///
@@ -836,6 +839,148 @@ class VeldCarryRepository {
     return snapshot.docs
         .map((doc) => FarmPermit.fromMap(doc.data(), id: doc.id))
         .toList(growable: false);
+  }
+
+  // ── Derived read models: alerts + veld report ─────────────────────────
+  //
+  // Alerts and reports are DERIVED: they load the same records the screens
+  // already load and hand them to the pure builders in
+  // `veld_carry_alerts.dart` / `veld_carry_report.dart`. Nothing is written
+  // back, so an alert or a report can never drift from the live data.
+
+  /// Builds the farm's live alerts, most urgent first. Read-only.
+  ///
+  /// A camp whose child records cannot be read is treated as "unknown" (its
+  /// alerts are skipped) so one failed child read cannot hide the farm's other
+  /// alerts — `buildAlerts` only raises `no_*_recorded` for a camp it could
+  /// read and found genuinely empty.
+  Future<List<VeldAlert>> getAlertsForFarm(
+    String outfitterUid,
+    String farmId, {
+    DateTime? now,
+  }) async {
+    requireOwnership(outfitterUid);
+    final farm = _requireFarmId(farmId);
+    final camps = await getCamps(outfitterUid, farm);
+
+    final stockByCamp = <String, List<StockEntry>>{};
+    final rainfallByCamp = <String, List<RainfallEntry>>{};
+    for (final camp in camps) {
+      try {
+        stockByCamp[camp.id] =
+            await getStockEntries(outfitterUid, farm, camp.id);
+      } catch (e) {
+        debugPrint(
+          'VeldCarryRepository.getAlertsForFarm: stock read failed for camp '
+          '${camp.id}: $e',
+        );
+      }
+      try {
+        rainfallByCamp[camp.id] =
+            await getRainfallEntries(outfitterUid, farm, camp.id);
+      } catch (e) {
+        debugPrint(
+          'VeldCarryRepository.getAlertsForFarm: rainfall read failed for '
+          'camp ${camp.id}: $e',
+        );
+      }
+    }
+
+    final permits = await getPermits(outfitterUid, farm);
+    return buildAlerts(
+      camps: camps,
+      stockByCamp: stockByCamp,
+      permits: permits,
+      rainfallByCamp: rainfallByCamp,
+      now: now,
+    );
+  }
+
+  /// Builds the whole-farm veld report. Read-only.
+  ///
+  /// Unlike [getAlertsForFarm], a failed child read is rethrown: a report that
+  /// silently showed zero stock for an unreadable camp would be worse than no
+  /// report at all.
+  Future<VeldReport> getVeldReportForFarm(
+    String outfitterUid,
+    Farm farm, {
+    DateTime? now,
+  }) async {
+    requireOwnership(outfitterUid);
+    final farmId = _requireFarmId(farm.id);
+    final camps = await getCamps(outfitterUid, farmId);
+    final permits = await getPermits(outfitterUid, farmId);
+    return _buildReport(
+      outfitterUid: outfitterUid,
+      farm: farm,
+      camps: camps,
+      permits: permits,
+      now: now,
+    );
+  }
+
+  /// Builds a single-camp veld report. Read-only.
+  ///
+  /// Permits are narrowed to those that name this camp or carry no camp
+  /// restriction (farm-wide).
+  Future<VeldReport> getVeldReportForCamp(
+    String outfitterUid,
+    Farm farm,
+    String campId, {
+    DateTime? now,
+  }) async {
+    requireOwnership(outfitterUid);
+    final farmId = _requireFarmId(farm.id);
+    final campIds = _requireCampIds(farmId: farmId, campId: campId);
+    final camp = await getCamp(outfitterUid, farmId, campIds.campId);
+    if (camp == null) {
+      throw const VeldCarryRepositoryException('Camp not found.');
+    }
+    final permits = await getPermits(outfitterUid, farmId);
+    final relevant = permits
+        .where((p) => p.campIds.isEmpty || p.campIds.contains(campIds.campId))
+        .toList(growable: false);
+    return _buildReport(
+      outfitterUid: outfitterUid,
+      farm: farm,
+      camps: <Camp>[camp],
+      permits: relevant,
+      now: now,
+    );
+  }
+
+  Future<VeldReport> _buildReport({
+    required String outfitterUid,
+    required Farm farm,
+    required List<Camp> camps,
+    required List<FarmPermit> permits,
+    DateTime? now,
+  }) async {
+    final farmId = _requireFarmId(farm.id);
+    final stockByCamp = <String, List<StockEntry>>{};
+    final plantedByCamp = <String, List<PlantedArea>>{};
+    final predatorsByCamp = <String, List<PredatorEntry>>{};
+    final rainfallByCamp = <String, List<RainfallEntry>>{};
+    for (final camp in camps) {
+      stockByCamp[camp.id] =
+          await getStockEntries(outfitterUid, farmId, camp.id);
+      plantedByCamp[camp.id] =
+          await getPlantedAreas(outfitterUid, farmId, camp.id);
+      predatorsByCamp[camp.id] =
+          await getPredators(outfitterUid, farmId, camp.id);
+      rainfallByCamp[camp.id] =
+          await getRainfallEntries(outfitterUid, farmId, camp.id);
+    }
+    return buildVeldReport(
+      farm: farm,
+      camps: camps,
+      stockByCamp: stockByCamp,
+      plantedByCamp: plantedByCamp,
+      predatorsByCamp: predatorsByCamp,
+      permits: permits,
+      rainfallByCamp: rainfallByCamp,
+      now: now,
+    );
   }
 
   // ── Hunter-safe reads ────────────────────────────────────────────────

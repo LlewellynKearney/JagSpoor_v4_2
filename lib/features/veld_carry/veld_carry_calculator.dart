@@ -195,6 +195,19 @@ String permitStatus(DateTime? expiryDate) {
   return 'valid';
 }
 
+/// Whole days from the reference day to [date], counting calendar days only.
+///
+/// Negative when [date] is in the past, `0` when it is today, and `null` when
+/// [date] is null. Date-only (local midnight) so a time-of-day never skews the
+/// alert copy ("expires in 29 days" must not read 28 at 23:59).
+int? daysUntil(DateTime? date, {DateTime? now}) {
+  if (date == null) return null;
+  final reference = now ?? DateTime.now();
+  final targetDay = DateTime(date.year, date.month, date.day);
+  final today = DateTime(reference.year, reference.month, reference.day);
+  return targetDay.difference(today).inDays;
+}
+
 // ── Rainfall log ──────────────────────────────────────────────────────
 //
 // Rainfall is a measurement, so its aggregation lives here with the rest of

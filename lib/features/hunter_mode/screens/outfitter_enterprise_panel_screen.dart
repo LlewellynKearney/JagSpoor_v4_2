@@ -16,9 +16,12 @@ import '../models/farm_config.dart';
 import '../services/booking_availability_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
+import '../../veld_carry/ui/veld_carry_alerts_screen.dart';
 import '../../veld_carry/ui/veld_carry_camp_list_screen.dart';
 import '../../veld_carry/ui/veld_carry_gate.dart';
 import '../../veld_carry/ui/veld_carry_permits_screen.dart';
+import '../../veld_carry/veld_carry_alerts.dart';
+import '../../veld_carry/veld_carry_repository.dart';
 
 /// Resolves the display photo URL for a `farms` document: the explicit
 /// `photoUrl` first, then the first entry of the `photoUrls` array. Returns
@@ -1870,6 +1873,11 @@ class _OutfitterEnterprisePanelScreenState
                                           ),
                                         ),
                                       ),
+                                      _FarmVeldAlertsButton(
+                                        farmId: doc.id,
+                                        farmName: data['name']?.toString(),
+                                        theme: theme,
+                                      ),
                                       TextButton.icon(
                                         key: ValueKey(
                                             'veldPermitsEntry_${doc.id}'),
@@ -2187,6 +2195,90 @@ class _OutfitterEnterprisePanelScreenState
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: theme.accentColor, width: 2),
+      ),
+    );
+  }
+}
+
+/// "Alerts" entry on a farm card, carrying the live critical + warning count.
+///
+/// The whole farm-action block renders inside `VeldCarryGate`, so the default
+/// OFF build never issues the count read. The count is loaded once per card and
+/// refreshed after the alerts screen closes.
+class _FarmVeldAlertsButton extends StatefulWidget {
+  const _FarmVeldAlertsButton({
+    required this.farmId,
+    required this.theme,
+    this.farmName,
+  });
+
+  final String farmId;
+  final String? farmName;
+  final ThemeController theme;
+
+  @override
+  State<_FarmVeldAlertsButton> createState() => _FarmVeldAlertsButtonState();
+}
+
+class _FarmVeldAlertsButtonState extends State<_FarmVeldAlertsButton> {
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null || uid.isEmpty) return;
+      final alerts = await VeldCarryRepository.instance
+          .getAlertsForFarm(uid, widget.farmId);
+      if (!mounted) return;
+      setState(() => _count = criticalAndWarningCount(alerts));
+    } catch (e) {
+      debugPrint('_FarmVeldAlertsButton: alert count failed: $e');
+    }
+  }
+
+  Future<void> _open() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryAlertsScreen(
+          farmId: widget.farmId,
+          farmName: widget.farmName,
+          theme: widget.theme,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return VeldAlertCountBadge(
+      count: _count,
+      child: TextButton.icon(
+        key: ValueKey('veldAlertsEntry_${widget.farmId}'),
+        onPressed: _open,
+        icon: Icon(
+          Icons.notifications_active_outlined,
+          size: 18,
+          color: theme.accentColor,
+        ),
+        label: Text(
+          'Alerts',
+          style: TextStyle(
+            color: theme.accentColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        ),
       ),
     );
   }

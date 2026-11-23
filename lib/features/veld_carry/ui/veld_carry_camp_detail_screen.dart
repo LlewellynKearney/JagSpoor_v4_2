@@ -19,6 +19,7 @@ import 'package:jagspoor/features/veld_carry/ui/veld_carry_stock_form_screen.dar
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_stock_history_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
+import 'package:jagspoor/features/veld_carry/veld_carry_report.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
 import 'package:jagspoor/features/veld_carry/species_defaults.dart';
 
@@ -66,6 +67,7 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
   bool _loading = true;
   String? _error;
   bool _deleting = false;
+  bool _exporting = false;
 
   List<StockEntry> _stock = const [];
   List<PlantedArea> _planted = const [];
@@ -303,8 +305,52 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
     if (mounted) await _load();
   }
 
-  // ── Deletes ──────────────────────────────────────────────────────────
+  /// Builds this camp's veld report and hands it to the OS share sheet through
+  /// the app's existing branded PDF engine (`JagSpoorPdfDocument`).
+  ///
+  /// Rendered only inside `VeldCarryGate`, so with the feature flag OFF the
+  /// action does not exist and this method is unreachable.
+  Future<void> _exportCampReport() async {
+    if (_exporting) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final uid = _currentUid();
+    if (uid == null || uid.isEmpty) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('You must be signed in to export a veld report.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      final report = await _repository.getVeldReportForCamp(
+        uid,
+        Farm(id: widget.farmId, name: widget.farmName ?? ''),
+        _camp.id,
+      );
+      await VeldReportPdfExporter().generateAndShare(report);
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Veld report generated for ${report.farmName}.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      debugPrint('VeldCarryCampDetailScreen: report export failed: $e');
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Could not export the veld report: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
+  // ── Deletes ──────────────────────────────────────────────────────────
   Future<bool> _confirm(String title, String message, String action) async {
     final result = await showDialog<bool>(
       context: context,
@@ -530,6 +576,18 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
               tooltip: 'Rainfall log',
               iconColor: theme.accentColor,
               onPressed: _openRainfall,
+            ),
+          ),
+          // Single-camp veld report — flag-gated.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldCampReportButton'),
+              icon: _exporting
+                  ? Icons.hourglass_top_rounded
+                  : Icons.picture_as_pdf_rounded,
+              tooltip: 'Export camp veld report (PDF)',
+              iconColor: theme.accentColor,
+              onPressed: _exporting ? null : _exportCampReport,
             ),
           ),
           OutfitterActionChip(

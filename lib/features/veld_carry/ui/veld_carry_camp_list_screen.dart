@@ -6,11 +6,17 @@ import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
 import 'package:jagspoor/features/outfitter_mode/widgets/outfitter_scaffold.dart';
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
+import 'package:jagspoor/features/veld_carry/models/rainfall_entry.dart';
 import 'package:jagspoor/features/veld_carry/models/stock_entry.dart';
+import 'package:jagspoor/features/veld_carry/models/veld_alert.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_alerts_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_detail_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_form_screen.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_gate.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
+import 'package:jagspoor/features/veld_carry/veld_carry_alerts.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
+import 'package:jagspoor/features/veld_carry/veld_carry_report.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
 
 /// Lists the veld camps of one farm.
@@ -70,6 +76,11 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
   String? _error;
   List<_CampRow> _rows = const [];
 
+  /// Critical + warning count for the badge — recomputed on every load,
+  /// never stored.
+  int _alertCount = 0;
+  bool _exporting = false;
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +114,8 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
     try {
       final camps = await _repository.getCamps(uid, widget.farmId);
       final rows = <_CampRow>[];
+      final stockByCamp = <String, List<StockEntry>>{};
+      final rainfallByCamp = <String, List<RainfallEntry>>{};
       for (final camp in camps) {
         var stockLsu = 0.0;
         var stockGu = 0.0;
@@ -111,6 +124,7 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
         try {
           final stock =
               await _repository.getStockEntries(uid, widget.farmId, camp.id);
+          stockByCamp[camp.id] = stock;
           stockLsu = _sumCounted(stock, (e) => e.totalLsu);
           stockGu = _sumCounted(stock, (e) => e.totalGu);
           stockBu = _sumCounted(stock, (e) => e.totalBu);
@@ -131,6 +145,15 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
             '${camp.id}: $e',
           );
         }
+        try {
+          rainfallByCamp[camp.id] =
+              await _repository.getRainfallEntries(uid, widget.farmId, camp.id);
+        } catch (e) {
+          debugPrint(
+            'VeldCarryCampListScreen: rainfall read failed for camp '
+            '${camp.id}: $e',
+          );
+        }
         rows.add(
           _CampRow(
             camp: camp,
@@ -141,9 +164,28 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
           ),
         );
       }
+
+      // Alerts are derived from the SAME records this screen already read (plus
+      // the farm's permits), so the badge costs one extra read, not a second
+      // pass over every camp. A permit read failure only drops the permit
+      // alerts; the camp alerts still render.
+      var alerts = const <VeldAlert>[];
+      try {
+        final permits = await _repository.getPermits(uid, widget.farmId);
+        alerts = buildAlerts(
+          camps: camps,
+          stockByCamp: stockByCamp,
+          permits: permits,
+          rainfallByCamp: rainfallByCamp,
+        );
+      } catch (e) {
+        debugPrint('VeldCarryCampListScreen: alert build failed: $e');
+      }
+
       if (!mounted) return;
       setState(() {
         _rows = rows;
+        _alertCount = criticalAndWarningCount(alerts);
         _loading = false;
       });
     } catch (e) {
@@ -211,6 +253,63 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
     }
   }
 
+  /// Opens the farm's alert list. The badge count is refreshed on return
+  /// because the underlying records may have changed while it was open.
+  Future<void> _openAlerts() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryAlertsScreen(
+          farmId: widget.farmId,
+          farmName: widget.farmName,
+          theme: _theme,
+          repository: _repository,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  /// Builds the whole-farm veld report and hands it to the OS share sheet
+  /// through the app's existing branded PDF engine.
+  Future<void> _exportFarmReport() async {
+    if (_exporting) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final uid = _currentUid();
+    if (uid == null || uid.isEmpty) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('You must be signed in to export a veld report.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      final report = await _repository.getVeldReportForFarm(
+        uid,
+        Farm(id: widget.farmId, name: widget.farmName ?? ''),
+      );
+      await VeldReportPdfExporter().generateAndShare(report);
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Veld report generated for ${report.farmName}.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      debugPrint('VeldCarryCampListScreen: report export failed: $e');
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Could not export the veld report: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = _theme;
@@ -245,6 +344,34 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
+          // Alerts entry + live critical/warning badge — flag-gated: renders
+          // nothing (no icon, no space) while the feature flag is off.
+          VeldCarryGate(
+            builder: (context) => VeldAlertCountBadge(
+              count: _alertCount,
+              child: OutfitterActionChip(
+                key: const ValueKey('veldFarmAlertsButton'),
+                icon: Icons.notifications_active_outlined,
+                tooltip: _alertCount > 0
+                    ? 'Veld alerts ($_alertCount need attention)'
+                    : 'Veld alerts',
+                iconColor: theme.accentColor,
+                onPressed: _openAlerts,
+              ),
+            ),
+          ),
+          // Whole-farm veld report — flag-gated.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldFarmReportButton'),
+              icon: _exporting
+                  ? Icons.hourglass_top_rounded
+                  : Icons.picture_as_pdf_rounded,
+              tooltip: 'Export veld report (PDF)',
+              iconColor: theme.accentColor,
+              onPressed: _exporting ? null : _exportFarmReport,
+            ),
+          ),
           OutfitterActionChip(
             icon: Icons.refresh_rounded,
             tooltip: 'Refresh camps',
