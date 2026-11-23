@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
+import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 
 /// Shared presentation helpers for the Veld & Carrying Capacity UI.
@@ -155,5 +156,62 @@ class VeldCarrySectionLabel extends StatelessWidget {
         letterSpacing: 0.8,
       ),
     );
+  }
+}
+
+/// Human label for a planted feed type constant.
+String plantedFeedTypeLabel(String feedType) {
+  switch (feedType) {
+    case PlantedArea.feedTypeLucerneIrrigated:
+      return 'Lucerne (irrigated)';
+    case PlantedArea.feedTypeLucerneDryland:
+      return 'Lucerne (dryland)';
+    case PlantedArea.feedTypeTeff:
+      return 'Teff';
+    case PlantedArea.feedTypeOats:
+      return 'Oats';
+    case PlantedArea.feedTypeOatsVetch:
+      return 'Oats + vetch';
+    case PlantedArea.feedTypeRyegrassPerennial:
+      return 'Ryegrass (perennial)';
+    case PlantedArea.feedTypeRyegrassAnnual:
+      return 'Ryegrass (annual)';
+    case PlantedArea.feedTypeKikuyuIrrigated:
+      return 'Kikuyu (irrigated)';
+    case PlantedArea.feedTypeKikuyuDryland:
+      return 'Kikuyu (dryland)';
+    case PlantedArea.feedTypeEragrostis:
+      return 'Eragrostis';
+    case PlantedArea.feedTypeSmutsFinger:
+      return 'Smuts finger grass';
+    case PlantedArea.feedTypeMaizeStover:
+      return 'Maize stover';
+    case PlantedArea.feedTypeSorghum:
+      return 'Sorghum';
+    case PlantedArea.feedTypeOtherCustom:
+    default:
+      return 'Other (custom)';
+  }
+}
+
+/// Human label for a planted area: the custom name when the feed type is
+/// `OTHER_CUSTOM`, otherwise the feed-type label.
+String plantedFeedLabel(PlantedArea area) {
+  if (area.feedType == PlantedArea.feedTypeOtherCustom) {
+    final custom = (area.customName ?? '').trim();
+    return custom.isEmpty ? 'Other (custom)' : custom;
+  }
+  return plantedFeedTypeLabel(area.feedType);
+}
+
+/// Human label for a planted season constant.
+String plantedSeasonLabel(String season) {
+  switch (PlantedArea.normalizeSeason(season)) {
+    case PlantedArea.seasonSummer:
+      return 'Summer';
+    case PlantedArea.seasonWinter:
+      return 'Winter';
+    default:
+      return 'All year';
   }
 }

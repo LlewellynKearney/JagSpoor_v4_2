@@ -236,6 +236,31 @@ class VeldCarryRepository {
         .toList(growable: false);
   }
 
+  /// Reads one camp, or null when the document does not exist.
+  ///
+  /// Used by the camp detail screen to refresh its header after an edit
+  /// without leaving the screen.
+  Future<Camp?> getCamp(
+    String outfitterUid,
+    String farmId,
+    String campId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .get();
+    final data = snapshot.data();
+    if (!snapshot.exists || data == null) return null;
+    return Camp.fromMap(data, id: snapshot.id);
+  }
+
   // ── Camp children ─────────────────────────────────────────────────────
 
   /// Creates or updates one species row of a camp's stock ledger.
@@ -289,6 +314,60 @@ class VeldCarryRepository {
     return snapshot.docs
         .map((doc) => StockEntry.fromMap(doc.data(), id: doc.id))
         .toList(growable: false);
+  }
+
+  /// Lists a camp's planted areas, ordered by feed type.
+  ///
+  /// Read-only helper used by the camp detail screen and the camp list's
+  /// year-round capacity total. Ordered client-side so no composite index is
+  /// required.
+  Future<List<PlantedArea>> getPlantedAreas(
+    String outfitterUid,
+    String farmId,
+    String campId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(plantedAreasCollection)
+        .get();
+    final areas = snapshot.docs
+        .map((doc) => PlantedArea.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    areas.sort((a, b) => a.feedType.compareTo(b.feedType));
+    return areas;
+  }
+
+  /// Lists a camp's predator records, ordered by predator name.
+  Future<List<PredatorEntry>> getPredators(
+    String outfitterUid,
+    String farmId,
+    String campId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(predatorsCollection)
+        .get();
+    final predators = snapshot.docs
+        .map((doc) => PredatorEntry.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    predators.sort((a, b) => a.predatorName.compareTo(b.predatorName));
+    return predators;
   }
 
   /// Creates or updates one planted area of a camp.
@@ -391,7 +470,105 @@ class VeldCarryRepository {
         .toList(growable: false);
   }
 
+  // ── Deletes ───────────────────────────────────────────────────────────
+
+  /// Deletes one stock row of a camp.
+  Future<void> deleteStockEntry(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String entryId,
+  ) =>
+      _deleteChild(
+        outfitterUid,
+        farmId: farmId,
+        campId: campId,
+        collection: stockCollection,
+        docId: entryId,
+      );
+
+  /// Deletes one planted area of a camp.
+  Future<void> deletePlantedArea(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String areaId,
+  ) =>
+      _deleteChild(
+        outfitterUid,
+        farmId: farmId,
+        campId: campId,
+        collection: plantedAreasCollection,
+        docId: areaId,
+      );
+
+  /// Deletes one predator record of a camp.
+  Future<void> deletePredatorEntry(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String predatorId,
+  ) =>
+      _deleteChild(
+        outfitterUid,
+        farmId: farmId,
+        campId: campId,
+        collection: predatorsCollection,
+        docId: predatorId,
+      );
+
+  /// Deletes a camp document.
+  ///
+  /// Firestore does not cascade a delete to subcollections, so the child
+  /// documents (stock / planted areas / predators) are **not** removed here.
+  /// The camp detail screen deletes each child explicitly before calling this
+  /// method; anything a client cannot remove (a rules-denied document, a
+  /// concurrent write) is surfaced by the caller rather than silently orphaned.
+  Future<void> deleteCamp(
+    String outfitterUid,
+    String farmId,
+    String campId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final db = _requireFirestore();
+    await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .delete();
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────
+
+  Future<void> _deleteChild(
+    String outfitterUid, {
+    required String farmId,
+    required String campId,
+    required String collection,
+    required String docId,
+  }) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final id = docId.trim();
+    if (id.isEmpty) {
+      throw const VeldCarryRepositoryException('Document id is required.');
+    }
+    final db = _requireFirestore();
+    await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(collection)
+        .doc(id)
+        .delete();
+  }
 
   Future<void> _upsert(
     DocumentReference<Map<String, dynamic>> ref,

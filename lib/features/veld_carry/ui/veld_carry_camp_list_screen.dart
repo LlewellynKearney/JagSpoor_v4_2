@@ -5,7 +5,9 @@ import 'package:jagspoor/core/widgets/copyright_footer.dart';
 import 'package:jagspoor/core/widgets/safe_bottom_inset.dart';
 import 'package:jagspoor/features/outfitter_mode/widgets/outfitter_scaffold.dart';
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
+import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/models/stock_entry.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_detail_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_form_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
@@ -40,11 +42,18 @@ class _CampRow {
   const _CampRow({
     required this.camp,
     required this.totalLsu,
+    required this.totalGu,
+    required this.totalBu,
     required this.capacityLsu,
   });
 
   final Camp camp;
   final double totalLsu;
+  final double totalGu;
+  final double totalBu;
+
+  /// Year-round capacity: veld capacity plus the camp's ALL_YEAR planted
+  /// areas.
   final double capacityLsu;
 
   double get usage => usagePct(totalLsu, capacityLsu);
@@ -95,11 +104,16 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
       final camps = await _repository.getCamps(uid, widget.farmId);
       final rows = <_CampRow>[];
       for (final camp in camps) {
-        var totalLsu = 0.0;
+        var stockLsu = 0.0;
+        var stockGu = 0.0;
+        var stockBu = 0.0;
+        var planted = const <PlantedArea>[];
         try {
           final stock =
               await _repository.getStockEntries(uid, widget.farmId, camp.id);
-          totalLsu = _countedLsu(stock);
+          stockLsu = _sumCounted(stock, (e) => e.totalLsu);
+          stockGu = _sumCounted(stock, (e) => e.totalGu);
+          stockBu = _sumCounted(stock, (e) => e.totalBu);
         } catch (e) {
           // A stock read failure must not hide the camp itself; report the
           // camp with zero recorded LSU and log the cause.
@@ -108,11 +122,22 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
             '${camp.id}: $e',
           );
         }
+        try {
+          planted =
+              await _repository.getPlantedAreas(uid, widget.farmId, camp.id);
+        } catch (e) {
+          debugPrint(
+            'VeldCarryCampListScreen: planted read failed for camp '
+            '${camp.id}: $e',
+          );
+        }
         rows.add(
           _CampRow(
             camp: camp,
-            totalLsu: totalLsu,
-            capacityLsu: _capacityLsu(camp),
+            totalLsu: stockLsu,
+            totalGu: stockGu,
+            totalBu: stockBu,
+            capacityLsu: _capacityLsu(camp, planted),
           ),
         );
       }
@@ -132,30 +157,50 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
 
   /// Sum of the counted species' LSU — the calculator owns `totalLsu` on each
   /// row, so this is a plain sum, not a second formula.
-  double _countedLsu(List<StockEntry> stock) {
+  double _sumCounted(
+    List<StockEntry> stock,
+    double Function(StockEntry) selector,
+  ) {
     var total = 0.0;
     for (final entry in stock) {
-      if (entry.isCounted) total += entry.totalLsu;
+      if (entry.isCounted) total += selector(entry);
     }
     return total;
   }
 
-  /// Year-round capacity: veld capacity plus the ALL_YEAR planted areas.
-  /// Planted-area capture lands in Phase 3, so the list is empty here.
-  double _capacityLsu(Camp camp) {
+  /// Year-round capacity: veld capacity plus the camp's ALL_YEAR planted
+  /// areas. Seasonal plantings are reported separately and never inflate this
+  /// figure.
+  double _capacityLsu(Camp camp, List<PlantedArea> planted) {
     final effective =
         effectiveHaPerLsu(camp.deptNormHaPerLsu, camp.veldCondition);
     final veld = veldCapacityLsu(camp.totalSizeHa, effective);
-    return yearRoundCapacityLsu(veld, const []);
+    return yearRoundCapacityLsu(veld, planted);
   }
 
-  Future<void> _openForm({Camp? camp}) async {
+  Future<void> _openDetail(_CampRow row) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryCampDetailScreen(
+          camp: row.camp,
+          farmId: widget.farmId,
+          farmName: widget.farmName,
+          theme: _theme,
+          repository: _repository,
+        ),
+      ),
+    );
+    // The detail screen can add, edit or delete stock / planted areas, all of
+    // which move the usage figure — always re-read on return.
+    if (mounted) await _load();
+  }
+
+  Future<void> _openForm() async {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => VeldCarryCampFormScreen(
           farmId: widget.farmId,
           farmName: widget.farmName,
-          existingCamp: camp,
           theme: _theme,
           repository: _repository,
         ),
@@ -270,8 +315,9 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          key: ValueKey('veldCampCard_${camp.id}'),
           borderRadius: BorderRadius.circular(12),
-          onTap: () => _openForm(camp: camp),
+          onTap: () => _openDetail(row),
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: OutfitterUi.cardDecoration(theme),
@@ -293,8 +339,8 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
                       ),
                     ),
                     Icon(
-                      Icons.edit_rounded,
-                      size: 18,
+                      Icons.chevron_right_rounded,
+                      size: 22,
                       color: theme.accentColor,
                     ),
                   ],
@@ -346,6 +392,7 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
                     const SizedBox(width: 6),
                     Text(
                       'Usage ${formatUsagePct(row.usage)}',
+                      key: ValueKey('veldCampUsage_${camp.id}'),
                       style: TextStyle(
                         color: OutfitterUi.subtitleColor(theme),
                         fontSize: 12,
@@ -362,7 +409,8 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Recorded stock: ${formatLsu(row.totalLsu)}',
+                  'Recorded stock: ${formatLsu(row.totalLsu)} · '
+                  'G ${formatLsu(row.totalGu)} / B ${formatLsu(row.totalBu)}',
                   style: TextStyle(
                     color: OutfitterUi.subtitleColor(theme),
                     fontSize: 11,
