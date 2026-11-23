@@ -1255,6 +1255,125 @@ class VeldCarryRepository {
     return visible;
   }
 
+  /// Species availability across every camp of [farmId], read for a hunter.
+  ///
+  /// Answers "which species can I hunt on this farm, and how many are there"
+  /// without exposing anything else: the result carries only the species name,
+  /// its scientific name, the total count and the camps it was counted on.
+  /// No weights, no GU/BU, no camp sizes, no capacity and — critically — no
+  /// coordinates.
+  ///
+  /// [outfitterUid] is required because the veld data lives inside the
+  /// outfitter's own document (`users/{outfitterUid}/farms/{farmId}/...`); the
+  /// hunter already holds it from the package document it may read.
+  ///
+  /// Two exclusions keep the list honest:
+  ///
+  ///  * **present-only species** (Baboon / Vervet / Porcupine / Aardvark) —
+  ///    recorded for information, never huntable, so they are not offered;
+  ///  * **zero counts** — a species with nothing counted is not "available".
+  ///
+  /// Fails CLOSED: a blank uid / farmId, a hunter with no booking on the farm
+  /// or a Firestore error all resolve to an empty list.
+  Future<List<SpeciesAvailability>> getSpeciesAvailabilityForHunter(
+    String farmId,
+    String? hunterUid, {
+    required String outfitterUid,
+  }) async {
+    final farm = _requireFarmId(farmId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    if (!await _hunterReadAllowed(hunterUid, farm)) {
+      return const <SpeciesAvailability>[];
+    }
+
+    final camps = await getCampsForHunter(
+      farm,
+      outfitterUid: owner,
+      hunterUid: hunterUid,
+    );
+
+    final stockByCampName = <String, List<StockEntry>>{};
+    for (final camp in camps) {
+      try {
+        stockByCampName[camp.name.isEmpty ? 'Unnamed camp' : camp.name] =
+            await getStockForHunter(
+          farm,
+          camp.id,
+          outfitterUid: owner,
+          hunterUid: hunterUid,
+        );
+      } catch (e) {
+        // One unreadable camp must not hide the rest of the farm's species.
+        debugPrint(
+          'VeldCarryRepository: species availability stock read failed for '
+          'camp ${camp.id}: $e',
+        );
+      }
+    }
+
+    return aggregateSpeciesAvailability(stockByCampName);
+  }
+
+  /// Aggregates per-camp stock ledgers into one hunter-facing species list.
+  ///
+  /// [stockByCampName] maps a camp's display name to that camp's stock rows.
+  /// Present-only rows and zero counts are dropped; the remainder is grouped
+  /// case-insensitively by species so the same species counted on two camps
+  /// reports one row with the summed count and both camp names.
+  ///
+  /// Pure, so the aggregation contract is unit-testable without Firestore.
+  static List<SpeciesAvailability> aggregateSpeciesAvailability(
+    Map<String, List<StockEntry>> stockByCampName,
+  ) {
+    final counts = <String, int>{};
+    final displayNames = <String, String>{};
+    final scientificNames = <String, String>{};
+    final campsBySpecies = <String, List<String>>{};
+
+    final campNames = stockByCampName.keys.toList()..sort();
+    for (final campName in campNames) {
+      for (final entry in stockByCampName[campName] ?? const <StockEntry>[]) {
+        // Present-only species are recorded for information, never hunted.
+        if (!entry.isCounted) continue;
+        // Nothing counted on the farm means the species is not available.
+        if (entry.count <= 0) continue;
+
+        final key = entry.speciesName.trim().toLowerCase();
+        if (key.isEmpty) continue;
+
+        displayNames.putIfAbsent(key, () => speciesDisplayName(entry.speciesName));
+        scientificNames.putIfAbsent(
+          key,
+          () => entry.scientificName?.trim().isNotEmpty == true
+              ? entry.scientificName!.trim()
+              : (speciesDefaultFor(entry.speciesName)?.scientificName ?? ''),
+        );
+        counts[key] = (counts[key] ?? 0) + entry.count;
+        final camps = campsBySpecies.putIfAbsent(key, () => <String>[]);
+        if (!camps.contains(campName)) camps.add(campName);
+      }
+    }
+
+    final species = counts.keys
+        .map(
+          (key) => SpeciesAvailability(
+            speciesName: displayNames[key] ?? key,
+            scientificName: scientificNames[key] ?? '',
+            totalCount: counts[key] ?? 0,
+            campNames: List<String>.unmodifiable(campsBySpecies[key] ?? const []),
+          ),
+        )
+        .toList(growable: false);
+
+    // Most abundant first; alphabetical tie-break keeps the order stable.
+    return List<SpeciesAvailability>.of(species)
+      ..sort((a, b) {
+        final byCount = b.totalCount.compareTo(a.totalCount);
+        if (byCount != 0) return byCount;
+        return a.speciesName.toLowerCase().compareTo(b.speciesName.toLowerCase());
+      });
+  }
+
   // ── Deletes ───────────────────────────────────────────────────────────
 
   /// Deletes one stock row of a camp.
@@ -1427,6 +1546,37 @@ class VeldCarryRepository {
     }
     return (farmId: farm, campId: camp);
   }
+}
+
+/// One species a hunter can hunt on a farm, with the camps it was counted on.
+///
+/// The hunter-facing shape is deliberately narrow: name, scientific name, total
+/// count and camp names. It never carries a weight, a GU/BU split, a camp size,
+/// a capacity figure or a coordinate — those stay on the outfitter side.
+class SpeciesAvailability {
+  const SpeciesAvailability({
+    required this.speciesName,
+    required this.scientificName,
+    required this.totalCount,
+    required this.campNames,
+  });
+
+  /// Display name (`Chacma Baboon` -> `Baboon`, otherwise the canonical name).
+  final String speciesName;
+
+  /// Binomial / trinomial name, or `''` when not recorded.
+  final String scientificName;
+
+  /// Total head counted across every camp on the farm.
+  final int totalCount;
+
+  /// Camps the species was counted on, alphabetical.
+  final List<String> campNames;
+
+  /// `Available on: North Camp, South Camp`.
+  String get availableOnLabel => campNames.isEmpty
+      ? 'Available on: —'
+      : 'Available on: ${campNames.join(', ')}';
 }
 
 /// Thrown when a caller is not the outfitter that owns the veld data.

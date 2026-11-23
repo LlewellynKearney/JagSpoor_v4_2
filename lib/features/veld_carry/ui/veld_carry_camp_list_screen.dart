@@ -12,6 +12,7 @@ import 'package:jagspoor/features/veld_carry/models/veld_alert.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_alerts_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_detail_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_form_screen.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_map_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_gate.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_alerts.dart';
@@ -269,6 +270,22 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
     if (mounted) await _load();
   }
 
+  /// Opens the outfitter-only camp map. Re-read on return because a camp's
+  /// location can be set or moved from the detail screen.
+  Future<void> _openMap() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryCampMapScreen(
+          farmId: widget.farmId,
+          farmName: widget.farmName,
+          theme: _theme,
+          repository: _repository,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   /// Builds the whole-farm veld report and hands it to the OS share sheet
   /// through the app's existing branded PDF engine.
   Future<void> _exportFarmReport() async {
@@ -344,6 +361,17 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
+          // Camp map — outfitter-only. Flag-gated like every other entry, so
+          // with the feature flag off there is no icon and no Firestore read.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldFarmMapButton'),
+              icon: Icons.map_outlined,
+              tooltip: 'Camp map',
+              iconColor: theme.accentColor,
+              onPressed: _openMap,
+            ),
+          ),
           // Alerts entry + live critical/warning badge — flag-gated: renders
           // nothing (no icon, no space) while the feature flag is off.
           VeldCarryGate(

@@ -9,6 +9,7 @@ import 'package:jagspoor/features/veld_carry/models/farm_permit.dart';
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/models/stock_entry.dart';
 import 'package:jagspoor/features/veld_carry/species_defaults.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_species_availability_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
@@ -292,6 +293,8 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
     return ListView(
       padding: SafeBottomInset.paddingFor(context, horizontal: 16, top: 16),
       children: [
+        _speciesAvailabilityButton(theme),
+        const SizedBox(height: 12),
         for (final view in _camps) ...[
           _campCard(theme, view),
           const SizedBox(height: 12),
@@ -301,6 +304,42 @@ class _VeldCarryHunterViewScreenState extends State<VeldCarryHunterViewScreen> {
         _privacyNote(theme),
         const CopyrightFooter(),
       ],
+    );
+  }
+
+  /// Entry into the hunter's species availability list.
+  ///
+  /// A second, focused view of the same farm — species + counts only. It is a
+  /// separate screen so the veld / capacity detail above stays untouched.
+  Widget _speciesAvailabilityButton(ThemeController theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        key: const ValueKey('veldHunterSpeciesAvailabilityButton'),
+        style: FilledButton.styleFrom(
+          backgroundColor: theme.accentColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => VeldCarrySpeciesAvailabilityScreen(
+                outfitterUid: widget.outfitterUid,
+                farmId: widget.farmId,
+                farmName: widget.farmName,
+                theme: theme,
+                repository: widget.repository,
+              ),
+            ),
+          );
+        },
+        icon: const Icon(Icons.pets_rounded, size: 18),
+        label: const Text(
+          'Species Available on this Farm',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+      ),
     );
   }
 
@@ -692,6 +731,10 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
 
   bool _visible = false;
 
+  /// True when the farm has at least one camp carrying counted stock, i.e.
+  /// when a species availability list would actually have something to show.
+  bool _hasSpecies = false;
+
   /// The signed-in hunter's uid for the booking-gate probe (null when Firebase
   /// is unavailable — the gate then fails closed and no tile renders).
   String? _hunterUid() {
@@ -723,15 +766,35 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
     if (widget.farmId.trim().isEmpty || widget.outfitterUid.trim().isEmpty) {
       return;
     }
+    final hunterUid = _hunterUid();
     try {
       final camps = await _repository.getCampsForHunter(
         widget.farmId,
         outfitterUid: widget.outfitterUid,
-        hunterUid: _hunterUid(),
+        hunterUid: hunterUid,
       );
       if (!mounted) return;
       if (camps.isEmpty) return;
-      setState(() => _visible = true);
+
+      // The species tile only renders when the farm actually has counted
+      // stock to offer — an empty availability list adds no value.
+      var hasSpecies = false;
+      try {
+        final species = await _repository.getSpeciesAvailabilityForHunter(
+          widget.farmId,
+          hunterUid,
+          outfitterUid: widget.outfitterUid,
+        );
+        hasSpecies = species.isNotEmpty;
+      } catch (e) {
+        // Fail closed: no species tile rather than a broken one.
+        debugPrint('VeldCarryHunterEntryTile: species check failed: $e');
+      }
+      if (!mounted) return;
+      setState(() {
+        _visible = true;
+        _hasSpecies = hasSpecies;
+      });
     } catch (e) {
       // Fail closed: an unreadable farm shows no tile rather than a broken one.
       debugPrint('VeldCarryHunterEntryTile: camp check failed: $e');
@@ -742,13 +805,15 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
   Widget build(BuildContext context) {
     if (!_visible) return const SizedBox.shrink();
     final theme = _theme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _entryTile(
+          theme: theme,
           key: const ValueKey('veldHunterEntryTile'),
-          borderRadius: BorderRadius.circular(12),
+          icon: Icons.grass_rounded,
+          title: 'Veld & Carrying Capacity',
+          subtitle: 'Camps, capacity and permits shared by the outfitter',
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -762,19 +827,62 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
               ),
             );
           },
+        ),
+        // Second tile, only when the farm has counted stock to offer.
+        if (_hasSpecies)
+          _entryTile(
+            theme: theme,
+            key: const ValueKey('veldHunterSpeciesEntryTile'),
+            icon: Icons.pets_rounded,
+            title: 'Species Available',
+            subtitle: 'Which species you can hunt on this farm',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VeldCarrySpeciesAvailabilityScreen(
+                    outfitterUid: widget.outfitterUid,
+                    farmId: widget.farmId,
+                    farmName: widget.farmName,
+                    theme: theme,
+                    repository: widget.repository,
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _entryTile({
+    required ThemeController theme,
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: key,
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: HunterUi.cardDecoration(theme),
             child: Row(
               children: [
-                Icon(Icons.grass_rounded, color: theme.accentColor, size: 22),
+                Icon(icon, color: theme.accentColor, size: 22),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Veld & Carrying Capacity',
+                        title,
                         style: TextStyle(
                           color: HunterUi.titleColor(theme),
                           fontWeight: FontWeight.bold,
@@ -783,7 +891,7 @@ class _VeldCarryHunterEntryTileState extends State<VeldCarryHunterEntryTile> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Camps, capacity and permits shared by the outfitter',
+                        subtitle,
                         style: TextStyle(
                           color: HunterUi.subtitleColor(theme),
                           fontSize: 11,

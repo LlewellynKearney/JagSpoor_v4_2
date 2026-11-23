@@ -21109,3 +21109,124 @@ payment/billing/referral/profile/iOS code touched.
   `lib/features/admin/screens/admin_portal_v2_screen.dart`,
   `test/version_info_and_facebook_test.dart`,
   `test/force_update_service_test.dart`, `AGENTS.md`.
+
+## FEAT -- Veld & Carrying Capacity Phase 7C: camp map (outfitter-only) + species availability (hunter) (added 2026-11-23)
+
+Branch `feature/outfitter-veld-carry-weight` (base `2254109`, Phase 7B).
+**NOT merged, NOT deployed. Feature flag still OFF by default.**
+
+### 1. Camp map -- OUTFITTER ONLY
+`lib/features/veld_carry/ui/veld_carry_camp_map_screen.dart` (NEW).
+- **Map approach: REUSED the app's existing `flutter_map` ^7.0.2 + `latlong2`**
+  (already in `pubspec.yaml`, already used by
+  `offline_navigation_screen.dart`). **NO new dependency was added.**
+  `FlutterMap` + `TileLayer` (OSM) + one `Marker` pin per located camp; tapping
+  a pin opens `VeldCarryCampDetailScreen`.
+- Camera: `MapOptions(initialCenter: bounds centre, initialZoom: zoomFor(bounds))`
+  -- the centre of the camps' bounding box (the average for a two-camp farm).
+- Camps WITHOUT a location are listed below the map under a "NO LOCATION SET"
+  header carrying the exact copy `No location set — open camp to set location`,
+  each row tappable straight into the camp detail screen to set the location.
+- Empty state: `No camps have location set yet`. Loading spinner + error state.
+- A "CAMP LAYOUT" schematic card (`Approximate positions — not to scale`) plots
+  the camps as numbered dots from a PURE projection, so an outfitter with no
+  signal (tiles unavailable) still sees the relative layout.
+- **Privacy**: every read is the ownership-gated `getCamps(uid, farmId)`
+  (`requireOwnership`); the screen calls NO hunter-safe read and never passes a
+  coordinate to a hunter screen, widget or repository method. A visible
+  "Outfitter only. Camp locations are never shown to hunters." note is rendered.
+- Entry: a flag-gated `OutfitterActionChip` (`veldFarmMapButton`, map icon,
+  tooltip "Camp map") in the `VeldCarryCampListScreen` AppBar, wrapped in
+  `VeldCarryGate` -- no icon, no space and no Firestore read with the flag OFF.
+
+### 2. Species availability -- HUNTER
+`lib/features/veld_carry/veld_carry_repository.dart`:
+- NEW `getSpeciesAvailabilityForHunter(String farmId, String? hunterUid,
+  {required String outfitterUid})`. `outfitterUid` is required because the veld
+  data lives at `users/{outfitterUid}/farms/{farmId}/...` and the hunter already
+  holds it from the package document.
+  - Fails CLOSED via `_hunterReadAllowed` -> `hunterHasBookingForFarm`: no
+    confirmed/completed booking on the farm -> empty list.
+  - Reads camps + each camp's stock through the EXISTING hunter-safe methods
+    (`getCampsForHunter` / `getStockForHunter`).
+  - Excludes **present-only** species (`!entry.isCounted` -> Baboon / Vervet /
+    Porcupine / Aardvark are never offered) and **zero counts**.
+- NEW pure `aggregateSpeciesAvailability(Map<String, List<StockEntry>>)` --
+  groups case-insensitively, sums the head count across camps, collects the camp
+  names, resolves the scientific name from the authorised
+  `species_defaults.dart` table (no invented data), sorts by count desc then
+  name. Unit-testable without Firestore.
+- NEW `SpeciesAvailability` model (speciesName / scientificName / totalCount /
+  campNames / `availableOnLabel`). Deliberately narrow: no weight, no GU/BU, no
+  camp size, no capacity, no coordinate.
+
+`lib/features/veld_carry/ui/veld_carry_species_availability_screen.dart` (NEW):
+- Renders species name + italic scientific name + `N counted` +
+  `Available on: Camp A, Camp B` + an availability badge.
+- NEW pure `speciesAvailabilityBadge(int)` -- `>=10` "Good availability"
+  (green), `1..9` "Limited availability" (amber), `0` "Not available" (grey,
+  defensive; zero rows never reach the UI).
+- NO weights, NO GU/BU, NO location/GPS, NO camp sizes, NO capacity numbers.
+  A "Species and counts only..." privacy note is rendered.
+
+### 3. Hunter entry points
+`lib/features/veld_carry/ui/veld_carry_hunter_view_screen.dart`:
+- NEW `Species Available on this Farm` `FilledButton.icon`
+  (`veldHunterSpeciesAvailabilityButton`) at the top of the hunter view body.
+- `VeldCarryHunterEntryTile` now renders the ORIGINAL "Veld & Carrying
+  Capacity" tile plus a SECOND `Species Available` tile
+  (`veldHunterSpeciesEntryTile`) -- rendered only when the farm actually has
+  counted stock (`getSpeciesAvailabilityForHunter` non-empty), so a farm with no
+  stock shows no second tile. Both tiles stay inside the existing
+  `VeldCarryGate` wrapper on the marketplace, so the flag still gates them and
+  `hunter_package_marketplace_screen.dart` needed NO change.
+
+### 4. Tests
+`test/veld_carry_phase7c_test.dart` (NEW, **21 tests**, all pass):
+- relative positions: min lat/lng -> (0, 1) bottom-left, max lat/lng -> (1, 0)
+  top-right, and the pair sums to 1 on both axes (opposite corners); mid-farm ->
+  centre; single camp -> (0.5, 0.5) with zoom 14.
+- camps without location excluded from the map / listed separately; `boundsOf`
+  null when nothing is located; zoom tightens as the spread shrinks.
+- aggregation: sums across camps + both camp names; present-only excluded;
+  count 0 excluded; count-desc ordering; scientific name resolution.
+- badges at 0 / 1 / 9 / 10 (+ colour difference between the bands).
+- booking gate: hunter WITH a confirmed booking gets data; NO booking -> empty;
+  a PENDING booking does not unlock; blank uid keeps the un-gated read working.
+- privacy: widget test proving the species screen shows name/count/camps/badge
+  and NO coordinate/weight/GU/BU/size/LSU; structural scan proving the
+  hunter-facing sources never reference `.lat` / `.lng` / weights / GU / BU, the
+  map screen uses only the owner-gated `getCamps(` and never a hunter-safe read,
+  and the map button sits inside a `VeldCarryGate`.
+- No real Firebase: pure helpers + `FakeFirebaseFirestore` via `forTesting`.
+
+### 5. Verification (this sandbox)
+- `flutter analyze` (Flutter **3.44.9**, the CI pin): **0 errors, 0 warnings**,
+  333 pre-existing infos (the 13 in `lib/features/veld_carry` are the documented
+  `DropdownButtonFormField.value` deprecations on Flutter >=3.33).
+- `flutter test` (full suite, `LD_LIBRARY_PATH="$HOME/libs"`): **2947 passed,
+  1 failed** -- the DOCUMENTED pre-existing
+  `trial_onboarding_functions_contract_test` (asserts the v1 `.auth.user()`
+  shape while the trigger is v2 `onUserCreated`). Nothing in this change touches
+  it. The sqflite-FFI suites all pass with the `~/libs/libsqlite3.so` symlink.
+- Env: Flutter 3.44.9 cloned to `/workspace/sdk/flutter`; a Python `unzip` shim
+  (restores exec bits) at `~/bin/unzip`; `pubspec.lock` drift from `pub get`
+  reverted.
+
+### 6. Constraints honoured
+No merge; no deploy; no version bump; `min_required_version` untouched (27);
+live `firestore.rules` untouched (no rules change at all); no
+`GO_LIVE_READY` rules applied; flag still OFF by default; no
+payment/billing/PayFast/referral/profile/email/auth code touched; NO new
+dependency. No carrying-capacity maths was added or moved -- the only new
+arithmetic is a display-only normalised map projection and an integer head-count
+sum, both isolated in pure helpers (`VeldCampMapLayout`,
+`aggregateSpeciesAvailability`).
+
+### 7. Files
+- NEW: `lib/features/veld_carry/ui/veld_carry_camp_map_screen.dart`,
+  `lib/features/veld_carry/ui/veld_carry_species_availability_screen.dart`,
+  `test/veld_carry_phase7c_test.dart`.
+- MODIFIED: `lib/features/veld_carry/veld_carry_repository.dart`,
+  `lib/features/veld_carry/ui/veld_carry_hunter_view_screen.dart`,
+  `lib/features/veld_carry/ui/veld_carry_camp_list_screen.dart`, `AGENTS.md`.
