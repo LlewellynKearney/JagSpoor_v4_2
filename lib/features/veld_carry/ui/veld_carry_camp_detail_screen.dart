@@ -7,13 +7,16 @@ import 'package:jagspoor/features/outfitter_mode/widgets/outfitter_scaffold.dart
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/models/predator_entry.dart';
+import 'package:jagspoor/features/veld_carry/models/rainfall_entry.dart';
 import 'package:jagspoor/features/veld_carry/models/stock_entry.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_form_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_gate.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_permits_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_planted_form_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_predator_form_screen.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_rainfall_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_stock_form_screen.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_stock_history_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
@@ -67,6 +70,7 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
   List<StockEntry> _stock = const [];
   List<PlantedArea> _planted = const [];
   List<PredatorEntry> _predators = const [];
+  List<RainfallEntry> _rainfall = const [];
 
   @override
   void initState() {
@@ -105,11 +109,14 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
           await _repository.getPlantedAreas(uid, widget.farmId, _camp.id);
       final predators =
           await _repository.getPredators(uid, widget.farmId, _camp.id);
+      final rainfall =
+          await _repository.getRainfallEntries(uid, widget.farmId, _camp.id);
       if (!mounted) return;
       setState(() {
         _stock = stock;
         _planted = planted;
         _predators = predators;
+        _rainfall = rainfall;
         _loading = false;
       });
     } catch (e) {
@@ -250,6 +257,50 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Opens the camp's stock movement history.
+  ///
+  /// Rendered only inside `VeldCarryGate`, so with the feature flag OFF the
+  /// action does not exist and this method is unreachable.
+  Future<void> _openStockHistory() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryStockHistoryScreen(
+          farmId: widget.farmId,
+          campId: _camp.id,
+          campName: _camp.name,
+          farmName: widget.farmName,
+          camp: _camp,
+          theme: _theme,
+          repository: _repository,
+          currentUidOverride: widget.currentUidOverride,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  /// Opens the camp's rainfall log.
+  ///
+  /// Rendered only inside `VeldCarryGate`, so with the feature flag OFF the
+  /// action does not exist and this method is unreachable.
+  Future<void> _openRainfall() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryRainfallScreen(
+          farmId: widget.farmId,
+          campId: _camp.id,
+          campName: _camp.name,
+          farmName: widget.farmName,
+          expectedAnnualMm: _camp.rainfallMmPerYear,
+          theme: _theme,
+          repository: _repository,
+          currentUidOverride: widget.currentUidOverride,
+        ),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   // ── Deletes ──────────────────────────────────────────────────────────
@@ -461,6 +512,26 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
               onPressed: _openPermits,
             ),
           ),
+          // Stock movement history — flag-gated.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldCampHistoryButton'),
+              icon: Icons.history_rounded,
+              tooltip: 'Stock history',
+              iconColor: theme.accentColor,
+              onPressed: _openStockHistory,
+            ),
+          ),
+          // Rainfall log — flag-gated.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldCampRainfallButton'),
+              icon: Icons.water_drop_outlined,
+              tooltip: 'Rainfall log',
+              iconColor: theme.accentColor,
+              onPressed: _openRainfall,
+            ),
+          ),
           OutfitterActionChip(
             key: const ValueKey('veldCampDeleteButton'),
             icon: Icons.delete_outline_rounded,
@@ -504,6 +575,7 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
         const SizedBox(height: 16),
         _stockSection(theme),
         const SizedBox(height: 16),
+        _rainfallHintCard(theme),
         _plantedSection(theme),
         const SizedBox(height: 16),
         _predatorSection(theme),
@@ -709,6 +781,33 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
       addKey: const ValueKey('veldCampAddStockButton'),
       onAdd: () => _openStockForm(),
       emptyText: 'No counted stock recorded yet.',
+      trailing: [
+        // History entry on the stock section — flag-gated.
+        VeldCarryGate(
+          builder: (context) => TextButton.icon(
+            key: const ValueKey('veldStockHistoryButton'),
+            onPressed: _openStockHistory,
+            icon: Icon(
+              Icons.history_rounded,
+              size: 18,
+              color: theme.accentColor,
+            ),
+            label: Text(
+              'History',
+              style: TextStyle(
+                color: theme.accentColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
+      ],
       children: [
         for (final entry in _countedStock)
           _listRow(
@@ -722,6 +821,102 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
             onDelete: () => _deleteStock(entry),
           ),
       ],
+    );
+  }
+
+  /// Rainfall hint — a SUGGESTION only.
+  ///
+  /// It never writes `_camp.veldCondition`; the outfitter still decides. The
+  /// hint compares the trailing 12-month total against the camp's own recorded
+  /// annual rainfall, so no absolute millimetre bands are invented.
+  ///
+  /// Flag-gated: with the feature flag OFF nothing renders (and the surrounding
+  /// spacing collapses to the plain stock → planted gap).
+  Widget _rainfallHintCard(ThemeController theme) {
+    return VeldCarryGate(
+      builder: (context) {
+        final last12 = rainfallTotalLastTwelveMonths(_rainfall);
+        final suggestion = rainfallConditionSuggestion(
+          last12MonthsMm: last12,
+          expectedAnnualMm: _camp.rainfallMmPerYear,
+        );
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: OutfitterUi.cardDecoration(theme),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    VeldCarrySectionLabel(
+                      label: 'RAINFALL',
+                      theme: theme,
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      key: const ValueKey('veldCampRainfallLogButton'),
+                      onPressed: _openRainfall,
+                      icon: Icon(
+                        Icons.water_drop_outlined,
+                        size: 18,
+                        color: theme.accentColor,
+                      ),
+                      label: Text(
+                        'Rainfall log',
+                        style: TextStyle(
+                          color: theme.accentColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Rainfall last 12 months: ${last12.toStringAsFixed(1)} mm',
+                  key: const ValueKey('veldCampRainfallHintText'),
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (suggestion == null)
+                  Text(
+                    _camp.rainfallMmPerYear == null
+                        ? 'Add the camp\'s expected annual rainfall to see a '
+                            'veld condition hint.'
+                        : 'Record a few months to see a veld condition hint.',
+                    style: TextStyle(
+                      color: OutfitterUi.subtitleColor(theme),
+                      fontSize: 11,
+                    ),
+                  )
+                else
+                  Text(
+                    'Consider veld condition: '
+                    '${veldConditionLabel(suggestion)} — the outfitter decides.',
+                    key: const ValueKey('veldCampRainfallSuggestionText'),
+                    style: TextStyle(
+                      color: veldConditionColor(suggestion),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -816,6 +1011,7 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
     required VoidCallback onAdd,
     required String emptyText,
     String? footnote,
+    List<Widget> trailing = const [],
     required List<Widget> children,
   }) {
     return Container(
@@ -837,6 +1033,7 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
                 ),
               ),
               const Spacer(),
+              ...trailing,
               TextButton.icon(
                 key: addKey,
                 onPressed: onAdd,

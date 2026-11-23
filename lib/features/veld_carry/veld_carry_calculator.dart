@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
+import 'package:jagspoor/features/veld_carry/models/rainfall_entry.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_constants.dart';
 
 /// Pure carrying-capacity arithmetic for the Veld & Carrying Capacity feature.
@@ -192,6 +193,82 @@ String permitStatus(DateTime? expiryDate) {
     return 'expiring_soon';
   }
   return 'valid';
+}
+
+// ── Rainfall log ──────────────────────────────────────────────────────
+//
+// Rainfall is a measurement, so its aggregation lives here with the rest of
+// the feature's arithmetic. The condition hint is a SUGGESTION only — it never
+// writes a camp's `veldCondition`, the outfitter decides.
+
+/// Fraction of a camp's own expected annual rainfall at or above which the
+/// trailing 12-month total reads as `good`.
+const double rainfallGoodFraction = 0.9;
+
+/// Fraction at or above which the trailing total reads as `fair` (below it,
+/// `poor`).
+const double rainfallFairFraction = 0.6;
+
+/// Total millimetres across [entries]. Negative / non-finite figures are
+/// ignored rather than subtracted.
+double rainfallTotalMm(Iterable<RainfallEntry> entries) {
+  var total = 0.0;
+  for (final entry in entries) {
+    if (!entry.rainfallMm.isFinite || entry.rainfallMm <= 0) continue;
+    total += entry.rainfallMm;
+  }
+  return total;
+}
+
+/// Total millimetres recorded for [year] (a calendar year, `2026`).
+double rainfallTotalForYear(Iterable<RainfallEntry> entries, int year) {
+  return rainfallTotalMm(
+    entries.where((entry) => entry.year == year),
+  );
+}
+
+/// Total millimetres across the month keys in [months] (`2026-11`).
+double rainfallTotalForMonths(
+  Iterable<RainfallEntry> entries,
+  Set<String> months,
+) {
+  if (months.isEmpty) return 0.0;
+  return rainfallTotalMm(entries.where((entry) => months.contains(entry.month)));
+}
+
+/// Total millimetres for the trailing 12 months ending at [now] (the current
+/// month plus the eleven before it).
+double rainfallTotalLastTwelveMonths(
+  Iterable<RainfallEntry> entries, {
+  DateTime? now,
+}) {
+  final months =
+      RainfallEntry.recentMonths(now ?? DateTime.now(), count: 12).toSet();
+  return rainfallTotalForMonths(entries, months);
+}
+
+/// The veld-condition hint implied by a trailing rainfall total, as one of
+/// `Camp.veldConditionGood` / `Fair` / `Poor`.
+///
+/// Compares the last 12 months against the camp's OWN recorded annual rainfall
+/// ([expectedAnnualMm]) — no absolute millimetre bands are invented, because a
+/// "good" total in the Karoo would be a drought in KwaZulu-Natal. Returns null
+/// when the camp has no expected annual figure to compare against, so the UI
+/// shows no hint rather than a guess.
+String? rainfallConditionSuggestion({
+  required double last12MonthsMm,
+  double? expectedAnnualMm,
+}) {
+  if (!last12MonthsMm.isFinite || last12MonthsMm < 0) return null;
+  if (expectedAnnualMm == null ||
+      !expectedAnnualMm.isFinite ||
+      expectedAnnualMm <= 0) {
+    return null;
+  }
+  final fraction = last12MonthsMm / expectedAnnualMm;
+  if (fraction >= rainfallGoodFraction) return 'good';
+  if (fraction >= rainfallFairFraction) return 'fair';
+  return 'poor';
 }
 
 double _total(int count, double perAnimal) {
