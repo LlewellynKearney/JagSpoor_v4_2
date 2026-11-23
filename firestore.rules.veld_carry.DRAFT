@@ -1,0 +1,141 @@
+// ══════════════════════════════════════════════════════════════════════════
+// DRAFT ONLY — DO NOT APPLY TO LIVE RULES UNTIL LLEWELLYN APPROVES IN
+// GO-LIVE PHASE
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Veld & Carrying Capacity — Phase 0D draft rules.
+//
+// This file is NOT `firestore.rules`. The live ruleset is untouched and must
+// stay untouched until the go-live phase. When approved, the blocks marked
+// `[MERGE]` below are pasted into `firestore.rules` inside
+// `match /databases/{database}/documents`, and the two helper functions are
+// added next to the existing `isSignedIn()` / `isOwnerOf()` helpers.
+//
+// Data layout (nested under the existing `farms/{farmId}` document):
+//
+//   farms/{farmId}/camps/{campId}
+//   farms/{farmId}/camps/{campId}/stock/{entryId}
+//   farms/{farmId}/camps/{campId}/plantedAreas/{areaId}
+//   farms/{farmId}/camps/{campId}/predators/{entryId}
+//   farms/{farmId}/permits/{permitId}
+//
+// Ownership model: the outfitter that owns `farms/{farmId}` owns every veld
+// document underneath it. `farms/{farmId}.outfitterId` is already written by
+// `OutfitterEnterpriseManager.addFarm` and is already owner-scoped by the
+// live `farms` rule, so it is the single, non-spoofable authority here.
+// A child document therefore never carries its own owner field, and a caller
+// cannot widen access by writing their own uid onto a child doc.
+//
+// Deliberate omissions in this draft:
+//   • NO public read anywhere (no `allow read: if true`).
+//   • NO hunter write anywhere.
+//   • NO admin bypass on camps / stock / plantedAreas / predators — the brief
+//     says "owner read/write only". Add `|| isAdmin()` only if Llewellyn
+//     approves it in the go-live phase.
+//   • Farm managers are NOT granted access yet. The live `farm_managers`
+//     collection assigns a manager to a farm; wiring managers in is a
+//     separate decision for the go-live phase.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers (mirror the live `isSignedIn()` / `isOwnerOf()` style) ────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // True when the caller owns the farm that parents the veld document.
+    // `get()` is evaluated server-side and is not itself subject to read
+    // rules; a missing farm doc resolves `.data.outfitterId` to null (false),
+    // so an orphaned or unknown farmId grants nothing.
+    function isFarmOwner(farmId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/farms/$(farmId)).data.outfitterId == request.auth.uid;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] camps — owner read/write only
+    // ═════════════════════════════════════════════════════════════════════
+    match /farms/{farmId}/camps/{campId} {
+      allow read: if isFarmOwner(farmId);
+      // A document may never claim a farmId other than its own path
+      // segment. `request.resource` is null on delete, so the payload check
+      // is scoped to create/update and delete gets its own owner-only grant.
+      allow create, update: if isFarmOwner(farmId)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isFarmOwner(farmId);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] stock ledger — owner read/write only
+    // ═════════════════════════════════════════════════════════════════════
+    match /farms/{farmId}/camps/{campId}/stock/{entryId} {
+      allow read: if isFarmOwner(farmId);
+      // A document may never claim a campId other than its own path
+      // segment. `request.resource` is null on delete, so the payload check
+      // is scoped to create/update and delete gets its own owner-only grant.
+      allow create, update: if isFarmOwner(farmId)
+        && request.resource.data.campId == campId;
+      allow delete: if isFarmOwner(farmId);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] planted areas — owner read/write only
+    // ═════════════════════════════════════════════════════════════════════
+    match /farms/{farmId}/camps/{campId}/plantedAreas/{areaId} {
+      allow read: if isFarmOwner(farmId);
+      // A document may never claim a campId other than its own path segment.
+      // `request.resource` is null on delete, so the payload check is scoped
+      // to create/update and delete gets its own owner-only grant.
+      allow create, update: if isFarmOwner(farmId)
+        && request.resource.data.campId == campId;
+      allow delete: if isFarmOwner(farmId);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] predators — owner read/write only
+    // ═════════════════════════════════════════════════════════════════════
+    match /farms/{farmId}/camps/{campId}/predators/{entryId} {
+      allow read: if isFarmOwner(farmId);
+      // A document may never claim a campId other than its own path segment.
+      // `request.resource` is null on delete, so the payload check is scoped
+      // to create/update and delete gets its own owner-only grant.
+      allow create, update: if isFarmOwner(farmId)
+        && request.resource.data.campId == campId;
+      allow delete: if isFarmOwner(farmId);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] permits — owner read/write, hunter read on visible permits
+    // ═════════════════════════════════════════════════════════════════════
+    match /farms/{farmId}/permits/{permitId} {
+      // The owning outfitter reads every permit on their farm.
+      //
+      // A signed-in non-owner reads a permit ONLY when the outfitter marked it
+      // `hunter_visible`. This is the interim gate: the draft cannot yet
+      // verify that the caller actually holds a booking on this farm.
+      //
+      // TODO(veld-carry): Phase 5 — replace the bare `isSignedIn()` with a
+      // hunter-booking check, i.e. only expose a visible permit to a hunter
+      // who has a booking on this farm. Until then the visibility flag is the
+      // only control, and NO public (unauthenticated) read exists.
+      allow read: if isFarmOwner(farmId)
+        || (isSignedIn() && resource.data.visibility == 'hunter_visible');
+
+      // Writes stay owner-only. No hunter write, no manager write.
+      // A permit may never claim a farmId other than its own path segment.
+      // `request.resource` is null on delete, so the payload check is scoped
+      // to create/update and delete gets its own owner-only grant.
+      allow create, update: if isFarmOwner(farmId)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isFarmOwner(farmId);
+    }
+
+    // ── Default deny (already present in the live ruleset) ───────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
