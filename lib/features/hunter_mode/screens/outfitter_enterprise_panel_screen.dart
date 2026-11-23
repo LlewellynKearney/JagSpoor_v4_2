@@ -16,6 +16,8 @@ import '../models/farm_config.dart';
 import '../services/booking_availability_service.dart';
 import '../services/outfitter_enterprise_manager.dart';
 import '../../outfitter_mode/widgets/outfitter_scaffold.dart';
+import '../../veld_carry/ui/veld_carry_camp_list_screen.dart';
+import '../../veld_carry/ui/veld_carry_gate.dart';
 
 /// Resolves the display photo URL for a `farms` document: the explicit
 /// `photoUrl` first, then the first entry of the `photoUrls` array. Returns
@@ -1818,6 +1820,45 @@ class _OutfitterEnterprisePanelScreenState
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 10,
                                       vertical: 4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Veld & Carrying Capacity entry point.
+                              // Renders NOTHING (no button, no space) while
+                              // the feature flag is off — the default build.
+                              VeldCarryGate(
+                                builder: (context) => Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    key: ValueKey('veldCarryEntry_${doc.id}'),
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => VeldCarryCampListScreen(
+                                          farmId: doc.id,
+                                          farmName: data['name']?.toString(),
+                                          theme: theme,
+                                        ),
+                                      ),
+                                    ),
+                                    icon: Icon(
+                                      Icons.grass_rounded,
+                                      size: 18,
+                                      color: theme.accentColor,
+                                    ),
+                                    label: Text(
+                                      'Veld Carrying Capacity',
+                                      style: TextStyle(
+                                        color: theme.accentColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
                                     ),
                                   ),
                                 ),

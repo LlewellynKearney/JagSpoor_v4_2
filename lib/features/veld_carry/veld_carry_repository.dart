@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -9,31 +12,55 @@ import 'models/stock_entry.dart';
 
 /// Firestore repository for the Veld & Carrying Capacity feature.
 ///
-/// **Phase 0D — STUB ONLY.** Every method below validates ownership and then
-/// returns an empty result. No Firestore read or write is performed yet and
-/// no UI calls into this class: the feature stays dark behind
-/// [VeldCarryFeatureFlag], which is OFF unless both the compile-time and the
-/// control-plane switches are true.
+/// **Phase 2 — real Firestore I/O.** Every read and write below is scoped to
+/// the signed-in outfitter and lives *inside that user's own document*, so no
+/// new top-level collection is introduced:
 ///
-/// Ownership contract — enforced here *and* in
-/// `firestore.rules.veld_carry.DRAFT`: the caller must be the farm's
-/// outfitter. Every method compares [outfitterUid] against the signed-in uid
-/// and throws [VeldCarryOwnershipException] when they differ, so a caller can
-/// never read or write another outfitter's veld data. The draft rules
-/// re-check the same invariant server-side against
-/// `farms/{farmId}.outfitterId`, which is why the client check is a guard and
-/// not the security boundary.
+/// ```text
+/// users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}
+/// users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{speciesId}
+/// users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId}
+/// users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId}
+/// users/{outfitterUid}/farms/{farmId}/permits/{permitId}
+/// ```
+///
+/// The layout deliberately differs from the Phase 0D draft
+/// (`firestore.rules.veld_carry.DRAFT`, which nests under the top-level
+/// `farms/{farmId}`). The live ruleset is untouched in this phase; the
+/// go-live ruleset must mirror these `users/{uid}/farms/...` paths before the
+/// feature is switched on. Until then every read and write here is denied by
+/// the default-deny catch-all, which is the correct posture for a dark
+/// feature.
+///
+/// Ownership contract — enforced here *and* to be enforced by the go-live
+/// rules: the caller must be the farm's outfitter. Every method compares
+/// [outfitterUid] against the signed-in uid and throws
+/// [VeldCarryOwnershipException] when they differ, so a caller can never read
+/// or write another outfitter's veld data.
+///
+/// Error policy: Firestore failures are **rethrown**, never swallowed. A
+/// failed read must surface to the UI so the operator sees an error state
+/// instead of an empty camp list that looks like "no data".
 class VeldCarryRepository {
-  VeldCarryRepository._({String? Function()? currentUserIdResolver})
-      : _injectedCurrentUserIdResolver = currentUserIdResolver;
+  VeldCarryRepository._({
+    String? Function()? currentUserIdResolver,
+    FirebaseFirestore? firestore,
+  })  : _injectedCurrentUserIdResolver = currentUserIdResolver,
+        _injectedFirestore = firestore;
 
   /// Process-wide instance. The lazy getters below keep construction safe
   /// before `Firebase.initializeApp()` (cold launch / widget tests), matching
   /// the other repositories in this app.
   static final VeldCarryRepository instance = VeldCarryRepository._();
 
+  /// The signed-in user's own document — the parent of every veld path.
+  static const String usersCollection = 'users';
+
+  /// Farm documents nested under the user document.
+  static const String farmsCollection = 'farms';
+
   /// Camps live under the farm they belong to.
-  static const String campsCollection = 'camps';
+  static const String campsCollection = 'veldCamps';
 
   /// Camp children — stock ledger, planted areas and predator records.
   static const String stockCollection = 'stock';
@@ -44,6 +71,7 @@ class VeldCarryRepository {
   static const String permitsCollection = 'permits';
 
   final String? Function()? _injectedCurrentUserIdResolver;
+  final FirebaseFirestore? _injectedFirestore;
 
   /// Signed-in uid, or null when Firebase is unavailable.
   String? get _currentUserId {
@@ -56,13 +84,18 @@ class VeldCarryRepository {
     }
   }
 
-  /// Test seam: inject the uid resolver so the ownership guard can be
+  /// Test seam: inject the uid resolver and/or a Firestore instance so the
+  /// ownership guard, the path builders and the write payloads can be
   /// exercised without a Firebase app.
   @visibleForTesting
   static VeldCarryRepository forTesting({
     String? Function()? currentUserIdResolver,
+    FirebaseFirestore? firestore,
   }) =>
-      VeldCarryRepository._(currentUserIdResolver: currentUserIdResolver);
+      VeldCarryRepository._(
+        currentUserIdResolver: currentUserIdResolver,
+        firestore: firestore,
+      );
 
   /// Throws unless [outfitterUid] is the signed-in user.
   ///
@@ -82,21 +115,130 @@ class VeldCarryRepository {
     }
   }
 
-  /// Saves a camp. STUB — ownership-checked, then a no-op.
+  // ── Path builders ─────────────────────────────────────────────────────
+  //
+  // Pure string builders so the storage layout is asserted in one place and
+  // the tests can verify it without Firestore.
+
+  /// `users/{uid}/farms/{farmId}/veldCamps/{campId}`
+  static String campPath(String outfitterUid, String farmId, String campId) =>
+      '$usersCollection/$outfitterUid/$farmsCollection/$farmId/'
+      '$campsCollection/$campId';
+
+  /// `users/{uid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId}`
+  static String stockPath(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String entryId,
+  ) =>
+      '${campPath(outfitterUid, farmId, campId)}/$stockCollection/$entryId';
+
+  /// `users/{uid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId}`
+  static String plantedAreaPath(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String areaId,
+  ) =>
+      '${campPath(outfitterUid, farmId, campId)}/$plantedAreasCollection/'
+      '$areaId';
+
+  /// `users/{uid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId}`
+  static String predatorPath(
+    String outfitterUid,
+    String farmId,
+    String campId,
+    String predatorId,
+  ) =>
+      '${campPath(outfitterUid, farmId, campId)}/$predatorsCollection/'
+      '$predatorId';
+
+  /// `users/{uid}/farms/{farmId}/permits/{permitId}`
+  static String permitPath(
+    String outfitterUid,
+    String farmId,
+    String permitId,
+  ) =>
+      '$usersCollection/$outfitterUid/$farmsCollection/$farmId/'
+      '$permitsCollection/$permitId';
+
+  /// Generates a document id for a new camp / child record.
+  ///
+  /// The UI needs a stable id before the first write because the models carry
+  /// their own `id` and the repository signatures return `void`.
+  static String newId() {
+    final micros = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    final suffix = Random().nextInt(0x7fffffff).toRadixString(36);
+    return 'vc_${micros}_$suffix';
+  }
+
+  /// The single write-payload rule used by every upsert:
+  /// `updatedAt` is always "now"; `createdAt` is written only for a NEW
+  /// document so an edit can never move the creation timestamp.
+  ///
+  /// Pure so the rule is unit-testable without Firestore.
+  static Map<String, dynamic> buildUpsertPayload({
+    required Map<String, dynamic> base,
+    required bool isNew,
+    DateTime? now,
+  }) {
+    final payload = Map<String, dynamic>.from(base);
+    payload['updatedAt'] = Timestamp.fromDate(now ?? DateTime.now());
+    if (!isNew) {
+      payload.remove('createdAt');
+    }
+    return payload;
+  }
+
+  // ── Camps ─────────────────────────────────────────────────────────────
+
+  /// Creates or updates [camp] at `users/{uid}/farms/{farmId}/veldCamps`.
+  ///
+  /// Merge-write: a later phase can add fields to the camp document without
+  /// this call wiping them. `createdAt` is preserved across edits.
   Future<void> saveCamp(String outfitterUid, Camp camp) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — upsert
-    // farms/{camp.farmId}/camps/{camp.id} with camp.toMap().
+    final campId = camp.id.trim();
+    final farmId = camp.farmId.trim();
+    if (campId.isEmpty) {
+      throw const VeldCarryRepositoryException('Camp id is required.');
+    }
+    if (farmId.isEmpty) {
+      throw const VeldCarryRepositoryException('Camp farmId is required.');
+    }
+    final db = _requireFirestore();
+    final ref = db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(farmId)
+        .collection(campsCollection)
+        .doc(campId);
+    await _upsert(ref, camp.toMap());
   }
 
-  /// Lists the camps of a farm. STUB — returns an empty list.
+  /// Lists the camps of a farm, ordered by name.
   Future<List<Camp>> getCamps(String outfitterUid, String farmId) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — read farms/{farmId}/camps ordered by name.
-    return const <Camp>[];
+    final farm = _requireFarmId(farmId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(campsCollection)
+        .orderBy('name')
+        .get();
+    return snapshot.docs
+        .map((doc) => Camp.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
   }
 
-  /// Saves one species row of a camp's stock ledger. STUB.
+  // ── Camp children ─────────────────────────────────────────────────────
+
+  /// Creates or updates one species row of a camp's stock ledger.
   Future<void> saveStockEntry(
     String outfitterUid,
     String farmId,
@@ -104,11 +246,52 @@ class VeldCarryRepository {
     StockEntry entry,
   ) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — upsert
-    // farms/{farmId}/camps/{campId}/stock/{entry.id} with entry.toMap().
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final entryId = entry.id.trim();
+    if (entryId.isEmpty) {
+      throw const VeldCarryRepositoryException('Stock entry id is required.');
+    }
+    final db = _requireFirestore();
+    final ref = db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(stockCollection)
+        .doc(entryId);
+    await _upsert(ref, entry.toMap());
   }
 
-  /// Saves one planted area of a camp. STUB.
+  /// Lists a camp's stock ledger, ordered by species name.
+  ///
+  /// Read-only helper used by the camp list to report real stocking pressure.
+  /// The seven Phase 0D signatures above are unchanged.
+  Future<List<StockEntry>> getStockEntries(
+    String outfitterUid,
+    String farmId,
+    String campId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(stockCollection)
+        .orderBy('speciesName')
+        .get();
+    return snapshot.docs
+        .map((doc) => StockEntry.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+  }
+
+  /// Creates or updates one planted area of a camp.
   Future<void> savePlantedArea(
     String outfitterUid,
     String farmId,
@@ -116,11 +299,25 @@ class VeldCarryRepository {
     PlantedArea area,
   ) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — upsert
-    // farms/{farmId}/camps/{campId}/plantedAreas/{area.id} with area.toMap().
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final areaId = area.id.trim();
+    if (areaId.isEmpty) {
+      throw const VeldCarryRepositoryException('Planted area id is required.');
+    }
+    final db = _requireFirestore();
+    final ref = db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(plantedAreasCollection)
+        .doc(areaId);
+    await _upsert(ref, area.toMap());
   }
 
-  /// Saves one predator record of a camp. STUB.
+  /// Creates or updates one predator record of a camp.
   Future<void> savePredatorEntry(
     String outfitterUid,
     String farmId,
@@ -128,32 +325,114 @@ class VeldCarryRepository {
     PredatorEntry entry,
   ) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — upsert
-    // farms/{farmId}/camps/{campId}/predators/{entry.id} with entry.toMap().
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final entryId = entry.id.trim();
+    if (entryId.isEmpty) {
+      throw const VeldCarryRepositoryException(
+        'Predator entry id is required.',
+      );
+    }
+    final db = _requireFirestore();
+    final ref = db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(predatorsCollection)
+        .doc(entryId);
+    await _upsert(ref, entry.toMap());
   }
 
-  /// Saves a farm-wide permit. STUB.
+  // ── Farm-wide permits ─────────────────────────────────────────────────
+
+  /// Creates or updates a farm-wide permit.
   Future<void> savePermit(
     String outfitterUid,
     String farmId,
     FarmPermit permit,
   ) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — upsert
-    // farms/{farmId}/permits/{permit.id} with permit.toMap().
+    final farm = _requireFarmId(farmId);
+    final permitId = permit.id.trim();
+    if (permitId.isEmpty) {
+      throw const VeldCarryRepositoryException('Permit id is required.');
+    }
+    final db = _requireFirestore();
+    final ref = db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(permitsCollection)
+        .doc(permitId);
+    await _upsert(ref, permit.toMap());
   }
 
-  /// Lists the permits of a farm. STUB — returns an empty list.
+  /// Lists the permits of a farm, ordered by permit type.
   Future<List<FarmPermit>> getPermits(
     String outfitterUid,
     String farmId,
   ) async {
     requireOwnership(outfitterUid);
-    // TODO(veld-carry): Phase 1 — read farms/{farmId}/permits. The draft rules
-    // additionally expose a permit to a hunter only when
-    // `visibility == 'hunter_visible'`; the hunter booking check lands in
-    // Phase 5.
-    return const <FarmPermit>[];
+    final farm = _requireFarmId(farmId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(permitsCollection)
+        .orderBy('permitType')
+        .get();
+    return snapshot.docs
+        .map((doc) => FarmPermit.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+  }
+
+  // ── Internals ─────────────────────────────────────────────────────────
+
+  Future<void> _upsert(
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> base,
+  ) async {
+    final snapshot = await ref.get();
+    final payload = buildUpsertPayload(base: base, isNew: !snapshot.exists);
+    await ref.set(payload, SetOptions(merge: true));
+  }
+
+  FirebaseFirestore _requireFirestore() {
+    final injected = _injectedFirestore;
+    if (injected != null) return injected;
+    try {
+      return FirebaseFirestore.instance;
+    } catch (e) {
+      throw VeldCarryRepositoryException(
+        'Firestore is not available — veld data cannot be read or written '
+        '($e).',
+      );
+    }
+  }
+
+  String _requireFarmId(String farmId) {
+    final trimmed = farmId.trim();
+    if (trimmed.isEmpty) {
+      throw const VeldCarryRepositoryException('Farm id is required.');
+    }
+    return trimmed;
+  }
+
+  ({String farmId, String campId}) _requireCampIds({
+    required String farmId,
+    required String campId,
+  }) {
+    final farm = _requireFarmId(farmId);
+    final camp = campId.trim();
+    if (camp.isEmpty) {
+      throw const VeldCarryRepositoryException('Camp id is required.');
+    }
+    return (farmId: farm, campId: camp);
   }
 }
 
@@ -165,4 +444,15 @@ class VeldCarryOwnershipException implements Exception {
 
   @override
   String toString() => 'VeldCarryOwnershipException: $message';
+}
+
+/// Thrown when a veld operation is rejected before reaching Firestore
+/// (missing id, missing farm id, Firestore unavailable).
+class VeldCarryRepositoryException implements Exception {
+  const VeldCarryRepositoryException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'VeldCarryRepositoryException: $message';
 }

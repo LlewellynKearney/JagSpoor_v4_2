@@ -55,6 +55,13 @@ class VeldCarryFeatureFlag {
   /// Last control-plane value read; `false` before the first load.
   bool get adminConfigEnabled => _adminConfigEnabled;
 
+  /// The compile-time switch as seen by this instance.
+  ///
+  /// The UI gate uses this to short-circuit: with the default OFF build there
+  /// is no point reading `admin_config/feature_flags` at all, because the
+  /// control-plane switch alone can never enable the feature.
+  bool get compileTimeSwitchEnabled => _compileTimeEnabled;
+
   /// True only when the compile-time AND control-plane switches are both ON.
   bool get isVeldCarryEnabled => shouldEnable(
         compileTime: _compileTimeEnabled,
