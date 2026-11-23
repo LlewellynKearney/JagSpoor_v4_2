@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
+import 'package:jagspoor/features/veld_carry/models/farm_permit.dart';
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 
@@ -214,4 +215,82 @@ String plantedSeasonLabel(String season) {
     default:
       return 'All year';
   }
+}
+
+/// Human label for a [FarmPermit.permitTypes] constant.
+String permitTypeLabel(String permitType) {
+  switch (FarmPermit.normalizePermitType(permitType)) {
+    case FarmPermit.permitTypeCae:
+      return 'CAE (adequate enclosure)';
+    case FarmPermit.permitTypeExemption:
+      return 'Exemption';
+    case FarmPermit.permitTypeTops:
+      return 'TOPS';
+    case FarmPermit.permitTypeCites:
+      return 'CITES';
+    case FarmPermit.permitTypePhLicence:
+      return 'PH licence';
+    case FarmPermit.permitTypeOutfitterReg:
+      return 'Outfitter registration';
+    case FarmPermit.permitTypePredatorCaptivity:
+      return 'Predator captivity';
+    case FarmPermit.permitTypePredatorFencing:
+      return 'Predator fencing';
+    case FarmPermit.permitTypeDangerousGameFencing:
+      return 'Dangerous game fencing';
+    case FarmPermit.permitTypeVet:
+      return 'Veterinary';
+    case FarmPermit.permitTypeTransport:
+      return 'Transport';
+    case FarmPermit.permitTypeGameMovement:
+      return 'Game movement';
+    case FarmPermit.permitTypeOther:
+    default:
+      return 'Other';
+  }
+}
+
+/// Human label for a permit status constant.
+String permitStatusLabel(String status) {
+  switch ((status).trim().toLowerCase()) {
+    case FarmPermit.permitStatusExpiringSoon:
+      return 'Expiring soon';
+    case FarmPermit.permitStatusExpired:
+      return 'Expired';
+    case FarmPermit.permitStatusNoExpiry:
+      return 'No expiry';
+    case FarmPermit.permitStatusValid:
+    default:
+      return 'Valid';
+  }
+}
+
+/// Badge colour for a permit status constant.
+Color permitStatusColor(String status) {
+  switch ((status).trim().toLowerCase()) {
+    case FarmPermit.permitStatusExpiringSoon:
+      return const Color(0xFFB26A00);
+    case FarmPermit.permitStatusExpired:
+      return const Color(0xFFB71C1C);
+    case FarmPermit.permitStatusNoExpiry:
+      return const Color(0xFF1565C0);
+    case FarmPermit.permitStatusValid:
+    default:
+      return const Color(0xFF1B5E20);
+  }
+}
+
+/// Human label for a permit visibility constant.
+String permitVisibilityLabel(String visibility) =>
+    FarmPermit.normalizeVisibility(visibility) ==
+            FarmPermit.visibilityHunterVisible
+        ? 'Hunter visible'
+        : 'Private';
+
+/// `2026-11-23`, or `—` when the date is unknown.
+String formatPermitDate(DateTime? date) {
+  if (date == null) return '—';
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
 }

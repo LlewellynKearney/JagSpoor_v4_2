@@ -470,6 +470,162 @@ class VeldCarryRepository {
         .toList(growable: false);
   }
 
+  // ── Hunter-safe reads ────────────────────────────────────────────────
+  //
+  // The hunter view (`veld_carry_hunter_view_screen.dart`) is READ-ONLY and
+  // must NEVER call the ownership-gated methods above: a hunter is not the
+  // farm's outfitter. These reads skip [requireOwnership] and take the
+  // outfitter uid explicitly (the hunter already has it from the package /
+  // farm document it is allowed to read).
+  //
+  // TODO(go-live): the live Firestore rules MUST enforce BOTH the hunter
+  // visibility and the booking relationship before this feature is switched
+  // on. These methods are a client-side convenience, not the security
+  // boundary: they only ever return hunter-safe data and the UI renders a
+  // restricted subset (no GPS, no weights, no permit number / file).
+
+  /// Camps of [farmId], read for a hunter (no ownership check).
+  Future<List<Camp>> getCampsForHunter(
+    String farmId, {
+    required String outfitterUid,
+  }) async {
+    final farm = _requireFarmId(farmId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(campsCollection)
+        .get();
+    final camps = snapshot.docs
+        .map((doc) => Camp.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    return List<Camp>.of(camps)..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  /// One camp of [farmId], read for a hunter (no ownership check).
+  ///
+  /// Returns null when the camp does not exist.
+  Future<Camp?> getCampForHunter(
+    String farmId,
+    String campId, {
+    required String outfitterUid,
+  }) async {
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .get();
+    final data = snapshot.data();
+    if (!snapshot.exists || data == null) return null;
+    return Camp.fromMap(data, id: snapshot.id);
+  }
+
+  /// A camp's stock ledger, read for a hunter (no ownership check).
+  ///
+  /// The caller must render ONLY `speciesName` + `count` — the weights and the
+  /// GU/BU split stay on the outfitter side.
+  Future<List<StockEntry>> getStockForHunter(
+    String farmId,
+    String campId, {
+    required String outfitterUid,
+  }) async {
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(stockCollection)
+        .get();
+    final stock = snapshot.docs
+        .map((doc) => StockEntry.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    return List<StockEntry>.of(stock)
+      ..sort((a, b) => a.speciesName.compareTo(b.speciesName));
+  }
+
+  /// A camp's planted areas, read for a hunter (no ownership check).
+  ///
+  /// Needed so the hunter-facing capacity total matches the outfitter screen
+  /// (year-round planted areas add to the veld capacity). Feed type + hectares
+  /// are not sensitive; no location data is exposed.
+  Future<List<PlantedArea>> getPlantedAreasForHunter(
+    String farmId,
+    String campId, {
+    required String outfitterUid,
+  }) async {
+    final camp = _requireCampIds(farmId: farmId, campId: campId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(camp.farmId)
+        .collection(campsCollection)
+        .doc(camp.campId)
+        .collection(plantedAreasCollection)
+        .get();
+    final areas = snapshot.docs
+        .map((doc) => PlantedArea.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    return List<PlantedArea>.of(areas)
+      ..sort((a, b) => a.feedType.compareTo(b.feedType));
+  }
+
+  /// A farm's permits, read for a hunter (no ownership check).
+  ///
+  /// Only `hunter_visible` permits are returned — a `private` permit can never
+  /// reach the hunter view. The UI additionally renders ONLY the permit type,
+  /// expiry date and status (never the permit number, the issuing authority or
+  /// the attached file).
+  Future<List<FarmPermit>> getPermitsForHunter(
+    String farmId, {
+    required String outfitterUid,
+  }) async {
+    final farm = _requireFarmId(farmId);
+    final owner = _requireOutfitterUid(outfitterUid);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(permitsCollection)
+        .get();
+    final permits = snapshot.docs
+        .map((doc) => FarmPermit.fromMap(doc.data(), id: doc.id))
+        .toList(growable: false);
+    return hunterVisiblePermits(permits);
+  }
+
+  /// Filters [permits] down to the hunter-visible subset.
+  ///
+  /// Pure so the "a private permit never reaches the hunter" contract is
+  /// unit-testable without Firestore.
+  static List<FarmPermit> hunterVisiblePermits(Iterable<FarmPermit> permits) {
+    final visible = <FarmPermit>[];
+    for (final permit in permits) {
+      if (permit.visibility == FarmPermit.visibilityHunterVisible) {
+        visible.add(permit);
+      }
+    }
+    return visible;
+  }
+
   // ── Deletes ───────────────────────────────────────────────────────────
 
   /// Deletes one stock row of a camp.
@@ -516,6 +672,29 @@ class VeldCarryRepository {
         collection: predatorsCollection,
         docId: predatorId,
       );
+
+  /// Deletes one farm-wide permit.
+  Future<void> deletePermit(
+    String outfitterUid,
+    String farmId,
+    String permitId,
+  ) async {
+    requireOwnership(outfitterUid);
+    final farm = _requireFarmId(farmId);
+    final id = permitId.trim();
+    if (id.isEmpty) {
+      throw const VeldCarryRepositoryException('Permit id is required.');
+    }
+    final db = _requireFirestore();
+    await db
+        .collection(usersCollection)
+        .doc(outfitterUid)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(permitsCollection)
+        .doc(id)
+        .delete();
+  }
 
   /// Deletes a camp document.
   ///
@@ -590,6 +769,14 @@ class VeldCarryRepository {
         '($e).',
       );
     }
+  }
+
+  String _requireOutfitterUid(String outfitterUid) {
+    final trimmed = outfitterUid.trim();
+    if (trimmed.isEmpty) {
+      throw const VeldCarryRepositoryException('Outfitter uid is required.');
+    }
+    return trimmed;
   }
 
   String _requireFarmId(String farmId) {

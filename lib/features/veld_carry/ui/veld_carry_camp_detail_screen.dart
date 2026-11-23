@@ -9,6 +9,8 @@ import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
 import 'package:jagspoor/features/veld_carry/models/predator_entry.dart';
 import 'package:jagspoor/features/veld_carry/models/stock_entry.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_form_screen.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_gate.dart';
+import 'package:jagspoor/features/veld_carry/ui/veld_carry_permits_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_planted_form_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_predator_form_screen.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_stock_form_screen.dart';
@@ -232,6 +234,24 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
     if (saved == true && mounted) await _load();
   }
 
+  /// Opens the farm-wide permits vault.
+  ///
+  /// Rendered only inside `VeldCarryGate`, so with the feature flag OFF the
+  /// action does not exist and this method is unreachable.
+  Future<void> _openPermits() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VeldCarryPermitsScreen(
+          farmId: widget.farmId,
+          farmName: widget.farmName,
+          theme: _theme,
+          repository: _repository,
+          currentUidOverride: widget.currentUidOverride,
+        ),
+      ),
+    );
+  }
+
   // ── Deletes ──────────────────────────────────────────────────────────
 
   Future<bool> _confirm(String title, String message, String action) async {
@@ -430,6 +450,17 @@ class _VeldCarryCampDetailScreenState extends State<VeldCarryCampDetailScreen> {
         iconTheme: IconThemeData(color: theme.accentColor),
         elevation: 0,
         actions: [
+          // Permits vault entry — flag-gated: renders nothing (no icon, no
+          // space) while the feature flag is off.
+          VeldCarryGate(
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldCampPermitsButton'),
+              icon: Icons.folder_shared_outlined,
+              tooltip: 'Permits vault',
+              iconColor: theme.accentColor,
+              onPressed: _openPermits,
+            ),
+          ),
           OutfitterActionChip(
             key: const ValueKey('veldCampDeleteButton'),
             icon: Icons.delete_outline_rounded,

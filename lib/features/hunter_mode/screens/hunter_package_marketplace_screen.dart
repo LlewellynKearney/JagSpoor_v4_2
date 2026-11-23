@@ -16,6 +16,8 @@ import '../services/photo_gallery_resolver.dart';
 import '../services/pricing_math.dart';
 import '../widgets/booking_availability_strip.dart';
 import '../widgets/outfitter_contact_card.dart';
+import '../../veld_carry/ui/veld_carry_gate.dart';
+import '../../veld_carry/ui/veld_carry_hunter_view_screen.dart';
 import '../widgets/photo_gallery_strip.dart';
 import '../../shared/widgets/hunter_media_card.dart';
 import '../widgets/hunter_scaffold.dart';
@@ -973,6 +975,20 @@ class _BookingConfirmationSheetState extends State<_BookingConfirmationSheet> {
             OutfitterContactCard(
               source: widget.data,
               theme: widget.theme,
+            ),
+
+            // The ONE hunter entry point into the Veld & Carrying Capacity
+            // view. `VeldCarryGate` renders NOTHING while the feature flag is
+            // off (no tile, no gap, no Firestore read); the tile itself also
+            // renders nothing unless the farm has at least one veld camp.
+            VeldCarryGate(
+              builder: (context) => VeldCarryHunterEntryTile(
+                outfitterUid:
+                    (widget.data['outfitterId'] as String?)?.trim() ?? '',
+                farmId: (widget.data['farmId'] as String?)?.trim() ?? '',
+                farmName: widget.data['farmName'] as String?,
+                theme: widget.theme,
+              ),
             ),
 
             // Warning
