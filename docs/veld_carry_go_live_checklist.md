@@ -461,9 +461,10 @@ would have been rejected with `permission-denied`.
 and the client-side `hunterVisiblePermits` filter is **kept as a second line
 of defence** — the query is never trusted on its own.
 
-* File / method: `lib/features/veld_carry/veld_carry_repository.dart`,
-  `VeldCarryRepository.getPermitsForHunter` (the `.where('visibility', ...)`
-  clause sits directly before `.get()`).
+* File / line: `lib/features/veld_carry/veld_carry_repository.dart:721`
+  (`.where('visibility', isEqualTo: FarmPermit.visibilityHunterVisible)`)
+  inside `VeldCarryRepository.getPermitsForHunter`; the defence-in-depth
+  filter is `:729` (`return hunterVisiblePermits(permits);`).
 * Tests: `test/veld_carry_phase6_test.dart` — the hunter read returns ONLY
   `hunter_visible` permits from a mixed collection, a private-only collection
   yields an empty list, and `hunterVisiblePermits` is asserted to be the
