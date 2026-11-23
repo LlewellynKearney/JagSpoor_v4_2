@@ -1,0 +1,205 @@
+// ══════════════════════════════════════════════════════════════════════════
+// GO-LIVE READY — DO NOT APPLY UNTIL LLEWELLYN SAYS GO. Review + apply manually.
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Veld & Carrying Capacity — Phase 5 go-live ruleset (MERGE FRAGMENT).
+//
+// THIS FILE IS NOT A COMPLETE RULESET. It must NOT replace `firestore.rules`.
+// It is the set of blocks to paste INTO the live `firestore.rules`, inside
+// `match /databases/{database}/documents { ... }`, immediately ABOVE the
+// existing default-deny catch-all:
+//
+//     match /{document=**} {
+//       allow read, write: if false;
+//     }
+//
+// That catch-all must remain the LAST block. It is the default-deny that keeps
+// every un-listed path closed, and the veld feature relies on it for its dark
+// (flag-OFF) posture.
+//
+// ── Why this file exists (DRAFT → GO_LIVE_READY) ─────────────────────────
+// `firestore.rules.veld_carry.DRAFT` was written in Phase 0D, BEFORE the real
+// repository existed, and it nests the veld data under the TOP-LEVEL
+// `farms/{farmId}` collection. The Phase 2+ code does NOT use that layout. The
+// shipped repository (`lib/features/veld_carry/veld_carry_repository.dart`)
+// nests everything under the signed-in outfitter's OWN user document:
+//
+//   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}
+//   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId}
+//   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId}
+//   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId}
+//   users/{outfitterUid}/farms/{farmId}/permits/{permitId}
+//
+// These paths are the authoritative contract (see `VeldCarryRepository.campPath`
+// / `stockPath` / `plantedAreaPath` / `predatorPath` / `permitPath`, and the
+// collection-name constants `usersCollection` / `farmsCollection` /
+// `campsCollection` = 'veldCamps' / `stockCollection` / `plantedAreasCollection`
+// / `predatorsCollection` / `permitsCollection`). Applying the old DRAFT would
+// leave every real veld read/write denied by the default-deny catch-all.
+//
+// ── Ownership model ──────────────────────────────────────────────────────
+// The PATH carries the owner: the second segment is the outfitter's uid, and
+// Firestore guarantees a caller cannot write a path they were not granted. So
+// ownership is `request.auth.uid == outfitterUid` — a single, non-spoofable
+// check that needs no `get()` and no owner field on the child documents.
+// (The DRAFT instead read `farms/{farmId}.outfitterId`; that indirection is
+// gone because the top-level farm document is not on the veld data path.)
+//
+// ── Deliberate omissions (unchanged from the DRAFT's security posture) ───
+//   • NO public read anywhere — no read grant in this file is unconditional.
+//   • NO hunter write anywhere — every create/update/delete is owner-only.
+//   • NO hunter read on `predators` — predator records stay outfitter-only.
+//   • NO admin bypass on camps / stock / plantedAreas / predators / permits.
+//     The brief is "owner read/write only"; add `|| isAdmin()` only if
+//     Llewellyn approves it explicitly at go-live.
+//   • NO farm-manager access. `farm_managers` assigns a manager to a farm;
+//     wiring managers in is a separate go-live decision.
+//
+// ── Validation performed on this file ────────────────────────────────────
+//   • braces balanced, parens balanced (see the Phase 5 hand-back).
+//   • no unconditional read grant anywhere (no bare-true read, alone or paired
+//     with write).
+//   • default-deny in the live ruleset verified intact and untouched.
+//   • every path below matches the repository's path builders exactly.
+//
+// ── Known limitation (documented in docs/veld_carry_go_live_checklist.md) ─
+// The hunter permit read is gated on `resource.data.visibility`, which
+// Firestore can only honour for a QUERY that constrains the same field.
+// `VeldCarryRepository.getPermitsForHunter` currently issues an unconstrained
+// collection read and filters client-side, so it will be rejected with
+// `permission-denied` for a non-owner under this rule. Phase 6 must add
+// `.where('visibility', isEqualTo: 'hunter_visible')` to that query (or move
+// the read behind a callable). This is a CODE change, not a rules change, and
+// it is listed as a go-live blocker in the checklist.
+//
+// ══════════════════════════════════════════════════════════════════════════
+// [MERGE] helper — add next to the existing isSignedIn() / isOwnerOf() helpers
+// ══════════════════════════════════════════════════════════════════════════
+
+    // True when the caller owns the veld document they are addressing.
+    // The owner is the uid in the path (`users/{outfitterUid}/...`), so no
+    // document read is needed and a missing parent document cannot widen
+    // access.
+    function isVeldOwner(outfitterUid) {
+      return isSignedIn() && request.auth.uid == outfitterUid;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] veldCamps — owner full read/write; hunter read (interim)
+    // ═════════════════════════════════════════════════════════════════════
+    //
+    // NOTE the collection is `veldCamps`, NOT `camps` (the DRAFT's name).
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId} {
+      // The owner is always signed in, so this single clause grants the
+      // owner full read AND the interim hunter read.
+      //
+      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
+      // this farm) to be added in Phase 6 — current rule allows any signed-in
+      // hunter to read hunter-visible data.
+      allow read: if isSignedIn();
+
+      // A camp document may never claim a farmId other than its own path
+      // segment. `request.resource` is null on delete, so the payload check is
+      // scoped to create/update and delete gets its own owner-only grant.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] stock ledger — owner full read/write; hunter read (interim)
+    // ═════════════════════════════════════════════════════════════════════
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId} {
+      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
+      // this farm) to be added in Phase 6 — current rule allows any signed-in
+      // hunter to read hunter-visible data.
+      allow read: if isSignedIn();
+
+      // A stock row may never claim a campId other than its own path segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] plantedAreas — owner full read/write; hunter read (interim)
+    // ═════════════════════════════════════════════════════════════════════
+    //
+    // Hunter read is granted because the hunter-facing capacity total includes
+    // year-round planted feed (feed type + hectares are not sensitive).
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId} {
+      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
+      // this farm) to be added in Phase 6 — current rule allows any signed-in
+      // hunter to read hunter-visible data.
+      allow read: if isSignedIn();
+
+      // A planted area may never claim a campId other than its own path
+      // segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] predators — OWNER ONLY. No hunter read, by design.
+    // ═════════════════════════════════════════════════════════════════════
+    //
+    // Predator pressure is outfitter-internal management data (species, counts,
+    // prey offtake). The hunter view never queries this collection
+    // (`VeldCarryRepository` exposes no `...ForHunter` predator read), so no
+    // hunter clause exists — and none may be added without an explicit
+    // go-live decision.
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId} {
+      allow read: if isVeldOwner(outfitterUid);
+
+      // A predator record may never claim a campId other than its own path
+      // segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] permits — owner full read/write; hunter read on visible permits
+    // ═════════════════════════════════════════════════════════════════════
+    //
+    // Permits are farm-wide (not camp-specific), so they hang directly off the
+    // farm document.
+    match /users/{outfitterUid}/farms/{farmId}/permits/{permitId} {
+      // The owning outfitter reads every permit on their farm.
+      //
+      // A signed-in non-owner reads a permit ONLY when the outfitter marked it
+      // `hunter_visible`. This is the interim gate.
+      //
+      // TODO(veld-carry Phase 6): Booking check (hunter must have booking for
+      // this farm) to be added in Phase 6 — current rule allows any signed-in
+      // hunter to read hunter-visible data.
+      //
+      // NOTE for Phase 6 (code, not rules): a `resource.data` condition can
+      // only be honoured for a QUERY that constrains the same field. The
+      // hunter read must become
+      // `.where('visibility', isEqualTo: 'hunter_visible')` before this rule
+      // can serve it. See the checklist's known limitations.
+      allow read: if isVeldOwner(outfitterUid)
+        || (isSignedIn() && resource.data.visibility == 'hunter_visible');
+
+      // Writes stay owner-only. No hunter write, no manager write.
+      // A permit may never claim a farmId other than its own path segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+// ══════════════════════════════════════════════════════════════════════════
+// END OF MERGE FRAGMENT.
+//
+// After pasting, the live `firestore.rules` must still end with exactly one
+// default-deny catch-all:
+//
+//     match /{document=**} {
+//       allow read, write: if false;
+//     }
+//
+// Do not paste that block from here — it already exists in the live file and
+// must not be duplicated.
+// ══════════════════════════════════════════════════════════════════════════
