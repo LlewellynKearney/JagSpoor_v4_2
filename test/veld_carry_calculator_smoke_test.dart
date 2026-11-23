@@ -93,15 +93,21 @@ void main() {
 
     // Veld 80 + the ALL_YEAR area only (20 / 1.5).
     expect(yearRoundCapacityLsu(80, planted), closeTo(80 + 13.3333333, 1e-6));
-    // Summer sees both the ALL_YEAR area and the SUMMER area.
+    // Phase 1: seasonalBoostLsu reports SEASON-SPECIFIC plantings only — the
+    // ALL_YEAR area already sits in yearRoundCapacityLsu, so it is excluded.
     expect(
       seasonalBoostLsu(planted, PlantedArea.seasonSummer),
-      closeTo(13.3333333 + 10, 1e-6),
+      closeTo(10, 1e-6),
     );
-    // Winter only sees the ALL_YEAR area.
+    // Winter has no winter-specific planting, so the boost is zero.
     expect(
       seasonalBoostLsu(planted, PlantedArea.seasonWinter),
-      closeTo(13.3333333, 1e-6),
+      closeTo(0, 1e-6),
+    );
+    // Asking for ALL_YEAR returns 0 (reported by yearRoundCapacityLsu).
+    expect(
+      seasonalBoostLsu(planted, PlantedArea.seasonAllYear),
+      closeTo(0, 1e-6),
     );
   });
 
@@ -150,7 +156,9 @@ void main() {
         'poor': 1.60,
       });
       expect(VeldCarryConstants.veldConditionMultiplier('poor'), 1.60);
-      expect(VeldCarryConstants.veldConditionMultiplier('unknown'), 1.0);
+      // Phase 1: an unknown / blank condition falls back to `fair` (1.25).
+      expect(VeldCarryConstants.veldConditionMultiplier('unknown'), 1.25);
+      expect(VeldCarryConstants.veldConditionMultiplier(''), 1.25);
     });
 
     test('predator intake, permit types and present-only species', () {

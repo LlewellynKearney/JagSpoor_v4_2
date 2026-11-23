@@ -9,9 +9,9 @@ import 'package:jagspoor/features/veld_carry/veld_carry_constants.dart';
 /// helpers instead of re-deriving the maths. No Firestore, no Flutter, no
 /// state.
 ///
-/// The unit coefficients (`lsuPerAnimal` and the GU/BU split) and the stocking
-/// bands are provisional working values — Phase 1 replaces them with the
-/// official SA tables. The signatures below are final.
+/// Phase 1: the LSU coefficient, the GU/BU split, the veld-condition
+/// adjustment and the stocking bands are the real formulas. The 18 public
+/// signatures are final and unchanged from Phase 0.
 
 /// Reference live weight of one Large Stock Unit, in kilograms.
 const double lsuReferenceWeightKg = 450.0;
@@ -21,6 +21,21 @@ const double daysPerYear = 365.0;
 
 /// A permit within this many days of expiry counts as `expiring_soon`.
 const int permitExpiringSoonDays = 30;
+
+/// Upper bound applied to [usagePct] so a pathological input cannot render an
+/// absurd percentage.
+const double usagePctCeiling = 999.0;
+
+/// Stocking-band edges, in percent of carrying capacity.
+const double stockingUnderstockedMaxPct = 70.0;
+const double stockingOptimalMaxPct = 100.0;
+const double stockingOverstockedMaxPct = 120.0;
+
+/// Stocking bands returned by [stockingStatus].
+const String stockingUnderstocked = 'understocked';
+const String stockingOptimal = 'optimal';
+const String stockingOverstocked = 'overstocked';
+const String stockingSeverelyOverstocked = 'severely_overstocked';
 
 /// LSU equivalent of an animal weighing [weightKg].
 ///
@@ -43,7 +58,7 @@ double buPerAnimal(double weightKg, double browserPct) =>
 
 /// Total live weight of [count] animals at [avgWeightKg] each.
 double totalWeightKg(int count, double avgWeightKg) {
-  if (count <= 0 || !avgWeightKg.isFinite || avgWeightKg <= 0) return 0.0;
+  if (count < 0 || !avgWeightKg.isFinite || avgWeightKg <= 0) return 0.0;
   return count * avgWeightKg;
 }
 
@@ -58,6 +73,10 @@ double totalBu(int count, double buPerAnimal) => _total(count, buPerAnimal);
 
 /// Departmental ha/LSU norm adjusted for veld condition
 /// (`good` 1.0 / `fair` 1.25 / `poor` 1.60).
+///
+/// An unknown or blank condition is treated as `fair` (1.25) — the
+/// conservative middle band — so an unset condition never flatters the
+/// carrying capacity.
 double effectiveHaPerLsu(double deptNormHaPerLsu, String veldCondition) {
   if (!deptNormHaPerLsu.isFinite || deptNormHaPerLsu <= 0) return 0.0;
   return deptNormHaPerLsu *
@@ -95,12 +114,17 @@ double yearRoundCapacityLsu(
   return total;
 }
 
-/// Additional LSU supplied in [season] by planted areas that are either
-/// season-specific for that season or year-round (`ALL_YEAR`).
+/// Additional LSU supplied in [season] by planted areas planted for exactly
+/// that season.
+///
+/// `ALL_YEAR` areas are excluded — they already sit in
+/// [yearRoundCapacityLsu]. Asking for `ALL_YEAR` therefore returns 0.
 double seasonalBoostLsu(List<PlantedArea> plantedAreas, String season) {
+  final wanted = season.trim().toUpperCase();
+  if (wanted.isEmpty || wanted == PlantedArea.seasonAllYear) return 0.0;
   var total = 0.0;
   for (final area in plantedAreas) {
-    if (area.season == PlantedArea.seasonAllYear || area.season == season) {
+    if (area.season == wanted) {
       total += plantedCapacityLsu(area.areaHa, area.haPerLsu);
     }
   }
@@ -109,11 +133,14 @@ double seasonalBoostLsu(List<PlantedArea> plantedAreas, String season) {
 
 /// Stocking pressure as a percentage of capacity (`50 of 200 => 25.0`).
 ///
-/// A non-positive capacity yields 0 rather than infinity.
+/// A non-positive capacity yields 0 rather than infinity. The result is
+/// clamped to 0..[usagePctCeiling].
 double usagePct(double totalLsu, double totalCapacity) {
   if (!totalCapacity.isFinite || totalCapacity <= 0) return 0.0;
-  if (!totalLsu.isFinite || totalLsu <= 0) return 0.0;
-  return (totalLsu / totalCapacity) * 100.0;
+  if (!totalLsu.isFinite) return 0.0;
+  final pct = (totalLsu / totalCapacity) * 100.0;
+  if (!pct.isFinite || pct <= 0) return 0.0;
+  return pct > usagePctCeiling ? usagePctCeiling : pct;
 }
 
 /// Remaining LSU headroom. Negative means the camp is overstocked.
@@ -123,14 +150,15 @@ double headroomLsu(double totalCapacity, double totalLsu) {
   return capacity - used;
 }
 
-/// Provisional stocking band for a [usagePct]:
-/// `empty` (<= 0), `within_capacity` (<= 85), `near_capacity` (<= 100),
-/// `overstocked` (> 100).
+/// Stocking band for a [usagePct]:
+/// `understocked` (< 70), `optimal` (70..100), `overstocked` (100..120),
+/// `severely_overstocked` (> 120).
 String stockingStatus(double usagePct) {
-  if (!usagePct.isFinite || usagePct <= 0) return 'empty';
-  if (usagePct <= 85) return 'within_capacity';
-  if (usagePct <= 100) return 'near_capacity';
-  return 'overstocked';
+  if (!usagePct.isFinite) return stockingUnderstocked;
+  if (usagePct < stockingUnderstockedMaxPct) return stockingUnderstocked;
+  if (usagePct <= stockingOptimalMaxPct) return stockingOptimal;
+  if (usagePct <= stockingOverstockedMaxPct) return stockingOverstocked;
+  return stockingSeverelyOverstocked;
 }
 
 /// Prey consumed per year by [count] predators eating [dailyIntakeKg] a day.
@@ -167,7 +195,7 @@ String permitStatus(DateTime? expiryDate) {
 }
 
 double _total(int count, double perAnimal) {
-  if (count <= 0 || !perAnimal.isFinite || perAnimal <= 0) return 0.0;
+  if (count < 0 || !perAnimal.isFinite || perAnimal <= 0) return 0.0;
   return count * perAnimal;
 }
 

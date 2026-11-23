@@ -101,12 +101,18 @@ class VeldCarryConstants {
     'Aardvark',
   ];
 
-  /// Multiplier for [condition] (`good` / `fair` / `poor`); defaults to
-  /// `good` for unknown or blank input.
+  /// Multiplier for [condition] (`good` / `fair` / `poor`).
+  ///
+  /// Unknown or blank input falls back to `fair` (1.25) — the conservative
+  /// middle band — so an unset condition can never flatter the carrying
+  /// capacity.
   static double veldConditionMultiplier(String? condition) {
     final key = (condition ?? '').trim().toLowerCase();
-    return veldConditionMultipliers[key] ?? 1.0;
+    return veldConditionMultipliers[key] ?? unknownVeldConditionMultiplier;
   }
+
+  /// Multiplier applied when the veld condition is unknown or blank.
+  static const double unknownVeldConditionMultiplier = 1.25;
 
   /// Suggested ha/LSU for [province] (case-insensitive), or `null` when the
   /// province is unknown.
