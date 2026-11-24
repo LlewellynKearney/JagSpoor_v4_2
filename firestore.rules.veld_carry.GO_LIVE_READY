@@ -73,29 +73,56 @@
 // read would have been rejected with `permission-denied`.
 //
 // ── Booking check (go-live relationship gate) ───────────────────────────
-// The hunter reads below grant any signed-in user access to hunter-safe veld
-// data for any `outfitterUid`/`farmId` they know. The real relationship gate —
-// "the hunter must hold a CONFIRMED/COMPLETED booking on this farm" — is
-// enforced in CODE (`VeldCarryRepository.hunterHasBookingForFarm`, called by
-// every `...ForHunter` read when a `hunterUid` is supplied; it fails closed).
+// PHASE 7D UPDATE — the relationship gate is NOW EXPRESSIBLE IN RULES.
 //
-// It CANNOT be expressed as a Firestore rule: a rule may not read another
-// collection (`bookings`), and `exists()`/`get()` on a different path is
-// limited to `get()`/`exists()` on a single document that the query also
-// constrains — a farm-wide booking lookup is not queryable that way. The
-// future, rules-level shape would therefore need a denormalised field on the
-// veld documents (e.g. an `allowedHunterUids` array written by a Cloud
-// Function when a booking is confirmed), so the rule becomes:
+// A rule still may not read another collection (`bookings`), so the booking
+// relationship is DENORMALISED instead: `allowedHunterUids` (List<String>) is
+// written onto every camp document of the farm by
+// `VeldCarryRepository.syncAllowedHuntersForFarm`, which collects the hunters
+// holding a CONFIRMED / COMPLETED booking on that farm.
 //
-//     allow read: if isVeldOwner(outfitterUid)
-//       || (isSignedIn()
-//           && resource.data.allowedHunterUids is list
-//           && request.auth.uid in resource.data.allowedHunterUids);
+// The camps / stock / plantedAreas rules below therefore gate on
+//     request.auth.uid in resource.data.allowedHunterUids
+// (stock + plantedAreas resolve the field from their parent camp with a
+// `get()`; the camp path is fully specified by the query, so `get()` is valid
+// for a LIST query as well as a single-document read).
 //
-// That is a DATA change (a booking-confirmation trigger + a backfill), not a
-// rules-only change, so it is NOT implemented here. Until it is, the code-side
-// `hunterHasBookingForFarm` gate is the enforcement point and the residual
-// exposure is the documented limitation in the checklist (§7.3).
+// ⚠️ APPLY-TIME PREREQUISITE — Firestore rules are NOT filters. A rule that
+// inspects `resource.data.allowedHunterUids` can only serve a QUERY that
+// constrains the same field (this is the same trap as the Phase 6 permit
+// blocker, §7.2). Before this file is applied, the hunter camp read in
+// `VeldCarryRepository.getCampsForHunter` must add
+//
+//     .where('allowedHunterUids', arrayContains: hunterUid)
+//
+// (stock / plantedAreas need no change: their rule resolves the field through a
+// `get()` on the fully-specified parent camp path, which is constant across the
+// query). Without that constraint Firestore rejects the hunter's camp LIST read
+// with `permission-denied`. The client query is deliberately NOT changed in
+// Phase 7D because the rules are NOT applied yet — changing it now would deny
+// hunters on farms whose sync has not run.
+//
+// IMPORTANT — this closes the Phase 5/6 residual exposure ONLY ONCE THE SYNC
+// HAS RUN. The allow-list is data, not code:
+//   • a camp that has never been synced has NO `allowedHunterUids` field, and
+//     every non-owner read of it is DENIED (the `in` on a missing field errors,
+//     which fails closed);
+//   • the outfitter re-runs the sync from the camp list ("Sync hunter access",
+//     Phase 7D) — there is NO automatic booking-confirmation hook yet, by
+//     design (see docs/veld_carry_go_live_checklist.md §7.3);
+//   • removals are deliberately NOT automatic: cancelling a booking does not
+//     revoke access. Keeping access is the safer failure mode, and revoking is
+//     an explicit operator action.
+//
+// The code-side `hunterHasBookingForFarm` gate stays in place as the primary
+// enforcement (defence in depth): it fails closed on every `...ForHunter` read
+// when a `hunterUid` is supplied.
+//
+// FALLBACK: if the allow-list sync is NOT adopted, restore the Phase 5 rule —
+// `allow read: if isSignedIn();` — which is kept commented in each block. That
+// restores the documented Phase 6 posture (any signed-in hunter who knows the
+// `outfitterUid` + `farmId` can read hunter-safe veld data).
+
 //
 // ══════════════════════════════════════════════════════════════════════════
 // [MERGE] helper — add next to the existing isSignedIn() / isOwnerOf() helpers
@@ -110,19 +137,39 @@
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    // [MERGE] veldCamps — owner full read/write; hunter read (interim)
+    // [MERGE] helper — Phase 7D allow-list gate for a camp CHILD document
+    // ═════════════════════════════════════════════════════════════════════
+    //
+    // Stock and plantedAreas carry no allow-list of their own; it lives on the
+    // parent camp. The camp path is fully specified by the caller's query, so
+    // this single-document `get()` is valid for both a single read and a LIST
+    // query. A missing camp document, or a camp with no `allowedHunterUids`,
+    // errors and therefore DENIES (fail closed).
+    function isAllowedCamper(outfitterUid, farmId, campId) {
+      return isSignedIn()
+        && request.auth.uid in get(
+          /databases/$(database)/documents/users/$(outfitterUid)
+            /farms/$(farmId)/veldCamps/$(campId)
+        ).data.allowedHunterUids;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // [MERGE] veldCamps — owner full read/write; hunter read via allow-list
     // ═════════════════════════════════════════════════════════════════════
     //
     // NOTE the collection is `veldCamps`, NOT `camps` (the DRAFT's name).
     match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId} {
-      // The owner is always signed in, so this single clause grants the
-      // owner full read AND the interim hunter read.
-      //
-      // Booking check: enforced in CODE, not here — see the "Booking check"
-      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
-      // gates every hunter read when a hunterUid is supplied and fails closed.
-      // A rule cannot read the `bookings` collection.
-      allow read: if isSignedIn();
+      // Phase 7D: the booking relationship is now enforced HERE, from the
+      // denormalised allow-list that `syncAllowedHuntersForFarm` writes.
+      // See the "Booking check" note in this file's header.
+      allow read: if isVeldOwner(outfitterUid)
+        || (isSignedIn()
+            && resource.data.keys().hasAny(['allowedHunterUids'])
+            && resource.data.allowedHunterUids is list
+            && request.auth.uid in resource.data.allowedHunterUids);
+
+      // FALLBACK (Phase 5 posture — booking gate in CODE only):
+      // allow read: if isSignedIn();
 
       // A camp document may never claim a farmId other than its own path
       // segment. `request.resource` is null on delete, so the payload check is
@@ -136,11 +183,13 @@
     // [MERGE] stock ledger — owner full read/write; hunter read (interim)
     // ═════════════════════════════════════════════════════════════════════
     match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId} {
-      // Booking check: enforced in CODE, not here — see the "Booking check"
-      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
-      // gates every hunter read when a hunterUid is supplied and fails closed.
-      // A rule cannot read the `bookings` collection.
-      allow read: if isSignedIn();
+      // Phase 7D: gated by the camp's denormalised allow-list (the stock row
+      // carries none of its own). See the "Booking check" header note.
+      allow read: if isVeldOwner(outfitterUid)
+        || isAllowedCamper(outfitterUid, farmId, campId);
+
+      // FALLBACK (Phase 5 posture — booking gate in CODE only):
+      // allow read: if isSignedIn();
 
       // A stock row may never claim a campId other than its own path segment.
       allow create, update: if isVeldOwner(outfitterUid)
@@ -155,11 +204,13 @@
     // Hunter read is granted because the hunter-facing capacity total includes
     // year-round planted feed (feed type + hectares are not sensitive).
     match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId} {
-      // Booking check: enforced in CODE, not here — see the "Booking check"
-      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
-      // gates every hunter read when a hunterUid is supplied and fails closed.
-      // A rule cannot read the `bookings` collection.
-      allow read: if isSignedIn();
+      // Phase 7D: gated by the camp's denormalised allow-list. See the
+      // "Booking check" header note.
+      allow read: if isVeldOwner(outfitterUid)
+        || isAllowedCamper(outfitterUid, farmId, campId);
+
+      // FALLBACK (Phase 5 posture — booking gate in CODE only):
+      // allow read: if isSignedIn();
 
       // A planted area may never claim a campId other than its own path
       // segment.
@@ -199,10 +250,17 @@
       // A signed-in non-owner reads a permit ONLY when the outfitter marked it
       // `hunter_visible`. This is the interim gate.
       //
-      // Booking check: enforced in CODE, not here — see the "Booking check"
-      // note in this file's header. `VeldCarryRepository.hunterHasBookingForFarm`
-      // gates every hunter read when a hunterUid is supplied and fails closed.
-      // A rule cannot read the `bookings` collection.
+      // Phase 7D — allow-list variant, NOT enabled yet (see below):
+      //   allow read: if isVeldOwner(outfitterUid)
+      //     || (isSignedIn()
+      //         && resource.data.visibility == 'hunter_visible'
+      //         && resource.data.keys().hasAny(['allowedHunterUids'])
+      //         && request.auth.uid in resource.data.allowedHunterUids);
+      // Permits are FARM-level (not camp-level) and the camp sync does not
+      // write onto them, so enabling this clause today would deny every hunter
+      // permit read. Enable it only once the permit write stamps the farm's
+      // allow-list (a Phase 8 item). Until then this block keeps the Phase 6
+      // visibility gate, with the code-side booking check as the real gate.
       //
       // FIXED in Phase 6 (code, not rules): a `resource.data` condition can
       // only be honoured for a QUERY that constrains the same field, and

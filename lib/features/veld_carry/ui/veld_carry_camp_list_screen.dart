@@ -16,6 +16,7 @@ import 'package:jagspoor/features/veld_carry/ui/veld_carry_camp_map_screen.dart'
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_gate.dart';
 import 'package:jagspoor/features/veld_carry/ui/veld_carry_ui_common.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_alerts.dart';
+import 'package:jagspoor/features/veld_carry/veld_carry_feature_flag.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_calculator.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_report.dart';
 import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
@@ -32,12 +33,19 @@ class VeldCarryCampListScreen extends StatefulWidget {
     this.farmName,
     this.theme,
     this.repository,
+    this.flag,
   });
 
   final String farmId;
   final String? farmName;
   final ThemeController? theme;
   final VeldCarryRepository? repository;
+
+  /// Test seam: inject an enabled flag so the flag-gated AppBar actions (camp
+  /// map / alerts / report / hunter-access sync) can be exercised in a widget
+  /// test. Defaults to the process-wide flag, which is OFF for a normal build.
+  @visibleForTesting
+  final VeldCarryFeatureFlag? flag;
 
   @override
   State<VeldCarryCampListScreen> createState() =>
@@ -81,6 +89,9 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
   /// never stored.
   int _alertCount = 0;
   bool _exporting = false;
+
+  /// True while the manual `allowedHunterUids` sync is running.
+  bool _syncingAccess = false;
 
   @override
   void initState() {
@@ -327,6 +338,53 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
     }
   }
 
+  /// Mirrors the farm's confirmed/completed bookings onto every camp as
+  /// `allowedHunterUids`, so the go-live Firestore rule can gate a hunter read.
+  ///
+  /// MANUAL ONLY (Phase 7D): the shared booking-confirmation path
+  /// (`PackageBookingManager.confirmPaymentReceived`) is deliberately NOT
+  /// hooked — that file is read-only for this work, and a veld write from the
+  /// booking path would run this feature's I/O from code that must stay dark
+  /// while the flag is OFF. The outfitter runs the sync here instead (and can
+  /// re-run it whenever a booking is confirmed).
+  Future<void> _syncHunterAccess() async {
+    if (_syncingAccess) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final uid = _currentUid();
+    if (uid == null || uid.isEmpty) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('You must be signed in to sync hunter access.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _syncingAccess = true);
+    try {
+      final result = await _repository.syncAllowedHuntersForFarm(
+        widget.farmId,
+        outfitterUid: uid,
+      );
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Hunter access synced: ${result.summary}.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      debugPrint('VeldCarryCampListScreen: hunter access sync failed: $e');
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('Could not sync hunter access: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _syncingAccess = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = _theme;
@@ -364,6 +422,7 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
           // Camp map — outfitter-only. Flag-gated like every other entry, so
           // with the feature flag off there is no icon and no Firestore read.
           VeldCarryGate(
+            flag: widget.flag,
             builder: (context) => OutfitterActionChip(
               key: const ValueKey('veldFarmMapButton'),
               icon: Icons.map_outlined,
@@ -375,6 +434,7 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
           // Alerts entry + live critical/warning badge — flag-gated: renders
           // nothing (no icon, no space) while the feature flag is off.
           VeldCarryGate(
+            flag: widget.flag,
             builder: (context) => VeldAlertCountBadge(
               count: _alertCount,
               child: OutfitterActionChip(
@@ -390,6 +450,7 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
           ),
           // Whole-farm veld report — flag-gated.
           VeldCarryGate(
+            flag: widget.flag,
             builder: (context) => OutfitterActionChip(
               key: const ValueKey('veldFarmReportButton'),
               icon: _exporting
@@ -398,6 +459,21 @@ class _VeldCarryCampListScreenState extends State<VeldCarryCampListScreen> {
               tooltip: 'Export veld report (PDF)',
               iconColor: theme.accentColor,
               onPressed: _exporting ? null : _exportFarmReport,
+            ),
+          ),
+          // Manual `allowedHunterUids` sync — outfitter-only, flag-gated. The
+          // booking path is NOT hooked (see `_syncHunterAccess`), so this is the
+          // one place the go-live rule's allow-list gets refreshed.
+          VeldCarryGate(
+            flag: widget.flag,
+            builder: (context) => OutfitterActionChip(
+              key: const ValueKey('veldSyncHunterAccessButton'),
+              icon: _syncingAccess
+                  ? Icons.hourglass_top_rounded
+                  : Icons.group_add_outlined,
+              tooltip: 'Sync hunter access (confirmed bookings)',
+              iconColor: theme.accentColor,
+              onPressed: _syncingAccess ? null : _syncHunterAccess,
             ),
           ),
           OutfitterActionChip(

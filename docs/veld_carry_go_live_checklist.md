@@ -473,7 +473,7 @@ of defence** — the query is never trusted on its own.
   go-live rules have no per-document condition, so an unconstrained read is
   valid for them. Only permits are `resource.data`-guarded.
 
-### 7.3 — Booking check (CODE gate implemented in Phase 6; rules-level gate still a limitation)
+### 7.3 — Booking check (FIXED VIA `allowedHunterUids` in Phase 7D; rules can now enforce it)
 `VeldCarryRepository.hunterHasBookingForFarm(hunterUid, farmId)` is now
 implemented against the app's **real** booking store:
 
@@ -494,17 +494,77 @@ an optional `hunterUid`; when it is supplied and the booking check is false
 the read returns an **empty list / null** (fail closed). `VeldCarryHunterViewScreen`
 and `VeldCarryHunterEntryTile` pass the signed-in uid.
 
-**Rules-level gate is NOT implemented** — a Firestore rule cannot read the
-`bookings` collection. The future shape (a denormalised `allowedHunterUids`
-array written by a booking-confirmation trigger) is described as a comment
-block in `firestore.rules.veld_carry.GO_LIVE_READY`. Until that data change
-happens, the residual exposure is: **hunter-visible veld data is readable by
-any signed-in hunter who knows the `outfitterUid` + `farmId`** (camp names,
-species counts, hectares, hunter-visible permit type/expiry/status only — no
-GPS, no weights, no predators, no private permits, no permit files). Accepted
-limitation for a soft launch.
+**Rules-level gate — FIXED (prepared) in Phase 7D.** A rule still cannot read
+`bookings`, so the relationship is now **denormalised**: every camp document
+carries `allowedHunterUids` (List<String>), written by
 
-### 7.4 — Species weight/feeding table needs verification against official SA tables
+```dart
+VeldCarryRepository.syncAllowedHuntersForFarm(farmId)
+```
+
+which collects the hunters holding a **Confirmed / Completed** booking on that
+farm (Pending / Awaiting Payment / Declined / Cancelled never grant access) and
+merges them onto **every camp** of the farm with `FieldValue.arrayUnion`
+(union semantics — never a duplicate; an existing entry is never dropped).
+
+`firestore.rules.veld_carry.GO_LIVE_READY` now gates the hunter reads on
+
+```
+allow read: if isVeldOwner(outfitterUid)
+  || (isSignedIn()
+      && resource.data.keys().hasAny(['allowedHunterUids'])
+      && resource.data.allowedHunterUids is list
+      && request.auth.uid in resource.data.allowedHunterUids);
+```
+
+for **camps**, and via the `isAllowedCamper(...)` parent-`get()` helper for
+**stock** and **plantedAreas**. The old `allow read: if isSignedIn();` line is
+kept **commented** in each block as the fallback. **The rules are NOT applied**
+— the fragment is prepared, and `firestore.rules` itself is untouched.
+
+**Apply-time prerequisite (same trap as §7.2).** Firestore rules are not
+filters: a rule that inspects `resource.data.allowedHunterUids` can only serve a
+query that constrains the same field. Before this ruleset is applied,
+`VeldCarryRepository.getCampsForHunter` must add
+
+```dart
+.where('allowedHunterUids', arrayContains: hunterUid)
+```
+
+Stock / plantedAreas need no change — their rule resolves the field through a
+`get()` on the fully-specified parent camp path, which is constant across the
+query. The constraint is deliberately **not** added in Phase 7D: the rules are
+not applied, and constraining now would deny hunters on farms whose allow-list
+has not been synced yet.
+
+Three properties to know before enabling it:
+
+* **The sync must run first.** A camp that has never been synced has no
+  `allowedHunterUids`, so every non-owner read of it is denied (fail closed —
+  `request.auth.uid in <missing field>` errors).
+* **There is NO automatic hook.** `PackageBookingManager.confirmPaymentReceived`
+  is unchanged: the booking flow was read-only for this work, so the sync is a
+  **manual** action — the outfitter taps **Sync hunter access** on the Veld camp
+  list (outfitter-only, flag-gated, `ValueKey('veldSyncHunterAccessButton')`).
+  Re-run it after confirming a booking. A booking-confirmation Cloud Function /
+  trigger is the natural Phase 8 follow-up.
+* **Removal is deliberately NOT automatic.** Cancelling or refunding a booking
+  does not revoke access. Keeping access is the safer failure mode (a hunter
+  losing camp data mid-trip is worse than stale access) and cancellations are
+  often followed by a rebooking. Revoking is an explicit operator action.
+
+**Permits** keep the Phase 6 `visibility == 'hunter_visible'` gate: permits are
+farm-level (not camp-level) and the camp sync does not write onto them, so the
+allow-list clause for permits is present but **commented** — enabling it today
+would deny every hunter permit read. It becomes available once the permit write
+stamps the farm's allow-list (a Phase 8 item).
+
+The code-side `hunterHasBookingForFarm` gate **stays in place** as defence in
+depth: every `...ForHunter` read still fails closed when a `hunterUid` is
+supplied. So even without the rules deploy, the app never serves veld data to a
+hunter without a confirmed/completed booking.
+
+### 7.4 — Species weight/feeding table (VERIFIED in Phase 7D — 48 of 49; 1 UNVERIFIED)
 `lib/features/veld_carry/species_defaults.dart` is a **fallback** table: the
 app's `animals_seed.csv` carries no weight, feeding-class or grazer/browser
 split columns, so these values are the interim source of truth. They were
@@ -513,11 +573,36 @@ authorised by Llewellyn but must be verified against the official SA tables
 carried as a placeholder (`avgWeightKg: 0`, `feedingClass: unknown`) and
 listed in `missingSpeciesNames`.
 
-Phase 6 added a header note listing the **three most uncertain weights** —
-African Elephant 4500 kg, Giraffe 1100 kg, Hippopotamus 1500 kg — as
-"VERIFY against official SA tables before go-live". These are adult
-averages; mature bulls are heavier, so the current values may understate
-stocking pressure for those three species. **No values were changed.**
+**Phase 7D result — checked every row against a citable published source.**
+Each entry in `species_defaults.dart` now carries `isVerified` +
+`verificationSource` and an inline `// VERIFIED:` / `// UNVERIFIED —` marker.
+
+* **48 of 49 rows VERIFIED.** The fallback weight was within the ±20% tolerance
+  of the source, so the authorised value was **kept**.
+* **1 row CORRECTED:** **Cane Rat 8 kg → 4.5 kg**. The source's typical range is
+  3.2–5.2 kg (males average 4.5 kg); 8 kg matched only the exceptional 7–9 kg
+  upper tail and overstated the row by ~78%.
+* **1 row UNVERIFIED:** **Cape Hare** — Animal Diversity Web gives 4–5 kg for
+  *Lepus capensis*, but regional southern-African accounts give 1.5–3 kg and
+  *L. capensis* is a recognised species complex. The 2 kg fallback is retained
+  rather than replaced with a value that may be wrong for South Africa. Needs an
+  official SA source before it can be marked verified.
+
+The three Phase-6 "most uncertain" species are now resolved (no value changed):
+
+| Species | Table | Source | Verdict |
+| --- | --- | --- | --- |
+| African Elephant | 4500 kg | Wikipedia (en): bulls mean 6.0 t, cows mean 3.0 t | sex-average = 4500 kg — VERIFIED |
+| Giraffe | 1100 kg | Wikipedia (en): male mean 1,192 kg, female 828 kg (≈1010 kg) | +8.9% — VERIFIED |
+| Hippopotamus | 1500 kg | Wikipedia (en): mean 1.48 t bulls, 1.365 t cows (≈1422 kg) | +5.5% — VERIFIED |
+
+Grazer/browser splits were reviewed and **not changed** — every pure grazer is
+≥0.90 graze, every pure browser ≤0.10 graze, and no clearly-wrong split was
+found.
+
+Remaining gap: the `missingSpeciesNames` placeholders (species present in the
+app's seed catalogue but absent from the authorised table) still carry
+`avgWeightKg: 0`. They are **not** part of the 49 and remain unverified.
 
 Impact: a species with `avgWeightKg: 0` contributes 0 LSU, which
 **understates** stocking pressure. Review `missingSpeciesNames` before go-live

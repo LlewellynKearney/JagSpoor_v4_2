@@ -1076,7 +1076,157 @@ class VeldCarryRepository {
     return hunterHasBookingForFarm(hunterUid, farmId);
   }
 
+  // ── Denormalised hunter access (`allowedHunterUids`) ─────────────────────
+  //
+  // The rules cannot read `bookings`, so the booking relationship is mirrored
+  // onto every camp of the farm as an array of hunter uids. The go-live rule
+  // can then gate a hunter read with
+  // `request.auth.uid in resource.data.allowedHunterUids`.
+  //
+  // The client-side gate above stays in place as the primary enforcement: the
+  // array is a denormalisation that must be SYNCED before it can grant access.
+
+  /// The camp document field holding the allow-list.
+  static const String allowedHunterUidsField = Camp.allowedHunterUidsField;
+
+  /// Timestamp field stamped by [syncAllowedHuntersForFarm] so an operator can
+  /// see when the allow-list was last refreshed.
+  static const String allowedHunterUidsSyncedAtField =
+      'allowedHunterUidsSyncedAt';
+
+  /// Union semantics identical to `FieldValue.arrayUnion`: existing entries are
+  /// preserved, duplicates are dropped, order is stable.
+  ///
+  /// Pure so the contract the rule relies on is unit-testable.
+  static List<String> mergeAllowedHunterUids(
+      Object? current, Object? incoming) {
+    final merged = <String>[];
+    for (final uid in Camp.normalizeAllowedHunterUids(current)) {
+      if (!merged.contains(uid)) merged.add(uid);
+    }
+    for (final uid in Camp.normalizeAllowedHunterUids(incoming)) {
+      if (!merged.contains(uid)) merged.add(uid);
+    }
+    return merged;
+  }
+
+  /// Hunters holding a `confirmed` / `completed` booking on [farmId], as
+  /// recorded against the outfitter's own bookings.
+  ///
+  /// The query constrains `outfitterId` only (single-field equality — automatic
+  /// index, and the shape the party-scoped `bookings` rule can serve); `farmId`
+  /// and the status are filtered client-side. Pending / awaiting-payment /
+  /// declined / cancelled bookings never grant access.
+  Future<List<String>> collectAllowedHunterUidsForFarm(
+    String outfitterUid,
+    String farmId,
+  ) async {
+    final owner = _requireOutfitterUid(outfitterUid);
+    final farm = _requireFarmId(farmId);
+    final db = _requireFirestore();
+    final snapshot = await db
+        .collection(bookingsCollection)
+        .where('outfitterId', isEqualTo: owner)
+        .get();
+    final hunterUids = <String>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      if ((data['farmId'] ?? '').toString().trim() != farm) continue;
+      final status = BookingStatus.normalize(data['status'] as String?);
+      if (!veldAccessBookingStatuses.contains(status)) continue;
+      final hunter = (data['hunterId'] ?? '').toString().trim();
+      if (hunter.isEmpty || hunterUids.contains(hunter)) continue;
+      hunterUids.add(hunter);
+    }
+    return List<String>.unmodifiable(hunterUids);
+  }
+
+  /// Writes the farm's confirmed-hunter allow-list onto EVERY camp of [farmId].
+  ///
+  /// [outfitterUid] defaults to the signed-in user; the caller must be the
+  /// farm's outfitter (the veld data lives in their own document).
+  ///
+  /// **Removal policy — deliberately additive.** A hunter is ADDED on a
+  /// confirmed/completed booking and is NEVER auto-removed when a booking is
+  /// cancelled or refunded. Keeping access is the safer failure mode (a hunter
+  /// losing mid-trip access to the camp data would be worse than stale access),
+  /// and a cancellation is often followed by a rebooking. Removing access is an
+  /// explicit operator action, not an automatic side effect.
+  ///
+  /// Writes are additive too: `allowedHunterUids` is merged with
+  /// `FieldValue.arrayUnion`, so a hunter already on the list stays there and
+  /// no duplicate can appear. When the farm has no confirmed hunter, the field
+  /// is seeded as `[]` (never left absent) so the go-live rule evaluates a list
+  /// instead of a missing field and fails closed cleanly.
+  Future<VeldHunterAccessSyncResult> syncAllowedHuntersForFarm(
+    String farmId, {
+    String? outfitterUid,
+  }) async {
+    final farm = _requireFarmId(farmId);
+    final owner = _requireOutfitterUid(outfitterUid ?? _currentUserId ?? '');
+    requireOwnership(owner);
+
+    final db = _requireFirestore();
+    final hunterUids = await collectAllowedHunterUidsForFarm(owner, farm);
+    final campsRef = db
+        .collection(usersCollection)
+        .doc(owner)
+        .collection(farmsCollection)
+        .doc(farm)
+        .collection(campsCollection);
+    final camps = await campsRef.get();
+
+    var campsTouched = 0;
+    for (final doc in camps.docs) {
+      final data = doc.data();
+      final hasField = data.containsKey(allowedHunterUidsField);
+      final current = Camp.normalizeAllowedHunterUids(
+        data[allowedHunterUidsField],
+      );
+      final needsWrite = hunterUids.isEmpty
+          ? !hasField
+          : hunterUids.any((uid) => !current.contains(uid));
+      if (!needsWrite) continue;
+
+      if (hunterUids.isEmpty) {
+        // Seed the list so the rule never evaluates a missing field.
+        await doc.reference.set(
+          {
+            allowedHunterUidsField: <String>[],
+            allowedHunterUidsSyncedAtField: FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } else {
+        // arrayUnion is atomic and duplicate-free (union semantics).
+        await doc.reference.set(
+          {
+            allowedHunterUidsField: FieldValue.arrayUnion(hunterUids),
+            allowedHunterUidsSyncedAtField: FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+      campsTouched++;
+    }
+
+    return VeldHunterAccessSyncResult(
+      farmId: farm,
+      hunterUids: hunterUids,
+      campCount: camps.docs.length,
+      campsTouched: campsTouched,
+    );
+  }
+
   /// Camps of [farmId], read for a hunter (no ownership check).
+  ///
+  /// ⚠️ IF the Phase 7D go-live rules are ever applied, this read must add
+  /// `.where('allowedHunterUids', arrayContains: hunterUid)`: the rule inspects
+  /// `resource.data.allowedHunterUids`, and Firestore can only serve a query
+  /// that constrains the same field (rules are not filters). The constraint is
+  /// deliberately NOT added yet — the rules are not applied, and constraining
+  /// now would deny hunters on farms whose allow-list has not been synced.
+  /// See `firestore.rules.veld_carry.GO_LIVE_READY`.
   Future<List<Camp>> getCampsForHunter(
     String farmId, {
     required String outfitterUid,
@@ -1598,4 +1748,45 @@ class VeldCarryRepositoryException implements Exception {
 
   @override
   String toString() => 'VeldCarryRepositoryException: $message';
+}
+
+/// Outcome of [VeldCarryRepository.syncAllowedHuntersForFarm].
+///
+/// Reported to the outfitter so a manual sync is never a silent no-op: they see
+/// how many hunters are on the list, how many camps exist and how many camps
+/// were actually rewritten.
+class VeldHunterAccessSyncResult {
+  const VeldHunterAccessSyncResult({
+    required this.farmId,
+    required this.hunterUids,
+    required this.campCount,
+    required this.campsTouched,
+  });
+
+  final String farmId;
+
+  /// Hunters granted access by the sync (confirmed / completed bookings).
+  final List<String> hunterUids;
+
+  /// Camps on the farm.
+  final int campCount;
+
+  /// Camps whose allow-list was written by this run (0 = already in sync).
+  final int campsTouched;
+
+  bool get hasHunters => hunterUids.isNotEmpty;
+
+  /// `3 hunters · 4 camps (2 updated)`.
+  String get summary {
+    final hunters = hunterUids.isEmpty
+        ? 'no confirmed hunters'
+        : '${hunterUids.length} hunter${hunterUids.length == 1 ? '' : 's'}';
+    return '$hunters · $campCount camp${campCount == 1 ? '' : 's'} '
+        '($campsTouched updated)';
+  }
+
+  @override
+  String toString() =>
+      'VeldHunterAccessSyncResult($farmId, ${hunterUids.length} hunters, '
+      '$campsTouched/$campCount camps)';
 }

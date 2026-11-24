@@ -1,29 +1,43 @@
-// FALLBACK — verify — weights/splits authorised by Llewellyn, to be verified
-// against official SA tables in Phase 3.
+// FALLBACK TABLE — VERIFIED in Phase 7D against citable published sources.
 //
-// `assets/data/animals_seed.csv` carries no weight, feeding-class or
-// grazer/browser split columns, so the table below is the interim source of
-// truth for the Veld & Carrying Capacity feature. Values are NOT invented:
-// every counted species comes from the table Llewellyn authorised, and every
-// species that is absent from that table is carried as a placeholder
+// `assets/data/animals_seed.csv` still carries no weight, feeding-class or
+// grazer/browser split columns, so the table below remains the source of truth
+// for the Veld & Carrying Capacity feature. Values are NOT invented: every
+// counted species comes from the table Llewellyn authorised (Phase 1), and
+// every species that is absent from that table is carried as a placeholder
 // (`avgWeightKg: 0`, `feedingClass: unknown`) and listed in
-// [missingSpeciesNames] so it can be filled in during Phase 3.
+// [missingSpeciesNames].
 //
 // ══════════════════════════════════════════════════════════════════════════
-// VERIFY against official SA tables before go-live
+// PHASE 7D — verification result (49 species)
 // ══════════════════════════════════════════════════════════════════════════
-// The three MOST UNCERTAIN weights in this table are the large-bodied species,
-// where a single "average" hides a very wide bull/cow range:
+// Every row now carries `isVerified` + `verificationSource` and an inline
+// `// VERIFIED:` / `// UNVERIFIED —` marker, so a row can never sit in the
+// table with an unstated provenance.
 //
-//   • African Elephant   — 4500 kg
-//   • Giraffe            — 1100 kg
-//   • Hippopotamus       — 1500 kg
+//   48 of 49 rows VERIFIED  — the fallback weight was within ±20% of the cited
+//                             source, so the authorised value was KEPT.
+//    1 of 49 row  CORRECTED — Cane Rat 8 kg -> 4.5 kg (see its own comment).
+//    1 of 49 row  UNVERIFIED — Cape Hare: sources conflict (see its comment);
+//                             the 2 kg fallback is retained deliberately.
 //
-// These are ADULT AVERAGES; mature bulls are materially heavier (an elephant
-// bull can exceed 6000 kg, a hippo bull 2000 kg). Because LSU is linear in
-// weight, an under-stated average under-states stocking pressure for these
-// species. Verify all three against the official SA tables before go-live.
-// NO VALUES WERE CHANGED in Phase 6 — this is a verification note only.
+// The three large-bodied species flagged in Phase 6 are now resolved:
+//
+//   • African Elephant 4500 kg — VERIFIED. Wikipedia gives bulls a 6.0 t mean
+//     and cows a 3.0 t mean, so 4500 kg is exactly the sex-average. No change.
+//   • Giraffe 1100 kg — VERIFIED. Male mean 1,192 kg, female 828 kg (≈1010 kg
+//     average) — 1100 kg is +8.9%, inside tolerance. No change.
+//   • Hippopotamus 1500 kg — VERIFIED. Mean 1.48 t bulls, 1.365 t cows
+//     (≈1422 kg average) — 1500 kg is +5.5%, inside tolerance. No change.
+//
+// Sources used (priority order per the Phase 7D brief): published species
+// literature (Wikipedia species pages, which cite Skinner & Chimimba / Bothma
+// and the primary literature) and Animal Diversity Web where a Wikipedia page
+// carried no mass figure. No value was taken from an unsourced recollection.
+//
+// Grazer/browser splits were reviewed and NOT changed: every pure grazer is
+// ≥0.90 graze and every pure browser ≤0.10 graze; no obviously-wrong split was
+// found.
 
 /// Feeding-class labels used by [SpeciesDefault.feedingClass].
 class FeedingClass {
@@ -54,6 +68,8 @@ class SpeciesDefault {
     required this.browserPct,
     this.isCounted = true,
     this.isOmnivore = false,
+    this.isVerified = false,
+    this.verificationSource = '',
   });
 
   /// Canonical species name, as written in the authorised table.
@@ -79,6 +95,19 @@ class SpeciesDefault {
 
   /// Whether this species also takes animal matter.
   final bool isOmnivore;
+
+  /// True when [avgWeightKg] was checked against a citable published source in
+  /// Phase 7D and is within the ±20% acceptance tolerance (or was corrected to
+  /// the source value).
+  ///
+  /// False marks a row that is still a fallback: either unverified, or verified
+  /// as CONFLICTING (see [verificationSource]). Never invent a value for an
+  /// unverified row.
+  final bool isVerified;
+
+  /// The source the weight was checked against, or the reason it could not be
+  /// verified. Empty only for rows that predate Phase 7D.
+  final String verificationSource;
 
   /// Short label for the UI: `Chacma Baboon` -> `Baboon`, `Cape Porcupine`
   /// -> `Porcupine`, `Vervet Monkey` -> `Vervet`; otherwise [speciesName].
@@ -136,6 +165,7 @@ String speciesDisplayName(String? speciesName) {
 
 /// Authorised fallback defaults for every species in the Phase 1 table.
 const List<SpeciesDefault> speciesDefaults = [
+  // VERIFIED: Wikipedia (en) — Impala: 40–65 kg; males 53–76 kg, females 40–53 kg
   SpeciesDefault(
     speciesName: "Impala",
     scientificName: "Aepyceros melampus",
@@ -145,7 +175,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.40,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Impala: 40–65 kg; males 53–76 kg, females 40–53 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Greater kudu: bulls 190–270 kg, cows 120–210 kg
   SpeciesDefault(
     speciesName: "Greater Kudu",
     scientificName: "Tragelaphus strepsiceros",
@@ -155,7 +189,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Greater kudu: bulls 190–270 kg, cows 120–210 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Lesser kudu: males 92–108 kg, females 56–70 kg
   SpeciesDefault(
     speciesName: "Lesser Kudu",
     scientificName: "Tragelaphus imberbis",
@@ -165,7 +203,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Lesser kudu: males 92–108 kg, females 56–70 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Nyala: males 98–125 kg, females 55–68 kg
   SpeciesDefault(
     speciesName: "Nyala",
     scientificName: "Tragelaphus angasii",
@@ -175,7 +217,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.70,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Nyala: males 98–125 kg, females 55–68 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Cape bushbuck: 45–80 kg (males 60–80, females 25–60)
   SpeciesDefault(
     speciesName: "Bushbuck",
     scientificName: "Tragelaphus scriptus",
@@ -185,7 +231,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Cape bushbuck: 45–80 kg (males 60–80, females 25–60)',
   ),
+  // VERIFIED: Wikipedia (en) — Common eland: males 500–600 kg typical, females 340–445 kg
   SpeciesDefault(
     speciesName: "Eland",
     scientificName: "Taurotragus oryx",
@@ -195,7 +245,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.60,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Common eland: males 500–600 kg typical, females 340–445 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Sable antelope: males ~235 kg, females ~220 kg
   SpeciesDefault(
     speciesName: "Sable Antelope",
     scientificName: "Hippotragus niger",
@@ -205,7 +259,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Sable antelope: males ~235 kg, females ~220 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Roan antelope: males 242–300 kg, females 223–280 kg
   SpeciesDefault(
     speciesName: "Roan Antelope",
     scientificName: "Hippotragus equinus",
@@ -215,7 +273,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Roan antelope: males 242–300 kg, females 223–280 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Gemsbok: males 180–240 kg, females 100–210 kg
   SpeciesDefault(
     speciesName: "Gemsbok",
     scientificName: "Oryx gazella",
@@ -225,7 +287,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.15,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Gemsbok: males 180–240 kg, females 100–210 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Blue wildebeest: males 165–290 kg, females 140–260 kg
   SpeciesDefault(
     speciesName: "Blue Wildebeest",
     scientificName: "Connochaetes taurinus",
@@ -235,7 +301,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Blue wildebeest: males 165–290 kg, females 140–260 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Black wildebeest: 110–180 kg (bulls 140–157)
   SpeciesDefault(
     speciesName: "Black Wildebeest",
     scientificName: "Connochaetes gnou",
@@ -245,7 +315,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Black wildebeest: 110–180 kg (bulls 140–157)',
   ),
+  // VERIFIED: Wikipedia (en) — Red hartebeest: male mean 150 kg, female 120 kg
   SpeciesDefault(
     speciesName: "Red Hartebeest",
     scientificName: "Alcelaphus buselaphus",
@@ -255,7 +329,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Red hartebeest: male mean 150 kg, female 120 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Tsessebe: males 137 kg, females 120 kg
   SpeciesDefault(
     speciesName: "Tsessebe",
     scientificName: "Damaliscus lunatus",
@@ -265,7 +343,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Tsessebe: males 137 kg, females 120 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Blesbok: male mean 70 kg, female 61 kg
   SpeciesDefault(
     speciesName: "Blesbok",
     scientificName: "Damaliscus pygargus phillipsi",
@@ -275,7 +357,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Blesbok: male mean 70 kg, female 61 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Bontebok: 50–68 kg
   SpeciesDefault(
     speciesName: "Bontebok",
     scientificName: "Damaliscus pygargus pygargus",
@@ -285,7 +371,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Bontebok: 50–68 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Springbok: 27–42 kg
   SpeciesDefault(
     speciesName: "Springbok",
     scientificName: "Antidorcas marsupialis",
@@ -295,7 +384,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.30,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Springbok: 27–42 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Waterbuck: males 198–262 kg, females 161–214 kg
   SpeciesDefault(
     speciesName: "Waterbuck",
     scientificName: "Kobus ellipsiprymnus",
@@ -305,7 +397,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Waterbuck: males 198–262 kg, females 161–214 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Common reedbuck: mean 58 kg (females 48, males 68)
   SpeciesDefault(
     speciesName: "Reedbuck (Common)",
     scientificName: "Redunca arundinum",
@@ -315,7 +411,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Common reedbuck: mean 58 kg (females 48, males 68)',
   ),
+  // VERIFIED: Wikipedia (en) — Mountain reedbuck: ~30 kg
   SpeciesDefault(
     speciesName: "Mountain Reedbuck",
     scientificName: "Redunca fulvorufula",
@@ -325,7 +425,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Mountain reedbuck: ~30 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Grey rhebok: 19–30 kg
   SpeciesDefault(
     speciesName: "Grey Rhebok",
     scientificName: "Pelea capreolus",
@@ -335,7 +438,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.40,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Grey rhebok: 19–30 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Steenbok: 7–16 kg
   SpeciesDefault(
     speciesName: "Steenbok",
     scientificName: "Raphicerus campestris",
@@ -345,7 +451,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.70,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Steenbok: 7–16 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Common duiker: 12–25 kg
   SpeciesDefault(
     speciesName: "Common Duiker",
     scientificName: "Sylvicapra grimmia",
@@ -355,7 +464,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Common duiker: 12–25 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Blue duiker: 3.5–9 kg
   SpeciesDefault(
     speciesName: "Blue Duiker",
     scientificName: "Philantomba monticola",
@@ -365,7 +477,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.95,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Blue duiker: 3.5–9 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Natal duiker: mean 14 kg
   SpeciesDefault(
     speciesName: "Red Duiker",
     scientificName: "Cephalophus natalensis",
@@ -375,7 +490,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.95,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Natal duiker: mean 14 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Klipspringer: 8–18 kg
   SpeciesDefault(
     speciesName: "Klipspringer",
     scientificName: "Oreotragus oreotragus",
@@ -385,7 +503,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Klipspringer: 8–18 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Cape grysbok: 8–12 kg
   SpeciesDefault(
     speciesName: "Cape Grysbok",
     scientificName: "Raphicerus melanotis",
@@ -395,7 +516,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.70,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Cape grysbok: 8–12 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Sharpe's grysbok: 7–11.5 kg
   SpeciesDefault(
     speciesName: "Sharpe's Grysbok",
     scientificName: "Raphicerus sharpei",
@@ -405,7 +529,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.70,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Sharpe\'s grysbok: 7–11.5 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Oribi: 12–22 kg
   SpeciesDefault(
     speciesName: "Oribi",
     scientificName: "Ourebia ourebi",
@@ -415,7 +542,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Oribi: 12–22 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Suni: 4.5–5.4 kg
   SpeciesDefault(
     speciesName: "Suni",
     scientificName: "Neotragus moschatus",
@@ -425,7 +555,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.90,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Suni: 4.5–5.4 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Giraffe: male mean 1,192 kg, female mean 828 kg
   SpeciesDefault(
     speciesName: "Giraffe",
     scientificName: "Giraffa camelopardalis",
@@ -435,7 +568,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.95,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Giraffe: male mean 1,192 kg, female mean 828 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Plains zebra: males 220–322 kg, females 175–250 kg
   SpeciesDefault(
     speciesName: "Plains Zebra",
     scientificName: "Equus quagga",
@@ -445,7 +582,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.00,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Plains zebra: males 220–322 kg, females 175–250 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Mountain zebra: 204–372 kg
   SpeciesDefault(
     speciesName: "Mountain Zebra",
     scientificName: "Equus zebra",
@@ -455,7 +596,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.00,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Mountain zebra: 204–372 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Grevy's zebra: 350–450 kg
   SpeciesDefault(
     speciesName: "Grevy's Zebra",
     scientificName: "Equus grevyi",
@@ -465,7 +609,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.00,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Grevy\'s zebra: 350–450 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Common warthog: males 60–150 kg, females 45–75 kg
   SpeciesDefault(
     speciesName: "Warthog",
     scientificName: "Phacochoerus africanus",
@@ -475,7 +622,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.30,
     isCounted: true,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Common warthog: males 60–150 kg, females 45–75 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Bushpig: 60–80 kg common, boars to 150 kg
   SpeciesDefault(
     speciesName: "Bushpig",
     scientificName: "Potamochoerus larvatus",
@@ -485,7 +636,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.50,
     isCounted: true,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Bushpig: 60–80 kg common, boars to 150 kg',
   ),
+  // VERIFIED: Wikipedia (en) — African buffalo: males 650–900 kg, females to 500 kg
   SpeciesDefault(
     speciesName: "Cape Buffalo",
     scientificName: "Syncerus caffer",
@@ -495,7 +650,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — African buffalo: males 650–900 kg, females to 500 kg',
   ),
+  // VERIFIED: Wikipedia (en) — African bush elephant: bulls mean 6.0 t, cows mean 3.0 t; 4500 kg is the sex-average
   SpeciesDefault(
     speciesName: "African Elephant",
     scientificName: "Loxodonta africana",
@@ -505,7 +664,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.60,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — African bush elephant: bulls mean 6.0 t, cows mean 3.0 t; 4500 kg is the sex-average',
   ),
+  // VERIFIED: Wikipedia (en) — White rhinoceros: bulls 2,000–2,300 kg, cows 1,600–1,700 kg
   SpeciesDefault(
     speciesName: "White Rhino",
     scientificName: "Ceratotherium simum",
@@ -515,7 +678,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.00,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — White rhinoceros: bulls 2,000–2,300 kg, cows 1,600–1,700 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Black rhinoceros: 800–1,400 kg
   SpeciesDefault(
     speciesName: "Black Rhino",
     scientificName: "Diceros bicornis",
@@ -525,7 +692,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.95,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Black rhinoceros: 800–1,400 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Hippopotamus: mean 1.48 t bulls, 1.365 t cows
   SpeciesDefault(
     speciesName: "Hippopotamus",
     scientificName: "Hippopotamus amphibius",
@@ -535,7 +705,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.05,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Hippopotamus: mean 1.48 t bulls, 1.365 t cows',
   ),
+  // VERIFIED: Wikipedia (en) — Chacma baboon: male mean 31.8 kg, female mean 15.4 kg
   SpeciesDefault(
     speciesName: "Chacma Baboon",
     scientificName: "Papio ursinus",
@@ -545,7 +719,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.50,
     isCounted: false,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Chacma baboon: male mean 31.8 kg, female mean 15.4 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Vervet monkey: adult males mean 5.5 kg
   SpeciesDefault(
     speciesName: "Vervet Monkey",
     scientificName: "Chlorocebus pygerythrus",
@@ -555,7 +733,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.60,
     isCounted: false,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource:
+        'Wikipedia (en) — Vervet monkey: adult males mean 5.5 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Cape porcupine: 10–24 kg
   SpeciesDefault(
     speciesName: "Cape Porcupine",
     scientificName: "Hystrix africaeaustralis",
@@ -565,7 +747,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.40,
     isCounted: false,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Cape porcupine: 10–24 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Aardvark: 60–80 kg
   SpeciesDefault(
     speciesName: "Aardvark",
     scientificName: "Orycteropus afer",
@@ -575,7 +760,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.00,
     isCounted: false,
     isOmnivore: true,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Aardvark: 60–80 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Scrub hare: 3.2–4 kg
   SpeciesDefault(
     speciesName: "Scrub Hare",
     scientificName: "Lepus saxatilis",
@@ -585,7 +773,10 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Scrub hare: 3.2–4 kg',
   ),
+  // UNVERIFIED — UNVERIFIED — ADW gives 4–5 kg for Lepus capensis, but regional southern-African accounts give 1.5–3 kg and L. capensis is a recognised species complex; conflicting, so the 2 kg fallback is retained pending an official SA source
   SpeciesDefault(
     speciesName: "Cape Hare",
     scientificName: "Lepus capensis",
@@ -595,7 +786,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: false,
+    verificationSource:
+        'UNVERIFIED — ADW gives 4–5 kg for Lepus capensis, but regional southern-African accounts give 1.5–3 kg and L. capensis is a recognised species complex; conflicting, so the 2 kg fallback is retained pending an official SA source',
   ),
+  // VERIFIED: Animal Diversity Web (Pedetes capensis) — range mass 3–4 kg
   SpeciesDefault(
     speciesName: "Springhare",
     scientificName: "Pedetes capensis",
@@ -605,7 +800,11 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        'Animal Diversity Web (Pedetes capensis) — range mass 3–4 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Rock hyrax: 4–5 kg
   SpeciesDefault(
     speciesName: "Dassie / Rock Hyrax",
     scientificName: "Procavia capensis",
@@ -615,16 +814,24 @@ const List<SpeciesDefault> speciesDefaults = [
     browserPct: 0.50,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource: 'Wikipedia (en) — Rock hyrax: 4–5 kg',
   ),
+  // VERIFIED: Wikipedia (en) — Greater cane rat: typical 3.2–5.2 kg, males
+  // mean 4.5 kg. Phase 7D corrected this row from 8 kg (which matched only the
+  // exceptional 7–9 kg upper tail) to the source-quoted male mean.
   SpeciesDefault(
     speciesName: "Cane Rat",
     scientificName: "Thryonomys swinderianus",
-    avgWeightKg: 8,
+    avgWeightKg: 4.5,
     feedingClass: FeedingClass.grazer,
     grazerPct: 0.90,
     browserPct: 0.10,
     isCounted: true,
     isOmnivore: false,
+    isVerified: true,
+    verificationSource:
+        "Wikipedia (en) — Greater cane rat: typical 3.2–5.2 kg, males mean 4.5 kg (was 8 kg)",
   ),
 ];
 

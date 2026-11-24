@@ -218,12 +218,12 @@ void main() {
       expect(VeldCarryRepository.hunterVisiblePermits(const []), isEmpty);
     });
 
-    test('the repository source issues the visibility where() AND the '
+    test(
+        'the repository source issues the visibility where() AND the '
         'client-side filter', () {
-      final source =
-          File('lib/features/veld_carry/veld_carry_repository.dart')
-              .readAsStringSync()
-              .replaceAll('\r\n', '\n');
+      final source = File('lib/features/veld_carry/veld_carry_repository.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
 
       // The Firestore query constraint — without it a non-owner read is
       // rejected with permission-denied under the go-live rule.
@@ -248,7 +248,9 @@ void main() {
       expect(getAt, greaterThan(whereAt));
     });
 
-    test('camps / stock / plantedAreas rules carry NO per-document condition',
+    test(
+        'Phase 7D: camps / stock / plantedAreas reads gate on the '
+        'allowedHunterUids allow-list (plain signed-in read kept commented)',
         () {
       final rules =
           File('firestore.rules.veld_carry.GO_LIVE_READY').readAsStringSync();
@@ -260,19 +262,34 @@ void main() {
       ]) {
         final start = rules.indexOf(path);
         expect(start, greaterThan(0), reason: 'missing block: $path');
-        final block = rules.substring(start, start + 900);
-        // Their read grant is the plain signed-in check — no `resource.data`
-        // inspection — so an unconstrained query is valid for them. (A
-        // negative lookbehind keeps `request.resource.data` — the payload
-        // guard on create/update — from counting as a READ condition.)
-        expect(block.contains('allow read: if isSignedIn();'), isTrue,
-            reason: '$path should keep the plain signed-in read');
+        final block = rules.substring(start, start + 1200);
+
+        // Phase 7D replaced the interim read with the denormalised allow-list.
+        // The Phase 5 plain signed-in grant survives as the documented
+        // fallback, never as an active grant.
+        expect(block.contains('// allow read: if isSignedIn();'), isTrue,
+            reason: '$path should keep the Phase 5 read as a fallback comment');
         expect(
-          RegExp(r'(?<!request\.)resource\.data').hasMatch(block),
+          RegExp(r'^\s*allow read: if isSignedIn\(\);', multiLine: true)
+              .hasMatch(block),
           isFalse,
-          reason: '$path must not have a per-document read condition',
+          reason: '$path must not grant a bare signed-in read',
+        );
+
+        // The gate is either the document's own allow-list (camps) or the
+        // parent-camp helper (stock / plantedAreas).
+        expect(
+          block.contains('allowedHunterUids') ||
+              block.contains('isAllowedCamper('),
+          isTrue,
+          reason: '$path must gate on the allow-list',
         );
       }
+
+      // Firestore rules are not filters: a `resource.data` condition needs a
+      // query that constrains the same field, so the apply-time prerequisite is
+      // recorded next to the rules that create it.
+      expect(rules, contains(".where('allowedHunterUids', arrayContains:"));
     });
   });
 
@@ -285,8 +302,7 @@ void main() {
       await seedBooking(firestore);
 
       expect(
-        await hunterRepo(firestore)
-            .hunterHasBookingForFarm(hunterUid, farmId),
+        await hunterRepo(firestore).hunterHasBookingForFarm(hunterUid, farmId),
         isTrue,
       );
     });
@@ -296,8 +312,7 @@ void main() {
       await seedBooking(firestore, status: BookingStatus.completed);
 
       expect(
-        await hunterRepo(firestore)
-            .hunterHasBookingForFarm(hunterUid, farmId),
+        await hunterRepo(firestore).hunterHasBookingForFarm(hunterUid, farmId),
         isTrue,
       );
     });
@@ -307,8 +322,7 @@ void main() {
       await seedBooking(firestore, status: 'Paid');
 
       expect(
-        await hunterRepo(firestore)
-            .hunterHasBookingForFarm(hunterUid, farmId),
+        await hunterRepo(firestore).hunterHasBookingForFarm(hunterUid, farmId),
         isTrue,
       );
     });
@@ -338,8 +352,7 @@ void main() {
       await seedBooking(firestore, bookingFarm: 'another-farm');
 
       expect(
-        await hunterRepo(firestore)
-            .hunterHasBookingForFarm(hunterUid, farmId),
+        await hunterRepo(firestore).hunterHasBookingForFarm(hunterUid, farmId),
         isFalse,
       );
     });
@@ -349,8 +362,7 @@ void main() {
       await seedBooking(firestore, bookingHunter: 'someone-else');
 
       expect(
-        await hunterRepo(firestore)
-            .hunterHasBookingForFarm(hunterUid, farmId),
+        await hunterRepo(firestore).hunterHasBookingForFarm(hunterUid, farmId),
         isFalse,
       );
     });
@@ -653,7 +665,8 @@ void main() {
       expect(capturedType, 'application/pdf');
     });
 
-    testWidgets('a failed upload aborts the save with an error', (tester) async {
+    testWidgets('a failed upload aborts the save with an error',
+        (tester) async {
       final firestore = FakeFirebaseFirestore();
       final repo = ownerRepo(firestore);
 
