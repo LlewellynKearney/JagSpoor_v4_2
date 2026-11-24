@@ -27,8 +27,9 @@
 //     and cows a 3.0 t mean, so 4500 kg is exactly the sex-average. No change.
 //   • Giraffe 1100 kg — VERIFIED. Male mean 1,192 kg, female 828 kg (≈1010 kg
 //     average) — 1100 kg is +8.9%, inside tolerance. No change.
-//   • Hippopotamus 1500 kg — VERIFIED. Mean 1.48 t bulls, 1.365 t cows
-//     (≈1422 kg average) — 1500 kg is +5.5%, inside tolerance. No change.
+//   • Hippopotamus 1500 kg — VERIFIED. Adults average 1.5 t (bulls) and 1.3 t
+//     (cows) — ≈1400 kg sex-average, so 1500 kg is +7.1%, inside tolerance.
+//     No change.
 //
 // Sources used (priority order per the Phase 7D brief): published species
 // literature (Wikipedia species pages, which cite Skinner & Chimimba / Bothma
@@ -695,7 +696,8 @@ const List<SpeciesDefault> speciesDefaults = [
     isVerified: true,
     verificationSource: 'Wikipedia (en) — Black rhinoceros: 800–1,400 kg',
   ),
-  // VERIFIED: Wikipedia (en) — Hippopotamus: mean 1.48 t bulls, 1.365 t cows
+  // VERIFIED: Wikipedia (en) — Hippopotamus: adults average 1.5 t bulls,
+  // 1.3 t cows (≈1400 kg sex-average)
   SpeciesDefault(
     speciesName: "Hippopotamus",
     scientificName: "Hippopotamus amphibius",
@@ -707,7 +709,8 @@ const List<SpeciesDefault> speciesDefaults = [
     isOmnivore: false,
     isVerified: true,
     verificationSource:
-        'Wikipedia (en) — Hippopotamus: mean 1.48 t bulls, 1.365 t cows',
+        'Wikipedia (en) — Hippopotamus: adults average 1.5 t bulls, 1.3 t cows '
+        '(≈1400 kg sex-average)',
   ),
   // VERIFIED: Wikipedia (en) — Chacma baboon: male mean 31.8 kg, female mean 15.4 kg
   SpeciesDefault(

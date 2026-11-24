@@ -594,7 +594,7 @@ The three Phase-6 "most uncertain" species are now resolved (no value changed):
 | --- | --- | --- | --- |
 | African Elephant | 4500 kg | Wikipedia (en): bulls mean 6.0 t, cows mean 3.0 t | sex-average = 4500 kg — VERIFIED |
 | Giraffe | 1100 kg | Wikipedia (en): male mean 1,192 kg, female 828 kg (≈1010 kg) | +8.9% — VERIFIED |
-| Hippopotamus | 1500 kg | Wikipedia (en): mean 1.48 t bulls, 1.365 t cows (≈1422 kg) | +5.5% — VERIFIED |
+| Hippopotamus | 1500 kg | Wikipedia (en): adults average 1.5 t bulls, 1.3 t cows (≈1400 kg) | +7.1% — VERIFIED |
 
 Grazer/browser splits were reviewed and **not changed** — every pure grazer is
 ≥0.90 graze, every pure browser ≤0.10 graze, and no clearly-wrong split was
