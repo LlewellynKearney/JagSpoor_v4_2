@@ -1003,8 +1003,10 @@ class VeldCarryRepository {
   // QUERY that constrains the same field. `getPermitsForHunter` therefore
   // issues a `where('visibility', ...)` query — an unconstrained read would be
   // rejected with `permission-denied` for a non-owner, not silently narrowed.
-  // Camps / stock / plantedAreas carry no per-document condition in the
-  // go-live rules, so an unconstrained read is valid for them.
+  // The camp rule inspects `resource.data.allowedHunterUids`, so
+  // `getCampsForHunter` issues `.where('allowedHunterUids', arrayContains:
+  // hunterUid)`. Stock / plantedAreas need no `where()`: their rule resolves
+  // the allow-list through a `get()` on the fully-specified parent camp path.
 
   // ── Booking gate (hunter reads) ───────────────────────────────────────
   //
@@ -1071,6 +1073,10 @@ class VeldCarryRepository {
   /// A null [hunterUid] means "no booking gate requested" (the outfitter's own
   /// screens and the pre-Phase-6 call sites), so the read proceeds. A non-null
   /// uid is gated on [hunterHasBookingForFarm] and fails closed.
+  ///
+  /// NOTE: [getCampsForHunter] is stricter — it short-circuits to an empty list
+  /// on a null / blank uid BEFORE reaching this gate, because its query must
+  /// carry the `allowedHunterUids` constraint.
   Future<bool> _hunterReadAllowed(String? hunterUid, String farmId) async {
     if (hunterUid == null) return true;
     return hunterHasBookingForFarm(hunterUid, farmId);
@@ -1220,13 +1226,18 @@ class VeldCarryRepository {
 
   /// Camps of [farmId], read for a hunter (no ownership check).
   ///
-  /// ⚠️ IF the Phase 7D go-live rules are ever applied, this read must add
-  /// `.where('allowedHunterUids', arrayContains: hunterUid)`: the rule inspects
-  /// `resource.data.allowedHunterUids`, and Firestore can only serve a query
-  /// that constrains the same field (rules are not filters). The constraint is
-  /// deliberately NOT added yet — the rules are not applied, and constraining
-  /// now would deny hunters on farms whose allow-list has not been synced.
-  /// See `firestore.rules.veld_carry.GO_LIVE_READY`.
+  /// The Phase 7D rule gates a camp on
+  /// `request.auth.uid in resource.data.allowedHunterUids`, and Firestore rules
+  /// are not filters: the QUERY must constrain the same field or the read is
+  /// rejected with `permission-denied`. The read therefore issues
+  /// `.where('allowedHunterUids', arrayContains: hunterUid)`.
+  ///
+  /// Fails CLOSED on a missing uid: a null / blank [hunterUid] returns an empty
+  /// list and never runs an unconstrained query.
+  ///
+  /// The allow-list membership is re-checked client-side before a camp is
+  /// returned. That is a SECOND DEFENCE, not the security boundary — the
+  /// Firestore rule is authoritative.
   Future<List<Camp>> getCampsForHunter(
     String farmId, {
     required String outfitterUid,
@@ -1234,7 +1245,9 @@ class VeldCarryRepository {
   }) async {
     final farm = _requireFarmId(farmId);
     final owner = _requireOutfitterUid(outfitterUid);
-    if (!await _hunterReadAllowed(hunterUid, farm)) return const <Camp>[];
+    final hunter = (hunterUid ?? '').trim();
+    if (hunter.isEmpty) return const <Camp>[];
+    if (!await _hunterReadAllowed(hunter, farm)) return const <Camp>[];
     final db = _requireFirestore();
     final snapshot = await db
         .collection(usersCollection)
@@ -1242,9 +1255,11 @@ class VeldCarryRepository {
         .collection(farmsCollection)
         .doc(farm)
         .collection(campsCollection)
+        .where(allowedHunterUidsField, arrayContains: hunter)
         .get();
     final camps = snapshot.docs
         .map((doc) => Camp.fromMap(doc.data(), id: doc.id))
+        .where((camp) => camp.allowedHunterUids.contains(hunter))
         .toList(growable: false);
     return List<Camp>.of(camps)..sort((a, b) => a.name.compareTo(b.name));
   }

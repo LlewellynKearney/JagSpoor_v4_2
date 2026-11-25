@@ -71,8 +71,13 @@ void main() {
 
   Future<void> seedCamp(
     FakeFirebaseFirestore firestore,
-    Camp value,
-  ) async {
+    Camp value, {
+    List<String>? allowedHunterUids,
+  }) async {
+    final data = Map<String, dynamic>.from(value.toMap());
+    if (allowedHunterUids != null) {
+      data[Camp.allowedHunterUidsField] = allowedHunterUids;
+    }
     await firestore
         .collection('users')
         .doc(outfitterUid)
@@ -80,7 +85,7 @@ void main() {
         .doc(farmId)
         .collection('veldCamps')
         .doc(value.id)
-        .set(value.toMap());
+        .set(data);
   }
 
   Future<void> seedStock(
@@ -318,8 +323,17 @@ void main() {
     test('aggregates the farm stock for a signed-in hunter with a booking',
         () async {
       final firestore = FakeFirebaseFirestore();
-      await seedCamp(firestore, camp(id: 'north', name: 'North Camp'));
-      await seedCamp(firestore, camp(id: 'south', name: 'South Camp'));
+      // Phase 7D: a hunter camp read is allow-list constrained.
+      await seedCamp(
+        firestore,
+        camp(id: 'north', name: 'North Camp'),
+        allowedHunterUids: const [hunterUid],
+      );
+      await seedCamp(
+        firestore,
+        camp(id: 'south', name: 'South Camp'),
+        allowedHunterUids: const [hunterUid],
+      );
       await seedStock(
         firestore,
         'north',
@@ -402,10 +416,14 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('a blank hunter uid keeps the un-gated read working (outfitter '
-        'preview path)', () async {
+    test('a blank hunter uid fails closed (no unconstrained camp query)',
+        () async {
       final firestore = FakeFirebaseFirestore();
-      await seedCamp(firestore, camp(id: 'north', name: 'North Camp'));
+      await seedCamp(
+        firestore,
+        camp(id: 'north', name: 'North Camp'),
+        allowedHunterUids: const [hunterUid],
+      );
       await seedStock(
         firestore,
         'north',
@@ -418,8 +436,10 @@ void main() {
         outfitterUid: outfitterUid,
       );
 
-      expect(result.map((s) => s.speciesName), ['Blesbok']);
-      expect(result.single.totalCount, 3);
+      // Phase 7D: the camp read is allow-list constrained, so a missing uid
+      // can never be served — and must never fall back to an unconstrained
+      // read of the whole farm.
+      expect(result, isEmpty);
     });
   });
 
@@ -437,6 +457,7 @@ void main() {
       await seedCamp(
         firestore,
         camp(id: 'north', name: 'North Camp', lat: -24.123, lng: 28.654),
+        allowedHunterUids: const [hunterUid],
       );
       await seedStock(
         firestore,

@@ -4,6 +4,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jagspoor/core/theme/app_theme.dart';
+import 'package:jagspoor/features/hunter_mode/models/booking_status.dart';
 import 'package:jagspoor/features/veld_carry/models/camp.dart';
 import 'package:jagspoor/features/veld_carry/models/farm_permit.dart';
 import 'package:jagspoor/features/veld_carry/models/planted_area.dart';
@@ -25,6 +26,7 @@ import 'package:jagspoor/features/veld_carry/veld_carry_repository.dart';
 /// numbers or attached files.
 void main() {
   const outfitterUid = 'outfitter-1';
+  const hunterUid = 'hunter-1';
   const farmId = 'farm-1';
   const campId = 'camp-1';
 
@@ -59,6 +61,9 @@ void main() {
         veldType: 'Sweetveld',
         veldCondition: Camp.veldConditionGood,
         deptNormHaPerLsu: 10,
+        // Phase 7D: the camp rule gates a hunter read on this allow-list, so a
+        // hunter read is only served for a camp that names the hunter.
+        allowedHunterUids: const [hunterUid],
       );
 
   StockEntry kudu({int count = 12}) => StockEntry(
@@ -125,6 +130,14 @@ void main() {
   /// lucerne block and two permits (one hunter-visible, one private).
   Future<void> seedFarm(FakeFirebaseFirestore firestore) async {
     final repo = ownerRepo(firestore);
+    // Phase 7D: a hunter read requires BOTH a booking on the farm and a camp
+    // allow-list naming the hunter.
+    await firestore.collection('bookings').doc('booking-$hunterUid').set({
+      'hunterId': hunterUid,
+      'outfitterId': outfitterUid,
+      'farmId': farmId,
+      'status': BookingStatus.confirmed,
+    });
     await repo.saveCamp(outfitterUid, buildCamp());
     await repo.saveStockEntry(outfitterUid, farmId, campId, kudu());
     await repo.saveStockEntry(outfitterUid, farmId, campId, baboon());
@@ -242,8 +255,13 @@ void main() {
       final firestore = FakeFirebaseFirestore();
       await seedFarm(firestore);
 
-      final camps = await hunterRepo(firestore)
-          .getCampsForHunter(farmId, outfitterUid: outfitterUid);
+      // Phase 7D: the hunter read is allow-list constrained, so the hunter uid
+      // is required (a blank uid fails closed).
+      final camps = await hunterRepo(firestore).getCampsForHunter(
+        farmId,
+        outfitterUid: outfitterUid,
+        hunterUid: hunterUid,
+      );
 
       expect(camps, hasLength(1));
       expect(camps.first.name, 'North Camp');
@@ -299,6 +317,7 @@ void main() {
           farmName: 'Bosveld Ranch',
           theme: theme,
           repository: hunterRepo(firestore),
+          currentUidOverride: hunterUid,
         ),
       );
 
@@ -330,6 +349,7 @@ void main() {
           farmName: 'Bosveld Ranch',
           theme: theme,
           repository: hunterRepo(firestore),
+          currentUidOverride: hunterUid,
         ),
       );
 
@@ -365,6 +385,7 @@ void main() {
           farmId: farmId,
           theme: theme,
           repository: hunterRepo(firestore),
+          currentUidOverride: hunterUid,
         ),
       );
 
@@ -388,6 +409,7 @@ void main() {
           farmId: farmId,
           theme: theme,
           repository: hunterRepo(firestore),
+          currentUidOverride: hunterUid,
         ),
       );
 
@@ -401,6 +423,14 @@ void main() {
         (tester) async {
       final firestore = FakeFirebaseFirestore();
       final repo = ownerRepo(firestore);
+      // Phase 7D: a hunter read needs a booking on the farm (and the camp
+      // allow-list, which buildCamp() carries).
+      await firestore.collection('bookings').doc('booking-$hunterUid').set({
+        'hunterId': hunterUid,
+        'outfitterId': outfitterUid,
+        'farmId': farmId,
+        'status': BookingStatus.confirmed,
+      });
       await repo.saveCamp(outfitterUid, buildCamp());
       await repo.savePermit(
         outfitterUid,
@@ -420,6 +450,7 @@ void main() {
           farmId: farmId,
           theme: theme,
           repository: hunterRepo(firestore),
+          currentUidOverride: hunterUid,
         ),
       );
 
@@ -445,6 +476,7 @@ void main() {
               farmId: farmId,
               theme: theme,
               repository: hunterRepo(firestore),
+              currentUidOverride: hunterUid,
             ),
           ),
         ),
@@ -466,6 +498,7 @@ void main() {
               farmId: farmId,
               theme: theme,
               repository: hunterRepo(firestore),
+              currentUidOverride: hunterUid,
             ),
           ),
         ),
@@ -497,6 +530,7 @@ void main() {
                 farmId: farmId,
                 theme: theme,
                 repository: hunterRepo(firestore),
+                currentUidOverride: hunterUid,
               ),
             ),
           ),

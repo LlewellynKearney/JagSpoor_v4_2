@@ -602,10 +602,20 @@ void main() {
       );
     });
 
-    test('the LIVE firestore.rules is untouched (no veld blocks added)', () {
-      final live = File('firestore.rules').readAsStringSync();
-      expect(live, isNot(contains('veldCamps')));
-      expect(live, isNot(contains('allowedHunterUids')));
+    test('the LIVE firestore.rules carries the veld blocks + allow-list gate',
+        () {
+      // 399ebbf synced the GO_LIVE_READY fragment into the live ruleset, so the
+      // former "live rules untouched" assertion is obsolete. Assert the live
+      // rules now enforce the same hunter contract the fragment documents.
+      final live =
+          File('firestore.rules').readAsStringSync().replaceAll('\r\n', '\n');
+      expect(live, contains('veldCamps'));
+      expect(live, contains('allowedHunterUids'));
+      expect(
+        live,
+        contains('request.auth.uid in resource.data.allowedHunterUids'),
+      );
+      expect(live, contains('function isAllowedCamper('));
     });
   });
 }

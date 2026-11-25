@@ -42,7 +42,7 @@ void main() {
   VeldCarryRepository hunterRepo(FakeFirebaseFirestore firestore) =>
       VeldCarryRepository.forTesting(firestore: firestore);
 
-  Camp buildCamp() => Camp(
+  Camp buildCamp({List<String>? allowedHunterUids}) => Camp(
         id: campId,
         farmId: farmId,
         name: 'North Camp',
@@ -53,6 +53,7 @@ void main() {
         veldType: 'Sweetveld',
         veldCondition: Camp.veldConditionGood,
         deptNormHaPerLsu: 10,
+        allowedHunterUids: allowedHunterUids,
       );
 
   FarmPermit buildPermit({
@@ -86,9 +87,12 @@ void main() {
 
   /// Seeds a camp with a counted stock row, a planted block, one
   /// hunter-visible permit and two private permits.
-  Future<void> seedFarm(FakeFirebaseFirestore firestore) async {
+  Future<void> seedFarm(
+    FakeFirebaseFirestore firestore, {
+    List<String>? allowedHunterUids,
+  }) async {
     final repo = ownerRepo(firestore);
-    await repo.saveCamp(outfitterUid, buildCamp());
+    await repo.saveCamp(outfitterUid, buildCamp(allowedHunterUids: allowedHunterUids));
     await repo.saveStockEntry(
       outfitterUid,
       farmId,
@@ -439,7 +443,8 @@ void main() {
 
     test('hunter reads return data once a Confirmed booking exists', () async {
       final firestore = FakeFirebaseFirestore();
-      await seedFarm(firestore);
+      // Phase 7D: the camp must also name the hunter in its allow-list.
+      await seedFarm(firestore, allowedHunterUids: const [hunterUid]);
       await seedBooking(firestore);
       final repo = hunterRepo(firestore);
 
@@ -479,15 +484,17 @@ void main() {
       );
     });
 
-    test('omitting hunterUid keeps the pre-Phase-6 behaviour', () async {
+    test('omitting hunterUid fails closed (no unconstrained camp query)',
+        () async {
       final firestore = FakeFirebaseFirestore();
-      await seedFarm(firestore);
+      await seedFarm(firestore, allowedHunterUids: const [hunterUid]);
 
-      // No gate requested -> the read proceeds (outfitter-side / legacy use).
+      // Phase 7D: the camp read is allow-list constrained, so it needs a uid.
+      // A null uid must NOT fall back to an unconstrained read.
       expect(
         await hunterRepo(firestore)
             .getCampsForHunter(farmId, outfitterUid: outfitterUid),
-        hasLength(1),
+        isEmpty,
       );
     });
   });
