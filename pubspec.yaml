@@ -2,7 +2,7 @@ name: jagspoor
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 4.2.30+30
+version: 4.2.31+31
 
 environment:
   sdk: ^3.6.0

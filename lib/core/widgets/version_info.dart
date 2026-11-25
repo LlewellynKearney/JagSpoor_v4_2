@@ -17,10 +17,10 @@ class VersionInfo {
   /// Static fallback used only when `package_info_plus` cannot resolve the
   /// live bundle metadata (billing/test host). Mirrors the current Android
   /// Play Console build (see `android/app/build.gradle.kts`).
-  static const String fallbackVersionCode = '30';
-  static const String fallbackVersionName = '4.2.30';
+  static const String fallbackVersionCode = '31';
+  static const String fallbackVersionName = '4.2.31';
 
-  /// The compact `v<name>+<code>` label (e.g. `v4.2.30+30`) for surfaces that
+  /// The compact `v<name>+<code>` label (e.g. `v4.2.31+31`) for surfaces that
   /// render the version inline with other UI (the Admin Portal V2 header).
   ///
   /// Mirrors the pubspec `version: <name>+<code>` shape so the running build is
@@ -39,8 +39,8 @@ class VersionInfo {
   /// Asynchronously resolves the installed app version + build number.
   ///
   /// Returns a map of `{name, code, display}`. `name` is the human-readable
-  /// version (e.g. "4.2.30"), `code` is the build/version code (e.g. "30"),
-  /// and `display` is the combined `"4.2.30 (build 30)"` label used by the
+  /// version (e.g. "4.2.31"), `code` is the build/version code (e.g. "31"),
+  /// and `display` is the combined `"4.2.31 (build 31)"` label used by the
   /// widgets. Never throws -- any platform failure falls back to the
   /// documented [fallbackVersionName] / [fallbackVersionCode].
   static Future<Map<String, String>> resolve() async {
@@ -65,7 +65,7 @@ class VersionInfo {
   }
 }
 
-/// A compact, theme-aware version caption ("v4.2.30 · build 30") rendered in
+/// A compact, theme-aware version caption ("v4.2.31 · build 31") rendered in
 /// the footer area of the profile / settings screens.
 ///
 /// Fetches the version dynamically from `package_info_plus` on first mount
