@@ -11,9 +11,16 @@ service firebase.storage {
     // below are redundant with this global rule but make the contract
     // explicit so a future tightening of this catch-all cannot silently
     // break a feature.
+    //
+    // EXCEPTION — `veld_permits/**` is deliberately EXCLUDED here. Veld permit
+    // documents are regulatory paperwork and are OWNER-ONLY (see the
+    // `veld_permits` block at the end of this file). Without this exclusion the
+    // global authenticated read would grant every signed-in hunter read access
+    // and the owner-only block would be a no-op, because Firebase Storage
+    // rules OR every matching `allow` grant.
     // ─────────────────────────────────────────────────────────────────────
-    match /{allPaths=**} {
-      allow read: if request.auth != null;
+    match /{firstSegment}/{allPaths=**} {
+      allow read: if request.auth != null && firstSegment != 'veld_permits';
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -101,6 +108,37 @@ service firebase.storage {
     // screenshots).
     match /bug_report_attachments/{uid}/{allPaths=**} {
       allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Veld Carrying Capacity — 4.2.30 — synced from GO_LIVE_READY
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Permit documents uploaded by `VeldCarryPermitFormScreen` via
+    // `ImageService.uploadDocument` land at:
+    //
+    //   veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName}
+    //
+    // (`VeldCarryPermitFormScreen.permitStoragePath` is the authoritative
+    // builder; path segments are stripped of `/` so a crafted file name cannot
+    // escape its permit folder.)
+    //
+    // OWNER READ/WRITE ONLY — the second path segment is the outfitter's uid,
+    // so `request.auth.uid == outfitterUid` is a single, non-spoofable check
+    // needing no document read.
+    //   • NO public read.
+    //   • NO hunter read — the hunter veld view renders permit TYPE + EXPIRY +
+    //     STATUS only and never links the file, so a hunter must not be able to
+    //     fetch it even with the URL.
+    //   • NO admin bypass (matches the Firestore fragment's posture).
+    match /veld_permits/{outfitterUid}/{farmId}/{permitId}/{fileName} {
+      // `request.auth != null` is implied by the uid comparison, but it is
+      // stated explicitly so an unauthenticated request can never satisfy the
+      // clause by comparing null to a path segment.
+      allow read: if request.auth != null
+        && request.auth.uid == outfitterUid;
+      allow write: if request.auth != null
+        && request.auth.uid == outfitterUid;
     }
   }
 }

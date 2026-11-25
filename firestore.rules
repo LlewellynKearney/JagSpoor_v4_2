@@ -87,6 +87,29 @@ service cloud.firestore {
       );
     }
 
+    // ── Veld Carrying Capacity helpers (4.2.30) ─────────────────────────
+    // The veld data nests under the signed-in outfitter's OWN user document:
+    //   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}[/stock|plantedAreas|predators]
+    //   users/{outfitterUid}/farms/{farmId}/permits/{permitId}
+    // The owner is the uid in the PATH, so ownership needs no document read and
+    // a missing parent document cannot widen access.
+    function isVeldOwner(outfitterUid) {
+      return isSignedIn() && request.auth.uid == outfitterUid;
+    }
+
+    // Phase 7D allow-list gate for a camp CHILD document (stock / plantedAreas).
+    // The allow-list lives on the parent camp; the camp path is fully specified
+    // by the caller's query, so this single-document get() is valid for both a
+    // single read and a LIST query. A missing camp, or a camp with no
+    // `allowedHunterUids`, errors and therefore DENIES (fail closed).
+    function isAllowedCamper(outfitterUid, farmId, campId) {
+      return isSignedIn()
+        && request.auth.uid in get(
+          /databases/$(database)/documents/users/$(outfitterUid)
+            /farms/$(farmId)/veldCamps/$(campId)
+        ).data.allowedHunterUids;
+    }
+
     // ── Marketplace / catalog (readable by any signed-in user) ──────────
     // SA Game Guide catalog (`animals`). Public read (the game guide works
     // offline + unauthenticated for reference). Write is split so the
@@ -949,6 +972,101 @@ service cloud.firestore {
     match /admin_config/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Veld Carrying Capacity — 4.2.30 — synced from GO_LIVE_READY
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Merged from `firestore.rules.veld_carry.GO_LIVE_READY`. Layout is the
+    // shipped repository contract (NOT the older DRAFT, which used top-level
+    // `farms/{farmId}` and a `camps` collection name):
+    //
+    //   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}
+    //   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId}
+    //   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId}
+    //   users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId}
+    //   users/{outfitterUid}/farms/{farmId}/permits/{permitId}
+    //
+    // Posture: no public read anywhere; no hunter write anywhere; predators are
+    // owner-only (no hunter clause); no admin bypass (add `|| isAdmin()` only on
+    // an explicit decision); no farm-manager access.
+    //
+    // Hunter reads on camps / stock / plantedAreas are gated by the Phase 7D
+    // denormalised `allowedHunterUids` allow-list that
+    // `VeldCarryRepository.syncAllowedHuntersForFarm` writes onto every camp.
+    // ⚠️ Firestore rules are NOT filters: the hunter camp LIST query must
+    // constrain the same field (`.where('allowedHunterUids', arrayContains:
+    // hunterUid)`) or it is rejected with permission-denied. Stock /
+    // plantedAreas need no query change — their rule resolves the field through
+    // a get() on the fully-specified parent camp path.
+
+    // veldCamps — owner full read/write; hunter read via the allow-list.
+    // NOTE the collection is `veldCamps`, NOT `camps`.
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId} {
+      allow read: if isVeldOwner(outfitterUid)
+        || (isSignedIn()
+            && resource.data.keys().hasAny(['allowedHunterUids'])
+            && resource.data.allowedHunterUids is list
+            && request.auth.uid in resource.data.allowedHunterUids);
+
+      // A camp may never claim a farmId other than its own path segment.
+      // request.resource is null on delete, so the payload check is scoped to
+      // create/update and delete gets its own owner-only grant.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // stock ledger — owner full read/write; hunter read via the camp allow-list.
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/stock/{entryId} {
+      allow read: if isVeldOwner(outfitterUid)
+        || isAllowedCamper(outfitterUid, farmId, campId);
+
+      // A stock row may never claim a campId other than its own path segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // plantedAreas — owner full read/write; hunter read via the camp allow-list
+    // (feed type + hectares are not sensitive and feed the hunter capacity total).
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/plantedAreas/{areaId} {
+      allow read: if isVeldOwner(outfitterUid)
+        || isAllowedCamper(outfitterUid, farmId, campId);
+
+      // A planted area may never claim a campId other than its own path segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // predators — OWNER ONLY. No hunter read, by design (outfitter-internal
+    // management data; the hunter view never queries this collection).
+    match /users/{outfitterUid}/farms/{farmId}/veldCamps/{campId}/predators/{predatorId} {
+      allow read: if isVeldOwner(outfitterUid);
+
+      // A predator record may never claim a campId other than its own path
+      // segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.campId == campId;
+      allow delete: if isVeldOwner(outfitterUid);
+    }
+
+    // permits — farm-wide (not camp-specific). Owner full read/write; a signed-in
+    // non-owner reads ONLY permits the outfitter marked `hunter_visible`.
+    // `VeldCarryRepository.getPermitsForHunter` constrains the same field
+    // (`.where('visibility', isEqualTo: 'hunter_visible')`), which Firestore
+    // requires for this rule to serve the query.
+    match /users/{outfitterUid}/farms/{farmId}/permits/{permitId} {
+      allow read: if isVeldOwner(outfitterUid)
+        || (isSignedIn() && resource.data.visibility == 'hunter_visible');
+
+      // Writes stay owner-only. No hunter write, no manager write.
+      // A permit may never claim a farmId other than its own path segment.
+      allow create, update: if isVeldOwner(outfitterUid)
+        && request.resource.data.farmId == farmId;
+      allow delete: if isVeldOwner(outfitterUid);
     }
 
     // ── Default deny ────────────────────────────────────────────────────
