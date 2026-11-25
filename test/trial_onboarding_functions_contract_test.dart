@@ -23,11 +23,20 @@ void main() {
     });
 
     test('is a Firebase Auth user-creation trigger in us-central1', () {
-      // v1 auth provider: .auth.user().onCreate(...)
-      expect(onboardingSource, contains('.auth.user()'));
-      expect(onboardingSource, contains('.onCreate(async (user)'));
-      expect(onboardingSource, contains('.region("us-central1")'));
-      expect(onboardingSource, contains('export const initializeNewUserTrial'));
+      // v2 identity provider: onUserCreated(...) from
+      // `firebase-functions/v2/identity` is the 2nd-gen Auth onCreate trigger.
+      expect(onboardingSource,
+          contains('import { onUserCreated } from "firebase-functions/v2/identity"'));
+      expect(onboardingSource,
+          contains('export const initializeNewUserTrial = onUserCreated('));
+      expect(onboardingSource, contains('region: "us-central1"'));
+      // The handler receives the created Auth user on `event.data`.
+      expect(onboardingSource, contains('async (event) =>'));
+      expect(onboardingSource, contains('const user = event.data;'));
+      expect(onboardingSource, contains('const uid = user.uid;'));
+      // Regression guard: the v1 trigger shape must not come back.
+      expect(onboardingSource, isNot(contains('.auth.user()')));
+      expect(onboardingSource, isNot(contains('firebase-functions/v1')));
     });
 
     test('initializes new users to a 30-day free trial', () {
